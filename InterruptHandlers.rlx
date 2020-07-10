@@ -1,0 +1,30 @@
+/* Int 0 */
+
+define void DivideByZero(InterruptContext* C, Registers* R) {
+	TerminalAWriteLine("DIVIDE BY ZERO: n/a")
+}
+define void _DivideByZero() asm {
+	call, @InterruptSetup
+	call, @DivideByZero
+	jmp, @InterruptReturn
+}
+
+
+/* Int 3 */
+
+define void Breakpoint(InterruptContext* C, Registers* R) {
+	TerminalAWriteLine("BREAKPOINT: int3")
+}
+define void _Breakpoint() asm {
+	call, @InterruptSetup
+	call, @Breakpoint
+	jmp, @InterruptReturn
+}
+
+declare void _PIT()
+
+define void AddHandlers() {
+	InsertIDTEntry(0x00, &_DivideByZero, true)
+	InsertIDTEntry(0x03, &_Breakpoint, true)
+	InsertIDTEntry(0x20, &_PIT, true)
+}

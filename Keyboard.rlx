@@ -1,0 +1,162 @@
+
+
+/* 256 bytes in the output file are allocated to store the current 'line' of keyboard input */
+i8* InputBuffer := StaticAllocate:(512)
+
+i32 InputIndex := 0 	/* Where to write the next character into the 'pending input' buffer */
+i32 ShiftState := 0 	/* If shift is 'down' or not */
+
+i16 PS2_DATA := 0x60
+
+#Include ./src/Shell.rlx
+
+define i8 ScanCodeToASCII(i16 ScanCode) {
+	/* Note: This doesn't need to work for all characters, since it is only used for displaying, not for logic. */
+	
+	i8* Map := "  123456789 -=  qwertyuiop[]  asdfghjkl;'` \zxcvbnm,./ *  "
+	i32 MapMax := 0x3A
+	
+	if (ScanCode >= MapMax) {
+		return ' '
+	}
+	else {
+		i8 Result := Map[ScanCode]
+		
+		if (ShiftState && IsAlpha(Result)) {
+			/* If Shift is down (and we're working with a letter), switch the letter to uppercase */
+			
+			Result := Result ^ 0x20
+		}
+		
+		return Result
+	}
+}
+
+declare void KeyboardWait(i8, i8)
+
+define void KeyboardEvent() {
+	/* IRQ1 handler */
+	
+	KeyboardWait(0, 1)
+	i16 ScanCode := InB(PS2_DATA) As i16
+	i8 ASCIICode := ScanCodeToASCII(ScanCode)
+	
+	/* TerminalPrintFormat("\nidx: %i, buffer: %s\n", InputIndex, InputBuffer) */
+	
+	if (ScanCode & 0x80) {
+		/* Ignore all 'released' codes, except for 'shift shift released' (0xAA) */
+		
+		if (ScanCode = 0xAA) {
+			/* Never reached */
+			
+			ShiftState := false
+		}
+	}
+	else if (ScanCode = 0x2A) {
+		/* Left shift down */
+		
+		ShiftState := true
+	}
+	else if (ScanCode = 0x0E) {
+		if (InputIndex != 0) {
+			InputIndex -= 1
+			
+			if (TerminalColumn != 0) {
+				TerminalColumn -= 1
+				TerminalWriteCharacter(' ')
+				TerminalColumn -= 1
+			}
+		}
+	}
+	else if (ScanCode = 0x1C) {
+		TerminalWriteNewLine()
+		
+		InputBuffer[InputIndex] := 0
+		OnCommand(InputBuffer)
+		Prompt()
+		
+		InputIndex := 0
+	}
+	else {
+		/* (Hopefully) A printable character, so print it and append it to the input buffer */
+		
+		InputBuffer[InputIndex] := ASCIICode
+		TerminalPrintFormat("%c",  ASCIICode)
+		InputIndex += 1
+	}
+	
+	SendEOI(1)
+}
+
+define void _KeyboardEvent() asm {
+	call, @InterruptSetup	/* Saves all GPRs */
+	call, @KeyboardEvent	/* Call the actual handler */
+	jmp, @InterruptReturn	/* Pop all GPRs, iretq */
+}
+
+i8 KEYBOARD_DATA := 0x60
+i8 KEYBOARD_COMMAND := 0x64
+i8 KEYBOARD_STATUS := 0x64
+
+i8 CONTROLLER_READ_COMMAND := 0x20
+i8 CONTROLLER_WRITE_COMMAND := 0x60
+i8 CONTROLLER_DISABLE_AUX := 0xA7
+i8 CONTROLLER_ENABLE_AUX := 0xA8
+i8 CONTROLLER_DISABLE := 0xAD
+i8 CONTROLLER_ENABLE := 0xAE
+
+define void KeyboardWait(i8 ForWrite, i8 TargetStatus) {
+	/* Bit 0 = read status, bit 1 = write status */
+	
+	i8 Mask := 0x01 + ForWrite
+	TargetStatus := TargetStatus << ForWrite
+	
+	loop {
+		i8 Status := InB(KEYBOARD_STATUS)
+		
+		if ((Status & Mask) = TargetStatus) {
+			return true
+		}
+	}
+}
+
+i16 KEYBOARD_WAIT_INPUT := 0x100
+
+define i8 KeyboardSendCommand(i16 Command, ... Bytes) {
+	KeyboardWait(1, 0)
+	
+	OutB(KEYBOARD_COMMAND, (Command & 0xFF) As i8)
+	
+	for (i32 Index := 1, Index <= Bytes[0], Index += 1) {
+		KeyboardWait(1, 0)
+		OutB(KEYBOARD_DATA, Bytes[Index] As i8)
+	}
+	
+	if (Command > 0xFF) {
+		KeyboardWait(0, 1)
+		
+		return InB(KEYBOARD_DATA)
+	}
+}
+
+define void SetupKeyboard() {
+	/* Called with interrupts disabled, and before the IDT is loaded */
+	
+	KeyboardSendCommand(CONTROLLER_DISABLE)
+	KeyboardSendCommand(CONTROLLER_DISABLE_AUX)
+	
+	InB(KEYBOARD_DATA) /* Flush input buffer */
+	
+	/* Enable interrupts for both PS/2 ports, enable first port translation(?) */
+	i8 ConfigByte := KeyboardSendCommand(CONTROLLER_READ_COMMAND | KEYBOARD_WAIT_INPUT)
+	ConfigByte := ConfigByte | 0x43
+	KeyboardSendCommand(CONTROLLER_WRITE_COMMAND, ConfigByte)
+	
+	KeyboardSendCommand(CONTROLLER_ENABLE)
+	KeyboardSendCommand(CONTROLLER_ENABLE_AUX)
+	
+	TerminalPrintFormat("Kbd: Starting index: %i\n", InputIndex)
+	
+	InsertIDTEntry(0x21, &_KeyboardEvent, true)
+	EnablePICLine(1, true)
+}

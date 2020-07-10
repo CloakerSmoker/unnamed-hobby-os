@@ -1,0 +1,127 @@
+define void MemoryMove(i8* To, i8* From, i32 Size) {
+	i32 Index := 0
+	
+	if (To < From) {
+		for (Index := 0, Index < Size, Index += 1) {
+			To[Index] := From[Index]
+		}
+	}
+	else {
+		for (Index := Size, Index != 0, Index += 1) {
+			To[Index - 1] := From[Index - 1]
+		}
+	}
+}
+define void MemorySet8(i8* At, i8 Value, i32 Size) {
+	for (i32 Index := 0, Index < Size, Index += 1) {
+		At[Index] := Value
+	}
+}
+define void MemorySet16(i16* At, i16 Value, i32 Size) {
+	for (i32 Index := 0, Index < Size, Index += 1) {
+		At[Index] := Value
+	}
+}
+define void MemorySet64(i64* At, i64 Value, i32 Size) {
+	for (i32 Index := 0, Index < Size, Index += 1) {
+		At[Index] := Value
+	}
+}
+
+define void MemoryReverse(i8* Buffer, i32 Length) {
+	for (i32 Index := 0, Index < Length, Index += 1) {
+		i8 Temp := Buffer[Index]
+		Buffer[Index] := Buffer[Length - 1]
+		Buffer[Length - 1] := Temp
+		
+		Length -= 1
+	}
+}
+
+define i32 StringLength(i8* String) {
+	for (i32 Length := 0, String[Length] != 0, Length += 1) {}	
+	
+	return Length
+}
+
+i8* NumberBuffer := StaticAllocate:(96)
+
+define i8 NumberToCharacter(i8 Number) {
+	if (Number < 10) {
+		return Number + '0' As i8
+	}
+	else {
+		return Number - 10 + 'a' As i8
+	}
+	
+}
+
+define i8* IToA(i64 Number, i32 Base) {
+	MemorySet64(NumberBuffer, 0, 12)
+	
+	i8 Sign := 0
+	
+	if (Number = 0) {
+		NumberBuffer[0] := '0'
+		return NumberBuffer
+	}
+	
+	if (Number < 0) {
+		Sign := true
+		Number := -Number
+	}
+	
+	for (i32 Index := 0, Number > 0, Index += 1) {
+		NumberBuffer[Index] := NumberToCharacter((Number % Base) As i8)
+		Number := Number / Base
+	}
+	
+	if (Sign && Base = 10) {
+		NumberBuffer[Index] := '-'
+	}
+	
+	NumberBuffer[Index + 1] := 0
+	
+	MemoryReverse(NumberBuffer, Index)
+	
+	return NumberBuffer
+}
+
+define void Burn() {
+	for (i32 I := 0, I < 0xFFFFFF, I += 1) {}
+}
+
+define void Sleep(i32 MS) {
+	i64 End := TickCount + (MS / 10)
+	
+	while (TickCount <= End) {}
+}
+
+define i8 IsAlpha(i8 Character) {
+	if ('a' <= Character && Character <= 'z') {
+		return true
+	}
+	else if ('A' <= Character && Character <= 'Z') {
+		return true
+	}
+
+	return false
+}
+
+define i8 StringEquals(i8* Left, i8* Right) {
+	i32 Index := 0
+	
+	loop {
+		i8 LeftCharacter := Left[Index]
+		i8 RightCharacter := Right[Index]
+		
+		if (LeftCharacter = 0 && RightCharacter = 0) {
+			return true
+		}
+		else if (LeftCharacter != RightCharacter || LeftCharacter = 0 || RightCharacter = 0) {
+			return false
+		}
+		
+		Index += 1
+	}
+}

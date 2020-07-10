@@ -1,0 +1,107 @@
+#StandAlone
+#ImageBase 0xC000
+
+struct IDTEntry unaligned {
+	i16 OffsetLow16,
+	i16 Selector,
+	i8 PaddingZero,
+	i8 Flags,
+	i16 OffsetHigh16,
+	i32 OffsetHigh32,
+	i32 Padding
+}
+
+struct IDT unaligned {
+	i16 Size,
+	IDTEntry* Start
+}
+
+bits GDTEntry As i64 {
+	[0:15] LimitLow16,
+	[16:31] BaseLow16,
+	[32:39] BaseMiddle8,
+	[40:47] Access,
+	[48:51] LimitHigh4,
+	[52:55] Flags,
+	[56:63] BaseHigh8
+}
+
+struct GDT unaligned {
+	i16 Size,
+	i64* Start
+}
+
+/* Pad the output file so IDT starts at a multiple of 16 */
+i64 Dummy0
+i16 Dummy1
+i8 Dumm2
+
+IDTEntry* IDT := StaticAllocate:(1000)
+IDT* IDTHeader := StaticAllocate:(0x10)
+
+i64 TickCount := 0 /* Updated by the PIT inside of Time.rlx */
+
+define i64 ReadRSP() asm {
+	mov, rax, rsp
+	ret
+}
+
+i64 StackBottom := 0
+i64 KernelLimit := 0
+
+#Include ./src/Utility.rlx
+#Include ./src/VGA.rlx
+#Include ./src/Interrupts.rlx
+
+define void Main(i64 _KernelLimit) {
+	StackBottom := ReadRSP()
+	KernelLimit := _KernelLimit
+	
+	TerminalClear()
+	SetupInterrupts()
+	
+	TerminalSetCursor(0, 0)
+	
+	TerminalToggleCursor()
+	TerminalToggleCursor()
+	
+/* 	for (i32 X := 0, X < 80, X += 1) {
+		for (i32 Y := 0, Y < 25, Y += 1) {
+			TerminalRow := 0
+			TerminalColumn := 0
+			TerminalPrintFormat("X: %i, Y: %i     RSP: %x   ", X, Y, ReadRSP())
+			TerminalSetCursor(Y, X)
+			Delay()
+		}
+	}
+	
+	loop {} */
+	
+	/* for (i32 I := 0, I <= 21, I += 1) {
+		TerminalPrintFormat("test%i abc\n", I)
+	} */
+	
+	TerminalAWriteLine("scroll 1")
+	TerminalAWriteLine("scroll 2")
+	TerminalAWriteLine("scroll 3")
+	
+	Prompt()
+	
+	/*
+	
+	TerminalWriteNumberLine(69420)
+	
+	TerminalSetCursor(0, 0)
+	
+	Breakpoint:()
+	
+	TerminalAWriteLine("After breakpoint")
+	
+	i64 U := 2 / 0
+	
+	TerminalAWriteLine("After Div0")
+	
+	TerminalPrintFormat("Abc %i, %x, %c, %s \n", 200, 200, 'h', "abcdef please work") */
+	
+	loop {}
+}

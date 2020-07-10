@@ -1,0 +1,31 @@
+
+
+
+define void Prompt() {
+	TerminalPrintFormat("=>")
+}
+
+define void OnCommand(i8* Command) {
+	if (StringEquals(Command, "tinfo")) {
+		i64 MS := GetUptimeMS()
+		i64 Seconds := MS / 1000
+		i64 Minutes := Seconds / 60
+		Seconds := Seconds % 60
+		i64 Hours := Minutes / 60
+		Minutes := Minutes % 60
+		
+		TerminalPrintFormat("Uptime [ %ih %im %is ], Ticks [ %ics %ims ]\n", Hours, Minutes, Seconds, GetUptimeCS(), MS)
+	}
+	else if (StringEquals(Command, "sinfo")) {
+		i64 RSP := ReadRSP()
+		i64 StackSpace := StackBottom - RSP
+		
+		TerminalPrintFormat("Top = %x, RSP = %x, Size = %x\n", StackBottom, RSP, StackSpace)
+	}
+	else if (StringEquals(Command, "kinfo")) {
+		TerminalPrintFormat("Base = c000, Limit = %x, Size = %x\n", KernelLimit, KernelLimit - 0xC000)
+	}
+	else {
+		TerminalPrintFormat("Unknown command '%s'\n", Command)
+	}
+}

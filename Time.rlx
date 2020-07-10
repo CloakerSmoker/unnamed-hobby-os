@@ -1,0 +1,66 @@
+i8 DRAW_CLOCK := false
+
+/* Int 0x20, IRQ0 */
+
+i64 LastTime := 0
+
+define void PIT(InterruptContext* C, Registers* R) {
+	i64 NewTime := (TickCount * 10) / 1000
+	
+	if ((NewTime != LastTime) && DRAW_CLOCK) {
+		i32 OldX := TerminalColumn
+		i32 OldY := TerminalRow
+		
+		TerminalColumn := 40
+		TerminalRow := 0
+		
+		i64 Seconds := NewTime
+		i64 Minutes := Seconds / 60
+		Seconds := Seconds % 60
+		i64 Hours := Minutes / 60
+		Minutes := Minutes % 60
+		
+		TerminalPrintFormat("Uptime [ %ih %im %is ]", Hours, Minutes, Seconds)
+		
+		TerminalColumn := OldX
+		TerminalRow := OldY
+		
+		LastTime := NewTime
+	}
+	
+	TickCount += 1
+	
+	SendEOI(0)
+}
+define void _PIT() asm {
+	call, @InterruptSetup
+	call, @PIT
+	jmp, @InterruptReturn
+}
+
+define void Delay() {
+	i64 Start := TickCount
+	
+	while (Start = TickCount) {}
+}
+
+define i64 GetUptimeCS() {
+	return TickCount
+}
+
+define i64 GetUptimeMS() {
+	/* One tick = 10 ms, so (TickCount * 10) gives us tickcount in regular MS. */
+	
+	return (TickCount * 10)
+}
+
+define void InitializePIT(i32 Reload) {
+	OutB(0x43, 0x36) 
+	OutB(0x40, (Reload & 0xFF) As i8)
+	OutB(0x40, (Reload >> 8) As i8)
+}
+
+define void SetupTime() {
+	InitializePIT(11931) /* 100 hz */
+	EnablePICLine(0, true)
+}
