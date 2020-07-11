@@ -56,5 +56,23 @@ define void SetupPaging() {
 		PT1[PT1Index] := (PT1Index * 0x1000) | PAGE_PRESENT | PAGE_WRITE
 	}
 	
+	BootInfo("Page tables built")
+	
+	PT2[0] := 0xB8000 | PAGE_PRESENT | PAGE_WRITE
+	
 	__Call(__Intrinsics->SetCR3, PML4T)
+	
+	BootInfo("Paging enabled")
+	
+	BootInfo("Paging doesn't work")
+	
+	TerminalBuffer := 0x200000
+	TerminalRow -= 1
+	TerminalColumn := 8
+	
+	TerminalAWrite("Paging works           ")
+	
+	TerminalWriteNewLine()
+	
+	TerminalBuffer := 0xB8000
 }

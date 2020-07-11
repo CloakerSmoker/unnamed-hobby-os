@@ -56,12 +56,19 @@ define void TerminalCheckBounds() {
 }
 
 define void TerminalWriteCharacter(i8 Character) {
-	i32 Index := (TerminalRow * VGA_WIDTH) + TerminalColumn
-	TerminalBuffer[Index] := PackEntry(Character, TerminalColor)
-	
-	TerminalColumn += 1
-	
-	TerminalCheckBounds()
+	if (Character = '	') {
+		for (i32 I := 0, I < 4, I += 1) {
+			TerminalWriteCharacter(' ')
+		}
+	}
+	else {
+		i32 Index := (TerminalRow * VGA_WIDTH) + TerminalColumn	
+		TerminalBuffer[Index] := PackEntry(Character, TerminalColor)
+		
+		TerminalColumn += 1
+		
+		TerminalCheckBounds()
+	}
 }
 
 define void VGACommand(i8 Number, i8 Parameter) asm {
@@ -139,6 +146,8 @@ define void TerminalWriteHexNumberLine(i64 Number) {
 }
 
 define void TerminalPrintFormat(i8* Format, ... Args) {
+	i16 StartingColor := TerminalColor
+	
 	i32 Length := StringLength(Format)
 	i32 ArgIndex := 1
 	
@@ -172,21 +181,25 @@ define void TerminalPrintFormat(i8* Format, ... Args) {
 			if (Next = 'n') {
 				TerminalAWriteLine("")
 			}
+			else if (Next = 't') {
+				TerminalWriteCharacter('	')
+			}
 			else {
 				TerminalWriteCharacter(Next)
 			}
 		}
 		else if (Next = '^') {
 			Index += 2
-			i8 Fore := Format[Index - 1]
-			i8 Back := Format[Index]
+			i8 Fore := GetCharacterValue(Format[Index - 1])
+			i8 Back := GetCharacterValue(Format[Index])
 			
-			
+			TerminalColor := PackColor(Fore, Back)
 		}
 		else {
 			TerminalWriteCharacter(Next)
 		}
 	}
 	
+	TerminalColor := StartingColor
 	TerminalSetCursor(TerminalRow, TerminalColumn)
 }

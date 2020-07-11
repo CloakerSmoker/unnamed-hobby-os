@@ -13,7 +13,7 @@ i16 PS2_DATA := 0x60
 define i8 ScanCodeToASCII(i16 ScanCode) {
 	/* Note: This doesn't need to work for all characters, since it is only used for displaying, not for logic. */
 	
-	i8* Map := "  123456789 -=  qwertyuiop[]  asdfghjkl;'` \zxcvbnm,./ *  "
+	i8* Map := "  1234567890-=  qwertyuiop[]  asdfghjkl;'` \zxcvbnm,./ *  "
 	i32 MapMax := 0x3A
 	
 	if (ScanCode >= MapMax) {

@@ -5,8 +5,36 @@ define void Prompt() {
 	TerminalPrintFormat(" >")
 }
 
-define void OnCommand(i8* Command) {
-	if (StringEquals(Command, "uptime")) {
+
+i8** CommandParameters := StaticAllocate:(0x20)
+
+define void OnCommand(i8* CommandLine) {
+	i32 ParameterStart := 0
+	i32 ParameterCount := 0
+	
+	for (i32 Index := 0, CommandLine[Index] != 0, Index += 1) {
+		i8 NextCharacter := CommandLine[Index]
+		
+		if (NextCharacter = ' ') {
+			CommandParameters[ParameterCount] := CommandLine + ParameterStart
+			ParameterCount += 1
+
+			CommandLine[Index] := 0
+			
+			while (CommandLine[Index + 1] = ' ') {
+				Index += 1
+			}
+			
+			ParameterStart := Index + 1
+		}
+	}
+	
+	CommandParameters[ParameterCount] := CommandLine + ParameterStart
+	
+	i8* Command := CommandParameters[0]
+	i8** Parameters := CommandParameters + 8
+	
+	if (StartsWith(Command, "uptime")) {
 		i64 MS := GetUptimeMS()
 		i64 Seconds := MS / 1000
 		i64 Minutes := Seconds / 60
@@ -14,24 +42,57 @@ define void OnCommand(i8* Command) {
 		i64 Hours := Minutes / 60
 		Minutes := Minutes % 60
 		
-		TerminalPrintFormat("Uptime [ %ih %im %is ]\nTicks [ %ics %ims ]\n", Hours, Minutes, Seconds, GetUptimeCS(), MS)
+		TerminalPrintFormat("\tUptime [ %ih %im %is ]\n\tTicks [ %ics %ims ]\n", Hours, Minutes, Seconds, GetUptimeCS(), MS)
 	}
-	else if (StringEquals(Command, "stack")) {
+	else if (StartsWith(Command, "stack")) {
 		i64 RSP := ReadRSP()
 		i64 StackSpace := StackBottom - RSP
 		
-		TerminalPrintFormat("Top = %x, RSP = %x, Size = %x\n", StackBottom, RSP, StackSpace)
+		TerminalPrintFormat("\tTop = %x, RSP = %x, Size = %x\n", StackBottom, RSP, StackSpace)
 	}
-	else if (StringEquals(Command, "kinfo")) {
-		TerminalPrintFormat("Base = c000, Limit = %x, Size = %x\n", KernelLimit, KernelLimit - 0xC000)
+	else if (StartsWith(Command, "kinfo")) {
+		TerminalPrintFormat("\tBase = c000, Limit = %x, Size = %x\n", KernelLimit, KernelLimit - 0xC000)
 	}
-	else if (StringEquals(Command, "spur")) {
-		TerminalPrintFormat("Bone spurs = %x\n", SpuriousCount)
+	else if (StartsWith(Command, "spur")) {
+		TerminalPrintFormat("\tBone spurs = %x\n", SpuriousCount)
 	}
-	else if (StringEquals(Command, "page")) {
-		TerminalPrintFormat("CR3/PML4T = %x\n", __Call(__Intrinsics->GetCR3, 0))
+	else if (StartsWith(Command, "page")) {
+		TerminalPrintFormat("\tCR3/PML4T = %x\n", __Call(__Intrinsics->GetCR3, 0))
+	}
+	else if (StartsWith(Command, "peek")) {
+		i64 TargetAddress := AToI(Parameters[0])
+		i64 AddressValue := *(TargetAddress As i64*)
+		
+		if (ParameterCount = 2 && StringLength(Parameters[1]) = 1) {
+			i8 Size := Parameters[1][0]
+			
+			if (IsNumeric(Size, 8)) {
+				if (Size = '1') {
+					AddressValue := AddressValue & 0xFF
+				}
+				else if (Size = '2') {
+					AddressValue := AddressValue & 0xFFFF
+				}
+				else if (Size = '4') {
+					AddressValue := AddressValue & 0xFFFFFFFF
+				}
+				else if (Size = '8') {
+					AddressValue := AddressValue
+				}
+				else {
+					TerminalPrintFormat("\tUnknown size '^40%c^F0', must be ^901/2/4/8^F0\n", Size)
+					return 0
+				}
+				
+				TerminalPrintFormat("\t*(^20%x^F0 As i%i*) = ^A0%x^F0\n", TargetAddress, (Size - '0') * 8, AddressValue)
+				return 0
+			}
+		}
+		
+		
+		TerminalPrintFormat("\t*(^20%x^F0) = ^A0%x^F0\n", TargetAddress, AddressValue)
 	}
 	else {
-		TerminalPrintFormat("Unknown command '%s'\n", Command)
+		TerminalPrintFormat("\tUnknown command '^40%s^F0'\n", Command)
 	}
 }

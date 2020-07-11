@@ -67,12 +67,13 @@ __Intrinsics* __Intrinsics := 0
 #Include ./src/VGA.rlx
 
 define void BootInfo(i8* Message) {
-	i16 OldColor := TerminalColor
-	TerminalColor := PackColor(VGA_BLUE | VGA_BRIGHT | VGA_RED, VGA_BLACK)
+	/* i16 OldColor := TerminalColor */
+	/* TerminalColor := PackColor(VGA_BLUE | VGA_BRIGHT | VGA_RED, VGA_BLACK) */
 	
-	TerminalPrintFormat(" [BOOT] %s\n", Message)
+	TerminalPrintFormat(" ^D0[BOOT]^F0 ")
+	/* TerminalColor := OldColor */
 	
-	TerminalColor := OldColor
+	TerminalPrintFormat("%s\n", Message)
 }
 
 #Include ./src/Interrupts.rlx
@@ -93,47 +94,10 @@ define void Main(i64 _KernelLimit, void* _Intrinsics) {
 	BootInfo("Interrupts enabled")
 	
 	SetupPaging()
-	BootInfo("Paging enabled")
 	
-	TerminalSetCursor(0, 0)
-	
-/* 	for (i32 X := 0, X < 80, X += 1) {
-		for (i32 Y := 0, Y < 25, Y += 1) {
-			TerminalRow := 0
-			TerminalColumn := 0
-			TerminalPrintFormat("X: %i, Y: %i     RSP: %x   ", X, Y, ReadRSP())
-			TerminalSetCursor(Y, X)
-			Delay()
-		}
-	}
-	
-	loop {} */
-	
-	/* for (i32 I := 0, I <= 21, I += 1) {
-		TerminalPrintFormat("test%i abc\n", I)
-	} */
-	
-	TerminalAWriteLine("scroll 1")
-	TerminalAWriteLine("scroll 2")
-	TerminalAWriteLine("scroll 3")
+	BootInfo("Main() complete, spinning")
 	
 	Prompt()
-	
-	/*
-	
-	TerminalWriteNumberLine(69420)
-	
-	TerminalSetCursor(0, 0)
-	
-	Breakpoint:()
-	
-	TerminalAWriteLine("After breakpoint")
-	
-	i64 U := 2 / 0
-	
-	TerminalAWriteLine("After Div0")
-	
-	TerminalPrintFormat("Abc %i, %x, %c, %s \n", 200, 200, 'h', "abcdef please work") */
 	
 	loop {}
 }
