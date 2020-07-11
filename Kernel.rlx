@@ -48,22 +48,54 @@ define i64 ReadRSP() asm {
 
 i64 StackBottom := 0
 i64 KernelLimit := 0
+void* SetCR3 := 0
+
+define void __Call(void* Function, i64 Parameter) asm {
+	xchg, rdi, rsi
+	call, rsi
+	ret
+} 
+
+struct __Intrinsics {
+	void* SetCR3,
+	void* GetCR3
+}
+
+__Intrinsics* __Intrinsics := 0
 
 #Include ./src/Utility.rlx
 #Include ./src/VGA.rlx
-#Include ./src/Interrupts.rlx
 
-define void Main(i64 _KernelLimit) {
+define void BootInfo(i8* Message) {
+	i16 OldColor := TerminalColor
+	TerminalColor := PackColor(VGA_BLUE | VGA_BRIGHT | VGA_RED, VGA_BLACK)
+	
+	TerminalPrintFormat(" [BOOT] %s\n", Message)
+	
+	TerminalColor := OldColor
+}
+
+#Include ./src/Interrupts.rlx
+#Include ./src/Paging.rlx
+
+define void Main(i64 _KernelLimit, void* _Intrinsics) {
+	TerminalClear()
+	
+	BootInfo("Main()")
+	
 	StackBottom := ReadRSP()
 	KernelLimit := _KernelLimit
+	__Intrinsics := _Intrinsics
 	
-	TerminalClear()
+	BootInfo("Bootloader info saved")
+	
 	SetupInterrupts()
+	BootInfo("Interrupts enabled")
+	
+	SetupPaging()
+	BootInfo("Paging enabled")
 	
 	TerminalSetCursor(0, 0)
-	
-	TerminalToggleCursor()
-	TerminalToggleCursor()
 	
 /* 	for (i32 X := 0, X < 80, X += 1) {
 		for (i32 Y := 0, Y < 25, Y += 1) {

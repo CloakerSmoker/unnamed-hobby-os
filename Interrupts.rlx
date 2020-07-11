@@ -156,20 +156,26 @@ define void SetupInterrupts() {
 	IDTHeader->Start := IDT
 	IDTHeader->Size := 799
 	
-	for (i32 Index := 0, Index < 20, Index += 1) {
+	for (i32 Index := 0, Index < 50, Index += 1) {
 		InsertIDTEntry(Index, &_DefaultHandler, false)
 	}
 	
 	AddHandlers()
+	BootInfo("IDT built")
 	
 	RemapPIC(0x20, 0x28)
+	BootInfo("PIC remapped")
 	
 	SetupTime()
 	SetupKeyboard()
+	BootInfo("PIT and PS/2 ready")
 	
 	LIDT(IDTHeader)
 	
+	BootInfo("IDT loaded")
+	
 	asm {sti}
+	
 }
 
 #Include ./src/InterruptHandlers.rlx

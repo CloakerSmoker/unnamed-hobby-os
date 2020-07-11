@@ -41,14 +41,10 @@ define void KeyboardEvent() {
 	i16 ScanCode := InB(PS2_DATA) As i16
 	i8 ASCIICode := ScanCodeToASCII(ScanCode)
 	
-	/* TerminalPrintFormat("\nidx: %i, buffer: %s\n", InputIndex, InputBuffer) */
-	
 	if (ScanCode & 0x80) {
 		/* Ignore all 'released' codes, except for 'shift shift released' (0xAA) */
 		
 		if (ScanCode = 0xAA) {
-			/* Never reached */
-			
 			ShiftState := false
 		}
 	}
@@ -65,6 +61,7 @@ define void KeyboardEvent() {
 				TerminalColumn -= 1
 				TerminalWriteCharacter(' ')
 				TerminalColumn -= 1
+				TerminalSetCursor(TerminalRow, TerminalColumn)
 			}
 		}
 	}
@@ -84,6 +81,8 @@ define void KeyboardEvent() {
 		TerminalPrintFormat("%c",  ASCIICode)
 		InputIndex += 1
 	}
+	
+	TerminalSetCursor(TerminalRow, TerminalColumn)
 	
 	SendEOI(1)
 }
@@ -154,8 +153,6 @@ define void SetupKeyboard() {
 	
 	KeyboardSendCommand(CONTROLLER_ENABLE)
 	KeyboardSendCommand(CONTROLLER_ENABLE_AUX)
-	
-	TerminalPrintFormat("Kbd: Starting index: %i\n", InputIndex)
 	
 	InsertIDTEntry(0x21, &_KeyboardEvent, true)
 	EnablePICLine(1, true)

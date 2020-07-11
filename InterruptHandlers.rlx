@@ -21,10 +21,40 @@ define void _Breakpoint() asm {
 	jmp, @InterruptReturn
 }
 
+/* Int 11 */
+
+define void BadSegment(InterruptContext* C, Registers* R) {
+	TerminalPrintFormat("BAD SEGMENT:\n	RIP = %x", C->RIP)
+}
+define void _BadSegment() asm {
+	call, @InterruptCodeSetup
+	call, @BadSegment
+	jmp, @InterruptReturn
+}
+
+i64 SpuriousCount := 0
+
+/* Int 0x27 */
+define void What(InterruptContext* C, Registers* R) {
+	SpuriousCount += 1
+	/* TerminalPrintFormat("Wtf?:\n    RIP = %x\n", C->RIP) */
+}
+define void _What() asm {
+	call, @InterruptSetup
+	call, @What
+	jmp, @InterruptReturn
+}
+
+
+/* Add actual IDT entries */
+
+
 declare void _PIT()
 
 define void AddHandlers() {
 	InsertIDTEntry(0x00, &_DivideByZero, true)
 	InsertIDTEntry(0x03, &_Breakpoint, true)
+	InsertIDTEntry(0x0B, &_BadSegment, true)
 	InsertIDTEntry(0x20, &_PIT, true)
+	InsertIDTEntry(0x27, &_What, true)
 }

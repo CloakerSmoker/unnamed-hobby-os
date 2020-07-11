@@ -1,20 +1,22 @@
-[BITS 16]	;Tells the assembler that its a 16 bit code
-[ORG 0x7C00]	;Origin, tell the assembler that where the code will
-	;be in memory after it is been loaded
+[BITS 16]
+[ORG 0x7C00]
 
 hd0 equ 0x80
 read equ 0x02
 sec1 equ 0x01
 sec2 equ 0x02
-cy_size equ (63 * 512)
+	
+	mov sp, TinyStack
 	
 	mov bx, 0x7e00
-	mov al, 63
+	mov al, 62
 	mov ch, 0
 	mov cl, sec2
 	call ReadSectors
 	
-	add bx, cy_size
+	push 0xfa0
+	pop es
+	mov bx, 0
 	mov al, 63
 	mov ch, 1
 	mov cl, sec1
@@ -29,8 +31,10 @@ ReadSectors:
 	int 0x13
 ret
 
-TIMES 510 - ($ - $$) db 0	;Fill the rest of sector with 0
-DW 0xAA55			;Add boot signature at the end of bootloader
+times 510 - ($ - $$) db 0
+dw 0xAA55
+
+TinyStack equ $
 
 WriteCharacter:
 	mov ah, 0x0e
@@ -70,7 +74,19 @@ LongMain:
 	mov rsp, Stack
 	push Halt
 	mov rdi, (KernelLimit - KernelBase) + 0xC000
+	mov rsi, Intrinsics
 	jmp RelaxStub
+
+SetCR3:
+	mov cr3, rdi
+ret
+GetCR3:
+	mov rax, cr3
+ret
+
+Intrinsics:
+	dq SetCR3
+	dq GetCR3
 
 TIMES 0x400 - ($ - $$) nop
 

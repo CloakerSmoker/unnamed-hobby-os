@@ -1,0 +1,60 @@
+void* PML4T := 0x1000
+void* PDPT := 0x2000
+void* PDT := 0x3000
+void* PT1 := 0x4000
+void* PT2 := 0x5000
+
+define void* GetNextLevel(void* D) {
+	return D & 0x7FFFFFFFFFFFF000
+}
+
+define void* WalkPageDescriptor(void* D, i64 Index) {
+	return GetNextLevel(D)[Index]
+}
+
+i64 PAGE_PRESENT := 1
+i64 PAGE_WRITE := 2
+
+define void* FindPage(i64 PageNumber) {
+	i64 PML4TIndex := PageNumber & (0x0000000FF8000000)
+	i64 PDPTIndex := PageNumber & (0x0000000007FC0000)
+	i64 PDTIndex := PageNumber & (0x000000000003FE00)
+	i64 PTIndex := PageNumber & (0x00000000000001FF)
+	
+	void TargetPDPT := PML4T[PML4TIndex]
+	
+	if !(TargetPDPT & PAGE_PRESENT) {
+		return 0
+	}
+	
+	void* TargetPDT := WalkPageDescriptor(TargetPDPT, PDPTIndex)
+	
+	if !(TargetPDT & PAGE_PRESENT) {
+		return 0
+	}
+	
+	void* TargetPT := WalkPageDescriptor(TargetPDT, PDTIndex)
+	
+	if !(TargetPT & PAGE_PRESENT) {
+		return 0
+	}
+	
+	void* TargetPage := GetNextLevel(TargetPT) + (PTIndex * 8)
+	
+	return TargetPage
+}
+
+define void SetupPaging() {
+	MemorySet8(PML4T, 0, 0x5000)
+	
+	PML4T[0] := PDPT | PAGE_PRESENT | PAGE_WRITE
+	PDPT[0] := PDT | PAGE_PRESENT | PAGE_WRITE
+	PDT[0] := PT1 | PAGE_PRESENT | PAGE_WRITE
+	PDT[1] := PT2 | PAGE_PRESENT | PAGE_WRITE
+	
+	for (i32 PT1Index := 0, PT1Index < 512, PT1Index += 1) {
+		PT1[PT1Index] := (PT1Index * 0x1000) | PAGE_PRESENT | PAGE_WRITE
+	}
+	
+	__Call(__Intrinsics->SetCR3, PML4T)
+}
