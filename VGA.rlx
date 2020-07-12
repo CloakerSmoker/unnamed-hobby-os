@@ -61,6 +61,9 @@ define void TerminalWriteCharacter(i8 Character) {
 			TerminalWriteCharacter(' ')
 		}
 	}
+	else if (Character = 10 || Character = 13) {
+	 	/* Dummy branch */
+	}
 	else {
 		i32 Index := (TerminalRow * VGA_WIDTH) + TerminalColumn	
 		TerminalBuffer[Index] := PackEntry(Character, TerminalColor)

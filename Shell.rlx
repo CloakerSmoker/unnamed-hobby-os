@@ -51,7 +51,7 @@ define void OnCommand(i8* CommandLine) {
 		TerminalPrintFormat("\tTop = %x, RSP = %x, Size = %x\n", StackBottom, RSP, StackSpace)
 	}
 	else if (StartsWith(Command, "kinfo")) {
-		TerminalPrintFormat("\tBase = c000, Limit = %x, Size = %x\n", KernelLimit, KernelLimit - 0xC000)
+		TerminalPrintFormat("\tBase = 0x34000, Top = %x, Size = %x\n", 0x34000 + KernelLimit, KernelLimit)
 	}
 	else if (StartsWith(Command, "spur")) {
 		TerminalPrintFormat("\tBone spurs = %x\n", SpuriousCount)
@@ -60,7 +60,7 @@ define void OnCommand(i8* CommandLine) {
 		TerminalPrintFormat("\tCR3/PML4T = %x\n", __Call(__Intrinsics->GetCR3, 0))
 	}
 	else if (StartsWith(Command, "peek")) {
-		i64 TargetAddress := AToI(Parameters[0])
+		i64 TargetAddress := AToI(Parameters[0], 10)
 		i64 AddressValue := *(TargetAddress As i64*)
 		
 		if (ParameterCount = 2 && StringLength(Parameters[1]) = 1) {
@@ -88,7 +88,6 @@ define void OnCommand(i8* CommandLine) {
 				return 0
 			}
 		}
-		
 		
 		TerminalPrintFormat("\t*(^20%x^F0) = ^A0%x^F0\n", TargetAddress, AddressValue)
 	}

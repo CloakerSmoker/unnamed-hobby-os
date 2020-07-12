@@ -31,51 +31,86 @@ ReadSectors:
 	int 0x13
 ret
 
-times 510 - ($ - $$) db 0
-dw 0xAA55
-
-TinyStack equ $
-
-WriteCharacter:
-	mov ah, 0x0e
-	mov bh, 0
-	mov bl, 0x07
-	int 0x10
-ret
-
-WriteAString:
-	mov al, [si]
-	test al, al
-	jz Exit
-	
-	call WriteCharacter
-	inc si
-	jmp WriteAString
-
-	Exit:
-ret
-
-Hello db 'Hello world!', 0
-
-ShortMain:
-	mov si, Hello
-	call WriteAString
-ret
-
 %include "./src/LongModeDirectly.asm"
 
 [BITS 64]
 
-Halt:
+Oct2Bin:
+	xor r8, r8
+	xor r9, r9
+	xor r10, r10
+	mov r11, 11
+	
+	Oct2Bin_Loop:
+		imul r8, 8
+		mov r9b, byte [rcx + r10]
+		
+		sub r9, '0'
+		add r8, r9
+		inc r10
+		dec r11
+		
+		or r11, r11
+		jnz Oct2Bin_Loop
+	ret
+ret
+
+UStar_FindKernel:
+	mov rax, FS_Base
+	xor esi, esi
+	
+	UStar_Loop:
+		add rax, rsi
+		
+		mov ecx, dword [rax + 257]
+		cmp ecx, 'usta'
+		jne UStar_Fail
+		
+		lea rcx, [rax + 0x7c]
+		call Oct2Bin
+		
+		mov ecx, dword [rax]
+		cmp ecx, 'Kern'
+		jne UStar_Next
+		
+		lea rax, [rax + 512]
+		ret
+		
+		UStar_Next:
+			xchg rax, r8
+			xor edx, edx
+			mov ebx, 512
+			idiv ebx
+			imul rax, 512
+			add rax, 512
+			
+			cmp edx, 0
+			jz UStar_Loop_
+			add rax, 512
+			UStar_Loop_:
+			add rax, r8
+	jmp UStar_Loop
+	
+	UStar_Fail:
 	hlt
-	jmp Halt
 
 LongMain:
 	mov rsp, Stack
-	push Halt
-	mov rdi, (KernelLimit - KernelBase) + 0xC000
+	call UStar_FindKernel
+	
+	mov rbx, [rax + 8]
+	xor edi, edi
+LoadKernel:
+	mov rcx, [rax + rdi]
+	mov [rbx + rdi], rcx
+	inc edi
+	cmp edi, r8d
+	jl LoadKernel
+	
+	mov edx, FS_Base
 	mov rsi, Intrinsics
-	jmp RelaxStub
+	mov edi, r8d
+	jmp rbx
 
 SetCR3:
 	mov cr3, rdi
@@ -88,7 +123,12 @@ Intrinsics:
 	dq SetCR3
 	dq GetCR3
 
+times 510 - ($ - $$) db 0
+dw 0xAA55
+
 TIMES 0x400 - ($ - $$) nop
+
+TinyStack equ 0x1000
 
 PageTables equ $
 
@@ -97,7 +137,8 @@ TIMES 0x4000 db 0
 KernelBase equ $
 
 RelaxStub:
-INCBIN "Kernel.bin"
+FS_Base:
+INCBIN "Kernel.tar"
 
 KernelLimit equ $
 

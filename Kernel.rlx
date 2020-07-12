@@ -1,5 +1,5 @@
 #StandAlone
-#ImageBase 0xC000
+#ImageBase 0x34000
 
 struct IDTEntry unaligned {
 	i16 OffsetLow16,
@@ -30,11 +30,6 @@ struct GDT unaligned {
 	i16 Size,
 	i64* Start
 }
-
-/* Pad the output file so IDT starts at a multiple of 16 */
-i64 Dummy0
-i16 Dummy1
-i8 Dumm2
 
 IDTEntry* IDT := StaticAllocate:(1000)
 IDT* IDTHeader := StaticAllocate:(0x10)
@@ -70,22 +65,25 @@ define void BootInfo(i8* Message) {
 	/* i16 OldColor := TerminalColor */
 	/* TerminalColor := PackColor(VGA_BLUE | VGA_BRIGHT | VGA_RED, VGA_BLACK) */
 	
-	TerminalPrintFormat(" ^D0[BOOT]^F0 ")
+	TerminalPrintFormat(" ^D0[BOOT]^F0 %s\n", Message)
 	/* TerminalColor := OldColor */
 	
-	TerminalPrintFormat("%s\n", Message)
+	/* TerminalPrintFormat("%s\n", Message) */
 }
 
 #Include ./src/Interrupts.rlx
 #Include ./src/Paging.rlx
 
-define void Main(i64 _KernelLimit, void* _Intrinsics) {
+#Include ./src/UStar.rlx
+
+define void Main(i64 _KernelLimit, void* _Intrinsics, UStarHeader* FS) {
 	TerminalClear()
 	
 	BootInfo("Main()")
 	
 	StackBottom := ReadRSP()
 	KernelLimit := _KernelLimit
+	RootFS := FS
 	__Intrinsics := _Intrinsics
 	
 	BootInfo("Bootloader info saved")
@@ -95,7 +93,9 @@ define void Main(i64 _KernelLimit, void* _Intrinsics) {
 	
 	SetupPaging()
 	
-	BootInfo("Main() complete, spinning")
+	BootInfo("Main() complete")
+	
+	FileSystemCheck()
 	
 	Prompt()
 	

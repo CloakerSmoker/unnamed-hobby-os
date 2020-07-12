@@ -188,10 +188,9 @@ define i8 GetCharacterValue(i8 Character) {
 	return (Character - '0') As i8
 }
 
-define i64 AToI(i8* AString) {
+define i64 AToI(i8* AString, i64 Base) {
 	i64 Result := 0
 	i64 Negative := 0
-	i64 Base := 10
 	
 	i16 FirstCharacter := AString[0]
 	
