@@ -55,14 +55,19 @@ define void TerminalCheckBounds() {
 	}
 }
 
+declare void TerminalWriteNewLine()
+
 define void TerminalWriteCharacter(i8 Character) {
 	if (Character = '	') {
 		for (i32 I := 0, I < 4, I += 1) {
 			TerminalWriteCharacter(' ')
 		}
 	}
-	else if (Character = 10 || Character = 13) {
-	 	/* Dummy branch */
+	else if (Character = 13) {
+		TerminalWriteNewLine()
+	}
+	else if (Character = 10) {
+		/* Dummy branch */
 	}
 	else {
 		i32 Index := (TerminalRow * VGA_WIDTH) + TerminalColumn	

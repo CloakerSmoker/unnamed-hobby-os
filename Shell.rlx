@@ -34,6 +34,12 @@ define void OnCommand(i8* CommandLine) {
 	i8* Command := CommandParameters[0]
 	i8** Parameters := CommandParameters + 8
 	
+	
+	i32 FileSize := 0
+	void* FileData := 0
+	i8 Result := 0
+	UStarHeader* File := 0
+	
 	if (StartsWith(Command, "uptime")) {
 		i64 MS := GetUptimeMS()
 		i64 Seconds := MS / 1000
@@ -58,6 +64,26 @@ define void OnCommand(i8* CommandLine) {
 	}
 	else if (StartsWith(Command, "page")) {
 		TerminalPrintFormat("\tCR3/PML4T = %x\n", __Call(__Intrinsics->GetCR3, 0))
+	}
+	else if (StartsWith(Command, "cat")) {
+		Result := FindFile(RootFS, Parameters[0], &FileData, &FileSize)
+		
+		if (Result = 0) {
+			TerminalPrintFormat("\tFile '^40%s^F0' not found\n", Parameters[0])
+		}
+		else {
+			TerminalAWrite(FileData As i8*)
+			TerminalWriteNewLine()
+		}
+	}
+	else if (StartsWith(Command, "fstats")) {
+		File := FindFileHeader(RootFS, Parameters[0], &FileSize)
+		
+		if !(File) {
+			TerminalPrintFormat("\tFile '^40%s^F0' not found\n", Parameters[0])
+		}
+		
+		TerminalPrintFormat("\tSize = %i, Type = %c, Owner name = '%s'\n", FileSize, File->Type, File~>OwnerName)
 	}
 	else if (StartsWith(Command, "peek")) {
 		i64 TargetAddress := AToI(Parameters[0], 10)

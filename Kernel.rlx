@@ -71,10 +71,10 @@ define void BootInfo(i8* Message) {
 	/* TerminalPrintFormat("%s\n", Message) */
 }
 
+#Include ./src/UStar.rlx
 #Include ./src/Interrupts.rlx
 #Include ./src/Paging.rlx
 
-#Include ./src/UStar.rlx
 
 define void Main(i64 _KernelLimit, void* _Intrinsics, UStarHeader* FS) {
 	TerminalClear()
@@ -88,10 +88,10 @@ define void Main(i64 _KernelLimit, void* _Intrinsics, UStarHeader* FS) {
 	
 	BootInfo("Bootloader info saved")
 	
+	SetupPaging()
+	
 	SetupInterrupts()
 	BootInfo("Interrupts enabled")
-	
-	SetupPaging()
 	
 	BootInfo("Main() complete")
 	

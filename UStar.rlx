@@ -28,17 +28,14 @@ i8 Directory := '5'
 i8 FIFO := '6'
 i8 ContiguosFile := '7'
 
-define i32 FindFile(UStarHeader* FS, i8* Name, void** OutFileData, i32* OutFileSize) {
+define UStarHeader* FindFileHeader(UStarHeader* FS, i8* Name, i32** OutFileSize) {
 	while (StartsWith(FS~>Magic, "ustar")) {
 		i32 FileSize := AToI(FS~>FileSize, 8)
 		
 		if (StringEquals(FS~>Name, Name)) {
-			void* FileData := (FS + 512) As void*
-			
-			OutFileData[0] := FileData
 			OutFileSize[0] := FileSize
 			
-			return 1
+			return FS
 		}
 		
 		i32 Offset := ((FileSize / 512) * 512) + 512
@@ -54,6 +51,17 @@ define i32 FindFile(UStarHeader* FS, i8* Name, void** OutFileData, i32* OutFileS
 	return 0
 }
 
+define i8 FindFile(UStarHeader* FS, i8* Name, void** OutFileData, i32* OutFileSize) {
+	UStarHeader* FileHeader := FindFileHeader(FS, Name, OutFileSize)
+	
+	if (FileHeader != 0) {
+		OutFileData[0] := FileHeader + 512
+		return true
+	}
+	
+	return false
+}
+
 define void FSInfo(i8* Message) {
 	TerminalPrintFormat(" ^E0[ FS ]^F0 %s\n", Message)
 }
@@ -62,7 +70,7 @@ define void FileSystemCheck() {
 	void* CheckData := 0
 	i32 CheckSize := 0
 	
-	i32 Result := FindFile(RootFS, "FSCheck.txt", &CheckData, &CheckSize)
+	i8 Result := FindFile(RootFS, "FSCheck.txt", &CheckData, &CheckSize)
 	
 	if (Result = 0) {
 		FSInfo("File system check FAILED")
