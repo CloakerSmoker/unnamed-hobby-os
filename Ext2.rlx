@@ -1,0 +1,291 @@
+#Include ./src/lib/Memory.rlx
+#Include ./src/lib/String.rlx
+#Include ./src/lib/Console.rlx
+#Include ./src/lib/File.rlx
+
+define i32 MemoryCompare(i8* Left, i8* Right, i32 Length) {
+	for (i32 Index := 0, Index < Length, Index += 1) {
+		if (Left[Index] != Right[Index]) {
+			return false
+		}
+	}
+	
+	return true
+}
+
+
+struct BlockGroupDescriptor {
+	i32 BlockBitmap,
+	i32 INodeBitmap,
+	i32 INodeTable,
+	i16 UnallocatedBlocks,
+	i16 UnallocatedINodes,
+	i16 DirectoryCount,
+	i8{14} Padding
+}
+
+struct SuperBlock {
+	i32 TotalINodes,
+	i32 TotalBlocks,
+	i32 ReservedBlocks,
+	i32 UnallocatedBlocks,
+	i32 UnallocatedINodes,
+	i32 SuperBlockNumber,
+	i32 BlockSize,
+	i32 FragmentSize,
+	i32 BlocksPerGroup,
+	i32 FragmentsPerGroup,
+	i32 INodesPerGroup
+}
+
+struct Ext2 {
+	SuperBlock* SB,
+	BlockGroupDescriptor* BlockGroupTable,
+	i64 FD
+}
+
+struct INode {
+	i16 Permissions,
+	i16 UserID,
+	i32 FileSizeLow,
+	
+	i32 LastAccessTime,
+	i32 CreationTime,
+	i32 LastModificationTime,
+	i32 DeletionTime,
+	
+	i16 GroupID,
+	i16 HardLinkCount,
+	i32 DiskSectorsUsed,
+	i32 Flags,
+	i32 OSValue,
+	
+	i32{12} DirectBlocks,
+	i32 SingleIndirectBlock,
+	i32 DoubleIndirectBlock,
+	i32 TripleIndirectBlock,
+	
+	i32 GenerationNumber,
+	i64 Reserved,
+	i32 FragmentAddress,
+	i32{4} OSValuess
+}
+
+struct DirectoryEntry {
+	i32 INode,
+	i16 EntryLength,
+	i8 NameLength,
+	i8 Flags,
+	i8{1} Name
+}
+
+
+void* Ext2TempINode := StaticAllocate:(0x400)
+void* Ext2TempBlock := StaticAllocate:(0x400)
+
+define void ReadSectors(Ext2* FS, i32 SectorNumber, i32 SectorCount, void* Buffer) {
+	FileSeek(FS->FD, SectorNumber * 512, SEEK_SET)
+	FileRead(FS->FD, Buffer, SectorCount * 512)
+}
+
+define INode* Ext2FindINode(Ext2* FS, i32 INodeNumber) {
+	INodeNumber -= 1
+	
+	i32 BlockSize := 1024 << (FS->SB->BlockSize As i8)
+	i32 INodeSize := 128
+	i32 INodesPerGroup := FS->SB->INodesPerGroup
+	
+	i32 GroupNumber := INodeNumber / INodesPerGroup
+	i32 INodeIndex := INodeNumber % INodesPerGroup
+	
+	BlockGroupDescriptor* GroupDescriptor := FS->BlockGroupTable + (GroupNumber * #BlockGroupDescriptor)
+	
+	i32 GroupBaseBlock := GroupDescriptor->INodeTable
+	
+	i32 INodeOffset := INodeIndex * INodeSize
+	i32 BlockNumber := INodeOffset / BlockSize
+	i32 OffsetInBlock := INodeOffset % BlockSize
+	
+	PrintFormat("Reading INode %i from block %i:%i\n", INodeNumber, BlockNumber, OffsetInBlock)
+	
+	ReadSectors(FS, (GroupBaseBlock + BlockNumber) * 2, 2, Ext2TempINode)
+	
+	return (Ext2TempINode + OffsetInBlock) As INode*
+}
+
+define void* Ext2ReadIndirectBlock(Ext2* FS, i32* Blocks, i32 BlockIndex, i32 Depth) {
+	PrintFormat("indirect block %i is block %i\n", BlockIndex, Blocks[BlockIndex])
+	
+	ReadSectors(FS, Blocks[BlockIndex] * 2, 2, Ext2TempBlock)
+	return Ext2TempBlock As void*
+}
+
+define void* Ext2ReadINode(Ext2* FS, INode* TargetNode, i32 BlockIndex) {
+	i32* Blocks := TargetNode~>DirectBlocks
+	
+	if (BlockIndex >= 12) {
+		PrintFormat("\n======= Reading indirect block %i:%i. ", TargetNode->SingleIndirectBlock, BlockIndex - 12)
+		
+		ReadSectors(FS, TargetNode->SingleIndirectBlock * 2, 2, Ext2TempBlock)
+		return Ext2ReadIndirectBlock(FS, Ext2TempBlock As i32*, BlockIndex - 12, 0)
+	}
+	
+	PrintFormat("\n======= Reading block %i\n", Blocks[BlockIndex])
+	ReadSectors(FS, Blocks[BlockIndex] * 2, 2, Ext2TempBlock)
+	
+	return Ext2TempBlock As void* 
+}
+define DirectoryEntry* Ext2DirectoryFindEntry(Ext2* FS, INode* Directory, i8* Name) {
+	i32 NameLength := StringLength(Name)
+	i32 BlockIndex := 0
+	i32 BlockSize := 1024 << (FS->SB->BlockSize As i8)
+	
+	PrintFormat("Finding directory entry %s\n", Name)
+	
+	loop {		
+		void* BlockData := Ext2ReadINode(FS, Directory, BlockIndex)
+		
+		if (BlockData[0] = 0) {
+			break
+		}
+		
+		PrintFormat("Got block %i data, checking entries\n", BlockIndex)
+		
+		loop {
+			DirectoryEntry* NextEntry := BlockData As DirectoryEntry*
+			
+			i32 Offset := NextEntry->EntryLength
+			
+			if (Offset = 0) {
+				break
+			}
+			
+			i8 FoundLength := NextEntry->NameLength
+			
+			PrintFormat("Found entry with name '%s', length = %i, target = %i\n", NextEntry~>Name, FoundLength, NameLength)
+			
+			if (FoundLength = NameLength) {
+				if (MemoryCompare(NextEntry~>Name, Name, NameLength)) {
+					PrintFormat("Found target\n")
+					return NextEntry
+				}
+				
+				PrintFormat("	'%s' != '%s'\n", NextEntry~>Name, Name)
+			}
+			
+			BlockData += Offset
+		}
+		
+		BlockIndex += 1
+	}
+	
+	return 0
+}
+
+define DirectoryEntry* Ext2FindFile(Ext2* FS, i8** SplitPath, i32 SplitCount) {
+	i32 RootINode := 2
+	
+	PrintFormat("Looking up %s/%s/%s\n", SplitPath[0], SplitPath[1], SplitPath[2])
+	
+	INode* RootDirectory := Ext2FindINode(FS, RootINode)
+	
+	PrintFormat("Got root directory, size = %x\n", RootDirectory->FileSizeLow)
+	
+	for (i32 Depth := 0, Depth < SplitCount, Depth += 1) {
+		DirectoryEntry* Next := Ext2DirectoryFindEntry(FS, RootDirectory, SplitPath[Depth])
+		
+		if (Next = 0) {
+			return 'N'
+		}
+		
+		if (Next->Flags & 0x1) {
+			SplitCount -= 1
+			
+			if (Depth = SplitCount && StringEquals(Next~>Name, SplitPath[SplitCount])) {
+				return Next
+			}
+			else {
+				return 'F'
+			}
+		}
+		else if !(Next->Flags & 0x2) {
+			return 'U'
+		}
+		
+		RootDirectory := Ext2FindINode(FS, Next->INode)
+	}
+}
+
+define i32 SplitPath(i8* Path, i8** Into, i32 Max) {
+	i32 Count := 0
+	i32 Start := 0
+	
+	for (i32 Index := 0, Path[Index] != 0, Index += 1) {
+		if (Path[Index] = '/') {
+			Into[Count] := Path + Start
+			Count += 1
+			
+			if (Count = Max) {
+				return Count
+			}
+			
+			Path[Index] := 0
+			Start := Index + 1
+		}
+	}
+	
+	Into[Count] := Path + Start
+	Count += 1
+	
+	return Count
+}
+
+define i32 Main(i64 ArgC, i8** ArgV) {
+	GetArgs(&ArgC, &ArgV)
+	
+	i64 F := FileOpen("ext22.img", FILE_READ)
+	
+	PrintFormat("FD = %x\n", F)
+	
+	Ext2 FS
+	FS.FD := F
+	
+	void* SBData := Alloc(0x2000)
+	FileSeek(F, 0x400, SEEK_SET)
+	FileRead(F, SBData, 0x800)
+	
+	FS.SB := SBData As SuperBlock*
+	FS.BlockGroupTable := SBData + 0x400 As BlockGroupDescriptor*
+	
+	Ext2* FSP := &FS
+	
+	PrintFormat("SB data\n Block size = %i\n Blocks per group = %i\n INodes per group = %i\n\n", 1024 << (FSP->SB->BlockSize As i8), FSP->SB->BlocksPerGroup, FSP->SB->INodesPerGroup)
+	
+	i8*{5} Path
+	
+	i32 Count := SplitPath(ArgV[1], Path, 5)
+	
+	DirectoryEntry* Result := Ext2FindFile(&FS, Path, Count)
+	
+	if (Result > 0x200) {
+		PrintFormat("Found file '%s' at INode %i\n", Result~>Name, Result->INode)	
+		
+		INode* ResultNode := Ext2FindINode(&FS, Result->INode)
+		i32 I := 0
+		
+		loop {
+			i8* T := Ext2ReadINode(&FS, ResultNode, I)
+			
+			if (T[0] = 0) {
+				break	
+			}
+			
+			AWrite(T)
+			I += 1
+		}
+		
+	}
+	else {
+		PrintFormat("Couldn't find file, error %c\n", Result As i8)
+	}
+}
