@@ -49,18 +49,6 @@ define void InterruptReturn() asm {
 	iret
 }
 
-define i8 InB(i16 Port) asm {
-	mov, dx, dix
-	inb
-	ret
-}
-define void OutB(i16 Port, i8 Data) asm {
-	mov, dx, dix
-	mov, a, si
-	outb
-	ret
-}
-
 struct Registers {
 	i64 R15, i64 R14, i64 R13, i64 R12, i64 R11, i64 R10, i64 R9, i64 R8,
 	i64 RBP, i64 RDX, i64 RCX, i64 RBX, i64 RDI, i64 RSI, i64 RAX

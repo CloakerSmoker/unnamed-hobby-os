@@ -18,7 +18,7 @@ Start:
 	mov gs, ax
 	cld
 	
-	; Point edi to a free space bracket.
+	; Point es:edi to a free space bracket.
 	mov edi, PageTables
 	; Switch to Long Mode.
 	jmp SwitchToLongMode

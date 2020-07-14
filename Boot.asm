@@ -8,15 +8,16 @@ sec2 equ 0x02
 	
 	mov sp, TinyStack
 	
-	mov bx, 0x7e00
+	push 0x1400
+	pop es
+	
+	mov bx, 0
 	mov al, 62
 	mov ch, 0
 	mov cl, sec2
 	call ReadSectors
 	
-	push 0xfa0
-	pop es
-	mov bx, 0
+	mov bx, 0x7e00
 	mov al, 63
 	mov ch, 1
 	mov cl, sec1
@@ -126,18 +127,9 @@ Intrinsics:
 times 510 - ($ - $$) db 0
 dw 0xAA55
 
-TIMES 0x400 - ($ - $$) nop
-
 TinyStack equ 0x1000
+FS_Base equ 0x14000
 
-PageTables equ $
-
-TIMES 0x4000 db 0
-
-KernelBase equ $
-
-RelaxStub:
-FS_Base:
 INCBIN "Kernel.tar"
 
 KernelLimit equ $
@@ -147,3 +139,5 @@ TIMES 64504 - ($ - $$) db 0
 Stack equ $
 
 TIMES 64512 - ($ - $$) db 0
+
+PageTables equ 0x8000

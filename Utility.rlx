@@ -222,3 +222,26 @@ define i64 AToI(i8* AString, i64 Base) {
 	
 	return Result
 }
+
+define i8 InB(i16 Port) asm {
+	mov, dx, dix
+	inb
+	ret
+}
+define void OutB(i16 Port, i8 Data) asm {
+	mov, dx, dix
+	mov, a, si
+	outb
+	ret
+}
+define i16 InW(i16 Port) asm {
+	mov, dx, dix
+	inw
+	ret
+}
+define void OutW(i16 Port, i16 Data) asm {
+	mov, dx, dix
+	mov, ax, six
+	outw
+	ret
+}

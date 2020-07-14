@@ -190,7 +190,15 @@ define void TerminalPrintFormat(i8* Format, ... Args) {
 				TerminalAWriteLine("")
 			}
 			else if (Next = 't') {
-				TerminalWriteCharacter('	')
+				i32 Padding := 4 - (TerminalColumn % 4)
+				
+				if (Padding = 4) {
+					Padding := 0
+				}
+				
+				for (i32 I := 0, I < Padding, I += 1) {
+					TerminalWriteCharacter(' ')
+				}
 			}
 			else {
 				TerminalWriteCharacter(Next)

@@ -77,13 +77,16 @@ define void OnCommand(i8* CommandLine) {
 		}
 	}
 	else if (StartsWith(Command, "fstats")) {
-		File := FindFileHeader(RootFS, Parameters[0], &FileSize)
+		File := FindFileHeader(RootFS, Parameters[0], &FileSize, false)
 		
 		if !(File) {
 			TerminalPrintFormat("\tFile '^40%s^F0' not found\n", Parameters[0])
 		}
 		
 		TerminalPrintFormat("\tSize = %i, Type = %c, Owner name = '%s'\n", FileSize, File->Type, File~>OwnerName)
+	}
+	else if (StartsWith(Command, "flist")) {
+		ListFiles(RootFS, Parameters[0])
 	}
 	else if (StartsWith(Command, "peek")) {
 		i64 TargetAddress := AToI(Parameters[0], 10)
