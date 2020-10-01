@@ -65,7 +65,7 @@ define void _DefaultHandler() asm {
 define void InsertIDTEntry(i32 Index, void* Function, i8 Present) {
 	IDTEntry* E := IDT + (Index * 16)
 	
-	MemorySet64(E, 0, 2)
+	MemorySet64(E As i64*, 0, 2)
 	
 	E->OffsetLow16 := (Function & 0xFFFF)
 	E->OffsetHigh16 := (Function >> 16) & 0xFFFF

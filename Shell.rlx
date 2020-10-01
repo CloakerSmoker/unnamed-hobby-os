@@ -40,6 +40,8 @@ define void OnCommand(i8* CommandLine) {
 	i8 Result := 0
 	UStarHeader* File := 0
 	
+	TerminalPrintFormat("\tAck '%s'\n", Command)
+	
 	if (StartsWith(Command, "uptime")) {
 		i64 MS := GetUptimeMS()
 		i64 Seconds := MS / 1000
@@ -63,7 +65,7 @@ define void OnCommand(i8* CommandLine) {
 		TerminalPrintFormat("\tBone spurs = %x\n", SpuriousCount)
 	}
 	else if (StartsWith(Command, "page")) {
-		TerminalPrintFormat("\tCR3/PML4T = %x\n", __Call(__Intrinsics->GetCR3, 0))
+		TerminalPrintFormat("\tCR3/PML4T = %x\n", Helpers->GetCR3())
 	}
 	else if (StartsWith(Command, "cat")) {
 		Result := FindFile(RootFS, Parameters[0], &FileData, &FileSize)

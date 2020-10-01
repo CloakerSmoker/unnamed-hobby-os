@@ -59,7 +59,7 @@ define i8 NumberToCharacter(i8 Number) {
 declare i8 GetCharacterValue(i8)
 
 define i8* IToA(i64 Number, i64 Base) {
-	MemorySet64(NumberBuffer, 0, 12)
+	MemorySet64(NumberBuffer As i64*, 0, 12)
 	
 	i8 Sign := 0
 	

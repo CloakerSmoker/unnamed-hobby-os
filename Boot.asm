@@ -96,7 +96,7 @@ UStar_FindKernel:
 	hlt
 
 LongMain:
-	mov rsp, Stack
+	mov rsp, TinyStack
 	call UStar_FindKernel
 	
 	mov rbx, [rax + 8]
@@ -104,7 +104,7 @@ LongMain:
 LoadKernel:
 	mov rcx, [rax + rdi]
 	mov [rbx + rdi], rcx
-	inc edi
+	add rdi, 8
 	cmp edi, r8d
 	jl LoadKernel
 	
@@ -132,12 +132,10 @@ FS_Base equ 0x14000
 
 INCBIN "Kernel.tar"
 
-KernelLimit equ $
-
-TIMES 64504 - ($ - $$) db 0
-
-Stack equ $
-
 TIMES 64512 - ($ - $$) db 0
 
 PageTables equ 0x8000
+
+Ext2LoadExtendedBootLoader:
+	mov bx
+	

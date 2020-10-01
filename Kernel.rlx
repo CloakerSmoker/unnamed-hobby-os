@@ -1,4 +1,3 @@
-#StandAlone
 #ImageBase 0x34000
 
 struct IDTEntry unaligned {
@@ -45,30 +44,30 @@ i64 StackBottom := 0
 i64 KernelLimit := 0
 void* SetCR3 := 0
 
-define void __Call(void* Function, i64 Parameter) asm {
-	xchg, rdi, rsi
-	call, rsi
-	ret
-} 
-
-struct __Intrinsics {
-	void* SetCR3,
-	void* GetCR3
+struct ASMHelpers {
+	void* pSetCR3,
+	void* pGetCR3,
+	
+	define i64 Call(void* Function, void* Parameter) asm {
+		xchg, rdi, rdx
+		call, rsi
+		ret
+	},
+	define void SetCR3(void** ToPLM4) {
+		return this->Call(this->pSetCR3, ToPLM4 As void*)
+	},
+	define i64 GetCR3() {
+		return this->Call(this->pGetCR3, 0 As void*)
+	}
 }
 
-__Intrinsics* __Intrinsics := 0
+ASMHelpers* Helpers := 0
 
 #Include ./src/Utility.rlx
 #Include ./src/VGA.rlx
 
 define void BootInfo(i8* Message) {
-	/* i16 OldColor := TerminalColor */
-	/* TerminalColor := PackColor(VGA_BLUE | VGA_BRIGHT | VGA_RED, VGA_BLACK) */
-	
 	TerminalPrintFormat(" ^D0[BOOT]^F0 %s\n", Message)
-	/* TerminalColor := OldColor */
-	
-	/* TerminalPrintFormat("%s\n", Message) */
 }
 
 #Include ./src/UStar.rlx
@@ -76,7 +75,7 @@ define void BootInfo(i8* Message) {
 #Include ./src/Paging.rlx
 
 
-define void Main(i64 _KernelLimit, void* _Intrinsics, UStarHeader* FS) {
+define void Main(i64 _KernelLimit, void* _Helpers, UStarHeader* FS) {
 	TerminalClear()
 	
 	BootInfo("Main()")
@@ -84,7 +83,7 @@ define void Main(i64 _KernelLimit, void* _Intrinsics, UStarHeader* FS) {
 	StackBottom := ReadRSP()
 	KernelLimit := _KernelLimit
 	RootFS := FS
-	__Intrinsics := _Intrinsics
+	Helpers := _Helpers As ASMHelpers*
 	
 	BootInfo("Bootloader info saved")
 	

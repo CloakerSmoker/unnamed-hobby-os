@@ -39,7 +39,7 @@ define i32 RoundFileSize(i32 FileSize) {
 	return Offset
 }
 
-define UStarHeader* FindFileHeader(UStarHeader* FS, i8* Name, i32** OutFileSize, i8 StartsWithCompare) {
+define UStarHeader* FindFileHeader(UStarHeader* FS, i8* Name, i32* OutFileSize, i8 StartsWithCompare) {
 	while (StartsWith(FS~>Magic, "ustar")) {
 		i32 FileSize := AToI(FS~>FileSize, 8)
 		
@@ -61,7 +61,7 @@ define UStarHeader* FindFileHeader(UStarHeader* FS, i8* Name, i32** OutFileSize,
 		FS += RoundFileSize(FileSize)
 	}
 	
-	return 0
+	return null
 }
 
 define i8 FindFile(UStarHeader* FS, i8* Name, void** OutFileData, i32* OutFileSize) {
@@ -96,7 +96,7 @@ define void FSInfo(i8* Message) {
 	TerminalPrintFormat(" ^E0[ FS ]^F0 %s\n", Message)
 }
 
-#Include ./src/BlockDevice.rlx
+/* #Include ./src/BlockDevice.rlx */
 
 define void FileSystemCheck() {
 	void* CheckData := 0
@@ -112,6 +112,6 @@ define void FileSystemCheck() {
 		FSInfo(CheckData)
 	}
 	
-	ATATest()
+	/* ATATest() */
 }
 
