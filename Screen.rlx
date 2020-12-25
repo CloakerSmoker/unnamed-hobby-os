@@ -1,0 +1,89 @@
+
+
+i32 SCREEN_WIDTH := 1024
+i32 SCREEN_HEIGHT := 768
+i32 COLOR_DEPTH := 24
+i32 BYTES_PER_PIXEL := 3
+
+i32 PIXEL_COUNT := SCREEN_WIDTH * SCREEN_HEIGHT
+i32 FRAMEBUFFER_SIZE := PIXEL_COUNT * COLOR_DEPTH
+
+struct Pixel {
+	i8 Red
+	i8 Green
+	i8 Blue
+}
+
+struct Screen {
+	union {
+		void* RawFrameBuffer
+		i8* FrameBuffer
+		Pixel* PixelBuffer
+	}
+	
+	define void Adopt(void* RawFrameBuffer) {
+		this->RawFrameBuffer := RawFrameBuffer
+	}
+	
+	define Pixel* GetPixelAddress(i32 X, i32 Y) {
+		i32 Index := (Y * SCREEN_WIDTH) + X
+		i32 Offset := Index * BYTES_PER_PIXEL
+		
+		return this->PixelBuffer + Offset
+	}
+	define void SetPixel(i32 X, i32 Y, i32 Color) {
+		Pixel* Pixel := this->GetPixelAddress(X, Y)
+		
+		Pixel->Red := (Color & 0xFF) As i8
+		Pixel->Green := ((Color >> 8) & 0xFF) As i8
+		Pixel->Blue := ((Color >> 16) & 0xFF) As i8
+	}
+	define void DrawRectangle(i32 X, i32 Y, i32 Width, i32 Height, i32 Color) {
+		for (i32 RowIndex := 0, RowIndex < Height, RowIndex += 1) {
+			for (i32 ColumnIndex := 0, ColumnIndex <= Width, ColumnIndex += 1) {
+				this->SetPixel(X + ColumnIndex, Y + RowIndex, Color)
+			}
+		}
+	}
+	define void DrawCharacter(i32 X, i32 Y, i8 Character, i32 ForegroundColor, i32 BackgroundColor) {
+		if (Character = ' ') {
+			this->DrawRectangle(X, Y, 8, 12, BackgroundColor)
+			return
+		}
+		
+		Glyph* CharacterGlyph := Font + (Character - FIRST_CHARACTER) * #Glyph
+		
+		for (i32 RowIndex := 0, RowIndex < 12, RowIndex += 1) {
+			i8 RowData := CharacterGlyph~>Rows[RowIndex]
+			
+			for (i8 ColumnIndex := 0, ColumnIndex < 8, ColumnIndex += 1) {
+				i8 Mask := (1 << ColumnIndex) As i8
+				
+				if (RowData & Mask) {
+					this->SetPixel(X - ColumnIndex + 8, Y + RowIndex, ForegroundColor)
+				}
+				else {
+					this->SetPixel(X - ColumnIndex + 8, Y + RowIndex, BackgroundColor)
+				}
+			}
+		}
+	}
+	define void DrawText(i32 X, i32 Y, i8* Text, i32 TextLength, i32 ForegroundColor, i32 BackgroundColor) {
+		for (i32 Index := 0, Index < TextLength, Index += 1) {
+			this->DrawCharacter(X, Y, Text[Index], ForegroundColor, BackgroundColor)
+			
+			X += 8
+			
+			if (X >= SCREEN_WIDTH) {
+				X := 0
+				Y -= 12
+			}
+		}
+	}
+	define void DrawText(i32 X, i32 Y, i8* Text, i32 ForegroundColor, i32 BackgroundColor) {
+		this->DrawText(X, Y, Text, StringLength(Text), ForegroundColor, BackgroundColor)
+	}
+}
+
+Screen RawScreen
+Screen* Screen := &RawScreen

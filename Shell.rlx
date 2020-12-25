@@ -5,8 +5,8 @@ define void Prompt() {
 	TerminalPrintFormat(" >")
 }
 
-
-i8** CommandParameters := StaticAllocate:(0x20)
+i8{0x20} _CommandParameters
+i8** CommandParameters := _CommandParameters As i8**
 
 define void OnCommand(i8* CommandLine) {
 	i32 ParameterStart := 0
@@ -39,8 +39,6 @@ define void OnCommand(i8* CommandLine) {
 	void* FileData := 0
 	i8 Result := 0
 	UStarHeader* File := 0
-	
-	TerminalPrintFormat("\tAck '%s'\n", Command)
 	
 	if (StartsWith(Command, "uptime")) {
 		i64 MS := GetUptimeMS()
@@ -78,7 +76,7 @@ define void OnCommand(i8* CommandLine) {
 			TerminalWriteNewLine()
 		}
 	}
-	else if (StartsWith(Command, "fstats")) {
+	else if (StartsWith(Command, "stat")) {
 		File := FindFileHeader(RootFS, Parameters[0], &FileSize, false)
 		
 		if !(File) {
@@ -87,7 +85,7 @@ define void OnCommand(i8* CommandLine) {
 		
 		TerminalPrintFormat("\tSize = %i, Type = %c, Owner name = '%s'\n", FileSize, File->Type, File~>OwnerName)
 	}
-	else if (StartsWith(Command, "flist")) {
+	else if (StartsWith(Command, "ls")) {
 		ListFiles(RootFS, Parameters[0])
 	}
 	else if (StartsWith(Command, "peek")) {
@@ -112,11 +110,11 @@ define void OnCommand(i8* CommandLine) {
 				}
 				else {
 					TerminalPrintFormat("\tUnknown size '^40%c^F0', must be ^901/2/4/8^F0\n", Size)
-					return 0
+					return
 				}
 				
 				TerminalPrintFormat("\t*(^20%x^F0 As i%i*) = ^A0%x^F0\n", TargetAddress, (Size - '0') * 8, AddressValue)
-				return 0
+				return
 			}
 		}
 		

@@ -36,7 +36,7 @@ define void TerminalScroll() {
 	
 	i16* From := TerminalBuffer + (160)
 	
-	MemoryMove(TerminalBuffer, From, 3840)
+	MoveMemory(TerminalBuffer, From, 3840)
 	
 	i16* LastLine := TerminalBuffer + 3840
 	
@@ -72,6 +72,8 @@ define void TerminalWriteCharacter(i8 Character) {
 	else {
 		i32 Index := (TerminalRow * VGA_WIDTH) + TerminalColumn	
 		TerminalBuffer[Index] := PackEntry(Character, TerminalColor)
+		
+		;BochsPrint("TRC '%c' into %x, next column %i\n", Character, Index, TerminalColumn + 1)
 		
 		TerminalColumn += 1
 		

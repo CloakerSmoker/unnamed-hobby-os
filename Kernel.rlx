@@ -1,102 +1,72 @@
 #ImageBase 0x34000
 
-struct IDTEntry unaligned {
-	i16 OffsetLow16,
-	i16 Selector,
-	i8 PaddingZero,
-	i8 Flags,
-	i16 OffsetHigh16,
-	i32 OffsetHigh32,
-	i32 Padding
+define i32 StringLength(i8* String) {
+	for (i32 Index := 0, String[Index] != 0, Index += 1) {}
+	
+	return Index
+}
+define void BochsPrintCharacter(i8 Character) {
+	asm (rdx := 0xE9, rax := Character) {
+		outb
+	}
+}
+define void BochsPrintString(i8* String, i8 Recurse) {
+	if !(Recurse) {
+		BochsPrintString("OS	|: ", true)
+	}
+	
+	for (i32 Index := 0, Index < StringLength(String), Index += 1) {
+		BochsPrintCharacter(String[Index])
+	}
+}
+define void BochsPrintString(i8* String) {
+	BochsPrintString(String, false)
 }
 
-struct IDT unaligned {
-	i16 Size,
-	IDTEntry* Start
-}
-
-bits GDTEntry As i64 {
-	[0:15] LimitLow16,
-	[16:31] BaseLow16,
-	[32:39] BaseMiddle8,
-	[40:47] Access,
-	[48:51] LimitHigh4,
-	[52:55] Flags,
-	[56:63] BaseHigh8
-}
-
-struct GDT unaligned {
-	i16 Size,
-	i64* Start
-}
-
-IDTEntry* IDT := StaticAllocate:(1000)
-IDT* IDTHeader := StaticAllocate:(0x10)
-
-i64 TickCount := 0 /* Updated by the PIT inside of Time.rlx */
-
-define i64 ReadRSP() asm {
-	mov, rax, rsp
+define void SetCR3(void* ToPLM4) asm {
+	ret
+	ret
+	ret
 	ret
 }
 
-i64 StackBottom := 0
-i64 KernelLimit := 0
-void* SetCR3 := 0
+#Include "./src/Paging.rlx"
 
-struct ASMHelpers {
-	void* pSetCR3,
-	void* pGetCR3,
+#Require "./src/Font.rlx"
+#Require "./src/Screen.rlx"
+#Require "./src/Terminal.rlx"
+
+define void Main(i64 _KernelLimit, void* RawFrameBuffer, UStarHeader* FS) {
+	i8* Function := &SetCR3 As i8*
 	
-	define i64 Call(void* Function, void* Parameter) asm {
-		xchg, rdi, rdx
-		call, rsi
-		ret
-	},
-	define void SetCR3(void** ToPLM4) {
-		return this->Call(this->pSetCR3, ToPLM4 As void*)
-	},
-	define i64 GetCR3() {
-		return this->Call(this->pGetCR3, 0 As void*)
-	}
-}
-
-ASMHelpers* Helpers := 0
-
-#Include ./src/Utility.rlx
-#Include ./src/VGA.rlx
-
-define void BootInfo(i8* Message) {
-	TerminalPrintFormat(" ^D0[BOOT]^F0 %s\n", Message)
-}
-
-#Include ./src/UStar.rlx
-#Include ./src/Interrupts.rlx
-#Include ./src/Paging.rlx
-
-
-define void Main(i64 _KernelLimit, void* _Helpers, UStarHeader* FS) {
-	TerminalClear()
-	
-	BootInfo("Main()")
-	
-	StackBottom := ReadRSP()
-	KernelLimit := _KernelLimit
-	RootFS := FS
-	Helpers := _Helpers As ASMHelpers*
-	
-	BootInfo("Bootloader info saved")
+	Function[0] := 0x0f
+	Function[1] := 0x22
+	Function[2] := 0xdf As i8
 	
 	SetupPaging()
 	
-	SetupInterrupts()
-	BootInfo("Interrupts enabled")
+	i8* FrameBuffer := 0x200000 As i8*
 	
-	BootInfo("Main() complete")
+	BochsPrintString("Main\n")
 	
-	FileSystemCheck()
+	;for (i32 Index := 0, Index < 0x240000, Index += 3) {
+	;	FrameBuffer[Index + 0] := 0x11
+	;	FrameBuffer[Index + 1] := 0x77
+	;	FrameBuffer[Index + 2] := 0xFF As i8
+	;}
 	
-	Prompt()
+	Screen->Adopt(FrameBuffer)
+	Screen->DrawRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0xFF_FF_FF)
+	Terminal->Initialize(Screen)
+	
+	Terminal->PrintLine("BOOT: Screen *probably* works")
+	Terminal->PrintLine("BOOT: Another message.")
+	Terminal->SetColors(0xFF_00_00, 0xFF_FF_FF)
+	Terminal->PrintLine("SPOOKY: RED INSTEAD OF BLACK")
+	Terminal->SetColors(0x22_22_22, 0xFF_FF_FF)
+	Terminal->PrintLine("A very large number of characters, oh, wait. Actually, let's\nTest line breaks!")
+	Terminal->PrintLine("Now's a good time to test loads of characters: Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum.")
+	Terminal->PrintLine("\n\nThat line wrapping could be smarter, but I relly don't want to implement it.")
 	
 	loop {}
 }

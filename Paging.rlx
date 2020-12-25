@@ -1,154 +1,61 @@
-void** PML4T := 0x1000
-void* PDPT := 0x2000
-void* PDT := 0x3000
-void* PT1 := 0x4000
-void* PT2 := 0x5000
+i64**** PML4T 	:= 0x20000 As i64****
+i64*** PDPT 	:= 0x21000 As i64***
+i64** PDT 		:= 0x22000 As i64**
 
-define void* GetNextLevel(void* D) {
-	return D & 0x7FFFFFFFFFFFF000
-}
-
-define void* WalkPageDescriptor(void* D, i64 Index) {
-	return GetNextLevel(D)[Index] As void*
-}
+i64* PT1 		:= 0x23000 As i64*
+i64* PT2 		:= 0x24000 As i64*
+i64* PT3 		:= 0x25000 As i64*
+i64* PT4 		:= 0x26000 As i64*
+i64* PT5 		:= 0x27000 As i64*
+i64* PT6 		:= 0x28000 As i64*
+i64* PT7 		:= 0x29000 As i64*
+i64* PT8 		:= 0x2A000 As i64*
+i64* PT9 		:= 0x2B000 As i64*
 
 i64 PAGE_PRESENT := 1
 i64 PAGE_WRITE := 2
 
-define void* FindPage(i64 PageNumber) {
-	i64 PML4TIndex := PageNumber & (0x0000000FF8000000)
-	i64 PDPTIndex := PageNumber & (0x0000000007FC0000)
-	i64 PDTIndex := PageNumber & (0x000000000003FE00)
-	i64 PTIndex := PageNumber & (0x00000000000001FF)
+define void MapPageTable(i64* PageTable, i64 ToAddress) {
+	i64 ToPage := ToAddress / 0x1000
 	
-	void* TargetPDPT := PML4T[PML4TIndex]
-	
-	if !(TargetPDPT & PAGE_PRESENT) {
-		return null
+	for (i32 Index := 0, Index < 512, Index += 1) {
+		PageTable[Index] := ((Index + ToPage) * 0x1000) | PAGE_PRESENT | PAGE_WRITE
 	}
-	
-	void* TargetPDT := WalkPageDescriptor(TargetPDPT, PDPTIndex)
-	
-	if !(TargetPDT & PAGE_PRESENT) {
-		return null
-	}
-	
-	void* TargetPT := WalkPageDescriptor(TargetPDT, PDTIndex)
-	
-	if !(TargetPT & PAGE_PRESENT) {
-		return null
-	}
-	
-	void* TargetPage := GetNextLevel(TargetPT) + (PTIndex * 8)
-	
-	return TargetPage
 }
 
-/* define void MapPage(i64 PageNumber, i64 ToPageNumber) {
-	i64 Packed := (ToPageNumber << 12) | PAGE_PRESENT | PAGE_WRITE
-	
-	if (PageNumber < 0x200) {
-		PT1[PageNumber] := Packed
-	}
-	else {
-		PT2[PageNumber - 0x200] := Packed
-	}
-}
-define void MapAddress(i64 From, i64 To) {
-	MapPage(From / 0x1000, To / 0x1000)
-} */
+;struct PageFrameManager {
+;	
+;	
+;	
+;	
+;}
 
 define void SetupPaging() {
-	MemorySet8(PML4T As i8*, 0, 0x5000)
-	
 	PML4T[0] := PDPT | PAGE_PRESENT | PAGE_WRITE
 	PDPT[0] := PDT | PAGE_PRESENT | PAGE_WRITE
+	
 	PDT[0] := PT1 | PAGE_PRESENT | PAGE_WRITE
 	PDT[1] := PT2 | PAGE_PRESENT | PAGE_WRITE
+	PDT[2] := PT3 | PAGE_PRESENT | PAGE_WRITE
+	PDT[3] := PT4 | PAGE_PRESENT | PAGE_WRITE
+	PDT[4] := PT5 | PAGE_PRESENT | PAGE_WRITE
+	PDT[5] := PT6 | PAGE_PRESENT | PAGE_WRITE
+	PDT[6] := PT7 | PAGE_PRESENT | PAGE_WRITE
+	PDT[7] := PT8 | PAGE_PRESENT | PAGE_WRITE
+	PDT[8] := PT9 | PAGE_PRESENT | PAGE_WRITE
 	
-	for (i32 PT1Index := 0, PT1Index < 512, PT1Index += 1) {
-		PT1[PT1Index] := (PT1Index * 0x1000) | PAGE_PRESENT | PAGE_WRITE
-	}
+	MapPageTable(PT1, 0)
+	MapPageTable(PT2, 0xE0000000)
+	MapPageTable(PT3, 0xE0000000 + 0x200000)
+	MapPageTable(PT4, 0xE0000000 + 0x400000)
+	MapPageTable(PT5, 0xE0000000 + 0x600000)
+	MapPageTable(PT6, 0xE0000000 + 0x800000)
+	MapPageTable(PT7, 0xE0000000 + 0xA00000)
+	MapPageTable(PT8, 0xE0000000 + 0xC00000)
+	MapPageTable(PT9, 0xE0000000 + 0xD00000)
 	
-	BootInfo("Page tables built")
+	BochsPrintString("Page tables built\n")
+	BochsPrintString("Mapping 0x20_0000 -> 0xE000_0000\n")
 	
-	/* MapAddress(0x200000, 0xB8000) */
-	
-	PT2[0] := 0xB8000 | PAGE_PRESENT | PAGE_WRITE
-	
-	Helpers->SetCR3(PML4T)
-	
-	BootInfo("Paging enabled")
-	
-	BootInfo("Paging doesn't work")
-	
-	TerminalBuffer := 0x200000
-	TerminalRow -= 1
-	TerminalColumn := 8
-	
-	TerminalAWrite("Paging works           ")
-	
-	TerminalWriteNewLine()
-	
-	TerminalBuffer := 0xB8000
+	SetCR3(PML4T)
 }
-
-/* struct Heap {
-	i64 PageCount,
-	i8{0x100} AllocationMap,
-	void* Data
-}
-struct HeapAllocation {
-	i32 Size,
-	i8{1} Data
-}
-
-Heap _SytemHeap
-Heap* SystemHeap := &_SytemHeap
-
-i64 PAGE_SIZE := 0x1000
-
-define void SetupHeap() {
-	SystemHeap->PageCount := 1
-	SystemHeap->Data := 0x100000
-	
-	MemorySet8(SystemHeap~>AllocationMap, 0, 0x100)
-}
-define i32 HeapAllocHelper(i64 Count) {
-	i32 Run := 0
-	i32 RunStart := 0 
-	
-	for (i32 ChunkIndex := 0, ChunkIndex < (SystemHeap->PageCount * 0x100), ChunkIndex += 1) {
-		i8 ChunkValue := SystemHeap~>Data[ChunkIndex]
-		
-		for (i32 BitIndex := 0, BitIndex < 8, BitIndex += 1) {
-			i32 Mask := 1 << BitIndex
-			
-			if (ChunkIndex & Mask) {
-				if (Run > Count) {
-					return RunStart
-				}
-				
-				Run := (ChunkIndex << 3) | BitIndex 
-				break
-			}
-			else {
-				Run += 0x100
-			}
-		}
-		
-	}
-}
-
-define void* HeapIndexToAddress(i32 Chunk, i32 Bit) {
-	return SystemHeap->Date + ((Chunk << 1) | Bit) * 0x100
-}
-
-define void* HeapAlloc(i64 Count) {
-	i32 Run := 0
-	i32 RunStart := 0
-	
-
-	
-}
- */

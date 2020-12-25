@@ -1,0 +1,97 @@
+
+#Require "./src/Screen.rlx"
+;#Require "./src/Utility.rlx"
+
+struct Terminal {
+	Screen* Screen
+	
+	i32 X
+	i32 Y
+	
+	i32 ForegroundColor
+	i32 BackgroundColor
+	
+	define void Initialize(Screen* Screen) {
+		this->Screen := Screen
+		this->ForegroundColor := 0x00_00_00
+		this->BackgroundColor := 0xFF_FF_FF
+		
+		this->X := 0
+		this->Y := 0
+	}
+	
+	define void SetColors(i32 ForegroundColor, i32 BackgroundColor) {
+		this->ForegroundColor := ForegroundColor
+		this->BackgroundColor := BackgroundColor
+	}
+	
+	define void ConvertToScreenCoords(i32 XIn, i32 YIn, i32* XOut, i32* YOut) {
+		XOut[0] := XIn * 8
+		YOut[0] := YIn * 12
+	}
+	
+	define void NewLine() {
+		this->X := 0
+		this->Y += 1
+	}
+	
+	define void RawPrint(i8* Text, i32 TextLength) {
+		i32 ScreenX := 0
+		i32 ScreenY := 0
+		
+		this->ConvertToScreenCoords(this->X, this->Y, &ScreenX, &ScreenY)
+		
+		i32 PixelsLeft := SCREEN_WIDTH - ScreenX
+		i32 CharactersLeft := PixelsLeft / FONT_WIDTH
+		
+		while (TextLength > CharactersLeft) {
+			this->Screen->DrawText(ScreenX, ScreenY, Text, CharactersLeft, this->ForegroundColor, this->BackgroundColor)
+			
+			Text += CharactersLeft
+			TextLength -= CharactersLeft
+			
+			this->NewLine()
+			
+			this->ConvertToScreenCoords(this->X, this->Y, &ScreenX, &ScreenY)
+			
+			PixelsLeft := SCREEN_WIDTH - ScreenX
+			CharactersLeft := PixelsLeft / FONT_WIDTH
+		}
+		
+		if (TextLength) {
+			this->Screen->DrawText(ScreenX, ScreenY, Text, TextLength, this->ForegroundColor, this->BackgroundColor)
+		}
+		
+		i32 NewX := this->X + TextLength
+		
+		this->Y += NewX / SCREEN_WIDTH
+		this->X += NewX % SCREEN_WIDTH
+	}
+	
+	define void Print(i8* Text, i32 TextLength) {
+		i32 LastLineStart := 0
+		
+		for (i32 Index := 0, Index < TextLength, Index += 1) {
+			if (Text[Index] = 0x0A) {
+				this->RawPrint(Text + LastLineStart, Index - LastLineStart)
+				
+				LastLineStart := Index + 1
+				this->NewLine()
+			}
+		}
+		
+		if (LastLineStart != TextLength) {
+			this->RawPrint(Text + LastLineStart, TextLength - LastLineStart)
+		}
+	}
+	define void Print(i8* Text) {
+		this->Print(Text, StringLength(Text))
+	}
+	define void PrintLine(i8* Text) {
+		this->Print(Text)
+		this->NewLine()
+	}
+}
+
+Terminal RawTerminal
+Terminal* Terminal

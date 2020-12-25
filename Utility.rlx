@@ -1,4 +1,7 @@
-define void MemoryMove(i8* To, i8* From, i32 Size) {
+define void MoveMemory(void* RawTo, void* RawFrom, i32 Size) {
+	i8* To := RawTo As i8*
+	i8* From := RawFrom As i8*
+	
 	i32 Index := 0
 	
 	if (To < From) {
@@ -7,7 +10,7 @@ define void MemoryMove(i8* To, i8* From, i32 Size) {
 		}
 	}
 	else {
-		for (Index := Size, Index != 0, Index += 1) {
+		for (Index := Size, Index != 0, Index -= 1) {
 			To[Index - 1] := From[Index - 1]
 		}
 	}
@@ -44,7 +47,7 @@ define i32 StringLength(i8* String) {
 	return Length
 }
 
-i8* NumberBuffer := StaticAllocate:(96)
+i8{96} NumberBuffer
 
 define i8 NumberToCharacter(i8 Number) {
 	if (Number < 10) {
@@ -108,12 +111,6 @@ define i8* IToA(i64 Number, i64 Base) {
 	return NumberBuffer
 }
 
-define void Sleep(i32 MS) {
-	i64 End := TickCount + (MS / 10)
-	
-	while (TickCount <= End) {}
-}
-
 define i8 IsAlpha(i8 Character) {
 	if ('a' <= Character && Character <= 'z') {
 		return true
@@ -141,6 +138,8 @@ define i8 StringEquals(i8* Left, i8* Right) {
 		
 		Index += 1
 	}
+	
+	return false
 }
 define i32 StartsWith(i8* Left, i8* Right) {
 	i32 Index := 0
@@ -158,6 +157,8 @@ define i32 StartsWith(i8* Left, i8* Right) {
 		
 		Index += 1
 	}
+	
+	return false
 }
 
 define i8 IsNumeric(i8 Character, i64 Base) {

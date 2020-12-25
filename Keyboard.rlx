@@ -1,7 +1,8 @@
 
 
 /* 256 bytes in the output file are allocated to store the current 'line' of keyboard input */
-i8* InputBuffer := StaticAllocate:(512)
+
+i8{0x100} InputBuffer
 
 i32 InputIndex := 0 	/* Where to write the next character into the 'pending input' buffer */
 i32 ShiftState := 0 	/* If shift is 'down' or not */
@@ -114,7 +115,7 @@ define void KeyboardWait(i8 ForWrite, i8 TargetStatus) {
 		i8 Status := InB(KEYBOARD_STATUS)
 		
 		if ((Status & Mask) = TargetStatus) {
-			return true
+			return
 		}
 	}
 }
@@ -136,6 +137,8 @@ define i8 KeyboardSendCommand(i16 Command, ... Bytes) {
 		
 		return InB(KEYBOARD_DATA)
 	}
+	
+	return 0
 }
 
 define void SetupKeyboard() {
