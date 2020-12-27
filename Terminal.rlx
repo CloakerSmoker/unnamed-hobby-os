@@ -35,6 +35,27 @@ struct Terminal {
 		this->Y += 1
 	}
 	
+	define void DrawCursor(i8 Enable) {
+		i32 ScreenX := 0
+		i32 ScreenY := 0
+		
+		this->ConvertToScreenCoords(this->X, this->Y, &ScreenX, &ScreenY)
+		
+		i32 Color := this->BackgroundColor
+		
+		if (Enable) {
+			Color := this->ForegroundColor
+		}
+		
+		this->Screen->DrawRectangle(ScreenX, ScreenY + 10, 8, 2, Color)
+	}
+	define void ShowCursor() {
+		this->DrawCursor(true)
+	}
+	define void HideCursor() {
+		this->DrawCursor(false)
+	}
+	
 	define void RawPrint(i8* Text, i32 TextLength) {
 		i32 ScreenX := 0
 		i32 ScreenY := 0
@@ -69,6 +90,8 @@ struct Terminal {
 	}
 	
 	define void Print(i8* Text, i32 TextLength) {
+		this->HideCursor()
+		
 		i32 LastLineStart := 0
 		
 		for (i32 Index := 0, Index < TextLength, Index += 1) {

@@ -29,7 +29,7 @@ IDT:
     .Base         dd 0
  
 ; Function to switch directly to long mode from real mode.
-; Identity maps the first 2MiB.
+; Identity maps the first ~~2MiB~~ 4MiB.
 ; Uses Intel syntax.
  
 ; es:edi    Should point to a valid page-aligned 16KiB buffer, for the PML4, PDPT, PD and a PT.
@@ -63,7 +63,10 @@ SwitchToLongMode:
     lea eax, [es:di + 0x3000]         ; Put the address of the Page Table in to EAX.
     or eax, PAGE_PRESENT | PAGE_WRITE ; Or EAX with the flags - present flag, writeable flag.
     mov [es:di + 0x2000], eax         ; Store to value of EAX as the first PDE.
- 
+	
+	lea eax, [es:di + 0x4000]         ; Put the address of the Page Table in to EAX.
+    or eax, PAGE_PRESENT | PAGE_WRITE ; Or EAX with the flags - present flag, writeable flag.
+    mov [es:di + 0x2008], eax         ; Store to value of EAX as the second PDE.
  
     push di                           ; Save DI for the time being.
     lea di, [di + 0x3000]             ; Point DI to the page table.
@@ -75,7 +78,7 @@ SwitchToLongMode:
     mov [es:di], eax
     add eax, 0x1000
     add di, 8
-    cmp eax, 0x200000                 ; If we did all 2MiB, end.
+    cmp eax, 0x400000                 ; If we did all 4MiB, end.
     jb .LoopPageTable
  
     pop di                            ; Restore DI.

@@ -43,11 +43,18 @@ define void Main(i64 _KernelLimit, void* RawFrameBuffer, UStarHeader* FS) {
 	Function[1] := 0x22
 	Function[2] := 0xdf As i8
 	
-	SetupPaging()
-	
-	i8* FrameBuffer := 0x200000 As i8*
-	
 	BochsPrintString("Main\n")
+	
+	AddressSpace->Takeover()
+	
+	BochsPrintString("Paging initialized, AddressSpaceManager in control\n")
+	
+	; Remap the next available `FRAMEBUFFER_SIZE / PAGE_SIZE` bytes of virtual memory to 0xE000_0000 (or wherever) 
+	i32 FrameBufferPageCount := AddressSpace->SizeToPageCount(FRAMEBUFFER_SIZE)
+	i64 FrameBufferPage := AddressSpace->AllocateContiguousPages(FrameBufferPageCount)
+	AddressSpace->MapPageRange(FrameBufferPage, AddressSpace->PointerToPageNumber(RawFrameBuffer), FrameBufferPageCount)
+	
+	i8* FrameBuffer := AddressSpace->PageNumberToPointer(FrameBufferPage) As i8*
 	
 	;for (i32 Index := 0, Index < 0x240000, Index += 3) {
 	;	FrameBuffer[Index + 0] := 0x11
@@ -67,6 +74,9 @@ define void Main(i64 _KernelLimit, void* RawFrameBuffer, UStarHeader* FS) {
 	Terminal->PrintLine("A very large number of characters, oh, wait. Actually, let's\nTest line breaks!")
 	Terminal->PrintLine("Now's a good time to test loads of characters: Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum.")
 	Terminal->PrintLine("\n\nThat line wrapping could be smarter, but I relly don't want to implement it.")
+	Terminal->Print("I know this doesn't look like much of a change, but now paging is much more dynamic, and the framebuffer can move around in virtual or physical memory!")
+	
+	Terminal->ShowCursor()
 	
 	loop {}
 }

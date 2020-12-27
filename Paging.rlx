@@ -1,61 +1,85 @@
-i64**** PML4T 	:= 0x20000 As i64****
-i64*** PDPT 	:= 0x21000 As i64***
-i64** PDT 		:= 0x22000 As i64**
+i64 PAGE_TABLE_BASE := 0x20_0000
 
-i64* PT1 		:= 0x23000 As i64*
-i64* PT2 		:= 0x24000 As i64*
-i64* PT3 		:= 0x25000 As i64*
-i64* PT4 		:= 0x26000 As i64*
-i64* PT5 		:= 0x27000 As i64*
-i64* PT6 		:= 0x28000 As i64*
-i64* PT7 		:= 0x29000 As i64*
-i64* PT8 		:= 0x2A000 As i64*
-i64* PT9 		:= 0x2B000 As i64*
+i64**** PML4T 		:= PAGE_TABLE_BASE As i64****
+i64*** PDPT 		:= PAGE_TABLE_BASE + 0x1000 As i64***
+i64** PDT 			:= PAGE_TABLE_BASE + 0x2000 As i64**
+
+i64* PAGE_TABLES 	:= PAGE_TABLE_BASE + 0x3000 As i64*
+
+i32 PAGE_TABLE_SIZE 		:= 0x20_0000
+i32 PAGE_SIZE 				:= 0x1000
+i32 RESERVED_PAGE_FRAMES 	:= 3
+i32 PAGES_PER_TABLE 		:= 0x200
+
+i32 PAGE_FRAME_COUNT 	:= (PAGE_TABLE_SIZE / PAGE_SIZE) - RESERVED_PAGE_FRAMES
+i32 PAGE_COUNT 			:= PAGE_FRAME_COUNT * PAGES_PER_TABLE
+
+i32 PAGE_COUNT_FOR_1MB := 0x100
+i32 PAGE_COUNT_FOR_2MB := 0x200
+i32 PAGE_COUNT_FOR_4MB := 0x400
 
 i64 PAGE_PRESENT := 1
 i64 PAGE_WRITE := 2
 
-define void MapPageTable(i64* PageTable, i64 ToAddress) {
-	i64 ToPage := ToAddress / 0x1000
+struct AddressSpaceManager {
+	i32 NextFreePage
 	
-	for (i32 Index := 0, Index < 512, Index += 1) {
-		PageTable[Index] := ((Index + ToPage) * 0x1000) | PAGE_PRESENT | PAGE_WRITE
+	define void MapPageRange(i64 FromPage, i64 ToPage, i32 Count) {
+		i64 StartingPageTable := FromPage
+		
+		for (i32 Index := 0, Index < Count, Index += 1) {
+			i64 Value := ((ToPage + Index) * 0x1000) | PAGE_PRESENT | PAGE_WRITE
+			
+			PAGE_TABLES[StartingPageTable + Index] := Value
+		}
+	}
+	
+	define void Takeover() {
+		PML4T[0] := PDPT | PAGE_PRESENT | PAGE_WRITE
+		PDPT[0] := PDT | PAGE_PRESENT | PAGE_WRITE
+		
+		for (i32 Index := 0, Index < PAGE_FRAME_COUNT, Index += 1) {
+			; Point 509 entries in the PDT to our 509 PT structures, giving us just under 1gb of continguous address space
+			;  (FrameCount * PagesPerFrame * PageSize) * (509 * 512 * 0x1000) = 0x3FA0_0000
+			
+			PDT[Index] := PAGE_TABLES + (Index * 0x1000) | PAGE_PRESENT | PAGE_WRITE
+		}
+		
+		this->MapPageRange(0, 0, PAGE_COUNT_FOR_4MB)
+		
+		SetCR3(PML4T)
+		
+		this->NextFreePage := PAGE_COUNT_FOR_4MB
+	}
+	
+	define i64 AllocateContiguousPages(i32 Count) {
+		i32 StartingPageTable := this->NextFreePage
+		
+		this->NextFreePage += Count
+		
+		if (this->NextFreePage > PAGE_COUNT) {
+			BochsPrintString("OUT OF MEMORY, ATTEMPTED TO ALLOCATE PAGES PAST 2MB PAGE STRUCT BOUNDS")
+			loop {}
+		}
+		
+		return StartingPageTable
+	}
+	define i32 SizeToPageCount(i32 Size) {
+		i32 PageCount := Size / PAGE_SIZE
+		
+		if (Size % PAGE_SIZE) {
+			PageCount += 1
+		}
+		
+		return PageCount
+	}
+	define void* PageNumberToPointer(i64 PageNumber) {
+		return (PageNumber * 0x1000) As void*
+	}
+	define i64 PointerToPageNumber(void* PageMemory) {
+		return (PageMemory / 0x1000) As i64
 	}
 }
 
-;struct PageFrameManager {
-;	
-;	
-;	
-;	
-;}
-
-define void SetupPaging() {
-	PML4T[0] := PDPT | PAGE_PRESENT | PAGE_WRITE
-	PDPT[0] := PDT | PAGE_PRESENT | PAGE_WRITE
-	
-	PDT[0] := PT1 | PAGE_PRESENT | PAGE_WRITE
-	PDT[1] := PT2 | PAGE_PRESENT | PAGE_WRITE
-	PDT[2] := PT3 | PAGE_PRESENT | PAGE_WRITE
-	PDT[3] := PT4 | PAGE_PRESENT | PAGE_WRITE
-	PDT[4] := PT5 | PAGE_PRESENT | PAGE_WRITE
-	PDT[5] := PT6 | PAGE_PRESENT | PAGE_WRITE
-	PDT[6] := PT7 | PAGE_PRESENT | PAGE_WRITE
-	PDT[7] := PT8 | PAGE_PRESENT | PAGE_WRITE
-	PDT[8] := PT9 | PAGE_PRESENT | PAGE_WRITE
-	
-	MapPageTable(PT1, 0)
-	MapPageTable(PT2, 0xE0000000)
-	MapPageTable(PT3, 0xE0000000 + 0x200000)
-	MapPageTable(PT4, 0xE0000000 + 0x400000)
-	MapPageTable(PT5, 0xE0000000 + 0x600000)
-	MapPageTable(PT6, 0xE0000000 + 0x800000)
-	MapPageTable(PT7, 0xE0000000 + 0xA00000)
-	MapPageTable(PT8, 0xE0000000 + 0xC00000)
-	MapPageTable(PT9, 0xE0000000 + 0xD00000)
-	
-	BochsPrintString("Page tables built\n")
-	BochsPrintString("Mapping 0x20_0000 -> 0xE000_0000\n")
-	
-	SetCR3(PML4T)
-}
+AddressSpaceManager RawAddressSpace
+AddressSpaceManager* AddressSpace := &RawAddressSpace
