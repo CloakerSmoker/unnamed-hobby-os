@@ -1,10 +1,7 @@
 #ImageBase 0x34000
 
-define i32 StringLength(i8* String) {
-	for (i32 Index := 0, String[Index] != 0, Index += 1) {}
-	
-	return Index
-}
+#Require "./src/Utility.rlx"
+
 define void BochsPrintCharacter(i8 Character) {
 	asm (rdx := 0xE9, rax := Character) {
 		outb
@@ -30,11 +27,15 @@ define void SetCR3(void* ToPLM4) asm {
 	ret
 }
 
-#Include "./src/Paging.rlx"
-
 #Require "./src/Font.rlx"
 #Require "./src/Screen.rlx"
 #Require "./src/Terminal.rlx"
+
+#Require "./src/Paging.rlx"
+#Require "./src/Heap.rlx"
+
+Heap RawKernelHeap
+Heap* KernelHeap := &RawKernelHeap
 
 define void Main(i64 _KernelLimit, void* RawFrameBuffer, UStarHeader* FS) {
 	i8* Function := &SetCR3 As i8*
@@ -49,6 +50,13 @@ define void Main(i64 _KernelLimit, void* RawFrameBuffer, UStarHeader* FS) {
 	
 	BochsPrintString("Paging initialized, AddressSpaceManager in control\n")
 	
+	; Identity map 2mb of memory for the kernel heap
+	i64 HeapPage := AddressSpace->AllocateContiguousPages(PAGE_COUNT_FOR_2MB)
+	AddressSpace->MapPageRange(HeapPage, HeapPage, PAGE_COUNT_FOR_2MB)
+	void* HeapMemory := AddressSpace->PageNumberToPointer(HeapPage)
+	
+	BochsPrintString("Allocated KernelHeap memory\n")
+	
 	; Remap the next available `FRAMEBUFFER_SIZE / PAGE_SIZE` bytes of virtual memory to 0xE000_0000 (or wherever) 
 	i32 FrameBufferPageCount := AddressSpace->SizeToPageCount(FRAMEBUFFER_SIZE)
 	i64 FrameBufferPage := AddressSpace->AllocateContiguousPages(FrameBufferPageCount)
@@ -56,18 +64,18 @@ define void Main(i64 _KernelLimit, void* RawFrameBuffer, UStarHeader* FS) {
 	
 	i8* FrameBuffer := AddressSpace->PageNumberToPointer(FrameBufferPage) As i8*
 	
-	;for (i32 Index := 0, Index < 0x240000, Index += 3) {
-	;	FrameBuffer[Index + 0] := 0x11
-	;	FrameBuffer[Index + 1] := 0x77
-	;	FrameBuffer[Index + 2] := 0xFF As i8
-	;}
-	
 	Screen->Adopt(FrameBuffer)
 	Screen->DrawRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0xFF_FF_FF)
 	Terminal->Initialize(Screen)
 	
 	Terminal->PrintLine("BOOT: Screen *probably* works")
-	Terminal->PrintLine("BOOT: Another message.")
+	
+	KernelHeap->Initialize(HeapMemory, BYTES_IN_2MB)
+	
+	Terminal->Print("BOOT: Kernel Heap Initialized: ")
+	
+	KernelHeap->Print()
+	
 	Terminal->SetColors(0xFF_00_00, 0xFF_FF_FF)
 	Terminal->PrintLine("SPOOKY: RED INSTEAD OF BLACK")
 	Terminal->SetColors(0x22_22_22, 0xFF_FF_FF)

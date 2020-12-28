@@ -52,7 +52,6 @@ SwitchToLongMode:
     or eax, PAGE_PRESENT | PAGE_WRITE ; Or EAX with the flags - present flag, writable flag.
     mov [es:di], eax                  ; Store the value of EAX as the first PML4E.
  
- 
     ; Build the Page Directory Pointer Table.
     lea eax, [es:di + 0x2000]         ; Put the address of the Page Directory in to EAX.
     or eax, PAGE_PRESENT | PAGE_WRITE ; Or EAX with the flags - present flag, writable flag.

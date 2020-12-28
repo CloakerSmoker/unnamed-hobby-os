@@ -31,16 +31,6 @@ define void MemorySet64(i64* At, i64 Value, i32 Size) {
 	}
 }
 
-define void MemoryReverse(i8* Buffer, i32 Length) {
-	for (i32 Index := 0, Index < Length, Index += 1) {
-		i8 Temp := Buffer[Index]
-		Buffer[Index] := Buffer[Length - 1]
-		Buffer[Length - 1] := Temp
-		
-		Length -= 1
-	}
-}
-
 define i32 StringLength(i8* String) {
 	for (i32 Length := 0, String[Length] != 0, Length += 1) {}
 	
@@ -49,135 +39,26 @@ define i32 StringLength(i8* String) {
 
 i8{96} NumberBuffer
 
-define i8 NumberToCharacter(i8 Number) {
-	if (Number < 10) {
-		return (Number + '0') As i8
-	}
-	else {
-		return ((Number - 10) + 'a') As i8
-	}
+define i8 Lower(i8 Character) {
+	; Converts A-Z to a-z
 	
-}
-
-declare i8 GetCharacterValue(i8)
-
-define i8* IToA(i64 Number, i64 Base) {
-	MemorySet64(NumberBuffer As i64*, 0, 12)
-	
-	i8 Sign := 0
-	
-	if (Number < 0) {
-		Sign := true
-		
-		if (Base = 10) {
-			Number := -Number
-		}
-		else if (Base = 16) {
-			Number := Number & 0x7FFFFFFFFFFFFFFF
-		}
-	}
-	
-	for (i32 Index := 0, Number != 0, Index += 1) {
-		NumberBuffer[Index] := NumberToCharacter((Number % Base) As i8)
-		Number := Number / Base
-	}
-	
-	if (Index = 0) {
-		NumberBuffer[0] := '0'
-		Index := 1
-	}
-	
-	if (Sign) {
-		if (Base = 10) {
-			NumberBuffer[Index] := '-'
-		}
-		else if (Base = 16) {
-			i8 Last := GetCharacterValue(NumberBuffer[Index - 1])
-			Last := Last | 0x8
-			NumberBuffer[Index - 1] := NumberToCharacter(Last)
-		}
-	}
-	
-	if (Base = 16) {
-		NumberBuffer[Index] := 'x'
-		NumberBuffer[Index + 1] := '0'
-		Index += 2
-	}
-	
-	NumberBuffer[Index + 1] := 0
-	
-	MemoryReverse(NumberBuffer, Index)
-	
-	return NumberBuffer
-}
-
-define i8 IsAlpha(i8 Character) {
-	if ('a' <= Character && Character <= 'z') {
-		return true
-	}
-	else if ('A' <= Character && Character <= 'Z') {
-		return true
-	}
-
-	return false
-}
-
-define i8 StringEquals(i8* Left, i8* Right) {
-	i32 Index := 0
-	
-	loop {
-		i8 LeftCharacter := Left[Index]
-		i8 RightCharacter := Right[Index]
-		
-		if (LeftCharacter = 0 && RightCharacter = 0) {
-			return true
-		}
-		else if (LeftCharacter != RightCharacter || LeftCharacter = 0 || RightCharacter = 0) {
-			return false
-		}
-		
-		Index += 1
-	}
-	
-	return false
-}
-define i32 StartsWith(i8* Left, i8* Right) {
-	i32 Index := 0
-	
-	loop {
-		i8 LeftCharacter := Left[Index]
-		i8 RightCharacter := Right[Index]
-		
-		if (RightCharacter = 0) {
-			return Index
-		}
-		else if (LeftCharacter != RightCharacter || LeftCharacter = 0) {
-			return false
-		}
-		
-		Index += 1
-	}
-	
-	return false
-}
-
-define i8 IsNumeric(i8 Character, i64 Base) {
-	Base -= 1
-	
-	if (Base > 9) {
-		if (Character >= 'a' && Character <= ('a' + Base)) {
-			return true
-		}
-	}
-	
-	return (Character >= '0') && (Character <= ('0' + Base))
-}
-define i16 Lower(i16 Character) {
 	if ('A' <= Character && Character <= 'Z') {
 		Character += 32
 	}
 	
 	return Character
+}
+define i16 Lower(i16 Character) {
+	return Lower(Character As i8) As i16
+}
+
+define i8 NumberToCharacter(i8 Number) {
+	if (Number < 10) {
+		return (Number + '0') As i8
+	}
+	else {
+		return (Number - 10 + 'A') As i8
+	}
 }
 define i8 GetCharacterValue(i8 Character) {
 	Character := Lower(Character)
@@ -189,39 +70,72 @@ define i8 GetCharacterValue(i8 Character) {
 	return (Character - '0') As i8
 }
 
-define i64 AToI(i8* AString, i64 Base) {
-	i64 Result := 0
-	i64 Negative := 0
-	
-	i16 FirstCharacter := AString[0]
-	
-	if (FirstCharacter = '0' && Lower(AString[1]) = 'x') {
-		Base := 16
-		AString += 2
-	}
-	else if (FirstCharacter = '-') {
-		Negative := 1
-		AString += 1
-	}
-	
-	i32 Length := StringLength(AString)
-	
+define void MemoryReverse(i8* Buffer, i32 Length) {
 	for (i32 Index := 0, Index < Length, Index += 1) {
-		i8 NextCharacter := Lower(AString[Index])
+		i8 Temp := Buffer[Index]
+		Buffer[Index] := Buffer[Length - 1]
+		Buffer[Length - 1] := Temp
 		
-		if !(IsNumeric(NextCharacter, Base)) {
-			Break
+		Length -= 1
+	}
+}
+
+define i8* IToA(i64 Number, i64 Base, i8* Buffer, i8 PrintExtra) {
+	i8 Sign := 0
+	
+	if (Number < 0) {
+		Sign := true
+		
+		if (Base = 10) {
+			Number := -Number
 		}
-		
-		Result := Result * Base
-		Result += GetCharacterValue(NextCharacter)
+		else if (Base = 16 || Base = 2) {
+			/* Negative hex numbers are printed as unsigned, and get the sign bit individually set in the output string */
+			
+			Number := Number & 0x7FFFFFFFFFFFFFFF
+		}
 	}
 	
-	if (Negative) {
-		Result := -Result
+	for (i32 Index := 0, Number != 0, Index += 1) {
+		Buffer[Index] := NumberToCharacter((Number % Base) As i8)
+		Number := Number / Base
 	}
 	
-	return Result
+	if (Index = 0) {
+		Buffer[0] := '0'
+		Index := 1
+	}
+	
+	if (Sign) {
+		if (Base = 10) {
+			Buffer[Index] := '-'
+			Index += 1
+		}
+		else if (Base = 16) {
+			i8 Last := GetCharacterValue(Buffer[Index - 1])
+			Last := Last | 0x8
+			Buffer[Index - 1] := NumberToCharacter(Last)
+		}
+	}
+	
+	if (Base = 16 && PrintExtra) {
+		Buffer[Index] := 'x'
+		Buffer[Index + 1] := '0'
+		Index += 2
+	}
+	
+	MemoryReverse(Buffer, Index)
+	
+	return Buffer
+}
+define i8* IToA(i64 Number, i64 Base, i8* Buffer) {
+	return IToA(Number, Base, Buffer, true)
+}
+define i8* IToA(i64 Number, i8* Buffer) {
+	return IToA(Number, 10, Buffer)
+}
+define i8* IToAH(i64 Number, i8* Buffer) {
+	return IToA(Number, 16, Buffer)
 }
 
 define i8 InB(i16 Port) asm {

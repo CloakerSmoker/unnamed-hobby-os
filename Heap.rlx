@@ -1,0 +1,158 @@
+struct HeapBlock {
+	i64 Tag
+	HeapBlock* Next
+	i32 Size
+	i8 IsFree
+	i8 Padding
+	
+	define void SetSize(i32 NewSize) {
+		this->Size := NewSize
+		this->Next := this + this->Size
+	}
+	define void* Body() {
+		return (this + #HeapBlock) As void*
+	}
+	define i8 IsValid() {
+		if (this->Next = 0) {
+			return true
+		}
+		
+		return (this + this->Size) = this->Next
+	}
+	define void MergeContigousFreeBlocks() {
+		HeapBlock* Next := this->Next
+		
+		while (Next != null && Next->IsFree) {
+			this->Size += Next->Size
+			this->Next := Next->Next
+			
+			Next := Next->Next
+		}
+	}
+}
+
+i32 TAIL_SPACE_FOR_NEW_BLOCK := 0x40 + #HeapBlock
+
+struct Heap {
+	union {
+		void* RawBackingMemory
+		HeapBlock* FirstBlock
+	}
+	
+	HeapBlock* FirstFreeBlock
+	
+	define void Initialize(void* Memory, i32 Size) {
+		this->RawBackingMemory := Memory
+		
+		HeapBlock* FirstBlock := this->FirstBlock
+		
+		FirstBlock->Size := Size
+		FirstBlock->IsFree := true
+		
+		this->FirstFreeBlock := FirstBlock
+	}
+	
+	define HeapBlock* AllocateBlock(i64 Tag, i32 Size) {
+		;Print("AllocateBlock(%x) {\n", Size)
+		
+		for (HeapBlock* Block := this->FirstFreeBlock, Block != null, Block := Block->Next) {
+			;Print("\tBlock { Size %x, Free? %i }\n", Block->Size, Block->IsFree)
+			
+			if (Block->IsFree) {
+				Block->MergeContigousFreeBlocks()
+				
+				i32 BlockSize := Block->Size
+				
+				if (BlockSize >= Size) {
+					i32 TailSpace := BlockSize - Size
+					
+					;Print("\t\t{ TailSpace = %x }\n", TailSpace)
+					
+					if (TailSpace >= TAIL_SPACE_FOR_NEW_BLOCK) {
+						HeapBlock* TailNext := Block->Next
+						
+						Block->SetSize(Size)
+						
+						HeapBlock* Tail := Block->Next
+						
+						Tail->IsFree := true
+						Tail->Size := TailSpace
+						Tail->Next := TailNext
+						Tail->Tag := '__'
+					}
+					
+					Block->IsFree := false
+					Block->Tag := Tag
+					
+					;Print("}\n")
+					
+					return Block
+				}
+			}
+		}
+		
+		;Print("}\n")
+		
+		return null
+	}
+	define void* Allocate(i64 Tag, i32 Size) {
+		i8* Memory := this->AllocateBlock(Tag, Size + #HeapBlock)->Body()
+		
+		for (i32 Index := 0, Index < Size, Index += 1) {
+			Memory[Index] := 0
+		}
+		
+		return Memory
+	}
+	define void* Allocate(i32 Size) {
+		return this->Allocate('++', Size)
+	}
+	
+	define void FreeBlock(HeapBlock* Block) {
+		HeapBlock* Next := Block->Next
+		
+		Block->IsFree := true
+		
+		if (Block < this->FirstFreeBlock) {
+			this->FirstFreeBlock := Block
+		}
+	}
+	define void Free(void* RawBlock) {
+		this->FreeBlock((RawBlock - #HeapBlock) As HeapBlock*)
+	}
+	
+	define void* Extend(void* RawOldBlock, i32 NewSize) {
+		HeapBlock* OldBlock := RawOldBlock - #HeapBlock
+		
+		i32 OldSize := OldBlock->Size
+		i32 TrueNewSize := NewSize + #HeapBlock
+		
+		if (OldBlock->Size >= TrueNewSize) {
+			return RawOldBlock
+		}
+		
+		this->FreeBlock(OldBlock)
+		
+		HeapBlock* NewBlock := this->AllocateBlock(OldBlock->Tag, TrueNewSize)
+		
+		i8* NewBlockBody := NewBlock->Body()
+		
+		MoveMemory(NewBlockBody, RawOldBlock, OldSize)
+		
+		for (i32 Index := OldSize, Index < NewSize, Index += 1) {
+			NewBlockBody[Index] := 0
+		}
+		
+		return NewBlockBody
+	}
+	
+	define void Print() {
+		Print("Heap [%x owns %x] {\n", this, this->RawBackingMemory)
+		
+		for (HeapBlock* Block := this->FirstBlock, Block != null, Block := Block->Next) {
+			Print("    Block [%l] { Size %x, Free? %i, Valid? %i }\n", Block->Tag, Block->Size, Block->IsFree, Block->IsValid())
+		}
+		
+		Print("}\n")
+	}
+}
