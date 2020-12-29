@@ -113,6 +113,11 @@ struct Terminal {
 		this->Print(Text)
 		this->NewLine()
 	}
+	
+	define void Seek(i32 X, i32 Y) {
+		this->X := X
+		this->Y := Y
+	}
 }
 
 Terminal RawTerminal

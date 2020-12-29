@@ -28,7 +28,8 @@ i64 PAGE_PRESENT := 1
 i64 PAGE_WRITE := 2
 
 struct AddressSpaceManager {
-	i32 NextFreePage
+	i32 NextFreeVirtualPage
+	i32 NextFreePhysicalPage
 	
 	define void MapPageRange(i64 FromPage, i64 ToPage, i32 Count) {
 		i64 StartingPageTable := FromPage
@@ -55,21 +56,30 @@ struct AddressSpaceManager {
 		
 		SetCR3(PML4T)
 		
-		this->NextFreePage := PAGE_COUNT_FOR_4MB
+		this->NextFreeVirtualPage := PAGE_COUNT_FOR_4MB
+		this->NextFreePhysicalPage := PAGE_COUNT_FOR_4MB
 	}
 	
-	define i64 AllocateContiguousPages(i32 Count) {
-		i32 StartingPageTable := this->NextFreePage
+	define i64 AllocateContiguousVirtualPages(i32 Count) {
+		i32 StartingPageTable := this->NextFreeVirtualPage
 		
-		this->NextFreePage += Count
+		this->NextFreeVirtualPage += Count
 		
-		if (this->NextFreePage > PAGE_COUNT) {
+		if (this->NextFreeVirtualPage > PAGE_COUNT) {
 			BochsPrintString("OUT OF MEMORY, ATTEMPTED TO ALLOCATE PAGES PAST 2MB PAGE STRUCT BOUNDS")
 			loop {}
 		}
 		
 		return StartingPageTable
 	}
+	define i64 AllocateContiguousPhysicalPages(i32 Count) {
+		i32 FirstPage := this->NextFreePhysicalPage
+		
+		this->NextFreePhysicalPage += Count
+		
+		return FirstPage
+	}
+	
 	define i32 SizeToPageCount(i32 Size) {
 		i32 PageCount := Size / PAGE_SIZE
 		
@@ -84,6 +94,15 @@ struct AddressSpaceManager {
 	}
 	define i64 PointerToPageNumber(void* PageMemory) {
 		return (PageMemory / 0x1000) As i64
+	}
+	
+	define void* AllocateMappedPages(i32 Count) {
+		i64 VirtualPages := this->AllocateContiguousVirtualPages(Count)
+		i64 PhysicalPages := this->AllocateContiguousPhysicalPages(Count)
+		
+		this->MapPageRange(VirtualPages, PhysicalPages, Count)
+		
+		return this->PageNumberToPointer(VirtualPages)
 	}
 }
 

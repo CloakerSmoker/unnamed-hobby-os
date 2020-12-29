@@ -57,53 +57,6 @@ struct InterruptContext {
 	i64 RIP, i64 CS, i64 Flags, i64 RSP, i64 SS
 }
 
-struct StackFrame {
-	StackFrame* LastFrame,
-	i64* ReturnAddress
-}
-
-define void PrintStackDump(Registers* Registers) {
-	BochsPrint("PSD RBP = %x\n", Registers->RBP)
-	
-	StackFrame* Last := Registers->RBP As StackFrame*
-	i32 Index := 1
-	
-	while (Last) {
-		if (Last->LastFrame & 1) {
-			StackFrame* Temp := Last->LastFrame - 1
-			
-			TerminalPrintFormat("	^10Stack[%i]^F0 ^D0Try catch address^F0 = %x\n", Index, Last->ReturnAddress, Temp)
-			
-			Last := Temp
-		}
-		else {
-			i64* MaybeMagic := Last - 0x8
-			i8** MaybeName := (Last - 0x10) As i8**
-			
-			if (Debug && *MaybeMagic = 0x12345678) {
-				TerminalPrintFormat("	^10Stack[%i]^F0 ^B0Fn^F0 = %s\n", Index, *MaybeName)
-			}
-			else {
-				TerminalPrintFormat("	^10Stack[%i]^F0 ^B0Fn callsite^F0 = %x\n", Index, Last->ReturnAddress, Last->LastFrame)
-			}
-			
-			Index += 1
-			
-			Last := Last->LastFrame
-		}
-	}
-	
-	TerminalPrintFormat("Halted\n")
-	
-	loop {}
-}
-
-define void _DefaultHandler() asm {
-	call, @InterruptSetup
-	call, @PrintStackDump
-	jmp, @InterruptReturn
-}
-
 struct IDTEntry unaligned {
 	i16 OffsetLow16,
 	i16 Selector,
@@ -119,20 +72,20 @@ struct IDT unaligned {
 	IDTEntry* Start
 }
 
-IDT* IDTHeader := 0xFF00
-IDTEntry* IDT := 0x10000
+IDT* IDTHeader
+IDTEntry* IDT
 
 define void InsertIDTEntry(i32 Index, void* Function, i8 Present) {
-	IDTEntry* E := IDT + (Index * 16)
+	IDTEntry* E := IDT + (Index * #IDTEntry)
 	
 	MemorySet64(E As i64*, 0, 2)
 	
-	E->OffsetLow16 := (Function & 0xFFFF)
-	E->OffsetHigh16 := (Function >> 16) & 0xFFFF
-	E->OffsetHigh32 := (Function >> 32) & 0xFFFFFFFF
+	E->OffsetLow16 := (Function & 0xFFFF) As i16
+	E->OffsetHigh16 := ((Function >> 16) & 0xFFFF) As i16
+	E->OffsetHigh32 := ((Function >> 32) & 0xFFFFFFFF) As i32
 	
 	E->Selector := 0x08
-	E->Flags := 0x0E | (Present * 0x80)
+	E->Flags := 0x0E | (Present << 7) As i8
 }
 
 i16 MASTER_PIC := 0x20
@@ -177,7 +130,7 @@ define void EnablePICLine(i8 IRQLine, i8 Enabled) {
 		IRQLine -= 8
 	}
 	
-	i8 Value := InB(Port)
+	i32 Value := InB(Port)
 	
 	if (Enabled) {
 		Value := Value & ~(1 << IRQLine)
@@ -186,49 +139,40 @@ define void EnablePICLine(i8 IRQLine, i8 Enabled) {
 		Value := Value | (1 << IRQLine)
 	}
 	
-	OutB(Port, Value)
+	OutB(Port, Value As i8)
 }
 
-declare void SetupTime()
+i32 IDT_MAX := 50
+i32 IDT_SIZE := IDT_MAX * #IDTEntry
+
 declare void AddHandlers()
-declare void SetupKeyboard()
-
-define void LIDT(IDT* NewIDT) asm {
-	lidt, {rdi} As i64*
-	ret
-}
 
 define void SetupInterrupts() {
 	asm {cli}
 	
-	IDTHeader->Start := IDT
-	IDTHeader->Size := 799
+	IDTHeader := KernelHeap->Allocate('IDTH', 0x10)
+	IDT := KernelHeap->Allocate('IDT', IDT_SIZE)
 	
-	for (i32 Index := 0, Index < 50, Index += 1) {
-		InsertIDTEntry(Index, &_DefaultHandler, true)
-	}
+	IDTHeader->Start := IDT
+	IDTHeader->Size := IDT_SIZE As i16
 	
 	AddHandlers()
-	BootInfo("IDT built")
+	Print("IDT built at %x, header at %x\n", IDT, IDTHeader)
+	
+	KernelHeap->Print()
 	
 	RemapPIC(0x20, 0x28)
-	BootInfo("PIC remapped")
-	
-	SetupTime()
-	SetupKeyboard()
-	BootInfo("PIT and PS/2 ready")
+	Print("PIC remapped\n")
 	
 	asm (rax := IDTHeader) {
 		lidt, {rax} As i64*
 	}
 	
-	BootInfo("IDT loaded")
+	Print("IDT loaded, base = %x, size = %i\n", IDTHeader->Start, IDTHeader->Size)
 	
 	asm {sti}
 	
-	BochsPrint("After STI\n")
+	Print("After STI\n")
 }
 
-#Include ./src/InterruptHandlers.rlx
-#Include ./src/Time.rlx
-#Include ./src/Keyboard.rlx
+#Require "./src/InterruptHandlers.rlx"

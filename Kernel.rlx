@@ -37,6 +37,8 @@ define void SetCR3(void* ToPLM4) asm {
 Heap RawKernelHeap
 Heap* KernelHeap := &RawKernelHeap
 
+#Require "./src/Interrupts.rlx"
+
 define void Main(i64 _KernelLimit, void* RawFrameBuffer, UStarHeader* FS) {
 	i8* Function := &SetCR3 As i8*
 	
@@ -51,15 +53,13 @@ define void Main(i64 _KernelLimit, void* RawFrameBuffer, UStarHeader* FS) {
 	BochsPrintString("Paging initialized, AddressSpaceManager in control\n")
 	
 	; Identity map 2mb of memory for the kernel heap
-	i64 HeapPage := AddressSpace->AllocateContiguousPages(PAGE_COUNT_FOR_2MB)
-	AddressSpace->MapPageRange(HeapPage, HeapPage, PAGE_COUNT_FOR_2MB)
-	void* HeapMemory := AddressSpace->PageNumberToPointer(HeapPage)
+	void* HeapMemory := AddressSpace->AllocateMappedPages(PAGE_COUNT_FOR_2MB)
 	
 	BochsPrintString("Allocated KernelHeap memory\n")
 	
 	; Remap the next available `FRAMEBUFFER_SIZE / PAGE_SIZE` bytes of virtual memory to 0xE000_0000 (or wherever) 
 	i32 FrameBufferPageCount := AddressSpace->SizeToPageCount(FRAMEBUFFER_SIZE)
-	i64 FrameBufferPage := AddressSpace->AllocateContiguousPages(FrameBufferPageCount)
+	i64 FrameBufferPage := AddressSpace->AllocateContiguousVirtualPages(FrameBufferPageCount)
 	AddressSpace->MapPageRange(FrameBufferPage, AddressSpace->PointerToPageNumber(RawFrameBuffer), FrameBufferPageCount)
 	
 	i8* FrameBuffer := AddressSpace->PageNumberToPointer(FrameBufferPage) As i8*
@@ -74,17 +74,23 @@ define void Main(i64 _KernelLimit, void* RawFrameBuffer, UStarHeader* FS) {
 	
 	Terminal->Print("BOOT: Kernel Heap Initialized: ")
 	
+	KernelHeap->Allocate('Example', 0x222)
 	KernelHeap->Print()
 	
+	SetupInterrupts()
+	
+	Terminal->NewLine()
 	Terminal->SetColors(0xFF_00_00, 0xFF_FF_FF)
 	Terminal->PrintLine("SPOOKY: RED INSTEAD OF BLACK")
 	Terminal->SetColors(0x22_22_22, 0xFF_FF_FF)
 	Terminal->PrintLine("A very large number of characters, oh, wait. Actually, let's\nTest line breaks!")
 	Terminal->PrintLine("Now's a good time to test loads of characters: Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum.")
 	Terminal->PrintLine("\n\nThat line wrapping could be smarter, but I relly don't want to implement it.")
-	Terminal->Print("I know this doesn't look like much of a change, but now paging is much more dynamic, and the framebuffer can move around in virtual or physical memory!")
+	Terminal->PrintLine("I know this doesn't look like much of a change, but now paging is much more dynamic, and the framebuffer can move around in virtual or physical memory!")
 	
-	Terminal->ShowCursor()
+	Terminal->SetColors(0xFF_FF_FF, 0x00_00_00)
+	
+	;Terminal->ShowCursor()
 	
 	loop {}
 }
