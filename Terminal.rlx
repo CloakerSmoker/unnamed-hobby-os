@@ -118,6 +118,10 @@ struct Terminal {
 		this->X := X
 		this->Y := Y
 	}
+	
+	define void OnScroll(i32 CharacterOffset) {
+		this->Y += CharacterOffset
+	}
 }
 
 Terminal RawTerminal

@@ -160,3 +160,59 @@ define void OutW(i16 Port, i16 Data) asm {
 	outw
 	ret
 }
+
+
+define void FastMoveMemory(void* To, void* From, i32 Size) asm {
+	mov, rcx, rdx
+	
+	cmp, rdi, rsi
+	jlt, MoveDown
+	
+	dec, rdx
+	add, rdi, rdx
+	add, rsi, rdx
+	
+	std
+	rep movsb
+	
+	ret
+	
+MoveDown:
+	cld
+	rep movsb
+	
+	ret
+}
+
+define void FastSetMemory8(void* Memory, i64 Value, i32 Count) asm {
+	mov, rax, rsi
+	mov, rcx, rdx
+	
+	rep stosb
+	
+	ret
+}
+define void FastSetMemory16(void* Memory, i64 Value, i32 Count) asm {
+	mov, rax, rsi
+	mov, rcx, rdx
+	
+	rep stosw
+	
+	ret
+}
+define void FastSetMemory32(void* Memory, i64 Value, i32 Count) asm {
+	mov, rax, rsi
+	mov, rcx, rdx
+	
+	rep stosd
+	
+	ret
+}
+define void FastSetMemory64(void* Memory, i64 Value, i32 Count) asm {
+	mov, rax, rsi
+	mov, rcx, rdx
+	
+	rep stosq
+	
+	ret
+}

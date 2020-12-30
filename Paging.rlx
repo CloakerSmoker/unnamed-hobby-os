@@ -27,6 +27,11 @@ i32 BYTES_IN_4MB := 0x40_0000
 i64 PAGE_PRESENT := 1
 i64 PAGE_WRITE := 2
 
+define void SetCR3(i64**** PML4T) asm {
+	ldcr3, rdi
+	ret
+}
+
 struct AddressSpaceManager {
 	i32 NextFreeVirtualPage
 	i32 NextFreePhysicalPage

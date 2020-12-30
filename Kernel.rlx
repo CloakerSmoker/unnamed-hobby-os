@@ -20,13 +20,6 @@ define void BochsPrintString(i8* String) {
 	BochsPrintString(String, false)
 }
 
-define void SetCR3(void* ToPLM4) asm {
-	ret
-	ret
-	ret
-	ret
-}
-
 #Require "./src/Font.rlx"
 #Require "./src/Screen.rlx"
 #Require "./src/Terminal.rlx"
@@ -40,12 +33,6 @@ Heap* KernelHeap := &RawKernelHeap
 #Require "./src/Interrupts.rlx"
 
 define void Main(i64 _KernelLimit, void* RawFrameBuffer, UStarHeader* FS) {
-	i8* Function := &SetCR3 As i8*
-	
-	Function[0] := 0x0f
-	Function[1] := 0x22
-	Function[2] := 0xdf As i8
-	
 	BochsPrintString("Main\n")
 	
 	AddressSpace->Takeover()
@@ -64,7 +51,7 @@ define void Main(i64 _KernelLimit, void* RawFrameBuffer, UStarHeader* FS) {
 	
 	i8* FrameBuffer := AddressSpace->PageNumberToPointer(FrameBufferPage) As i8*
 	
-	Screen->Adopt(FrameBuffer)
+	Screen->Adopt(FrameBuffer, 0xFF_FF_FF)
 	Screen->DrawRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0xFF_FF_FF)
 	Terminal->Initialize(Screen)
 	

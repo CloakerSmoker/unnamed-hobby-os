@@ -1,21 +1,45 @@
 
 i16 PS2_DATA := 0x60
 
+i8 SHIFT_STATE := false
+
+define i8 GetMapIndex(i8* Map, i32 Max, i16 Code) {
+	if (Code >= Max) {
+		return ' '
+	}
+	
+	return Map[Code]
+}
+
 define i8 ScanCodeToASCII(i16 ScanCode) {
 	/* Note: This doesn't need to work for all characters, since it is only used for displaying, not for logic. */
 	
-	i8* Map := "  1234567890-=  qwertyuiop[]  asdfghjkl;'`  \zxcvbnm,./ *  "
-	i32 MapMax := 59
+	i8* LowerMap := "  1234567890-=  qwertyuiop[]  asdfghjkl;'` \\zxcvbnm,./    "
+	i8* UpperMap := "  !@#$%^&*()_+  QWERTYUIOP{}  ASDFGHJKL:\"~ |ZXCVBNM<>?"
 	
-	if (ScanCode >= MapMax) {
-		return ' '
+	i32 LowerMapMax := 58
+	i32 UpperMapMax := 54
+	
+	if (SHIFT_STATE) {
+		return GetMapIndex(UpperMap, UpperMapMax, ScanCode)
 	}
 	else {
-		return Map[ScanCode]
+		return GetMapIndex(LowerMap, LowerMapMax, ScanCode)
 	}
 }
 
 declare void KeyboardWait(i8, i8)
+
+i32 SCANCODE_MASK_DOWN := 0x80
+i32 SCANCODE_SHIFT_UP := 0xAA
+i32 SCANCODE_SHIFT_DOWN := 0x2A
+i32 SCANCODE_BACKSPACE_DOWN := 0x0E
+i32 SCANCODE_ENTER_DOWN := 0x1C
+
+i32 SCANCODE_UP_ARROW := 0x48
+i32 SCANCODE_LEFT_ARROW := 0x4B
+i32 SCANCODE_RIGHT_ARROW := 0x4D
+i32 SCANCODE_DOWN_ARROW := 0x50
 
 define void KeyboardEvent() {
 	/* IRQ1 handler */
@@ -24,8 +48,31 @@ define void KeyboardEvent() {
 	i16 ScanCode := InB(PS2_DATA) As i16
 	i8 ASCIICode := ScanCodeToASCII(ScanCode)
 	
-	if !(ScanCode & 0x80) {
-		Terminal->Print(&ASCIICode, 1)
+	if (ScanCode & SCANCODE_MASK_DOWN) {
+		if (ScanCode = SCANCODE_SHIFT_UP) {
+			SHIFT_STATE := false
+		}
+	}
+	else if (ScanCode = SCANCODE_SHIFT_DOWN) {
+		SHIFT_STATE := true
+	}
+	else if (ScanCode = SCANCODE_BACKSPACE_DOWN) {
+		; Backspace
+	}
+	else if (ScanCode = SCANCODE_ENTER_DOWN) {
+		Terminal->NewLine()
+	}
+	else if (ScanCode = SCANCODE_UP_ARROW) {
+		Screen->VerticalScroll(12)
+		Terminal->OnScroll(1)
+	}
+	else if (ScanCode = SCANCODE_DOWN_ARROW) {
+		Screen->VerticalScroll(-12)
+		Terminal->OnScroll(-1)
+	}
+	else {
+		;Print("%c (%x) ", ASCIICode, ScanCode)
+		Print("%c", ASCIICode)
 	}
 	
 	SendEOI(1)
