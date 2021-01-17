@@ -30,6 +30,9 @@ define i8 ScanCodeToASCII(i16 ScanCode) {
 
 declare void KeyboardWait(i8, i8)
 
+i8{0x200} InputBuffer
+i32 InputIndex := 0
+
 i32 SCANCODE_MASK_DOWN := 0x80
 i32 SCANCODE_SHIFT_UP := 0xAA
 i32 SCANCODE_SHIFT_DOWN := 0x2A
@@ -57,10 +60,23 @@ define void KeyboardEvent() {
 		SHIFT_STATE := true
 	}
 	else if (ScanCode = SCANCODE_BACKSPACE_DOWN) {
-		; Backspace
+		if (Terminal->X > 0) {
+			Terminal->X -= 1
+		}
+		
+		Terminal->Print(" ")
+		Terminal->X -= 1
+		
+		if (InputIndex > 0) {
+			InputIndex -= 1
+		}
 	}
 	else if (ScanCode = SCANCODE_ENTER_DOWN) {
 		Terminal->NewLine()
+		
+		InputBuffer[InputIndex] := 0
+		
+		;Shell->OnCommand(InputBuffer)
 	}
 	else if (ScanCode = SCANCODE_UP_ARROW) {
 		Screen->VerticalScroll(12)
@@ -71,8 +87,10 @@ define void KeyboardEvent() {
 		Terminal->OnScroll(-1)
 	}
 	else {
-		;Print("%c (%x) ", ASCIICode, ScanCode)
 		Print("%c", ASCIICode)
+		
+		InputBuffer[InputIndex] := ASCIICode
+		InputIndex += 1
 	}
 	
 	SendEOI(1)

@@ -104,10 +104,10 @@ struct Screen {
 				i8 Mask := (1 << ColumnIndex) As i8
 				
 				if (RowData & Mask) {
-					this->SetPixel(X - ColumnIndex + 8, Y + RowIndex, ForegroundColor)
+					this->SetPixel(X - ColumnIndex + 7, Y + RowIndex, ForegroundColor)
 				}
 				else {
-					this->SetPixel(X - ColumnIndex + 8, Y + RowIndex, BackgroundColor)
+					this->SetPixel(X - ColumnIndex + 7, Y + RowIndex, BackgroundColor)
 				}
 			}
 		}

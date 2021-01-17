@@ -67,17 +67,6 @@ define void Main(i64 _KernelLimit, void* RawFrameBuffer, UStarHeader* FS) {
 	SetupInterrupts()
 	
 	Terminal->NewLine()
-	Terminal->SetColors(0xFF_00_00, 0xFF_FF_FF)
-	Terminal->PrintLine("SPOOKY: RED INSTEAD OF BLACK")
-	Terminal->SetColors(0x22_22_22, 0xFF_FF_FF)
-	Terminal->PrintLine("A very large number of characters, oh, wait. Actually, let's\nTest line breaks!")
-	Terminal->PrintLine("Now's a good time to test loads of characters: Lorem Ipsum is simply dummy text of the printing and typesetting industry. Lorem Ipsum has been the industry's standard dummy text ever since the 1500s, when an unknown printer took a galley of type and scrambled it to make a type specimen book. It has survived not only five centuries, but also the leap into electronic typesetting, remaining essentially unchanged. It was popularised in the 1960s with the release of Letraset sheets containing Lorem Ipsum passages, and more recently with desktop publishing software like Aldus PageMaker including versions of Lorem Ipsum.")
-	Terminal->PrintLine("\n\nThat line wrapping could be smarter, but I relly don't want to implement it.")
-	Terminal->PrintLine("I know this doesn't look like much of a change, but now paging is much more dynamic, and the framebuffer can move around in virtual or physical memory!")
-	
-	Terminal->SetColors(0xFF_FF_FF, 0x00_00_00)
-	
-	;Terminal->ShowCursor()
 	
 	loop {}
 }

@@ -49,9 +49,11 @@ define void _SpuriousInterrupt() asm {
 /* Add actual IDT entries */
 
 #Require "./src/Keyboard.rlx"
+#Require "./src/PIT.rlx"
 
 define void AddHandlers() {
 	SetupKeyboard()
+	SetupPIT(PIT_100HZ)
 	
 	InsertIDTEntry(0x27, &_SpuriousInterrupt, true)
 }

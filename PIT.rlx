@@ -1,0 +1,92 @@
+/* Int 0x20, IRQ0 */
+
+struct PITCounterMode {
+	i64 WholePerTick
+	i64 FractionPerTick
+	i64 FractionToWholeDivisor
+	i16 ReloadValue
+}
+
+PITCounterMode PIT_100HZ_CONFIG {
+	WholePerTick: 			100, 
+	FractionPerTick: 		0006872852, 
+	FractionToWholeDivisor: 1000000000,
+	ReloadValue:			11931
+}
+
+PITCounterMode* PIT_100HZ := &PIT_100HZ_CONFIG
+
+i64 PITWhole 	:= 0 ; Number of milliseconds since the PIT was initialized
+i64 PITFraction := 0 ; Counter mode specific fraction, used to track sub-millisecond time since PITWhole is an integer
+i64 TickCount	:= 0 ; Number of unknown length ticks since the PIT was initialized
+
+define i64 GetTickCount() {
+	return TickCount
+}
+define i64 GetUptimeMS() {
+	return PITWhole
+}
+
+PITCounterMode* CurrentPITMode := null
+
+define void OnPITInterrupt(InterruptContext* C, Registers* R) {
+	TickCount += 1
+	
+	PITWhole += CurrentPITMode->WholePerTick
+	PITFraction += CurrentPITMode->FractionPerTick
+	
+	PITWhole += (PITFraction / CurrentPITMode->FractionToWholeDivisor) * 100
+	PITFraction %= CurrentPITMode->FractionToWholeDivisor
+	
+	SendEOI(0)
+}
+define void PITInterrupt() asm {
+	call, @InterruptSetup
+	call, @OnPITInterrupt
+	jmp, @InterruptReturn
+}
+
+i8 PIT_CHANNEL_0 := 0
+i8 PIT_CHANNEL_1 := 1
+i8 PIT_CHANNEL_2 := 2
+
+i8 PIT_ACCESS_LATCH := 0
+i8 PIT_ACCESS_LOWBYTE := 1
+i8 PIT_ACCESS_HIGHBYTE := 2
+i8 PIT_ACCESS_BOTHBYTE := 3
+
+i8 PIT_MODE_RATE_GENERATOR := 6
+
+define i8 PackPITCommand(i8 Channel, i8 AccessMode, i8 OperatingMode) {
+	return ((Channel << 6) | (AccessMode << 4) | (OperatingMode)) As i8
+}
+
+define void InitializePIT(i8 Command, i16 Reload) {
+	OutB(0x43, Command) 
+	OutB(0x40, (Reload & 0xFF) As i8)
+	OutB(0x40, (Reload >> 8) As i8)
+}
+
+define void SetupPIT(PITCounterMode* Mode) {
+	CurrentPITMode := Mode
+	
+	InsertIDTEntry(0x20, &PITInterrupt, true)
+	
+	i8 Command := PackPITCommand(PIT_CHANNEL_0, PIT_ACCESS_BOTHBYTE, PIT_MODE_RATE_GENERATOR)
+	InitializePIT(Command, Mode->ReloadValue)
+	
+	Print("Initialized PIT to ~%i hz\n", Mode->WholePerTick)
+	
+	EnablePICLine(0, true)
+}
+
+define void SleepTicks(i32 Ticks) {
+	i64 End := TickCount + Ticks
+	
+	while (TickCount < End) {}
+}
+define void SleepMS(i32 Milliseconds) {
+	i64 End := PITWhole + Milliseconds
+	
+	while (PITWhole < End) {}
+}
