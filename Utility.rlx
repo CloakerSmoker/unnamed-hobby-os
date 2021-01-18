@@ -138,6 +138,71 @@ define i8* IToAH(i64 Number, i8* Buffer) {
 	return IToA(Number, 16, Buffer)
 }
 
+define i8 IsNumeric(i8 Character, i64 Base) {
+	Base -= 1
+	
+	if (Base > 9) {
+		if (Character >= 'a' && Character <= ('a' + Base)) {
+			return true
+		}
+	}
+	
+	return (Character >= '0') && (Character <= ('0' + Base))
+}
+
+define i64 AToI(i8* String, i32 Length, i64 Base) {
+	i64 Result := 0
+	i64 Negative := 0
+	
+	i8 FirstCharacter := String[0]
+	
+	if (FirstCharacter = '-') {
+		Negative := 1
+		String += 1
+		FirstCharacter := String[0]
+	}
+	
+	if !(IsNumeric(FirstCharacter, Base)) {
+		return 0
+	}
+		
+	for (i32 Index := 0, Index < Length, Index += 1) {
+		i8 NextCharacter := String[Index]
+		
+		if !(IsNumeric(NextCharacter, Base)) {
+			Break
+		}
+		
+		Result *= Base
+		Result += GetCharacterValue(NextCharacter)
+	}
+	
+	if (Negative) {
+		Result := -Result
+	}
+	
+	return Result
+}
+define i64 AToI(i8* String, i64 Base) {
+	return AToI(String, StringLength(String), Base)
+}
+
+define i8 StringEquals(i8* Left, i8* Right) {
+	i32 Length := StringLength(Left)
+	
+	if (StringLength(Right) != Length) {
+		return false
+	}
+	
+	for (i32 Index := 0, Index < Length, Index += 1) {
+		if (Left[Index] != Right[Index]) {
+			return false
+		}
+	}
+	
+	return true
+}
+
 define i8 InB(i16 Port) asm {
 	mov, dx, dix
 	inb

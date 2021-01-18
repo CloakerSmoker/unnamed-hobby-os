@@ -30,7 +30,9 @@ define void BochsPrintString(i8* String) {
 Heap RawKernelHeap
 Heap* KernelHeap := &RawKernelHeap
 
+
 #Require "./src/Interrupts.rlx"
+#Require "./src/Shell.rlx"
 
 define void Main(i64 _KernelLimit, void* RawFrameBuffer, UStarHeader* FS) {
 	BochsPrintString("Main\n")
@@ -51,8 +53,8 @@ define void Main(i64 _KernelLimit, void* RawFrameBuffer, UStarHeader* FS) {
 	
 	i8* FrameBuffer := AddressSpace->PageNumberToPointer(FrameBufferPage) As i8*
 	
-	Screen->Adopt(FrameBuffer, 0xFF_FF_FF)
-	Screen->DrawRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0xFF_FF_FF)
+	Screen->Adopt(FrameBuffer, SCREEN_WIDTH, SCREEN_HEIGHT, BYTES_PER_PIXEL, 0xFF_FF_FF)
+	Screen->Clear()
 	Terminal->Initialize(Screen)
 	
 	Terminal->PrintLine("BOOT: Screen *probably* works")
@@ -66,7 +68,7 @@ define void Main(i64 _KernelLimit, void* RawFrameBuffer, UStarHeader* FS) {
 	
 	SetupInterrupts()
 	
-	Terminal->NewLine()
+	Prompt()
 	
 	loop {}
 }

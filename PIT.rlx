@@ -8,8 +8,8 @@ struct PITCounterMode {
 }
 
 PITCounterMode PIT_100HZ_CONFIG {
-	WholePerTick: 			100, 
-	FractionPerTick: 		0006872852, 
+	WholePerTick: 			10, 
+	FractionPerTick: 		6872852, 
 	FractionToWholeDivisor: 1000000000,
 	ReloadValue:			11931
 }
@@ -35,7 +35,7 @@ define void OnPITInterrupt(InterruptContext* C, Registers* R) {
 	PITWhole += CurrentPITMode->WholePerTick
 	PITFraction += CurrentPITMode->FractionPerTick
 	
-	PITWhole += (PITFraction / CurrentPITMode->FractionToWholeDivisor) * 100
+	PITWhole += PITFraction / CurrentPITMode->FractionToWholeDivisor
 	PITFraction %= CurrentPITMode->FractionToWholeDivisor
 	
 	SendEOI(0)

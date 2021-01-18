@@ -44,6 +44,10 @@ i32 SCANCODE_LEFT_ARROW := 0x4B
 i32 SCANCODE_RIGHT_ARROW := 0x4D
 i32 SCANCODE_DOWN_ARROW := 0x50
 
+declare void OnCommand(i8*)
+
+i32 KeyboardBackspaceBound := 0
+
 define void KeyboardEvent() {
 	/* IRQ1 handler */
 	
@@ -60,14 +64,14 @@ define void KeyboardEvent() {
 		SHIFT_STATE := true
 	}
 	else if (ScanCode = SCANCODE_BACKSPACE_DOWN) {
-		if (Terminal->X > 0) {
+		if (Terminal->X > KeyboardBackspaceBound) {
 			Terminal->X -= 1
 		}
 		
 		Terminal->Print(" ")
 		Terminal->X -= 1
 		
-		if (InputIndex > 0) {
+		if (InputIndex > KeyboardBackspaceBound) {
 			InputIndex -= 1
 		}
 	}
@@ -75,8 +79,9 @@ define void KeyboardEvent() {
 		Terminal->NewLine()
 		
 		InputBuffer[InputIndex] := 0
+		InputIndex := 0
 		
-		;Shell->OnCommand(InputBuffer)
+		OnCommand(InputBuffer)
 	}
 	else if (ScanCode = SCANCODE_UP_ARROW) {
 		Screen->VerticalScroll(12)

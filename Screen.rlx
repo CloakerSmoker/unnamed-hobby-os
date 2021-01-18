@@ -6,7 +6,7 @@ i32 COLOR_DEPTH := 24
 i32 BYTES_PER_PIXEL := 3
 
 i32 PIXEL_COUNT := SCREEN_WIDTH * SCREEN_HEIGHT
-i32 FRAMEBUFFER_SIZE := PIXEL_COUNT * COLOR_DEPTH
+i32 FRAMEBUFFER_SIZE := (PIXEL_COUNT + 1) * BYTES_PER_PIXEL
 i32 ROW_SIZE := SCREEN_WIDTH * BYTES_PER_PIXEL
 
 struct Pixel {
@@ -60,25 +60,40 @@ struct Screen {
 		Pixel* PixelBuffer
 	}
 	
+	i32 Width
+	i32 Height
+	i32 Depth
 	i32 FillColor
 	
-	define void Adopt(void* RawFrameBuffer, i32 FillColor) {
+	i32 PixelCount
+	i32 FrameBufferSize
+	i32 RowSize
+	
+	
+	define void Adopt(void* RawFrameBuffer, i32 Width, i32 Height, i32 Depth, i32 FillColor) {
 		this->RawFrameBuffer := RawFrameBuffer
+		this->Width := Width
+		this->Height := Height
+		this->Depth := Depth
 		this->FillColor := FillColor
+		
+		this->PixelCount := Width * Height
+		this->FrameBufferSize := this->PixelCount * Depth
+		this->RowSize := Width * Depth
 		
 		i64* FastSetPixelTarget := &FastSetPixel + 2
 		*FastSetPixelTarget := RawFrameBuffer As i64
 	}
 	
 	define Pixel* GetPixelAddress(i32 X, i32 Y) {
-		i32 Index := (Y * SCREEN_WIDTH) + X
-		i32 Offset := Index * BYTES_PER_PIXEL
+		i32 Index := (Y * this->Width) + X
+		i32 Offset := Index * this->Depth
 		
 		return this->PixelBuffer + Offset
 	}
-	;define void SetPixel(i32 X, i32 Y, i32 Color) {
-	;	FastGetPixelAddress(X, Y, SCREEN_WIDTH, BYTES_PER_PIXEL, this->PixelBuffer)->SetColor(Color)
-	;}
+	define void SlowSetPixel(i32 X, i32 Y, i32 Color) {
+		FastGetPixelAddress(X, Y, SCREEN_WIDTH, BYTES_PER_PIXEL, this->PixelBuffer)->SetColor(Color)
+	}
 	define void SetPixel(i32 X, i32 Y, i32 Color) asm {
 		jmp, @FastSetPixel
 	}
@@ -118,7 +133,7 @@ struct Screen {
 			
 			X += 8
 			
-			if (X >= SCREEN_WIDTH) {
+			if (X >= this->Width) {
 				X := 0
 				Y -= 12
 			}
@@ -128,27 +143,30 @@ struct Screen {
 		this->DrawText(X, Y, Text, StringLength(Text), ForegroundColor, BackgroundColor)
 	}
 	
+	define void Clear() {
+		this->DrawRectangle(0, 0, this->Width, this->Height, this->FillColor)
+	}
 	define void VerticalScroll(i32 Offset) {
-		i32 GAP_SIZE := Offset * ROW_SIZE
+		i32 GapSize := Offset * this->RowSize
 		
 		void* TopRow := this->RawFrameBuffer
-		void* NewTopRow := TopRow + GAP_SIZE
+		void* NewTopRow := TopRow + GapSize
 		
 		i32 Y := 0
 		
 		if (Offset < 0) {
 			Offset := -Offset
 			
-			GAP_SIZE := Offset * ROW_SIZE
+			GapSize := Offset * this->RowSize
 			
 			NewTopRow := this->RawFrameBuffer
-			TopRow := NewTopRow + GAP_SIZE
+			TopRow := NewTopRow + GapSize
 			
-			Y := SCREEN_HEIGHT - Offset
+			Y := this->Height - Offset
 		}
 		
-		FastMoveMemory(NewTopRow, TopRow, FRAMEBUFFER_SIZE - GAP_SIZE)
-		this->DrawRectangle(0, Y, SCREEN_WIDTH, Offset, this->FillColor)
+		FastMoveMemory(NewTopRow, TopRow, this->FrameBufferSize - GapSize)
+		this->DrawRectangle(0, Y, this->Width, Offset, this->FillColor)
 	}
 }
 
