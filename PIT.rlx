@@ -5,6 +5,10 @@ struct PITCounterMode {
 	i64 FractionPerTick
 	i64 FractionToWholeDivisor
 	i16 ReloadValue
+	
+	define i64 GuessHZ() {
+		return 1000 / this->WholePerTick
+	}
 }
 
 PITCounterMode PIT_100HZ_CONFIG {
@@ -29,6 +33,8 @@ define i64 GetUptimeMS() {
 
 PITCounterMode* CurrentPITMode := null
 
+i64 LastDisplayedSeconds := 0
+
 define void OnPITInterrupt(InterruptContext* C, Registers* R) {
 	TickCount += 1
 	
@@ -37,6 +43,23 @@ define void OnPITInterrupt(InterruptContext* C, Registers* R) {
 	
 	PITWhole += PITFraction / CurrentPITMode->FractionToWholeDivisor
 	PITFraction %= CurrentPITMode->FractionToWholeDivisor
+	
+	i64 Seconds := PITWhole / 1000
+	
+	if (Seconds != LastDisplayedSeconds) {
+		LastDisplayedSeconds := Seconds
+		
+		if (UptimeDisplay != null) {
+			i64 Minutes := Seconds / 60
+			Seconds := Seconds % 60
+			i64 Hours := Minutes / 60
+			Minutes := Minutes % 60
+			
+			i8* UptimeText := FormatString("[ %ih %im %is | %ims ]          ", Hours, Minutes, Seconds, PITWhole)
+			
+			UptimeDisplay->DrawText(0, 0, UptimeText, 0xFF_FF_FF, 0x00_00_00)
+		}
+	}
 	
 	SendEOI(0)
 }
@@ -75,7 +98,7 @@ define void SetupPIT(PITCounterMode* Mode) {
 	i8 Command := PackPITCommand(PIT_CHANNEL_0, PIT_ACCESS_BOTHBYTE, PIT_MODE_RATE_GENERATOR)
 	InitializePIT(Command, Mode->ReloadValue)
 	
-	Print("Initialized PIT to ~%i hz\n", Mode->WholePerTick)
+	Print("Initialized PIT to ~%i hz\n", Mode->GuessHZ())
 	
 	EnablePICLine(0, true)
 }

@@ -20,6 +20,10 @@ define void BochsPrintString(i8* String) {
 	BochsPrintString(String, false)
 }
 
+declare void* KernelHeapAllocate(i64, i32)
+declare void* KernelHeapExtendAllocation(void*, i32)
+declare void KernelHeapFree(void*)
+
 #Require "./src/Font.rlx"
 #Require "./src/Screen.rlx"
 #Require "./src/Terminal.rlx"
@@ -30,6 +34,15 @@ define void BochsPrintString(i8* String) {
 Heap RawKernelHeap
 Heap* KernelHeap := &RawKernelHeap
 
+define void* KernelHeapAllocate(i64 Tag, i32 Size) {
+	return KernelHeap->Allocate(Tag, Size)
+}
+define void* KernelHeapExtendAllocation(void* Memory, i32 Size) {
+	return KernelHeap->Extend(Memory, Size)
+}
+define void KernelHeapFree(void* Memory) {
+	KernelHeap->Free(Memory)
+}
 
 #Require "./src/Interrupts.rlx"
 #Require "./src/Shell.rlx"
@@ -53,20 +66,36 @@ define void Main(i64 _KernelLimit, void* RawFrameBuffer, UStarHeader* FS) {
 	
 	i8* FrameBuffer := AddressSpace->PageNumberToPointer(FrameBufferPage) As i8*
 	
-	Screen->Adopt(FrameBuffer, SCREEN_WIDTH, SCREEN_HEIGHT, BYTES_PER_PIXEL, 0xFF_FF_FF)
-	Screen->Clear()
-	Terminal->Initialize(Screen)
+	NativeScreen->Adopt(FrameBuffer, SCREEN_WIDTH, SCREEN_HEIGHT, BYTES_PER_PIXEL, 0, 0x00_00_00)
+	
+	Terminal->Adopt(NativeScreen)
+	Terminal->SetColors(0xFF_FF_FF, 0x00_00_00)
+	
+	NativeScreen->Clear()
 	
 	Terminal->PrintLine("BOOT: Screen *probably* works")
 	
 	KernelHeap->Initialize(HeapMemory, BYTES_IN_2MB)
 	
 	Terminal->Print("BOOT: Kernel Heap Initialized: ")
-	
 	KernelHeap->Allocate('Example', 0x222)
 	KernelHeap->Print()
 	
 	SetupInterrupts()
+	
+	Screen* TerminalWindow := NativeScreen->CreateWindow(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT - 70, 0xFF_FF_FF)
+	Screen* TaskbarWindow := NativeScreen->CreateWindow(0, SCREEN_HEIGHT - 70, SCREEN_WIDTH, 70, 0x00_00_00)
+	Screen* UptimeWindow := TaskbarWindow->CreateWindow((SCREEN_WIDTH / 2) - 100, 35, 300, 20, 0x00_00_00)
+	
+	NativeScreen->PrintHierarchy(0)
+	NativeScreen->Clear()
+	
+	UptimeDisplay := UptimeWindow
+	
+	Terminal->Adopt(TerminalWindow)
+	Terminal->SetColors(0x00_00_00, 0xFF_FF_FF)
+	
+	Print("BOOT: Switched to window system for terminal\n")
 	
 	Prompt()
 	

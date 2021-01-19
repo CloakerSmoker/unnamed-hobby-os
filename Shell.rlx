@@ -54,8 +54,10 @@ define void OnCommand(i8* CommandLine) {
 		asm {sti}
 	}
 	else if (StringEquals(Command, "clear_screen")) {
-		Screen->DrawRectangle(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT, 0xFF_FF_FF)
-		Terminal->Seek(0, 0)
+		NativeScreen->Clear()
+	}
+	else if (StringEquals(Command, "windows")) {
+		NativeScreen->PrintHierarchy(0)
 	}
 	else if (StringEquals(Command, "peek")) {
 		i64 TargetAddress := AToI(Parameters[0], 10)

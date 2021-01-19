@@ -42,6 +42,8 @@ struct Heap {
 	HeapBlock* FirstFreeBlock
 	
 	define void Initialize(void* Memory, i32 Size) {
+		FastSetMemory64(Memory, 0, Size / 8)
+		
 		this->RawBackingMemory := Memory
 		
 		HeapBlock* FirstBlock := this->FirstBlock
@@ -150,7 +152,13 @@ struct Heap {
 		Print("Heap [%x owns %x] {\n", this, this->RawBackingMemory)
 		
 		for (HeapBlock* Block := this->FirstBlock, Block != null, Block := Block->Next) {
-			Print("    Block [%l] { Size %x, Free? %i, Valid? %i }\n", Block->Tag, Block->Size, Block->IsFree, Block->IsValid())
+			i8 BlockIsValid := Block->IsValid()
+			
+			Print("    Block [%l] { Size %x, Free? %i, Valid? %i }\n", Block->Tag, Block->Size, Block->IsFree, BlockIsValid)
+			
+			if !(BlockIsValid) {
+				break
+			}
 		}
 		
 		Print("}\n")

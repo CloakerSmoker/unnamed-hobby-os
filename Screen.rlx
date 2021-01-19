@@ -53,6 +53,8 @@ define void FastSetPixel(void* Dummy, i32 X, i32 Y, i32 Color) asm {
 	ret
 }
 
+declare void Print(i8*, ...)
+
 struct Screen {
 	union {
 		void* RawFrameBuffer
@@ -63,41 +65,65 @@ struct Screen {
 	i32 Width
 	i32 Height
 	i32 Depth
+	i32 RawStride
 	i32 FillColor
 	
+	i32 Stride
 	i32 PixelCount
 	i32 FrameBufferSize
 	i32 RowSize
 	
+	Screen* Next
+	Screen* FirstChild
 	
-	define void Adopt(void* RawFrameBuffer, i32 Width, i32 Height, i32 Depth, i32 FillColor) {
+	void* OnClearData
+	void* OnClear
+	
+	define void Adopt(void* RawFrameBuffer, i32 Width, i32 Height, i32 Depth, i32 StrideOffset, i32 FillColor) {
 		this->RawFrameBuffer := RawFrameBuffer
 		this->Width := Width
 		this->Height := Height
 		this->Depth := Depth
+		this->RawStride := StrideOffset
 		this->FillColor := FillColor
 		
+		this->Stride := Width + StrideOffset
+		this->RowSize := (Width * Depth) + StrideOffset
 		this->PixelCount := Width * Height
-		this->FrameBufferSize := this->PixelCount * Depth
-		this->RowSize := Width * Depth
-		
-		i64* FastSetPixelTarget := &FastSetPixel + 2
-		*FastSetPixelTarget := RawFrameBuffer As i64
+		this->FrameBufferSize := (this->PixelCount * Depth) + (StrideOffset * Height)
+	}
+	define void SetClearListener(void* Function, void* Data) {
+		this->OnClearData := Data
+		this->OnClear := Function
 	}
 	
 	define Pixel* GetPixelAddress(i32 X, i32 Y) {
-		i32 Index := (Y * this->Width) + X
+		i32 Index := (Y * this->Stride) + X
 		i32 Offset := Index * this->Depth
 		
 		return this->PixelBuffer + Offset
 	}
-	define void SlowSetPixel(i32 X, i32 Y, i32 Color) {
-		FastGetPixelAddress(X, Y, SCREEN_WIDTH, BYTES_PER_PIXEL, this->PixelBuffer)->SetColor(Color)
-	}
-	define void SetPixel(i32 X, i32 Y, i32 Color) asm {
-		jmp, @FastSetPixel
+	define void SetPixel(i32 X, i32 Y, i32 Color) {
+		FastGetPixelAddress(X, Y, this->Stride, this->Depth, this->PixelBuffer)->SetColor(Color)
 	}
 	define void DrawRectangle(i32 X, i32 Y, i32 Width, i32 Height, i32 Color) {
+		i32 Red := Color >> 16 & 0xFF
+		i32 Green := Color >> 8 & 0xFF
+		i32 Blue := Color & 0xFF
+		
+		if (Red = Green && Green = Blue) {
+			; If we're drawing a rectangle which is monochrome, we can just set entire rows to be the exact same
+			;  byte with `rep stosb`
+			
+			i32 RectangleRowSize := Width * this->Depth
+			
+			for (i32 FastRowIndex := 0, FastRowIndex < Height, FastRowIndex += 1) {
+				FastSetMemory8(this->GetPixelAddress(X, Y + FastRowIndex), Blue, RectangleRowSize)
+			}
+			
+			return
+		}
+		
 		for (i32 RowIndex := 0, RowIndex < Height, RowIndex += 1) {
 			for (i32 ColumnIndex := 0, ColumnIndex <= Width, ColumnIndex += 1) {
 				this->SetPixel(X + ColumnIndex, Y + RowIndex, Color)
@@ -129,14 +155,14 @@ struct Screen {
 	}
 	define void DrawText(i32 X, i32 Y, i8* Text, i32 TextLength, i32 ForegroundColor, i32 BackgroundColor) {
 		for (i32 Index := 0, Index < TextLength, Index += 1) {
+			if (X + 8 >= this->Width) {
+				X := 0
+				Y += 12
+			}
+			
 			this->DrawCharacter(X, Y, Text[Index], ForegroundColor, BackgroundColor)
 			
 			X += 8
-			
-			if (X >= this->Width) {
-				X := 0
-				Y -= 12
-			}
 		}
 	}
 	define void DrawText(i32 X, i32 Y, i8* Text, i32 ForegroundColor, i32 BackgroundColor) {
@@ -145,30 +171,77 @@ struct Screen {
 	
 	define void Clear() {
 		this->DrawRectangle(0, 0, this->Width, this->Height, this->FillColor)
-	}
-	define void VerticalScroll(i32 Offset) {
-		i32 GapSize := Offset * this->RowSize
 		
-		void* TopRow := this->RawFrameBuffer
-		void* NewTopRow := TopRow + GapSize
-		
-		i32 Y := 0
-		
-		if (Offset < 0) {
-			Offset := -Offset
-			
-			GapSize := Offset * this->RowSize
-			
-			NewTopRow := this->RawFrameBuffer
-			TopRow := NewTopRow + GapSize
-			
-			Y := this->Height - Offset
+		if (this->OnClear != null) {
+			asm (rax := this->OnClear, rdi := this->OnClearData, rsi := this) {
+				call, rax
+			}
 		}
 		
-		FastMoveMemory(NewTopRow, TopRow, this->FrameBufferSize - GapSize)
-		this->DrawRectangle(0, Y, this->Width, Offset, this->FillColor)
+		if (this->FirstChild != null) {
+			this->FirstChild->Clear()
+		}
+		
+		if (this->Next != null) {
+			this->Next->Clear()
+		}
+	}
+	
+	define void PrintHierarchy(i32 Depth) {
+		for (i32 Index := 0, Index < Depth, Index += 1) { Print("    ") }
+		
+		Print("|-> %ix%i\n", this->Width, this->Height)
+		
+		if (this->FirstChild != null) {
+			this->FirstChild->PrintHierarchy(Depth + 1)
+		}
+		
+		if (this->Next != null) {
+			this->Next->PrintHierarchy(Depth)
+		}
+	}
+	
+	define void VerticalScroll(i32 Offset) {
+		;i32 GapSize := Offset * this->RowSize
+		;
+		;void* TopRow := this->RawFrameBuffer
+		;void* NewTopRow := TopRow + GapSize
+		;
+		;i32 Y := 0
+		;
+		;if (Offset < 0) {
+		;	Offset := -Offset
+		;	
+		;	GapSize := Offset * this->RowSize
+		;	
+		;	NewTopRow := this->RawFrameBuffer
+		;	TopRow := NewTopRow + GapSize
+		;	
+		;	Y := this->Height - Offset
+		;}
+		;
+		;FastMoveMemory(NewTopRow, TopRow, this->FrameBufferSize - GapSize)
+		;this->DrawRectangle(0, Y, this->Width, Offset, this->FillColor)
+	}
+	
+	define Screen* CreateWindow(Screen* Window, i32 X, i32 Y, i32 Width, i32 Height, i32 FillColor) {
+		i32 Stride := (this->Width - Width) + this->RawStride
+		void* FrameBuffer := this->GetPixelAddress(X, Y)
+		
+		Window->Adopt(FrameBuffer, Width, Height, this->Depth, Stride, FillColor)
+		Window->Clear()
+		
+		Window->Next := this->FirstChild
+		this->FirstChild := Window
+		
+		return Window
+	}
+	define Screen* CreateWindow(i32 X, i32 Y, i32 Width, i32 Height, i32 FillColor) {
+		return this->CreateWindow(KernelHeapAllocate('Window', #Screen), X, Y, Width, Height, FillColor)
 	}
 }
 
 Screen RawScreen
-Screen* Screen := &RawScreen
+Screen* NativeScreen := &RawScreen
+
+Screen* UptimeDisplay := null

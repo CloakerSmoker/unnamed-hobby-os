@@ -33,9 +33,7 @@
 ;}
 
 define void SpuriousInterrupt(InterruptContext* Context, Registers* Registers) {
-	Pixel* Pixel := Screen->GetPixelAddress(1000, 200)
-	
-	Pixel->Red += 20
+	return
 }
 
 /* Int 0x27 */

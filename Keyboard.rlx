@@ -84,11 +84,11 @@ define void KeyboardEvent() {
 		OnCommand(InputBuffer)
 	}
 	else if (ScanCode = SCANCODE_UP_ARROW) {
-		Screen->VerticalScroll(12)
+		NativeScreen->VerticalScroll(12)
 		Terminal->OnScroll(1)
 	}
 	else if (ScanCode = SCANCODE_DOWN_ARROW) {
-		Screen->VerticalScroll(-12)
+		NativeScreen->VerticalScroll(-12)
 		Terminal->OnScroll(-1)
 	}
 	else {

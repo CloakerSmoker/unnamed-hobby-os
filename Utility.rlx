@@ -126,7 +126,7 @@ define i8* IToA(i64 Number, i64 Base, i8* Buffer, i8 PrintExtra) {
 	
 	MemoryReverse(Buffer, Index)
 	
-	return Buffer
+	return Buffer + Index
 }
 define i8* IToA(i64 Number, i64 Base, i8* Buffer) {
 	return IToA(Number, Base, Buffer, true)
