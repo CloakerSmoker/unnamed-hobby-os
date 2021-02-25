@@ -1,7 +1,3 @@
-#Require "./src/lib/Memory.rlx"
-#Require "./src/lib/Console.rlx"
-#Require "./src/lib/File.rlx"
-
 i16 EXT2_SUPER_MAGIC := 0xEF53 As i16
 
 i16 EXT2_VALID_FS := 1
@@ -50,6 +46,8 @@ struct SuperBlock {
 	i16 DefaultGroupID
 	
 	define void SetFieldDefaults() {
+		this->ReservedBlocks := 100
+		
 		this->SuperBlockNumber := 1
 		this->BlockSize := 0
 		this->FragmentSize := 0
@@ -68,31 +66,8 @@ struct SuperBlock {
 		this->CreatorOS := 0
 		this->RevisionLevel := 0
 	}
-	define void Print() {
-		Print("SuperBlock {\n")
-		Print("	TotalINodes: %i\n", this->TotalINodes)
-		Print("	TotalBlocks: %i\n", this->TotalBlocks)
-		Print("	ReservedBlocks: %i\n", this->ReservedBlocks)
-		Print("	UnallocatedBlocks: %i\n", this->UnallocatedBlocks)
-		Print("	UnallocatedINodes: %i\n", this->UnallocatedINodes)
-		Print("	SuperBlockNumber: %i\n", this->SuperBlockNumber)
-		Print("	BlockSize: %i\n", this->BlockSize)
-		Print("	FragmentSize: %i\n", this->FragmentSize)
-		Print("	BlocksPerGroup: %i\n", this->BlocksPerGroup)
-		Print("	FragmentsPerGroup: %i\n", this->FragmentsPerGroup)
-		Print("	INodesPerGroup: %i\n", this->INodesPerGroup)
-		Print("	MountCount: %i\n", this->MountCount)
-		Print("	MaxMountCount: %i\n", this->MaxMountCount)
-		Print("	Magic: %x\n", this->Magic)
-		Print("	State: %i\n", this->State)
-		Print("	ErrorMode: %i\n", this->ErrorMode)
-		Print("	MinorRevision: %i\n", this->MinorRevision)
-		Print("	CheckInterval: %i\n", this->CheckInterval)
-		Print("	CreatorOS: %i\n", this->CreatorOS)
-		Print("	RevisionLevel: %i\n", this->RevisionLevel)
-		Print("}\n")
-	}
 }
+
 struct BlockGroupDescriptor {
 	i32 BlockBitmap,
 	i32 INodeBitmap,
@@ -101,16 +76,6 @@ struct BlockGroupDescriptor {
 	i16 UnallocatedINodes,
 	i16 DirectoryCount,
 	i8{14} Padding
-	
-	define void Print() {
-		Print("BlockGroupDescriptor {\n")
-		Print("	BlockBitmap: %i \t(sector %i | offset %x)\n", this->BlockBitmap, this->BlockBitmap * 2, this->BlockBitmap * 1024)
-		Print("	INodeBitmap: %i \t(sector %i | offset %x)\n", this->INodeBitmap, this->INodeBitmap * 2, this->INodeBitmap * 1024)
-		Print("	INodeTable: %i \t(sector %i | offset %x)\n", this->INodeTable, this->INodeTable * 2, this->INodeTable * 1024)
-		Print("	UnallocatedBlocks: %i\n", this->UnallocatedBlocks)
-		Print("	UnallocatedINodes: %i\n", this->UnallocatedINodes)
-		Print("}\n")
-	}
 }
 
 i8 INODE_FILE := 0x8
@@ -152,12 +117,11 @@ struct INode {
 	i32{4} OSValues
 	
 	define void SetFieldDefaults() {
-		this->Permissions := (0x1B4 | 0x8000) As i16
+		this->Permissions := (0x1FF | 0x8000) As i16
 		this->UserID := 1000
 		this->GroupID := 1000
 		this->FileSizeLow := 0
-		this->HardLinkCount := 1
-		this->DiskSectorsUsed := 2
+		this->DiskSectorsUsed := 0
 		this->GenerationNumber := 0x981237 ^ (this As i32)
 	}
 	
@@ -265,8 +229,6 @@ struct Ext2DeviceTraits {
 	define void ReadSectors(i32 StartSectorNumber, i32 SectorCount, void* Buffer) {
 		i32 EndSectorNumber := StartSectorNumber + SectorCount
 		
-		;Print("Read %i-%i, %i total\n", StartSectorNumber, EndSectorNumber, SectorCount)
-		
 		for (i32 Sector := StartSectorNumber, Sector < EndSectorNumber, Sector++) {
 			Ext2DeviceTraits:Call(this->State, Sector, Buffer, this->ReadSector)
 			Buffer += 0x200
@@ -285,9 +247,13 @@ struct Ext2DeviceTraits {
 i32 EXT2_RESERVED_BLOCKS_PER_GROUP := 4
 
 struct Ext2CreationParameters {
+	; Input parameters
+	
 	i32 BlockSize
 	i32 BlocksPerGroup
 	i32 INodesPerGroup
+	
+	; Calculated parmeters
 	
 	i32 BlockCount
 	i32 BlockGroupCount
@@ -301,7 +267,6 @@ struct Ext2CreationParameters {
 		this->INodesPerGroup := 0x800
 	}
 	
-	
 	define void AssumeFromStorageSize(i32 Size) {
 		this->BlockCount := Size / this->BlockSize
 		this->BlockGroupCount := (this->BlockCount / this->BlocksPerGroup) + 1
@@ -310,16 +275,73 @@ struct Ext2CreationParameters {
 		this->FinalGroupSize := this->BlockCount % this->BlocksPerGroup
 	}
 	
+	; Output info
 	
+	i32 FreeBlocks
+	i32 FreeINodes
+	i32 TotalSize
+	i32 ReservedBlocksPerGroup
+	i32 FinalGroupFreeBlocks
+	i32 FinalGroupFirstFreeBlock
+	i32 FinalGroupFirstTailBlock
+	i8 FinalGroupIsPresent
 }
-
-#Require "./src/lib/Exception.rlx"
 
 i64 EXT2_EXCEPTION_NO_DATA_BLOCK := 'EXT2_NDB'
 i64 EXT2_EXCEPTION_DATA_OUT_OF_RANGE := 'EXT2_DRG'
 i64 EXT2_EXCEPTION_BAD_PARAMETER := 'EXT2_BPM'
 i64 EXT2_EXCEPTION_DEVICE_READ_ERROR := 'EXT2_DRE'
 i64 EXT2_EXCEPTION_DEVICE_WRITE_ERROR := 'EXT2_DWE'
+i64 EXT2_EXCEPTION_OUT_OF_BLOCKS := 'EXT2_OOB'
+i64 EXT2_EXCEPTION_OUT_OF_INODES := 'EXT2_OOI'
+i64 EXT2_EXCEPTION_ALREADY_FREED_BLOCK := 'EXT2_AFB'
+i64 EXT2_EXCEPTION_PATH_ALREADY_EXISTS := 'EXT2_PAE'
+
+i64 EXT2_EXCEPTION_FORMAT_BAD_BLOCK_COUNT := 'EXT2_FBC'
+i64 EXT2_EXCEPTION_FORMAT_BAD_INODE_COUNT := 'EXT2_FIC'
+i64 EXT2_EXCEPTION_FORMAT_TOO_SMALL := 'EXT2_FTS'
+
+define i8* Ext2ExceptionToString(i64 Exception) {
+	if (Exception = EXT2_EXCEPTION_NO_DATA_BLOCK) {
+		return "A call was made attempting to read data past the end of a file/directory"
+	}
+	else if (Exception = EXT2_EXCEPTION_DATA_OUT_OF_RANGE) {
+		return "A call was made attempting to read data past the maximum range of the Ext2 filesystem driver"
+	}
+	else if (Exception = EXT2_EXCEPTION_BAD_PARAMETER) {
+		return "An internal error occurred while allocating a block/INode, and was not caught"
+	}
+	else if (Exception = EXT2_EXCEPTION_DEVICE_READ_ERROR) {
+		return "The device backing the filesystem reported an error during a READ command"
+	}
+	else if (Exception = EXT2_EXCEPTION_DEVICE_WRITE_ERROR) {
+		return "The device backing the filesystem reported an error during a WRITE command"
+	}
+	else if (Exception = EXT2_EXCEPTION_OUT_OF_BLOCKS) {
+		return "The filesystem can not hold any more data"
+	}
+	else if (Exception = EXT2_EXCEPTION_OUT_OF_INODES) {
+		return "The filesystem can not hold any more files, but can hold more data for existing files"
+	}
+	else if (Exception = EXT2_EXCEPTION_ALREADY_FREED_BLOCK) {
+		return "A call was made attempting to free a data block which is already free"
+	}
+	else if (Exception = EXT2_EXCEPTION_PATH_ALREADY_EXISTS) {
+		return "A call was made attempting to create a directory entry which already exists"
+	}
+	else if (Exception = EXT2_EXCEPTION_FORMAT_TOO_SMALL) {
+		return "The format parameters do not specify enough blocks for a functional filesystem"
+	}
+	else if (Exception = EXT2_EXCEPTION_FORMAT_BAD_BLOCK_COUNT) {
+		return "The format parameters do not specify enough blocks for the specified INode table size"
+	}
+	else if (Exception = EXT2_EXCEPTION_FORMAT_BAD_INODE_COUNT) {
+		return "The format parameters do not specify enougn INodes for the 11 reserved INodes"
+	}
+	else {
+		return "Unknown error"
+	}
+}
 
 struct Ext2 {
 	SuperBlock* SuperBlock
@@ -332,15 +354,9 @@ struct Ext2 {
 	
 	void* ExtraTempBlock
 	
-	Ext2DeviceTraits* Traits
+	void* TempBitmap
 	
-	static Ext2* New(Ext2DeviceTraits* Traits) {
-		Ext2* this := Alloc(#Ext2)
-		
-		this->Traits := Traits
-		
-		return this
-	}
+	Ext2DeviceTraits* Traits
 	
 	define void ReadSectors(i32 SectorNumber, i32 SectorCount, void* Buffer) {
 		this->Traits->ReadSectors(SectorNumber, SectorCount, Buffer)
@@ -351,10 +367,11 @@ struct Ext2 {
 		return Buffer
 	}
 	
-	define void Initialize(void* SuperBlockBuffer, void* TempINode, void* TempBlock, void* ExtraTempBlock) {
+	define void Initialize(void* SuperBlockBuffer, void* TempINode, void* TempBlock, void* ExtraTempBlock, void* TempBitmap) {
 		this->TempINode := TempINode
 		this->TempBlock := TempBlock
 		this->ExtraTempBlock := ExtraTempBlock
+		this->TempBitmap := TempBitmap
 		
 		this->SuperBlock := SuperBlockBuffer
 		this->BlockGroupTable := SuperBlockBuffer + 1024 As BlockGroupDescriptor*
@@ -375,6 +392,11 @@ struct Ext2 {
 		}
 		
 		return this->TempBlock
+	}
+	define void* ReadBitmap(i32 BitmapBlock) {
+		this->ReadSectors(BitmapBlock * 2, 2, this->TempBitmap)
+		
+		return this->TempBitmap
 	}
 	
 	define void WriteSectors(i32 SectorNumber, i32 SectorCount, void* Data) {
@@ -439,14 +461,18 @@ struct Ext2 {
 			MoveMemory(Node As i8*, NewData As i8*, #INode)
 		}
 	}
-	define void WriteINode(i32 INodeNumber, INode* NewTargetNodeData) {
+	define void WriteINode(i32 INodeNumber, INode* TargetNodeData) {
 		i32 OffsetInBlock := 0
 		i32 BlockNumber := this->FindINodeBlock(INodeNumber, &OffsetInBlock)
 		
-		void* OldBlockData := this->ReadBlock(BlockNumber)
-		INode* OldTargetNodeData := (OldBlockData + OffsetInBlock) As INode*
+		INode TargetClone
 		
-		MoveMemory(OldTargetNodeData As i8*, NewTargetNodeData As i8*, #INode)
+		MoveMemory(&TargetClone, TargetNodeData, #INode)
+		
+		void* OldBlockData := this->ReadBlock(BlockNumber, this->TempINode)
+		void* OldTargetNodeData := OldBlockData + OffsetInBlock
+		
+		MoveMemory(OldTargetNodeData, &TargetClone, #INode)
 		
 		this->WriteBlock(BlockNumber, OldBlockData)
 	}
@@ -503,18 +529,20 @@ struct Ext2 {
 		i32* RootBlock := TargetNode~>DirectBlocks
 		i32 RootBlockNumber := 0
 		
-		;Print(" Got path for node %i block %i, %i long\n", TargetNode->INodeNumber, DataBlockIndex, BlockCount)
+		;Print("Path for node %i block %i, %i long\n", TargetNode->INodeNumber, DataBlockIndex, BlockCount)
 		
 		this->SwapTempBlocks()
 		
 		for (i32 WalkBlockIndex := 0, WalkBlockIndex < BlockCount, WalkBlockIndex += 1) {
 			i32 NextBlockOffset := BlockPath[WalkBlockIndex]
 			
-			;Print("  Path[%i] = %i\n", WalkBlockIndex, RootBlock[NextBlockOffset])
+			;Print("  Path[%i] = data block %i (actual block %i)\n", WalkBlockIndex, NextBlockOffset, RootBlock[NextBlockOffset])
 			
 			if !(RootBlock[NextBlockOffset]) {
 				if (AllocateIfNeeded) {
 					RootBlock[NextBlockOffset] := this->AllocateBlock()
+					
+					;Print("  Allocated %i\n", RootBlock[NextBlockOffset])
 					
 					TargetNode->DiskSectorsUsed += 2
 					
@@ -537,10 +565,14 @@ struct Ext2 {
 			
 			RootBlockNumber := RootBlock[NextBlockOffset]
 			
+			;Print("  Next root block: %i\n", RootBlockNumber)
+			
 			if (BlockCount != 1) {
 				RootBlock := this->ReadBlock(RootBlockNumber)
 			}
 		}
+		
+		;Print(" => Result %i\n", RootBlockNumber)
 		
 		this->SwapTempBlocks()
 		
@@ -664,7 +696,7 @@ struct Ext2 {
 	}
 	
 	define i32 AllocateInBitmap(i8* Bitmap, i32 Max) {
-		for (i32 Index := 0, Index < Max, Index += 1) {
+		for (i32 Index := 0, Index <= Max, Index += 1) {
 			i32 ByteIndex := Index / 8
 			i32 BitIndex := Index % 8
 			i32 BitMask := 1 << (BitIndex As i8)
@@ -677,6 +709,8 @@ struct Ext2 {
 				return Index + 1
 			}
 		}
+		
+		Throw(EXT2_EXCEPTION_BAD_PARAMETER)
 		
 		return 0
 	}
@@ -697,12 +731,20 @@ struct Ext2 {
 			i32 BitmapBlock := BGD->INodeBitmap
 			
 			if (GetBlock) {
+				if (BGD->UnallocatedBlocks <= 0) {
+					break
+				}
+				
 				BitmapBlock := BGD->BlockBitmap
 				
 				BGD->UnallocatedBlocks -= 1
 				this->SuperBlock->UnallocatedBlocks -= 1
 			}
 			else {
+				if (BGD->UnallocatedBlocks <= 0) {
+					break
+				}
+			
 				BGD->UnallocatedINodes -= 1
 				this->SuperBlock->UnallocatedINodes -= 1
 			}
@@ -712,9 +754,19 @@ struct Ext2 {
 			
 			;Print("Block group %i bitmap%i at %i\n", BlockGroupIndex, GetBlock, BitmapBlock)
 			
-			i8* Bitmap := this->ReadBlock(BitmapBlock)
+			i8* Bitmap := this->ReadBitmap(BitmapBlock)
 			
-			i32 Result := this->AllocateInBitmap(Bitmap, MaxPerGroup)
+			try {
+				i32 Result := this->AllocateInBitmap(Bitmap, MaxPerGroup)
+			}
+			catch (i64 Exception) {
+				if (Exception = EXT2_EXCEPTION_BAD_PARAMETER) {
+					break
+				}
+				else {
+					Throw(Exception)
+				}
+			}
 			
 			if (Result) {
 				/* Commit the allocation to the file system */
@@ -722,6 +774,13 @@ struct Ext2 {
 				
 				return Result
 			}
+		}
+		
+		if (GetBlock) {
+			Throw(EXT2_EXCEPTION_OUT_OF_BLOCKS)
+		}
+		else {
+			Throw(EXT2_EXCEPTION_OUT_OF_INODES)
 		}
 		
 		return 0
@@ -746,7 +805,7 @@ struct Ext2 {
 		
 		i32 BlockBitmapBlock := TrueGroup->BlockBitmap
 		
-		i8* BlockBitmap := this->ReadBlock(BlockBitmapBlock) As i8*
+		i8* BlockBitmap := this->ReadBitmap(BlockBitmapBlock) As i8*
 		
 		i32 ByteIndex := TargetOffset / 8
 		i32 BitIndex := TargetOffset % 8
@@ -758,10 +817,55 @@ struct Ext2 {
 			BlockBitmap[ByteIndex] := (TargetByte ^ BitMask) As i8
 		}
 		else {
-			Print("Attempt to free free block %x\n", BlockNumber)
+			Throw(EXT2_EXCEPTION_ALREADY_FREED_BLOCK)
+			;Print("Attempt to free free block %x\n", BlockNumber)
 		}
 		
-		this->WriteBlock(BlockBitmapBlock, this->TempBlock)
+		this->WriteBlock(BlockBitmapBlock, BlockBitmap)
+	}
+	
+	declare void RemoveINodeReference(INode*)
+	
+	define void FreeINode(INode* Target) {
+		INode RawTarget
+		
+		MoveMemory(&RawTarget, Target, #INode)
+		
+		Target := &RawTarget
+		
+		if (Target->IsDirectory()) {
+			i32 NextEntryOffset := this->StartWalkDirectory(Target)
+			
+			loop {
+				DirectoryEntry* NextEntry := this->WalkDirectoryNext(Target, &NextEntryOffset)
+				
+				if (NextEntry = null) {
+					break
+				}
+				
+				INode* NextNode := this->ReadINode(NextEntry->INode)
+				
+				this->RemoveINodeReference(NextNode)
+			}
+		}
+		
+		i32 BlockCount := Target->FileSizeLow / 0x400
+		
+		if (Target->FileSizeLow % 0x400) {
+			BlockCount += 1
+		}
+		
+		
+		
+	}
+	define void RemoveINodeReference(INode* Target) {
+		Target->HardLinkCount -= 1
+		
+		this->WriteINode(Target)
+		
+		if (Target->HardLinkCount = 0) {
+			this->FreeINode(Target)
+		}
 	}
 	
 	define DirectoryEntry* DirectoryAppendEntry(INode* TargetNode, i8* Name, i32 NewNodeNumber, i8 Flags) {
@@ -793,7 +897,7 @@ struct Ext2 {
 					
 					i32 NewBlockNumber := this->FindINodeDataBlock(TargetNode, NewDataBlockIndex, true)
 					
-					Print("Allocated block %i for INode %i data block %i\n", NewBlockNumber, TargetNode->INodeNumber, NewDataBlockIndex)
+					;Print("Allocated block %i for INode %i data block %i\n", NewBlockNumber, TargetNode->INodeNumber, NewDataBlockIndex)
 					
 					NextEntry := this->ReadBlock(NewBlockNumber)
 					AllocatedNewBlock := true
@@ -818,7 +922,7 @@ struct Ext2 {
 			
 			NewBlockNumber := this->FindINodeDataBlock(TargetNode, 0, true)
 			
-			Print("Allocated block %i for INode %i data block %i\n", NewBlockNumber, TargetNode->INodeNumber, NewDataBlockIndex)
+			;Print("Allocated block %i for INode %i data block %i\n", NewBlockNumber, TargetNode->INodeNumber, NewDataBlockIndex)
 			
 			NextEntry := this->ReadBlock(NewBlockNumber)
 			AllocatedNewBlock := true
@@ -839,9 +943,8 @@ struct Ext2 {
 			
 			NextEntryOffset -= Padding
 			
-			Print("Entry '%s' has space for new entry after it\n", LastEntry~>Name)
+			;Print("Entry '%s' has space for new entry after it\n", LastEntry~>Name)
 		}
-		
 		
 		NextEntry->INode := NewNodeNumber
 		NextEntry->NameLength := NameLength As i8
@@ -855,37 +958,30 @@ struct Ext2 {
 		i32 DataBlockIndex := NextEntryOffset / 1024
 		i32 TrueBlockIndex := this->FindINodeDataBlock(TargetNode, DataBlockIndex, false)
 		
-		Print("AppendEntry NEO = %i, DBI = %i, TBI = %i\n", NextEntryOffset, DataBlockIndex, TrueBlockIndex)
+		;Print("AppendEntry NEO = %i, DBI = %i, TBI = %i\n", NextEntryOffset, DataBlockIndex, TrueBlockIndex)
 		
 		this->WriteBlock(TrueBlockIndex, this->TempBlock)
+		
+		INode* ChildNode := this->ReadINode(NewNodeNumber)
+		
+		ChildNode->HardLinkCount += 1
+		
+		this->WriteINode(ChildNode)
 		
 		return NextEntry
 	}
 	
 	define void WriteINodeBlock(INode* Node, i32 BlockNumber, void* BlockData) {
-		i32 NextBlock := Node~>DirectBlocks[BlockNumber]
+		i32 TargetBlock := this->FindINodeDataBlock(Node, BlockNumber, true)
 		
-		if !(NextBlock) {
-			NextBlock := this->AllocateBlock()
-			
-			Print("Allocated free block %i\n", NextBlock)
-			
-			Node~>DirectBlocks[BlockNumber] := NextBlock
-		}
-		else {
-			Print("Used existing block %i\n", NextBlock)
-		}
-		
-		this->WriteBlock(NextBlock, BlockData)
+		this->WriteBlock(TargetBlock, BlockData)
 	}
 	define void WriteINodeData(i32 NodeNumber, void* Data, i32 DataLength) {
-		Print("Finding INode %i for write\n", NodeNumber)
+		;Print("Finding INode %i for write\n", NodeNumber)
 		
 		INode* ForNode := this->ReadINode(NodeNumber)
 		
-		i32* NodeBlocks := ForNode~>DirectBlocks
-		
-		Print("Allocating and writing blocks\n")
+		;Print("Allocating and writing blocks\n")
 		
 		i32 BlockCount := DataLength / 1024
 		i32 Remainder := DataLength % 1024
@@ -907,8 +1003,6 @@ struct Ext2 {
 			
 			Index += 1
 		}
-		
-		NodeBlocks[Index] := 0 /* Signal that the file does not contain any more data */
 		
 		ForNode->FileSizeLow := DataLength
 		ForNode->DiskSectorsUsed := (Index - 1) * 1024
@@ -938,13 +1032,16 @@ struct Ext2 {
 		INode* ContainingNode := RootDirectory
 		
 		if (NameIndex != 0) {
-			i8* PathHead := CloneMemory(Path, NameIndex - 1)
+			i8* PathHead := Path
+			
+			i8 OldPathHeadEnd := PathHead[NameIndex]
+			
 			PathHead[NameIndex] := 0
 			
 			DirectoryEntry* ContainingEntry := this->FindDirectoryEntryByPath(RootDirectory, PathHead)
 			ContainingNode := this->ReadINode(ContainingEntry->INode)
 			
-			Free(PathHead)
+			PathHead[NameIndex] := OldPathHeadEnd
 		}
 		
 		if (OutContainingNodeNumber != null) {
@@ -954,7 +1051,9 @@ struct Ext2 {
 		DirectoryEntry* ExistingEntry := this->FindDirectoryEntryByName(ContainingNode, FileName)
 		
 		if (ExistingEntry != null) {
-			return -1
+			Throw(EXT2_EXCEPTION_PATH_ALREADY_EXISTS)
+			
+			return 0
 		}
 		
 		i32 NewFileNodeNumber := this->AllocateINode()
@@ -990,10 +1089,6 @@ struct Ext2 {
 		
 		i32 NewNodeNumber := this->MakeFile(RootDirectory, Path, DIRECTORY_ENTRY_DIRECTORY, &NewNode, &ContainingNodeNumber)
 		
-		if (NewNodeNumber <= 0) {
-			return -1
-		}
-		
 		this->DirectoryAppendEntry(NewNode, ".", NewNodeNumber, DIRECTORY_ENTRY_DIRECTORY)
 		this->DirectoryAppendEntry(NewNode, "..", ContainingNodeNumber, DIRECTORY_ENTRY_DIRECTORY)
 		
@@ -1014,6 +1109,23 @@ struct Ext2 {
 	}
 	
 	define void Format(Ext2CreationParameters* Parameters) {
+		if (Parameters->BlockCount < 9) {
+			; With such a tiny number of blocks, there would be a single free block, with 4 reserved ones, two
+			;  for the INode table, and a single one for the root directory data. Which means you would be able to store
+			;   a single <=1024 byte file
+			
+			Throw(EXT2_EXCEPTION_FORMAT_TOO_SMALL)
+			
+			return
+		}
+		else if (Parameters->INodeCount < 11) {
+			; Likewise, if there's not enough INodes for even the reserved ones, then the filesystem is worthless
+			
+			Throw(EXT2_EXCEPTION_FORMAT_BAD_INODE_COUNT)
+			
+			return
+		}
+	
 		; First, write a block of zeros to the final block of the device
 		;  (which is only really meaningful with files, since otherwise reads past the end of the actual file will break)
 		
@@ -1027,11 +1139,16 @@ struct Ext2 {
 		
 		this->WriteBlock(FinalBlock, Data)
 		
-		Print("Building super block...\n")
+		;Print("Building super block...\n")
 		
 		this->SuperBlock->SetFieldDefaults()
-		this->SuperBlock->TotalINodes := Parameters->INodeCount
 		this->SuperBlock->TotalBlocks := Parameters->BlockCount
+		this->SuperBlock->TotalINodes := Parameters->INodeCount
+		
+		this->SuperBlock->UnallocatedBlocks := Parameters->BlockCount - 1
+		this->SuperBlock->UnallocatedINodes := Parameters->INodeCount - 11
+		
+		this->SuperBlock->ReservedBlocks := this->SuperBlock->UnallocatedBlocks / 10
 		
 		; TODO: Actually set these fields, since they are log2 fields, they are left out for now
 		;this->SuperBlock->BlockSize := Parameters->BlockSize
@@ -1041,22 +1158,20 @@ struct Ext2 {
 		this->SuperBlock->FragmentsPerGroup := Parameters->BlocksPerGroup
 		this->SuperBlock->INodesPerGroup := Parameters->INodesPerGroup
 		
-		Print(" + Total blocks: %i\n", Parameters->INodeCount)
-		Print(" + Total INodes: %i\n", Parameters->BlockCount)
-		Print(" + Blocks per group: %i\n", Parameters->BlocksPerGroup)
-		Print(" + INodes per group: %i\n", Parameters->INodesPerGroup)
-		Print(" + Overall FS size: %x\n", Parameters->BlockCount * Parameters->BlockSize)
+		Parameters->TotalSize := Parameters->BlockCount * Parameters->BlockSize
 		
 		this->CommitSuperBlock()
 		
-		Print("Generating preliminary block groups\n")
-		
 		i32 ReservedBlockCount := Parameters->INodeTableSize + 4 ; Number of blocks each group has reserved for FS stuff
+		
+		Parameters->ReservedBlocksPerGroup := ReservedBlockCount
 		
 		; On the first pass through the block groups, the first and last groups get no special treatment
 		;  but since they still need to be initialized just like the other block groups, we handle them afterwards
 		
 		for (i32 Index := 0, Index < Parameters->BlockGroupCount, Index++) {
+			this->SuperBlock->UnallocatedBlocks -= ReservedBlockCount
+			
 			BlockGroupDescriptor* Descriptor := this->GetBlockGroupDescriptor(Index)
 			
 			i32 DescriptorBaseBlock := Index * Parameters->BlocksPerGroup
@@ -1068,8 +1183,6 @@ struct Ext2 {
 			Descriptor->UnallocatedBlocks := (Parameters->BlocksPerGroup - ReservedBlockCount) As i16
 			Descriptor->UnallocatedINodes := Parameters->INodesPerGroup As i16
 			
-			Print("    Block group %i contains %i blocks, and %i INodes\n", Index, Descriptor->UnallocatedBlocks, Descriptor->UnallocatedINodes)
-			
 			; We've initialized the group descriptor well enough that we can build the block bitmap now, with blocks
 			;  reserved for the superblock clone, block group descriptor(s) clone, block bitmap, and INode bitmap
 			
@@ -1080,9 +1193,9 @@ struct Ext2 {
 			}
 			
 			this->EndReserveInBitmap(Descriptor->BlockBitmap, BlockBitmap)
-			
-			Print("    + Done building block bitmap for group\n", Index)
 		}
+		
+		this->CommitSuperBlock()
 		
 		if (Parameters->FinalGroupSize < ReservedBlockCount) {
 			; If the final group can't hold an entire INode table, it isn't possible to use it in the FS, so we just
@@ -1091,11 +1204,9 @@ struct Ext2 {
 			if (Parameters->BlockGroupCount = 1) {
 				; Except for if it is the *only* group, in which case we can't format the device at all
 				
-				Print("ERROR: Only block group is not large enough to hold an INode table, aborting...\n")
+				Throw(EXT2_EXCEPTION_FORMAT_BAD_BLOCK_COUNT)
 				return
 			}
-			
-			Print("WARNING: Final block group is not large enough to hold an INode table, truncating...\n")
 			
 			Descriptor->BlockBitmap := 0
 			Descriptor->INodeBitmap := 0
@@ -1107,56 +1218,66 @@ struct Ext2 {
 			this->SuperBlock->TotalBlocks -= Parameters->FinalGroupSize
 			this->SuperBlock->TotalINodes -= Parameters->INodesPerGroup
 			
-			this->CommitSuperBlock()
+			this->SuperBlock->UnallocatedBlocks += ReservedBlockCount
+			
+			Parameters->TotalSize := this->SuperBlock->TotalBlocks * Parameters->BlockSize
 		}
 		else {
+			Parameters->FinalGroupIsPresent := true
+			
 			; The final group is big enough for a INodeTable, calculate how many free blocks it will have with the
 			;  reserved ones allocated
 			
 			Descriptor->UnallocatedBlocks := (Parameters->FinalGroupSize - ReservedBlockCount) As i16
 			
-			Print("Updated final group to contain %i free blocks\n", Descriptor->UnallocatedBlocks)
+			Parameters->FinalGroupFreeBlocks := Descriptor->UnallocatedBlocks
+			
+			i32 FirstFreeBlock := ReservedBlockCount
+			i32 FirstTailBlock := FirstFreeBlock + Descriptor->UnallocatedBlocks - 1
+			
+			Parameters->FinalGroupFirstFreeBlock := FirstFreeBlock
+			Parameters->FinalGroupFirstTailBlock := FirstTailBlock
 			
 			; Reserve all blocks past the end of the device, to make sure they aren't allocated
 			
 			i8* FinalGroupBlocks := this->StartReserveInBitmap(Descriptor->BlockBitmap)
 			
-			for (Index := Descriptor->UnallocatedBlocks, Index < Parameters->BlocksPerGroup, Index++) {
+			for (Index := FirstTailBlock, Index < Parameters->BlocksPerGroup, Index++) {
 				this->ReserveInBitmap(FinalGroupBlocks, Index)
 			}
 			
 			this->EndReserveInBitmap(Descriptor->BlockBitmap, FinalGroupBlocks)
-			
-			Print(" + Reserved all blocks past end of storage medium\n")
 		}
+		
+		this->CommitSuperBlock()
+		
+		Parameters->FreeBlocks := this->SuperBlock->UnallocatedBlocks
+		Parameters->FreeINodes := this->SuperBlock->UnallocatedINodes
 		
 		; By now, we've got block group descriptors and block/INode bitmaps correctly set up for each descriptor
 		;  so we're almost done, we just need to reserve the reserved INodes, and then we can actually build some
 		;   files/folders
 		
-		Print("Reserving INodes in first group\n")
-		
 		BlockGroupDescriptor* FirstDescriptor := this->GetBlockGroupDescriptor(0)
+		
+		FirstDescriptor->UnallocatedBlocks -= 1
+		FirstDescriptor->UnallocatedINodes -= 11
 		
 		i8* FirstINodeBitmap := this->StartReserveInBitmap(FirstDescriptor->INodeBitmap)
 		
-		for (Index := 0, Index < 6, Index++) {
-			; Last reserved INode = 6, the "undelete directory"
+		for (Index := 0, Index < 11, Index++) {
+			; Last reserved INode = 11, which isn't defined
 			
 			this->ReserveInBitmap(FirstINodeBitmap, Index)
 		}
 		
 		this->EndReserveInBitmap(FirstDescriptor->INodeBitmap, FirstINodeBitmap)
 		
-		Print("Reserved all reserved INodes, committing block group descriptors\n")
-		
 		this->CommitBlockGroupDescriptors()
 		
 		; Alright, so we've got a functional FS now, but it doesn't have a root INode set, and is pretty useless
 		;  so, we just need to grab INode 2 (EXT2_ROOT_INODE) and set it up as a directory, along with creating
 		;   directory entries for "." and ".." (which both point back at the root INode)
-		
-		Print("Building root INode, creating entries\n")
 		
 		INode* RootNode := this->ReadINode(2)
 		
@@ -1169,341 +1290,5 @@ struct Ext2 {
 		this->DirectoryAppendEntry(RootNode, "..", 2, DIRECTORY_ENTRY_DIRECTORY)
 		
 		; And that's that. Now we've got a functional FS, ready to be used.
-		
-		Print("Done, format complete\n")
 	}
-}
-
-define i32 SplitPath(i8* Path, i8** Into, i32 Max) {
-	i32 Count := 0
-	i32 Start := 0
-	
-	for (i32 Index := 0, Path[Index] != 0, Index += 1) {
-		if (Path[Index] = '/') {
-			Into[Count] := Path + Start
-			Count += 1
-			
-			if (Count = Max) {
-				return Count
-			}
-			
-			Path[Index] := 0
-			Start := Index + 1
-		}
-	}
-	
-	Into[Count] := Path + Start
-	Count += 1
-	
-	return Count
-}
-
-define void Tabs(i32 Count) {
-	for (i32 Index := 0, Index < Count, Index += 1) {
-		Print("	")
-	}
-}
-
-define void DirectoryTree(Ext2* FS, INode* Root, i32 TabCount) {
-	i32 State := FS->StartWalkDirectory(Root)
-	
-	loop {
-		DirectoryEntry* NextEntry := FS->WalkDirectoryNext(Root, &State)
-		
-		if (NextEntry = null) {
-			break
-		}
-		
-		INode* NextNode := FS->ReadINode(NextEntry->INode)
-		
-		if (NextEntry->NameLength != 0) {
-			Tabs(TabCount)
-			Print("%x	%s\n", NextNode->FileSizeLow, NextEntry~>Name)
-		}
-		
-		if (NextNode->GetType() = 0x4 && NextEntry~>Name[0] != '.') {
-			INode* NextDirectory := CloneMemory(NextNode, #INode)
-			
-			DirectoryTree(FS, NextDirectory, TabCount + 1)
-			
-			Free(NextDirectory)
-		}
-	}
-}
-
-define void Prompt(Ext2* FS) {
-	if (FS->SuperBlock->SuperBlockNumber) {
-		INode* RootINode := CloneMemory(FS->ReadINode(2), #INode)
-	}
-	
-	loop {
-		Print("^90->^F0")
-		i8* NextLine := ReadLine()
-		
-		i64 ArgC := 0
-		i8** ArgV := null
-		
-		ParseCommandLine(NextLine, &ArgC, &ArgV)
-		i8* Command := ArgV[0]
-		i8* Path := ArgV[1]
-		
-		if (StringEquals(Command, "ls")) {
-			i32 NextEntryOffset := FS->StartWalkDirectory(RootINode)
-			
-			loop {
-				DirectoryEntry* NextEntry := FS->WalkDirectoryNext(RootINode, &NextEntryOffset)
-				
-				if (NextEntry = null) {
-					break
-				}
-				
-				INode* NextNode := FS->ReadINode(NextEntry->INode)
-				
-				if (NextNode->IsDirectory()) {
-					Print(" ^20D^F0 ")
-				}
-				else {
-					Print(" ^A0F^F0 ")
-				}
-				
-				Print("%x	%x	%s\n", NextEntry->INode, NextNode->FileSizeLow, NextEntry~>Name)
-			}
-		}
-		else if (StringEquals(Command, "cd")) {
-			DirectoryEntry* NewRootEntry := FS->FindDirectoryEntryByPath(RootINode, Path)
-			
-			if (NewRootEntry = null || !NewRootEntry->IsDirectory()) {
-				Print(" Could not find directory '^C0%s^F0'\n", Path)
-			}
-			else {
-				Print(" CD to '^A0%s^F0', INode ^A0%x^F0\n", Path, NewRootEntry->INode)
-				
-				Free(RootINode)
-				RootINode := FS->CloneINode(NewRootEntry->INode)
-			}
-		}
-		else if (StringEquals(Command, "bi")) {
-			DirectoryEntry* FoundNodeEntry := FS->FindDirectoryEntryByPath(RootINode, Path)
-			
-			if (FoundNodeEntry = null) {
-				Print(" Could not find file/directory '^C0%s^F0'\n", Path)
-			}
-			else {
-				INode* FoundNode := FS->CloneINode(FoundNodeEntry->INode)
-				
-				i32 BlockCount := FoundNode->FileSizeLow / 1024
-				
-				if (FoundNode->FileSizeLow % 1024) {
-					BlockCount += 1
-				}
-				
-				Print(" ^A0%i^F0 total blocks, ^A0%i^F0 total size\n", BlockCount, FoundNode->FileSizeLow)
-				
-				Print(" INode: ^A0%i^F0\n", FoundNode->INodeNumber - 1)
-				
-				i32 Offset := 0
-				i32 Block := FS->FindINodeBlock(FoundNode->INodeNumber, &Offset)
-				
-				Print(" Location: sector ^A0%i^F0+^20%i^F0 (offset ^A0%x^F0)\n", Block * 2, Offset, (Block * 1024) + Offset)
-				
-				for (i32 BlockIndex := 0, BlockIndex < BlockCount, BlockIndex += 1) {
-					i32 Temp := FS->FindINodeDataBlock(FoundNode, BlockIndex, false)
-					
-					Print("  ^20%i^F0 = Blocks[^20%i^F0] (sector %i | offset %x)\n", BlockIndex, Temp, Temp * 2, Temp * 1024)
-				}
-				
-				Free(FoundNode)
-			}
-		}
-		else if (StringEquals(Command, "cat")) {
-			DirectoryEntry* FoundFileEntry := FS->FindDirectoryEntryByPath(RootINode, Path)
-			
-			if (FoundFileEntry = null || !FoundFileEntry->IsFile()) {
-				Print(" Could not find file '^C0%s^F0'\n", Path)
-			}
-			else {
-				INode* FoundFileNode := FS->CloneINode(FoundFileEntry->INode)
-				
-				i32 FileBlockCount := FoundFileNode->FileSizeLow / 1024
-				
-				if (FoundFileNode->FileSizeLow % 1024) {
-					FileBlockCount += 1
-				}
-				
-				for (i32 FileBlockIndex := 0, FileBlockIndex < FileBlockCount, FileBlockIndex += 1) {
-					i32 FileDataBlock := FS->FindINodeDataBlock(FoundFileNode, FileBlockIndex, false)
-					Print("%s", FS->ReadBlock(FileDataBlock))
-				}
-				
-				Print("\n Done, ^A0%i^F0 blocks printed\n", FileBlockCount)
-				
-				Free(FoundFileNode)
-			}
-		}
-		else if (StringEquals(Command, "touch")) {
-			i32 CreatedFileNodeNumber := FS->MakeFile(RootINode, Path)
-			
-			if (CreatedFileNodeNumber = -1) {
-				Print(" File '^C0%s^F0' already exists\n", Path)
-			}
-			else {
-				Print(" Created new file at '^A0%s^F0', INode ^A0%i^F0\n", Path, CreatedFileNodeNumber)
-			}
-		}
-		else if (StringEquals(Command, "mkdir")) {
-			i32 CreatedDirectoryNodeNumber := FS->MakeDirectory(RootINode, Path)
-			
-			if (CreatedDirectoryNodeNumber = -1) {
-				Print(" Directory '^C0%s^F0' already exists\n", Path)
-			}
-			else {
-				Print(" Created new directory at '^A0%s^F0', INode ^A0%i^F0\n", Path, CreatedDirectoryNodeNumber)
-			}
-		}
-		else if (StringEquals(Command, "bg")) {
-			i32 Index := AToI(Path) As i16
-			Print("%i = \n", Index)
-			BlockGroupDescriptor* BGD := FS->GetBlockGroupDescriptor(Index)
-			
-			BGD->Print()
-		}
-		else if (StringEquals(Command, "tree")) {
-			DirectoryTree(FS, RootINode, 0)
-		}
-		else if (StringEquals(Command, "format")) {
-			i32 Size := AToI(Path) As i32
-			
-			Ext2CreationParameters* Parameters := Alloc(#Ext2CreationParameters)
-			Parameters->SetDefaults()
-			Parameters->AssumeFromStorageSize(Size)
-			
-			FS->Format(Parameters)
-			
-			RootINode := CloneMemory(FS->ReadINode(2), #INode)
-		}
-		else if (StringEquals(Command, "quit")) {
-			Free(ArgV)
-			break
-		}
-		
-		Free(ArgV)
-	}
-}
-
-#Require "./src/lib/Debug.rlx"
-
-struct Ext2FileBackedDevice {
-	i64 FD
-	
-	define void Read(i32 SectorNumber, void* Buffer) {
-		if (SectorNumber < 0) {
-			Throw(EXT2_EXCEPTION_DEVICE_READ_ERROR)
-		}
-		
-		FileSeek(this->FD, SectorNumber * 512, SEEK_SET)
-		FileRead(this->FD, Buffer, 512)
-	}
-	define void Write(i32 SectorNumber, void* Buffer) {
-		if (SectorNumber < 0) {
-			Throw(EXT2_EXCEPTION_DEVICE_WRITE_ERROR)
-		}
-		
-		FileSeek(this->FD, SectorNumber * 512, SEEK_SET)
-		FileWrite(this->FD, Buffer, 512)
-	}
-	
-	static void Read(Ext2FileBackedDevice* this, i32 Sector, void* Buffer) {
-		this->Read(Sector, Buffer)
-	}
-	static void Write(Ext2FileBackedDevice* this, i32 Sector, void* Buffer) {
-		this->Write(Sector, Buffer)
-	}
-	
-	static Ext2DeviceTraits* New(i64 FD) {
-		Ext2FileBackedDevice* this := Alloc(#Ext2FileBackedDevice)
-		
-		this->FD := FD
-		
-		Ext2DeviceTraits* Traits := Alloc(#Ext2DeviceTraits)
-		
-		Traits->State := this
-		Traits->ReadSector := &Ext2FileBackedDevice:Read
-		Traits->WriteSector := &Ext2FileBackedDevice:Write
-		
-		return Traits
-	}
-}
-
-
-
-define i32 Main(i64 ArgC, i8** ArgV) {
-	GetArgs(&ArgC, &ArgV)
-	
-	i64 F := FileOpen("new.bin", FILE_READ_WRITE | FILE_CREATE_NEW)
-	
-	Print("FD = %x\n", F)
-	
-	Ext2DeviceTraits* Traits := Ext2FileBackedDevice:New(F)
-	
-	Ext2* FS := Ext2:New(Traits)
-	
-	void* SB := Alloc(2048)
-	void* TI := Alloc(1024)
-	void* TB1 := Alloc(1024)
-	void* TB2 := Alloc(1024)
-	
-	FS->Initialize(SB, TI, TB1, TB2)
-	
-	;Print("SB data\n Block size = %i\n Blocks per group = %i\n INodes per group = %i\n\n", 1024 << (FS->SuperBlock->BlockSize As i8), FS->SuperBlock->BlocksPerGroup, FS->SuperBlock->INodesPerGroup)
-	
-	FS->SuperBlock->Print()
-	
-	Prompt(FS)
-	
-	return 0
-	
-	;i32 NewNode := FS->AllocateINode()
-	;
-	;i8* Data := "Abc 123 hello asdiausd ipi"
-	;FS->WriteINodeData(NewNode, Data, StringLength(Data))
-	;
-	;FS->DirectoryAppendEntry(2, "Testfile.txt", NewNode, 1)
-	
-	;INode* RootINode := CloneMemory(FS->ReadINode(2), #INode)
-	;
-	;DirectoryTree(FS, RootINode, 1)
-	
-	
-	;i8** Path := Alloc(0x100)
-	;
-	;i32 Count := SplitPath(ArgV[1], Path, 5)
-	;
-	;DirectoryEntry* Result := FS->FindDirectoryEntryByPath(Path, Count, true)
-	;
-	;if (Result > 0x200) {
-	;	Print("Found file '%s' at INode %i\n", Result~>Name, Result->INode)
-	;	;i32 ResultNode := Result->INode
-	;	;
-	;	;/* INode* Found := Ext2ReadINode(FSP, Result->INode)
-	;	;void* Data := Ext2ReadINodeData(FSP, Found, 0) */
-	;	;
-	;	;
-	;	;i32 NewNode := Ext2AllocateINode(FSP)
-	;	;
-	;	;INode* NewNodeData := Alloc(#INode)
-	;	;
-	;	;
-	;	;
-	;	;Ext2WriteINode(FSP, NewNode, NewNodeData)
-	;	;Ext2DirectoryAppendEntry(FSP, ResultNode, "dummyTest", NewNode, 1)
-	;	;
-	;	;i8* Data := "Abcd 123, dummy! aoi"
-	;	;void* Temp := Alloc(0x1000)
-	;	;MemoryCopy(Data, Temp, StringLength(Data))
-	;	;
-	;	;Ext2AllocateAndWriteBlocks(FSP, NewNode, 1, Temp)
-	;}
-	;else {
-	;	Print("Couldn't find file, error %c (%i)\n", Result As i8, Result As i64)
-	;}
 }
