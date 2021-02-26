@@ -5,6 +5,11 @@ hd0 equ 0x80
 read equ 0x02
 sec1 equ 0x01
 sec2 equ 0x02
+
+FrameBuffer equ 0x7000
+BootDisk equ 0x7002
+	
+	mov byte [BootDisk], dh
 	
 	mov sp, TinyStack
 	
@@ -18,7 +23,6 @@ sec2 equ 0x02
 	int 0x10
 	
 	mov ebx, dword [es:di+40]
-FrameBuffer equ 0x7000
 	mov dword [FrameBuffer], ebx
 	
 	mov ax, 0x4f02
@@ -26,26 +30,43 @@ FrameBuffer equ 0x7000
 	
 	int 0x10
 	
-	mov bx, 0
-	mov al, 62
-	mov ch, 0
-	mov cl, sec2
-	call ReadSectors
+	push 0x1000
+	pop es
 	
-	mov bx, 0x7e00
-	mov al, 63
-	mov ch, 1
-	mov cl, sec1
-	call ReadSectors
+	mov dword [LoadSecondStage_DAP_LBA], 11
+	
+	mov dh, byte [BootDisk]
+	mov ah, 0x42
+	mov si, LoadSecondStage_DAP
+	int 0x13
+	
+	mov eax, dword [es:0x28]
+	shl eax, 1
+	
+	mov dword [LoadSecondStage_DAP_LBA], eax
+	mov word [LoadSecondStage_DAP_SectorCount], 22
+	mov word [LoadSecondStage_DAP_Segment], 0x1000
+	mov word [LoadSecondStage_DAP_Offset], 0
+	
+	mov dh, byte [BootDisk]
+	mov ah, 0x42
+	mov si, LoadSecondStage_DAP
+	int 0x13
 	
 	jmp Start
 	
-ReadSectors:
-	mov ah, read
-	mov dh, 0
-	mov dl, hd0
-	int 0x13
-ret
+LoadSecondStage_DAP:
+	db 0x10
+	db 0
+LoadSecondStage_DAP_SectorCount:
+	dw 1
+LoadSecondStage_DAP_Offset: 
+	dw 0
+LoadSecondStage_DAP_Segment: 
+	dw 0x1000
+LoadSecondStage_DAP_LBA: 
+	dd 0
+	dd 0
 
 %include "./src/LongModeDirectly.asm"
 
@@ -55,23 +76,10 @@ LongMain:
 	xor ax, ax
 	mov rsp, Stack
 	
-	mov rax, FS_Base
-	
-	mov rbx, [rax + 8]
-	mov r8d, (KernelLimit - KernelStart)
-	
-	xor edi, edi
-LoadKernel:
-	mov rcx, [rax + rdi]
-	mov [rbx + rdi], rcx
-	inc edi
-	cmp edi, r8d
-	jl LoadKernel
-	
 	mov edx, FS_Base
 	mov esi, [FrameBuffer]
 	mov edi, r8d
-	jmp rbx
+	jmp 0x10000
 
 times 510 - ($ - $$) db 0
 dw 0xAA55
@@ -81,14 +89,6 @@ FS_Base equ 0x14000
 
 KernelStart equ $
 
-INCBIN "./src/FS/Kernel.bin"
-
 KernelLimit equ $
-
-TIMES 64504 - ($ - $$) db 0
-
-Stack equ $
-
-TIMES 64512 - ($ - $$) db 0
-
+Stack equ 0x90000
 PageTables equ 0x8000

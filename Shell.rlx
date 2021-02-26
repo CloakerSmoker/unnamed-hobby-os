@@ -8,6 +8,8 @@ define void Prompt() {
 
 i8*{0x20} CommandParameters
 
+i8{0x200} ATABuffer
+
 define void OnCommand(i8* CommandLine) {
 	i32 ParameterStart := 0
 	i32 ParameterCount := 0

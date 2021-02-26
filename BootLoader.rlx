@@ -56,7 +56,70 @@ struct INode {
 	i64 Reserved,
 	i32 FragmentAddress,
 	
-	i32{4} OSValues
+	i32{3} OSValues
+}
+
+define i8 NumberToCharacter(i8 Number) {
+	if (Number < 10) {
+		return (Number + '0') As i8
+	}
+	else {
+		return (Number - 10 + 'A') As i8
+	}
+}
+
+define void MemoryReverse(i8* Buffer, i32 Length) {
+	for (i32 Index := 0, Index < Length, Index += 1) {
+		i8 Temp := Buffer[Index]
+		Buffer[Index] := Buffer[Length - 1]
+		Buffer[Length - 1] := Temp
+		
+		Length -= 1
+	}
+}
+
+define i8* IToA(i64 Number, i64 Base, i8* Buffer, i8 PrintExtra) {
+	i8 Sign := 0
+	
+	if (Number < 0) {
+		Sign := true
+		
+		if (Base = 10) {
+			Number := -Number
+		}
+		else if (Base = 16 || Base = 2) {
+			Number := Number & 0x7FFFFFFFFFFFFFFF
+		}
+	}
+	
+	for (i32 Index := 0, Number != 0, Index += 1) {
+		Buffer[Index] := NumberToCharacter((Number % Base) As i8)
+		Number := Number / Base
+	}
+	
+	if (Index = 0) {
+		Buffer[0] := '0'
+		Index := 1
+	}
+	
+	if (Sign) {
+		if (Base = 10) {
+			Buffer[Index] := '-'
+			Index += 1
+		}
+	}
+	
+	if (Base = 16 && PrintExtra) {
+		Buffer[Index] := 'x'
+		Buffer[Index + 1] := '0'
+		Index += 2
+	}
+	
+	Buffer[Index] := 0
+	
+	MemoryReverse(Buffer, Index)
+	
+	return Buffer + Index
 }
 
 define i32 StringLength(i8* String) {
@@ -79,11 +142,15 @@ define void BochsPrintString(i8* String) {
 	RawBochsPrintString("BOOT	|: ")
 	RawBochsPrintString(String)
 }
+define void BochsPrintNewLine() {
+	BochsPrintCharacter(13)
+	BochsPrintCharacter(10)
+}
 
 define void Fail(i8 Location) {
 	BochsPrintString("Ext2 fail at checkpoint ")
 	BochsPrintCharacter(('0' + Location) As i8)
-	RawBochsPrintString("\n")
+	BochsPrintNewLine()
 	
 	loop {}
 }
@@ -196,9 +263,9 @@ struct MinimalExt2 {
 	}
 }
 
-void* TempBlock := (0x10_0000 As void*)
-void* TempINode := (0x10_1000 As void*)
-void* TempExtra := (0x10_2000 As void*)
+void* TempBlock := (0x14_0000 As void*)
+void* TempINode := (0x14_1000 As void*)
+void* TempExtra := (0x14_2000 As void*)
 
 struct BinFile {
 	i64 JumpToMain
@@ -210,7 +277,7 @@ struct BinFile {
 }
 
 define void StartKernel(i64 Limit, void* FrameBuffer, void* KernelMain) asm {
-	jmp, rcx
+	jmp, rdx
 }
 
 define void Main(i64 Limit, void* FrameBuffer) {
@@ -222,7 +289,7 @@ define void Main(i64 Limit, void* FrameBuffer) {
 	
 	MinimalExt2* FS := &RawFS
 	
-	INode* KernelNode := FS->ReadINode(5)
+	INode* KernelNode := FS->ReadINode(6)
 	
 	FS->ReadINodeData(TempExtra, KernelNode, 0)
 	
