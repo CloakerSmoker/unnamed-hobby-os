@@ -1,0 +1,247 @@
+define i8 InB(i16 Port) asm {
+	mov, dx, dix
+	inb
+	ret
+}
+define void OutB(i16 Port, i8 Data) asm {
+	mov, dx, dix
+	mov, a, si
+	outb
+	ret
+}
+define i16 InW(i16 Port) asm {
+	mov, dx, dix
+	inw
+	ret
+}
+define void OutW(i16 Port, i16 Data) asm {
+	mov, dx, dix
+	mov, ax, six
+	outw
+	ret
+}
+
+#Require "./src/ATA.rlx"
+
+struct INode {
+	union {
+		i16 Permissions,
+		i16 Type
+	}
+	
+	i16 UserID,
+	i32 FileSizeLow,
+	
+	i32 LastAccessTime,
+	i32 CreationTime,
+	i32 LastModificationTime,
+	i32 DeletionTime,
+	
+	i16 GroupID,
+	i16 HardLinkCount,
+	i32 DiskSectorsUsed,
+	i32 Flags,
+	
+	union {
+		i32 OSValue,
+		i32 INodeNumber
+	}
+	
+	i32{12} DirectBlocks,
+	i32 SingleIndirectBlock,
+	i32 DoubleIndirectBlock,
+	i32 TripleIndirectBlock,
+	
+	i32 GenerationNumber,
+	i64 Reserved,
+	i32 FragmentAddress,
+	
+	i32{4} OSValues
+}
+
+define i32 StringLength(i8* String) {
+	for (i32 Length := 0, String[Length] != 0, Length += 1) {}
+	
+	return Length
+}
+
+define void BochsPrintCharacter(i8 Character) {
+	asm (rdx := 0xE9, rax := Character) {
+		outb
+	}
+}
+define void RawBochsPrintString(i8* String) {
+	for (i32 Index := 0, Index < StringLength(String), Index += 1) {
+		BochsPrintCharacter(String[Index])
+	}
+}
+define void BochsPrintString(i8* String) {
+	RawBochsPrintString("BOOT	|: ")
+	RawBochsPrintString(String)
+}
+
+define void Fail(i8 Location) {
+	BochsPrintString("Ext2 fail at checkpoint ")
+	BochsPrintCharacter(('0' + Location) As i8)
+	RawBochsPrintString("\n")
+	
+	loop {}
+}
+
+struct MinimalExt2 {
+	void* TempBlock
+	void* TempINode
+	
+	i32 INodeTableBase
+	
+	define void* ReadBlock(i32 BlockNumber, void* Buffer) {
+		ATARead(false, BlockNumber * 2, 2, Buffer)
+		
+		return Buffer
+	}
+	define void* ReadBlock(i32 BlockNumber) {
+		return this->ReadBlock(BlockNumber, this->TempBlock)
+	}
+	
+	define i32 FindINodeBlock(i32 INodeNumber, i32* OutINodeOffset) {
+		INodeNumber -= 1
+		
+		i32 INodeOffset := INodeNumber * #INode
+		i32 BlockNumber := INodeOffset / 0x400
+		i32 OffsetInBlock := INodeOffset % 0x400
+		
+		*OutINodeOffset := OffsetInBlock
+		
+		return this->INodeTableBase + BlockNumber
+	}
+	
+	define i32 CalculateDataBlockPath(i32 DataBlockIndex, i32* BlockPath) {
+		if (DataBlockIndex < 12) {
+			BlockPath[0] := DataBlockIndex
+			return 1
+		}
+		
+		DataBlockIndex -= 12
+		
+		if (DataBlockIndex < 0x100) {
+			BlockPath[0] := 12
+			BlockPath[1] := DataBlockIndex
+			return 2
+		}
+		
+		DataBlockIndex -= 0x100
+		
+		if (DataBlockIndex < 0x10000) {
+			BlockPath[0] := 13
+			BlockPath[1] := DataBlockIndex / 0x100
+			BlockPath[2] := DataBlockIndex % 0x100
+			return 3
+		}
+		
+		DataBlockIndex -= 0x10000
+		
+		if (DataBlockIndex < 0x1000000) {
+			BlockPath[0] := 14
+			BlockPath[1] := DataBlockIndex / 0x10000
+			BlockPath[2] := DataBlockIndex % 0x10000
+			BlockPath[3] := DataBlockIndex % 0x100
+			return 4
+		}
+		
+		Fail(1)
+		
+		return 0
+	}
+	
+	define i32 FindINodeDataBlock(INode* TargetNode, i32 DataBlockIndex) {
+		i32{4} BlockPath
+		
+		i32 BlockCount := this->CalculateDataBlockPath(DataBlockIndex, BlockPath)
+		i32* RootBlock := TargetNode~>DirectBlocks
+		i32 RootBlockNumber := 0
+		
+		for (i32 WalkBlockIndex := 0, WalkBlockIndex < BlockCount, WalkBlockIndex += 1) {
+			i32 NextBlockOffset := BlockPath[WalkBlockIndex]
+			
+			if !(RootBlock[NextBlockOffset]) {
+				Fail(2)
+			}
+			
+			RootBlockNumber := RootBlock[NextBlockOffset]
+			
+			if (BlockCount != 1) {
+				RootBlock := this->ReadBlock(RootBlockNumber)
+			}
+		}
+		
+		return RootBlockNumber
+	}
+	
+	define INode* ReadINode(i32 NodeNumber) {
+		i32 OffsetInBlock := 0
+		i32 BlockNumber := this->FindINodeBlock(NodeNumber, &OffsetInBlock)
+		
+		INode* Result := this->ReadBlock(BlockNumber, this->TempINode) + OffsetInBlock
+		
+		Result->INodeNumber := NodeNumber
+		
+		return Result
+	}
+	define i32 ReadINodeData(void* IntoBuffer, INode* TargetNode, i32 BlockIndex) {
+		i32 TargetBlock := this->FindINodeDataBlock(TargetNode, BlockIndex)
+		
+		this->ReadBlock(TargetBlock, IntoBuffer)
+		
+		return TargetBlock
+	}
+}
+
+void* TempBlock := (0x10_0000 As void*)
+void* TempINode := (0x10_1000 As void*)
+void* TempExtra := (0x10_2000 As void*)
+
+struct BinFile {
+	i64 JumpToMain
+	
+	union {
+		i64 ImageBase
+		void* LoadLocation
+	}
+}
+
+define void StartKernel(i64 Limit, void* FrameBuffer, void* KernelMain) asm {
+	jmp, rcx
+}
+
+define void Main(i64 Limit, void* FrameBuffer) {
+	MinimalExt2 RawFS {
+		TempBlock: TempBlock,
+		TempINode: TempINode,
+		INodeTableBase: 5
+	}
+	
+	MinimalExt2* FS := &RawFS
+	
+	INode* KernelNode := FS->ReadINode(5)
+	
+	FS->ReadINodeData(TempExtra, KernelNode, 0)
+	
+	BinFile* KernelFile := TempExtra
+	
+	i32 KernelBlockCount := KernelNode->FileSizeLow / 0x400
+	i32 KernelRemainder := KernelNode->FileSizeLow % 0x400
+	
+	void* Kernel := KernelFile->LoadLocation
+	
+	for (i32 KernelBlockIndex := 0, KernelBlockIndex < KernelBlockCount, KernelBlockIndex += 1) {
+		FS->ReadINodeData(Kernel, KernelNode, KernelBlockIndex)
+		
+		Kernel += 0x400
+	}
+	
+	if (KernelRemainder) {
+		FS->ReadINodeData(Kernel, KernelNode, KernelBlockIndex)
+	}
+	
+	StartKernel(Limit, FrameBuffer, KernelFile->LoadLocation)
+}

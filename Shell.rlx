@@ -1,5 +1,5 @@
 
-
+#Require "./src/ATA.rlx"
 
 define void Prompt() {
 	Print("(>")
@@ -58,6 +58,23 @@ define void OnCommand(i8* CommandLine) {
 	}
 	else if (StringEquals(Command, "windows")) {
 		NativeScreen->PrintHierarchy(0)
+	}
+	else if (StringEquals(Command, "ata")) {
+		ATARead(false, 0, 1, ATABuffer)
+		
+		for (i32 Row := 0, Row < 32, Row += 1) {
+			i8* ColumnData := ATABuffer + (Row * 16)
+			
+			for (i32 Column := 0, Column < 16, Column += 1) {
+				i32 NextByte := ColumnData[Column]
+				NextByte &= 0xFF
+				
+				Print("%c", NumberToCharacter((NextByte >> 4) As i8))
+				Print("%c ", NumberToCharacter((NextByte & 0xF) As i8))
+			}
+			
+			Print("\n")
+		}
 	}
 	else if (StringEquals(Command, "peek")) {
 		i64 TargetAddress := AToI(Parameters[0], 10)

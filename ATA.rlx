@@ -5,13 +5,16 @@ define void ATAWait() {
 		i8 Status := InB(0x1F7)
 		
 		if (Status & 0x88 = 0x8) || (Status & 0x21 = 0x21) {
-			return 0
+			return
 		}
 	}
 }
 
 define void ATAReadWrite(i8 Slave, i32 LBA, i32 Sectors, i8 Command) {
-	OutB(0x1F6, (((0xE + Slave) << 4) | ((LBA >> 24) & 0xFF)) As i8)
+	i8 Device := ((0xE + Slave) << 4) As i8
+	i8 HighLBA := ((LBA >> 24) & 0xF) As i8
+	
+	OutB(0x1F6, Device | HighLBA)
 	OutB(0x1F2, Sectors As i8)
 	OutB(0x1F3, LBA As i8)
 	OutB(0x1F4, (LBA >> 8) As i8)
@@ -19,7 +22,9 @@ define void ATAReadWrite(i8 Slave, i32 LBA, i32 Sectors, i8 Command) {
 	OutB(0x1F7, Command)
 }
 
-define void ATARead(i8 FromSlave, i32 LBA, i32 SectorsToRead, i16* IntoBuffer) {
+define void ATARead(i8 FromSlave, i32 LBA, i32 SectorsToRead, void* RawIntoBuffer) {
+	i16* IntoBuffer := RawIntoBuffer
+	
 	ATAReadWrite(FromSlave, LBA, SectorsToRead, 0x20)
 	
 	for (i32 SectorIndex := 0, SectorIndex < SectorsToRead, SectorIndex += 1) {
@@ -48,21 +53,4 @@ define void ATAWrite(i8 ToSlave, i32 LBA, i32 SectorsToWrite, void* FromBuffer) 
 	}
 }
 
-i8{512} ATAWriteBuffer
-
-define void ATATest() {
-	ATARead(false, 0, 126, 0x24000 As void*)
-	
-	void* CheckData := 0
-	i32 CheckSize := 0
-	
-	i8 Result := FindFile(0x24200 As UStarHeader*, "FSCheck.txt", &CheckData, &CheckSize)
-	
-	if (Result = 0) {
-		FSInfo("ATA read FAILED")
-	}
-	
-	if (StartsWith(CheckData As i8*, "File system check PASSED")) {
-		FSInfo("ATA read PASSED")
-	}
-}
+i8{0x200} ATABuffer

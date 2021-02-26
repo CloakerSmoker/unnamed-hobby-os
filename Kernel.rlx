@@ -47,7 +47,7 @@ define void KernelHeapFree(void* Memory) {
 #Require "./src/Interrupts.rlx"
 #Require "./src/Shell.rlx"
 
-define void Main(i64 _KernelLimit, void* RawFrameBuffer, UStarHeader* FS) {
+define void Main(i64 _KernelLimit, void* RawFrameBuffer) {
 	BochsPrintString("Main\n")
 	
 	AddressSpace->Takeover()
