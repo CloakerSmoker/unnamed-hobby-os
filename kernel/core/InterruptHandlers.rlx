@@ -1,0 +1,9 @@
+; Int 0x27
+define void OnSpuriousInterrupt() asm {
+	call, @InterruptSetup
+	jmp, @InterruptReturn
+}
+
+define void AddKernelHandlers() {	
+	InsertIDTEntry(0x27, &OnSpuriousInterrupt, true)
+}

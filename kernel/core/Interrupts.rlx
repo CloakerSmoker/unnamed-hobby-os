@@ -1,3 +1,6 @@
+#Require "./src/utility/x64.rlx"
+#Require "./src/drivers/PIC.rlx"
+
 define void _InterruptSetup() asm {
 	xchg, rax, {rsp + 0x10} As i64*
 	
@@ -88,64 +91,11 @@ define void InsertIDTEntry(i32 Index, void* Function, i8 Present) {
 	E->Flags := 0x0E | (Present << 7) As i8
 }
 
-i16 MASTER_PIC := 0x20
-i16 SLAVE_PIC := 0xA0
-
-i16 MASTER_PIC_DATA := 0x21
-i16 SLAVE_PIC_DATA  := 0xA1
-
-define void RemapPIC(i8 MasterOffset, i8 SlaveOffset) {
-	i8 OldMaster := InB(MASTER_PIC_DATA)
-	i8 OldSlave := InB(SLAVE_PIC_DATA)
-	
-	OutB(MASTER_PIC, 0x11)
-	OutB(SLAVE_PIC, 0x11)
-	
-	OutB(MASTER_PIC_DATA, MasterOffset)
-	OutB(SLAVE_PIC_DATA, SlaveOffset)
-	
-	OutB(MASTER_PIC_DATA, 0x04)
-	OutB(SLAVE_PIC_DATA, 0x02)
-	
-	OutB(MASTER_PIC_DATA, 0x01)
-	OutB(SLAVE_PIC_DATA, 0x01)
-	
-	OutB(MASTER_PIC_DATA, OldMaster)
-	OutB(SLAVE_PIC_DATA, OldSlave)
-}
-
-define void SendEOI(i8 IRQLine) {
-	if (IRQLine >= 8) {
-		OutB(SLAVE_PIC, 0x20)
-	}
-	
-	OutB(MASTER_PIC, 0x20)
-}
-
-define void EnablePICLine(i8 IRQLine, i8 Enabled) {
-	i16 Port := MASTER_PIC_DATA
-	
-	if (IRQLine >= 8) {
-		Port := SLAVE_PIC_DATA
-		IRQLine -= 8
-	}
-	
-	i32 Value := InB(Port)
-	
-	if (Enabled) {
-		Value := Value & ~(1 << IRQLine)
-	}
-	else {
-		Value := Value | (1 << IRQLine)
-	}
-	
-	OutB(Port, Value As i8)
-}
-
 i32 IDT_MAX := 50
 i32 IDT_SIZE := IDT_MAX * #IDTEntry
 
-declare void AddHandlers()
+declare void AddKernelHandlers()
+declare void SetupDeviceInterrupts()
 
 define void SetupInterrupts() {
 	asm {cli}
@@ -156,23 +106,15 @@ define void SetupInterrupts() {
 	IDTHeader->Start := IDT
 	IDTHeader->Size := IDT_SIZE As i16
 	
-	AddHandlers()
-	Print("IDT built at %x, header at %x\n", IDT, IDTHeader)
-	
-	KernelHeap->Print()
-	
 	RemapPIC(0x20, 0x28)
-	Print("PIC remapped\n")
+	
+	AddKernelHandlers()
+	SetupDeviceInterrupts()
 	
 	asm (rax := IDTHeader) {
 		lidt, {rax} As i64*
+		sti
 	}
-	
-	Print("IDT loaded, base = %x, size = %i\n", IDTHeader->Start, IDTHeader->Size)
-	
-	asm {sti}
-	
-	Print("After STI\n")
 }
 
-#Require "./src/InterruptHandlers.rlx"
+#Require "./src/kernel/core/InterruptHandlers.rlx"

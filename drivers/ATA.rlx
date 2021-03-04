@@ -1,4 +1,5 @@
 
+#Require "./src/utility/x64.rlx"
 
 define void ATAWait() {
 	loop {

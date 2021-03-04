@@ -1,9 +1,9 @@
 
-#Require "./src/ATA.rlx"
+#Require "./src/utility/ScanCodes.rlx"
+#Require "./src/drivers/ATA.rlx"
 
 define void Prompt() {
 	Print("(>")
-	KeyboardBackspaceBound := 2
 }
 
 i8*{0x20} CommandParameters
@@ -46,6 +46,10 @@ define void OnCommand(i8* CommandLine) {
 		
 		Print(" Uptime [ %ih %im %is | %ims ]\n Ticks [ %i ]\n", Hours, Minutes, Seconds, GetUptimeMS(), GetTickCount())
 	}
+	else if (StringEquals(Command, "eol")) {
+		;Terminal->RawPrint("\n", 2)
+		Print("\n")
+	}
 	else if (StringEquals(Command, "reset_time")) {
 		asm {cli}
 		
@@ -55,11 +59,8 @@ define void OnCommand(i8* CommandLine) {
 		
 		asm {sti}
 	}
-	else if (StringEquals(Command, "clear_screen")) {
-		NativeScreen->Clear()
-	}
-	else if (StringEquals(Command, "windows")) {
-		NativeScreen->PrintHierarchy(0)
+	else if (StringEquals(Command, "clear")) {
+		Terminal->Clear()
 	}
 	else if (StringEquals(Command, "ata")) {
 		ATARead(false, 0, 1, ATABuffer)
@@ -116,5 +117,36 @@ define void OnCommand(i8* CommandLine) {
 		Print(" Unknown command '%s'\n", Command)
 	}
 	
-	Prompt()
+	;Prompt()
+}
+
+i8{0x200} CommandBuffer
+i32 CommandBufferIndex
+
+define void ShellOnKey(i16 ScanCode, i8 ASCIICode) {
+	if (ScanCode = SCANCODE_ENTER_DOWN) {
+		Terminal->NewLine()
+		
+		CommandBuffer[CommandBufferIndex] := 0
+		OnCommand(CommandBuffer)
+		CommandBufferIndex := 0
+	}
+	else if (ScanCode = SCANCODE_BACKSPACE_DOWN) {
+		if (CommandBufferIndex > 0) {
+			CommandBuffer[--CommandBufferIndex] := 0
+			
+			Terminal->Seek(Terminal->X - 1, Terminal->Y)
+			Terminal->Print(" ", 1)
+			Terminal->Seek(Terminal->X - 1, Terminal->Y)
+		}
+	}
+	else {
+		CommandBuffer[CommandBufferIndex++] := ASCIICode
+		
+		Terminal->Print(&ASCIICode, 1)
+	}
+}
+
+define void SetupShell() {
+	SetOnKeyCallback(&ShellOnKey)
 }

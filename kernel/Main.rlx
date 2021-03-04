@@ -1,35 +1,24 @@
 #ImageBase 0x34000
 
-#Require "./src/Utility.rlx"
 
-define void BochsPrintCharacter(i8 Character) {
-	asm (rdx := 0xE9, rax := Character) {
-		outb
-	}
-}
-define void BochsPrintString(i8* String, i8 Recurse) {
-	if !(Recurse) {
-		BochsPrintString("OS	|: ", true)
-	}
-	
-	for (i32 Index := 0, Index < StringLength(String), Index += 1) {
-		BochsPrintCharacter(String[Index])
-	}
-}
-define void BochsPrintString(i8* String) {
-	BochsPrintString(String, false)
-}
+#Require "./src/utility/Generic.rlx"
+#Require "./src/utility/x64.rlx"
+#Require "./src/utility/String.rlx"
+
+i8 USE_BOCHS_PORT_HACK := true
+
+#Require "./src/drivers/Bochs.rlx"
 
 declare void* KernelHeapAllocate(i64, i32)
 declare void* KernelHeapExtendAllocation(void*, i32)
 declare void KernelHeapFree(void*)
 
-#Require "./src/Font.rlx"
-#Require "./src/Screen.rlx"
-#Require "./src/Terminal.rlx"
+#Require "./src/kernel/graphics/Font.rlx"
+#Require "./src/kernel/graphics/Screen.rlx"
+#Require "./src/kernel/graphics/Terminal.rlx"
 
-#Require "./src/Paging.rlx"
-#Require "./src/Heap.rlx"
+#Require "./src/kernel/core/Paging.rlx"
+#Require "./src/kernel/core/Heap.rlx"
 
 Heap RawKernelHeap
 Heap* KernelHeap := &RawKernelHeap
@@ -44,11 +33,14 @@ define void KernelHeapFree(void* Memory) {
 	KernelHeap->Free(Memory)
 }
 
-#Require "./src/Interrupts.rlx"
-#Require "./src/Shell.rlx"
+#Require "./src/kernel/core/Interrupts.rlx"
+#Require "./src/kernel/core/Devices.rlx"
+#Require "./src/kernel/core/Shell.rlx"
 
-define void Main(i64 _KernelLimit, void* RawFrameBuffer) {
+define void Main(void* RawFrameBuffer) {
 	BochsPrintString("Main\n")
+	
+	BochsPrint("Len: %i\n", StringLength("\n"))
 	
 	AddressSpace->Takeover()
 	
@@ -59,7 +51,7 @@ define void Main(i64 _KernelLimit, void* RawFrameBuffer) {
 	
 	BochsPrintString("Allocated KernelHeap memory\n")
 	
-	; Remap the next available `FRAMEBUFFER_SIZE / PAGE_SIZE` bytes of virtual memory to 0xE000_0000 (or wherever) 
+	; Remap the next available `FRAMEBUFFER_SIZE` bytes of virtual memory to 0xE000_0000 (or wherever int10 says)
 	i32 FrameBufferPageCount := AddressSpace->SizeToPageCount(FRAMEBUFFER_SIZE)
 	i64 FrameBufferPage := AddressSpace->AllocateContiguousVirtualPages(FrameBufferPageCount)
 	AddressSpace->MapPageRange(FrameBufferPage, AddressSpace->PointerToPageNumber(RawFrameBuffer), FrameBufferPageCount)
@@ -69,9 +61,9 @@ define void Main(i64 _KernelLimit, void* RawFrameBuffer) {
 	NativeScreen->Adopt(FrameBuffer, SCREEN_WIDTH, SCREEN_HEIGHT, BYTES_PER_PIXEL, 0, 0x00_00_00)
 	
 	Terminal->Adopt(NativeScreen)
-	Terminal->SetColors(0xFF_FF_FF, 0x00_00_00)
-	
-	NativeScreen->Clear()
+	Terminal->SetColors(0x00_00_00, 0xFF_FF_FF)
+	;Terminal->SetColors(0xFF_FF_FF, 0x00_00_00)
+	Terminal->Clear()
 	
 	Terminal->PrintLine("BOOT: Screen *probably* works")
 	
@@ -83,19 +75,9 @@ define void Main(i64 _KernelLimit, void* RawFrameBuffer) {
 	
 	SetupInterrupts()
 	
-	Screen* TerminalWindow := NativeScreen->CreateWindow(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT - 70, 0xFF_FF_FF)
-	Screen* TaskbarWindow := NativeScreen->CreateWindow(0, SCREEN_HEIGHT - 70, SCREEN_WIDTH, 70, 0x00_00_00)
-	Screen* UptimeWindow := TaskbarWindow->CreateWindow((SCREEN_WIDTH / 2) - 100, 35, 300, 20, 0x00_00_00)
-	
-	NativeScreen->PrintHierarchy(0)
-	NativeScreen->Clear()
-	
-	UptimeDisplay := UptimeWindow
-	
-	Terminal->Adopt(TerminalWindow)
 	Terminal->SetColors(0x00_00_00, 0xFF_FF_FF)
 	
-	Print("BOOT: Switched to window system for terminal\n")
+	SetupShell()
 	
 	Prompt()
 	

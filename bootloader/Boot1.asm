@@ -68,7 +68,7 @@ LoadSecondStage_DAP_LBA:
 	dd 0
 	dd 0
 
-%include "./src/LongModeDirectly.asm"
+%include "./src/bootloader/LongModeDirectly.asm"
 
 [BITS 64]
 
@@ -76,9 +76,7 @@ LongMain:
 	xor ax, ax
 	mov rsp, Stack
 	
-	mov edx, FS_Base
-	mov esi, [FrameBuffer]
-	mov edi, r8d
+	mov rdi, [FrameBuffer]
 	jmp 0x10000
 
 times 510 - ($ - $$) db 0

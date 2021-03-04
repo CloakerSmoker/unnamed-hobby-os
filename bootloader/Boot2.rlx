@@ -1,27 +1,14 @@
-define i8 InB(i16 Port) asm {
-	mov, dx, dix
-	inb
-	ret
-}
-define void OutB(i16 Port, i8 Data) asm {
-	mov, dx, dix
-	mov, a, si
-	outb
-	ret
-}
-define i16 InW(i16 Port) asm {
-	mov, dx, dix
-	inw
-	ret
-}
-define void OutW(i16 Port, i16 Data) asm {
-	mov, dx, dix
-	mov, ax, six
-	outw
-	ret
-}
+#Require "./src/drivers/ATA.rlx"
 
-#Require "./src/ATA.rlx"
+i8 USE_BOCHS_PORT_HACK := true
+
+#Require "./src/drivers/Bochs.rlx"
+
+define void Fail(i8 Location) {
+	BochsPrint("Ext2 fail at checkpoint %i\n", Location)
+	
+	loop {}
+}
 
 struct INode {
 	union {
@@ -59,100 +46,54 @@ struct INode {
 	i32{3} OSValues
 }
 
-define i8 NumberToCharacter(i8 Number) {
-	if (Number < 10) {
-		return (Number + '0') As i8
-	}
-	else {
-		return (Number - 10 + 'A') As i8
-	}
-}
+i8 DIRECTORY_ENTRY_FILE := 1
+i8 DIRECTORY_ENTRY_DIRECTORY := 2
 
-define void MemoryReverse(i8* Buffer, i32 Length) {
-	for (i32 Index := 0, Index < Length, Index += 1) {
-		i8 Temp := Buffer[Index]
-		Buffer[Index] := Buffer[Length - 1]
-		Buffer[Length - 1] := Temp
+struct DirectoryEntry {
+	i32 INode,
+	i16 EntryLength,
+	i8 NameLength,
+	i8 Flags,
+	i8{1} Name
+	
+	define i16 TrueSize() {
+		i32 Result := this->NameLength + 8
+		i32 Remainder := Result % 4
 		
-		Length -= 1
-	}
-}
-
-define i8* IToA(i64 Number, i64 Base, i8* Buffer, i8 PrintExtra) {
-	i8 Sign := 0
-	
-	if (Number < 0) {
-		Sign := true
+		if (Remainder) {
+			Result += 4 - Remainder
+		}
 		
-		if (Base = 10) {
-			Number := -Number
+		return Result As i16
+	}
+	define i16 PaddingSize() {
+		return this->EntryLength - this->TrueSize()
+	}
+	
+	define DirectoryEntry* Next() {
+		return this + (this->EntryLength + 0)
+	}
+	
+	define i8 IsDirectory() {
+		return this->Flags = DIRECTORY_ENTRY_DIRECTORY
+	}
+	define i8 IsFile() {
+		return this->Flags = DIRECTORY_ENTRY_FILE
+	}
+	
+	define i8 NameEquals(i8* OtherName) {
+		if (StringLength(OtherName) != this->NameLength) {
+			return false
 		}
-		else if (Base = 16 || Base = 2) {
-			Number := Number & 0x7FFFFFFFFFFFFFFF
+		
+		for (i32 Index := 0, Index < this->NameLength, Index += 1) {
+			if (OtherName[Index] != this~>Name[Index]) {
+				return false
+			}
 		}
+		
+		return true
 	}
-	
-	for (i32 Index := 0, Number != 0, Index += 1) {
-		Buffer[Index] := NumberToCharacter((Number % Base) As i8)
-		Number := Number / Base
-	}
-	
-	if (Index = 0) {
-		Buffer[0] := '0'
-		Index := 1
-	}
-	
-	if (Sign) {
-		if (Base = 10) {
-			Buffer[Index] := '-'
-			Index += 1
-		}
-	}
-	
-	if (Base = 16 && PrintExtra) {
-		Buffer[Index] := 'x'
-		Buffer[Index + 1] := '0'
-		Index += 2
-	}
-	
-	Buffer[Index] := 0
-	
-	MemoryReverse(Buffer, Index)
-	
-	return Buffer + Index
-}
-
-define i32 StringLength(i8* String) {
-	for (i32 Length := 0, String[Length] != 0, Length += 1) {}
-	
-	return Length
-}
-
-define void BochsPrintCharacter(i8 Character) {
-	asm (rdx := 0xE9, rax := Character) {
-		outb
-	}
-}
-define void RawBochsPrintString(i8* String) {
-	for (i32 Index := 0, Index < StringLength(String), Index += 1) {
-		BochsPrintCharacter(String[Index])
-	}
-}
-define void BochsPrintString(i8* String) {
-	RawBochsPrintString("BOOT	|: ")
-	RawBochsPrintString(String)
-}
-define void BochsPrintNewLine() {
-	BochsPrintCharacter(13)
-	BochsPrintCharacter(10)
-}
-
-define void Fail(i8 Location) {
-	BochsPrintString("Ext2 fail at checkpoint ")
-	BochsPrintCharacter(('0' + Location) As i8)
-	BochsPrintNewLine()
-	
-	loop {}
 }
 
 struct MinimalExt2 {
@@ -261,6 +202,47 @@ struct MinimalExt2 {
 		
 		return TargetBlock
 	}
+	
+	define i32 StartWalkDirectory(INode* DirectoryNode) {
+		this->ReadINodeData(this->TempBlock, DirectoryNode, 0)
+		return 0
+	}
+	define DirectoryEntry* WalkDirectoryNext(INode* DirectoryNode, i32* pWalkHandle) {
+		i32 Offset := *pWalkHandle
+		
+		if (Offset >= DirectoryNode->FileSizeLow) {
+			return null
+		}
+		
+		i32 BlockNumber := Offset / 1024
+		i32 BlockOffset := Offset % 1024
+		
+		if (this->ReadINodeData(this->TempBlock, DirectoryNode, BlockNumber) = 0) {
+			return null
+		}
+		
+		DirectoryEntry* NextEntry := this->TempBlock + BlockOffset
+		
+		pWalkHandle[0] += NextEntry->EntryLength
+		
+		return NextEntry
+	}
+	define DirectoryEntry* FindDirectoryEntryByName(INode* Directory, i8* Name) {
+		i32 State := this->StartWalkDirectory(Directory)
+		
+		loop {
+			DirectoryEntry* NextEntry := this->WalkDirectoryNext(Directory, &State)
+			
+			if (NextEntry = null) {
+				return null
+			}
+			else if (NextEntry->NameEquals(Name)) {
+				return NextEntry
+			}
+		}
+		
+		return null
+	}
 }
 
 void* TempBlock := (0x14_0000 As void*)
@@ -276,11 +258,13 @@ struct BinFile {
 	}
 }
 
-define void StartKernel(i64 Limit, void* FrameBuffer, void* KernelMain) asm {
-	jmp, rdx
+define void StartKernel(void* FrameBuffer, void* KernelMain) asm {
+	jmp, rsi
 }
 
-define void Main(i64 Limit, void* FrameBuffer) {
+define void Main(void* FrameBuffer) {
+	BOCHS_PRINT_STAGE := "BOOT"
+	
 	MinimalExt2 RawFS {
 		TempBlock: TempBlock,
 		TempINode: TempINode,
@@ -289,7 +273,17 @@ define void Main(i64 Limit, void* FrameBuffer) {
 	
 	MinimalExt2* FS := &RawFS
 	
-	INode* KernelNode := FS->ReadINode(6)
+	INode* RootNode := FS->ReadINode(2)
+	
+	DirectoryEntry* KernelEntry := FS->FindDirectoryEntryByName(RootNode, "kernel.bin")
+	
+	if (KernelEntry = null || !KernelEntry->IsFile()) {
+		Fail(3)
+	}
+	
+	BochsPrint("Found kernel\n")
+	
+	INode* KernelNode := FS->ReadINode(KernelEntry->INode)
 	
 	FS->ReadINodeData(TempExtra, KernelNode, 0)
 	
@@ -310,5 +304,7 @@ define void Main(i64 Limit, void* FrameBuffer) {
 		FS->ReadINodeData(Kernel, KernelNode, KernelBlockIndex)
 	}
 	
-	StartKernel(Limit, FrameBuffer, KernelFile->LoadLocation)
+	BochsPrint("Loaded kernel, booting from %x\n", KernelFile->LoadLocation)
+	
+	StartKernel(FrameBuffer, KernelFile->LoadLocation)
 }

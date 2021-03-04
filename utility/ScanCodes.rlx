@@ -1,0 +1,35 @@
+define i8 ScanCodeGetMapIndex(i8* Map, i32 Max, i16 Code) {
+	if (Code >= Max) {
+		return ' '
+	}
+	
+	return Map[Code]
+}
+
+define i8 ScanCodeToASCII(i8 Shift, i16 ScanCode) {
+	; Note: This doesn't need to work for all characters, since it is only really used for displaying
+	
+	i8* LowerMap := "  1234567890-=  qwertyuiop[]  asdfghjkl;'` \\zxcvbnm,./    "
+	i8* UpperMap := "  !@#$%^&*()_+  QWERTYUIOP{}  ASDFGHJKL:\"~ |ZXCVBNM<>?"
+	
+	i32 LowerMapMax := 58
+	i32 UpperMapMax := 54
+	
+	if (Shift) {
+		return ScanCodeGetMapIndex(UpperMap, UpperMapMax, ScanCode)
+	}
+	else {
+		return ScanCodeGetMapIndex(LowerMap, LowerMapMax, ScanCode)
+	}
+}
+
+i32 SCANCODE_MASK_DOWN := 0x80
+i32 SCANCODE_SHIFT_UP := 0xAA
+i32 SCANCODE_SHIFT_DOWN := 0x2A
+i32 SCANCODE_BACKSPACE_DOWN := 0x0E
+i32 SCANCODE_ENTER_DOWN := 0x1C
+
+i32 SCANCODE_UP_ARROW := 0x48
+i32 SCANCODE_LEFT_ARROW := 0x4B
+i32 SCANCODE_RIGHT_ARROW := 0x4D
+i32 SCANCODE_DOWN_ARROW := 0x50

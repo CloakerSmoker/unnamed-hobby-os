@@ -1,0 +1,114 @@
+#Require "./src/utility/x64.rlx"
+#Require "./src/utility/ScanCodes.rlx"
+
+i8 PS2_PORT_DATA := 0x60
+i8 PS2_PORT_COMMAND := 0x64
+i8 PS2_PORT_STATUS := 0x64
+
+i8 PS2_READ_COMMAND := 0x20
+i8 PS2_WRITE_COMMAND := 0x60
+i8 PS2_DISABLE_AUX := 0xA7 As i8
+i8 PS2_ENABLE_AUX := 0xA8 As i8
+i8 PS2_DISABLE := 0xAD As i8
+i8 PS2_ENABLE := 0xAE As i8
+
+i16 PS2_WAIT_INPUT := 0x100
+
+declare void PS2Wait(i8, i8)
+
+void* PS2OnKeyCallback := null
+
+define void PS2OnKey(i16 ScanCode, i8 ASCIICode, void* Callback) asm {
+	jmp, rdx
+}
+
+i8 PS2_SHIFT_STATE := false
+
+define void OnPS2Event() {
+	; IRQ1 handler
+	
+	PS2Wait(0, 1)
+	i16 ScanCode := InB(PS2_PORT_DATA) As i16
+	i8 ASCIICode := ScanCodeToASCII(PS2_SHIFT_STATE, ScanCode)
+	
+	if (ScanCode & SCANCODE_MASK_DOWN) {
+		if (ScanCode = SCANCODE_SHIFT_UP) {
+			PS2_SHIFT_STATE := false
+		}
+	}
+	else if (ScanCode = SCANCODE_SHIFT_DOWN) {
+		PS2_SHIFT_STATE := true
+	}
+	else {
+		if (PS2OnKeyCallback != null) {
+			PS2OnKey(ScanCode, ASCIICode, PS2OnKeyCallback)
+		}
+	}
+	
+	SendEOI(1)
+}
+
+define void OnPS2Interrupt() asm {
+	call, @InterruptSetup   ; Saves all GPRs
+	call, @OnPS2Event       ; Call the actual handler
+	jmp, @InterruptReturn   ; Pop all GPRs, iretq
+}
+
+define void PS2Wait(i8 ForWrite, i8 TargetStatus) {
+	/* Bit 0 = read status, bit 1 = write status */
+	
+	i8 Mask := (1 << ForWrite) As i8
+	TargetStatus := (TargetStatus << ForWrite) As i8
+	
+	loop {
+		i8 Status := InB(PS2_PORT_STATUS)
+		
+		if ((Status & Mask) = TargetStatus) {
+			return
+		}
+	}
+}
+
+define i8 PS2SendCommand(i16 Command, ... Bytes) {
+	PS2Wait(1, 0)
+	
+	OutB(PS2_PORT_COMMAND, (Command & 0xFF) As i8)
+	
+	for (i32 Index := 1, Index <= Bytes[0], Index += 1) {
+		PS2Wait(1, 0)
+		OutB(PS2_PORT_DATA, Bytes[Index] As i8)
+	}
+	
+	if (Command > 0xFF) {
+		PS2Wait(0, 1)
+		
+		return InB(PS2_PORT_DATA)
+	}
+	
+	return 0
+}
+
+define void SetOnKeyCallback(void* Callback) {
+	PS2OnKeyCallback := Callback
+}
+define void SetupKeyboard() {
+	; Called with interrupts disabled, and before the IDT is loaded
+	
+	PS2SendCommand(PS2_DISABLE)
+	PS2SendCommand(PS2_DISABLE_AUX)
+	
+	InB(PS2_PORT_DATA) ; Flush input buffer
+	
+	; Enable interrupts for both PS/2 ports, enable first port translation(?)
+	i8 ConfigByte := PS2SendCommand(PS2_READ_COMMAND | PS2_WAIT_INPUT)
+	ConfigByte := ConfigByte | 0x43
+	PS2SendCommand(PS2_WRITE_COMMAND, ConfigByte)
+	
+	PS2SendCommand(PS2_ENABLE)
+	PS2SendCommand(PS2_ENABLE_AUX)
+	
+	InsertIDTEntry(0x21, &OnPS2Interrupt, true)
+	EnablePICLine(1, true)
+}
+
+Device* PS2Keyboard := CreateDevice("PS/2 Keyboard", &SetupKeyboard)

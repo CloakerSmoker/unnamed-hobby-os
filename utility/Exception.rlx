@@ -1,0 +1,65 @@
+define void RestoreHandlerContextAndTransferControl(i64 Code, void* Handler, void* OldRBP, void* OldRSP) asm {
+	; Restores the execution context to how the function containing the handler expects, and then
+	;  calls the handler passing the exception code
+	
+	mov, rbp, rdx
+	mov, rsp, rcx
+	jmp, rsi
+}
+
+struct StackFrame {
+	StackFrame* LastFrame,
+	i64* ReturnAddress
+}
+
+define i64* GetRBP() asm {
+	mov, rax, rbp
+	ret
+}
+
+define StackFrame* FindHandler(i64* StartingFrame) {
+	; Walks up stack frames looking for one marked as an exception handler
+	
+	StackFrame* Last := StartingFrame As StackFrame*
+	
+	while (Last) {
+		if (Last->LastFrame & 1) {
+			return Last
+		}
+		
+		Last := Last->LastFrame
+	}
+	
+	return null
+}
+
+void* UnhandledExceptionHandler := null
+
+define void CallUnhandledExceptionFilter(i64 Code, void* Handler) asm {
+	jmp, rsi
+}
+
+i8 EXCEPTION_WAS_LAST_CHANCE := false
+
+define void CallUnhandledExceptionHandler(i64 Code) {
+	if (UnhandledExceptionHandler != null && !EXCEPTION_WAS_LAST_CHANCE) {
+		EXCEPTION_WAS_LAST_CHANCE := true
+		
+		CallUnhandledExceptionFilter(Code, UnhandledExceptionHandler)
+	}
+	
+	loop {}
+}
+
+define void Throw(i64 Code) {
+	; Calls the first exception handler found in the call stack
+	
+	StackFrame* Last := FindHandler(GetRBP())
+	
+	if (Last = null) {
+		CallUnhandledExceptionHandler(Code)
+	}
+	else {
+		RestoreHandlerContextAndTransferControl(Code, Last->ReturnAddress, Last, Last->LastFrame - 1)
+	}
+}
