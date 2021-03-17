@@ -1292,3 +1292,21 @@ struct Ext2 {
 		; And that's that. Now we've got a functional FS, ready to be used.
 	}
 }
+
+struct Ext2ATADevice {
+	static void Read(Ext2ATADevice* this, i32 Sector, void* Buffer) {
+		ATARead(false, Sector, 1, Buffer)
+	}
+	static void Write(Ext2ATADevice* this, i32 Sector, void* Buffer) {
+		ATAWrite(false, Sector, 1, Buffer)
+	}
+	
+	static Ext2DeviceTraits* New() {
+		Ext2DeviceTraits* Traits := Alloc(#Ext2DeviceTraits)
+		
+		Traits->ReadSector := &Ext2ATADevice:Read
+		Traits->WriteSector := &Ext2ATADevice:Write
+		
+		return Traits
+	}
+}

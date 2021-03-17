@@ -46,9 +46,54 @@ define void OnCommand(i8* CommandLine) {
 		
 		Print(" Uptime [ %ih %im %is | %ims ]\n Ticks [ %i ]\n", Hours, Minutes, Seconds, GetUptimeMS(), GetTickCount())
 	}
-	else if (StringEquals(Command, "eol")) {
-		;Terminal->RawPrint("\n", 2)
-		Print("\n")
+	else if (StringEquals(Command, "ls")) {
+		i32 NextEntryOffset := FS->StartWalkDirectory(RootINode)
+		
+		loop {
+			DirectoryEntry* NextEntry := FS->WalkDirectoryNext(RootINode, &NextEntryOffset)
+			
+			if (NextEntry = null) {
+				break
+			}
+			
+			INode* NextNode := FS->ReadINode(NextEntry->INode)
+			
+			if (NextNode->IsDirectory()) {
+				Print(" D ")
+			}
+			else {
+				Print(" F ")
+			}
+			
+			Print("%x   %x   %s\n", NextEntry->INode, NextNode->FileSizeLow, NextEntry~>Name)
+		}
+	}
+	else if (StringEquals(Command, "cat")) {
+		i8* Path := CommandParameters[1]
+		
+		DirectoryEntry* FoundFileEntry := FS->FindDirectoryEntryByPath(RootINode, Path)
+		
+		if (FoundFileEntry = null || !FoundFileEntry->IsFile()) {
+			Print(" Could not find file '^%s'\n", Path)
+		}
+		else {
+			INode FoundFileNode
+			
+			MoveMemory(&FoundFileNode, FS->ReadINode(FoundFileEntry->INode), #INode)
+			
+			i32 FileBlockCount := FoundFileNode.FileSizeLow / 1024
+			
+			if (FoundFileNode.FileSizeLow % 1024) {
+				FileBlockCount += 1
+			}
+			
+			for (i32 FileBlockIndex := 0, FileBlockIndex < FileBlockCount, FileBlockIndex += 1) {
+				i32 FileDataBlock := FS->FindINodeDataBlock(&FoundFileNode, FileBlockIndex, false)
+				Print("%s", FS->ReadBlock(FileDataBlock))
+			}
+			
+			Print("\n Done, %i blocks printed\n", FileBlockCount)
+		}
 	}
 	else if (StringEquals(Command, "reset_time")) {
 		asm {cli}
@@ -117,7 +162,7 @@ define void OnCommand(i8* CommandLine) {
 		Print(" Unknown command '%s'\n", Command)
 	}
 	
-	;Prompt()
+	Prompt()
 }
 
 i8{0x200} CommandBuffer

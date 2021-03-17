@@ -15,6 +15,7 @@ define void MoveMemory(void* RawTo, void* RawFrom, i32 Size) {
 		}
 	}
 }
+
 define void MemorySet8(i8* At, i8 Value, i32 Size) {
 	for (i32 Index := 0, Index < Size, Index += 1) {
 		At[Index] := Value
