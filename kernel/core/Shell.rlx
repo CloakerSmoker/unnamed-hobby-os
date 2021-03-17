@@ -65,7 +65,7 @@ define void OnCommand(i8* CommandLine) {
 				Print(" F ")
 			}
 			
-			Print("%x   %x   %s\n", NextEntry->INode, NextNode->FileSizeLow, NextEntry~>Name)
+			Print("%x 	%x 	%s\n", NextEntry->INode, NextNode->FileSizeLow, NextEntry~>Name)
 		}
 	}
 	else if (StringEquals(Command, "cat")) {

@@ -1,6 +1,9 @@
 
 #Require "./src/kernel/graphics/Screen.rlx"
 
+i32 ASCII_TAB := 0x9
+i32 TAB_SIZE := 4
+
 struct Terminal {
 	Screen* Screen
 	
@@ -70,37 +73,59 @@ struct Terminal {
 		this->DrawCursor(false)
 	}
 	
-	define void RawPrint(i8* Text, i32 TextLength) {
+	define i32 MeasureText(i32 StartDisplayIndex, i8* Text, i32 TextLength) {
+		i32 DisplayIndex := StartDisplayIndex
+		
+		for (i32 Index := 0, Index < TextLength, Index++) {
+			i8 Next := Text[Index]
+			
+			if (Next = ASCII_TAB) {
+				i32 NextAlignmentPointOffset := TAB_SIZE - (DisplayIndex % TAB_SIZE)
+				
+				DisplayIndex += NextAlignmentPointOffset
+			}
+			else {
+				DisplayIndex++
+			}
+		}
+		
+		return DisplayIndex - StartDisplayIndex
+	}
+	define i32 GetTabLength(i32 AtIndex) {
+		return TAB_SIZE - (AtIndex % TAB_SIZE)
+	}
+	
+	define void RawPrintCharacter(i32* ScreenX, i32* ScreenY, i8 Character) {
+		this->Screen->DrawCharacter(*ScreenX, *ScreenY, Character, this->ForegroundColor, this->BackgroundColor)
+		*ScreenX += FONT_WIDTH
+	}
+	
+	define void RawPrintLine(i8* Line, i32 LineLength) {
 		i32 ScreenX := 0
 		i32 ScreenY := 0
 		
 		this->ConvertToScreenCoords(this->X, this->Y, &ScreenX, &ScreenY)
 		
-		i32 PixelsLeft := this->Screen->Width - ScreenX
-		i32 CharactersLeft := PixelsLeft / FONT_WIDTH
-		
-		while (TextLength > CharactersLeft) {
-			this->Screen->DrawText(ScreenX, ScreenY, Text, CharactersLeft, this->ForegroundColor, this->BackgroundColor)
+		for (i32 Index := 0, Index < LineLength, Index++) {
+			i8 Next := Line[Index]
 			
-			Text += CharactersLeft
-			TextLength -= CharactersLeft
-			
-			this->NewLine()
-			
-			this->ConvertToScreenCoords(this->X, this->Y, &ScreenX, &ScreenY)
-			
-			PixelsLeft := this->Screen->Width - ScreenX
-			CharactersLeft := PixelsLeft / FONT_WIDTH
+			if (Next = ASCII_TAB) {
+				i32 TabLength := this->GetTabLength(this->X + Index)
+				
+				for (i32 TabIndex := 0, TabIndex < TabLength, TabIndex++) {
+					this->RawPrintCharacter(&ScreenX, &ScreenY, ' ')
+				}
+			}
+			else {
+				this->RawPrintCharacter(&ScreenX, &ScreenY, Next)
+			}
 		}
 		
-		if (TextLength) {
-			this->Screen->DrawText(ScreenX, ScreenY, Text, TextLength, this->ForegroundColor, this->BackgroundColor)
-		}
-		
-		i32 NewX := this->X + TextLength
-		
-		this->Y += NewX / this->Screen->Width
-		this->X := NewX % this->Screen->Width
+		this->X += this->MeasureText(this->X, Line, LineLength)
+	}
+	
+	define void PrintWrappedLine(i8* Line, i32 LineLength) {
+		this->RawPrintLine(Line, LineLength)
 	}
 	
 	define void Print(i8* Text, i32 TextLength) {
@@ -122,7 +147,7 @@ struct Terminal {
 				i32 LastLineLength := Index - LastLineStart
 				
 				if (LastLineLength) {
-					this->RawPrint(&Text[LastLineStart], LastLineLength)
+					this->PrintWrappedLine(&Text[LastLineStart], LastLineLength)
 				}
 				
 				LastLineStart := Index + 1
@@ -130,9 +155,94 @@ struct Terminal {
 		}
 		
 		if (LastLineStart < TextLength) {
-			this->RawPrint(&Text[LastLineStart], TextLength - LastLineStart)
+			this->PrintWrappedLine(&Text[LastLineStart], TextLength - LastLineStart)
 		}
 	}
+	
+	;define void PrintSingleLine(i8* Text, i32 TextLength) {
+	;	i32 ScreenX := 0
+	;	i32 ScreenY := 0
+	;	
+	;	this->ConvertToScreenCoords(this->X, this->Y, &ScreenX, &ScreenY)
+	;	
+	;	i32 PixelsLeft := this->Screen->Width - ScreenX
+	;	i32 CharactersLeft := PixelsLeft / FONT_WIDTH
+	;	
+	;	i32 TextDisplayLength := this->MeasureText(this->X, Text, TextLength)
+	;	
+	;	while (TextDisplayLength > CharactersLeft) {
+	;		i32 DisplayIndex := this->X
+	;		
+	;		for (i32 Index := 0, Index < CharactersLeft, Index++) {
+	;			i8 Next := Text[Index]
+	;			
+	;			if (Next = ASCII_TAB) {
+	;				i32 TabLength := this->GetTabLength(DisplayIndex + Index)
+	;				
+	;				for (i32 Tab := 0, Tab < TabLength, Tab++) {
+	;					Print(" ")
+	;				}
+	;			}
+	;			
+	;		}
+	;		
+	;		
+	;		
+	;		this->Screen->DrawText(ScreenX, ScreenY, Text, CharactersLeft, this->ForegroundColor, this->BackgroundColor)
+	;		
+	;		Text += CharactersLeft
+	;		TextLength -= CharactersLeft
+	;		
+	;		TextDisplayLength := this->MeasureText(this->X, Text, TextLength)
+	;		
+	;		this->NewLine()
+	;		
+	;		this->ConvertToScreenCoords(this->X, this->Y, &ScreenX, &ScreenY)
+	;		
+	;		PixelsLeft := this->Screen->Width - ScreenX
+	;		CharactersLeft := PixelsLeft / FONT_WIDTH
+	;	}
+	;	
+	;	if (TextDisplayLength) {
+	;		this->Screen->DrawText(ScreenX, ScreenY, Text, TextLength, this->ForegroundColor, this->BackgroundColor)
+	;	}
+	;	
+	;	i32 NewX := this->X + TextDisplayLength
+	;	
+	;	this->Y += NewX / this->Screen->Width
+	;	this->X := NewX % this->Screen->Width
+	;}
+	;
+	;define void Print(i8* Text, i32 TextLength) {
+	;	;this->HideCursor()
+	;	
+	;	i32 LastLineStart := 0
+	;	
+	;	for (i32 Index := 0, Index < TextLength, Index += 1) {
+	;		i8 NextCharacter := Text[Index]
+	;		
+	;		if (NextCharacter = 0x0A || NextCharacter = 0x0D) {
+	;			if (NextCharacter = 0x0A) {
+	;				this->Y += 1
+	;			}
+	;			else if (NextCharacter = 0x0D) {
+	;				this->X := 0
+	;			}
+	;			
+	;			i32 LastLineLength := Index - LastLineStart
+	;			
+	;			if (LastLineLength) {
+	;				this->RawPrint(&Text[LastLineStart], LastLineLength)
+	;			}
+	;			
+	;			LastLineStart := Index + 1
+	;		}
+	;	}
+	;	
+	;	if (LastLineStart < TextLength) {
+	;		this->RawPrint(&Text[LastLineStart], TextLength - LastLineStart)
+	;	}
+	;}
 	define void Print(i8* Text) {
 		this->Print(Text, StringLength(Text))
 	}

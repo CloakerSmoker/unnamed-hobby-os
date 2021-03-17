@@ -1,0 +1,361 @@
+
+
+
+#Require "./src/lib/Console.rlx"
+
+struct CapturedGroup {
+	i8* Text
+	i32 Length
+}
+
+i8 PATTERN_MINUS         := ('-' | 0b1000_0000) As i8
+i8 PATTERN_OPEN_BRACKET  := ('[' | 0b1000_0000) As i8
+i8 PATTERN_CLOSE_BRACKET := (']' | 0b1000_0000) As i8
+i8 PATTERN_DOT           := ('.' | 0b1000_0000) As i8
+i8 PATTERN_OPEN_PAREN    := ('(' | 0b1000_0000) As i8
+i8 PATTERN_CLOSE_PAREN   := (')' | 0b1000_0000) As i8
+
+struct Parser {
+	i8* Pattern
+	i32 PatternLength
+	i32 PatternIndex
+	
+	i8* Input
+	i32 InputLength
+	i32 InputIndex
+	
+	CapturedGroup* CaptureGroups
+	i32 CaptureGroupCount
+	
+	define void Initialize(i8* Pattern, i32 PatternLength, CapturedGroup* CaptureGroups, i32 CaptureGroupCount) {
+		this->Pattern := Pattern
+		this->PatternLength := PatternLength
+		
+		this->CaptureGroups := CaptureGroups
+		this->CaptureGroupCount := CaptureGroupCount
+	}
+	
+	define i8 NextPatternCharacter() {
+		i8 Result := this->Pattern[this->PatternIndex++]
+		
+		if      (Result = '-') { return PATTERN_MINUS         }
+		else if (Result = '[') { return PATTERN_OPEN_BRACKET  }
+		else if (Result = ']') { return PATTERN_CLOSE_BRACKET }
+		else if (Result = '.') { return PATTERN_DOT           }
+		else if (Result = '(') { return PATTERN_OPEN_PAREN    }
+		else if (Result = ')') { return PATTERN_CLOSE_PAREN   }
+		else if (Result = '`') {
+			;Print("Escaped %c\n", this->Pattern[this->PatternIndex])
+			return this->Pattern[this->PatternIndex++]
+		}
+		else if (Result = '\') {
+			Result := this->Pattern[this->PatternIndex++]
+			;Print("MaybeHex %c\n", Result)
+			
+			if (Result = 'x') {
+				i8 High := this->Pattern[this->PatternIndex++]
+				i8 Low := this->Pattern[this->PatternIndex++]
+				
+				;Print("Hex %c%c\n", High, Low)
+				
+				Result := GetCharacterValue(Low)
+				Result |= (GetCharacterValue(High) << 4) As i8
+				
+				;Print("Result %c\n", Result)
+			}
+			else {
+				this->PatternIndex--
+			}
+		}
+		
+		return Result
+	}
+	define void BacktrackPattern() {
+		if (this->PatternIndex >= 2) {
+			i8 Last := this->Pattern[this->PatternIndex - 2]
+			
+			if (Last = '`') {
+				this->PatternIndex -= 1
+			}
+		}
+		
+		if (this->PatternIndex >= 4) {
+			Last := this->Pattern[this->PatternIndex - 4]
+			
+			;Print("Last = %c\n", Last)
+			
+			if (Last = '\') {
+				Last := this->Pattern[this->PatternIndex - 3]
+				
+				;Print("LastLast = %c\n", Last)
+				
+				if (Last = 'x') {
+					this->PatternIndex -= 3
+				}
+			}
+		}
+		
+		this->PatternIndex -= 1
+	}
+	
+	define i8 NextInputCharacter() {
+		return this->Input[this->InputIndex++]
+	}
+	
+	define i8 MatchCharacterClass() {
+		i32 Index := this->PatternIndex
+		
+		i8 FirstCharacter := this->NextPatternCharacter()
+		i8 SecondCharacter := this->NextPatternCharacter()
+		
+		i8 InputCharacter := this->NextInputCharacter()
+		
+		Print("MCC %c : %c\n", FirstCharacter, InputCharacter)
+		
+		i8 Result := false
+		
+		if (SecondCharacter = PATTERN_MINUS) {
+			i8 ThirdCharacter := this->NextPatternCharacter()
+			
+			Print(" + MCC %c-%c : %c\n", FirstCharacter, ThirdCharacter, InputCharacter)
+			
+			Result := (FirstCharacter <= InputCharacter && InputCharacter <= ThirdCharacter)
+		}
+		else {
+			this->BacktrackPattern()
+			
+			Result := InputCharacter = FirstCharacter
+		}
+		
+		if !(Result) {
+			this->InputIndex--
+		}
+		
+		return Result
+	}
+	
+	define i8 MatchCharacterGroup() {
+		i8 Matched := false
+		
+		loop {
+			i8 Next := this->NextPatternCharacter()
+			
+			if (Next = PATTERN_CLOSE_BRACKET) {
+				return false
+			}
+			
+			this->BacktrackPattern()
+			
+			if (this->MatchCharacterClass()) {
+				break
+			}
+		}
+		
+		loop {
+			Next := this->NextPatternCharacter()
+			
+			if (Next = PATTERN_CLOSE_BRACKET) {
+				break
+			}
+		}
+		
+		return true
+	}
+	define i8 MatchCharacter() {
+		;if (this->InputIndex > this->InputLength) {
+		;	return false
+		;}
+		
+		i8 Left := this->NextInputCharacter()
+		i8 Right := this->NextPatternCharacter()
+		
+		if (Right = PATTERN_DOT) {
+			return true
+		}
+		
+		Print("MC %c : %c\n", Left, Right)
+		
+		return Left = Right
+	}
+	
+	;define i8 MatchGroup() {
+	;	
+	;}
+	;define i8 MatchAnchor() {
+	;
+	;}
+	
+	declare i8 MatchExpression()
+	
+	i32 CaptureGroupIndex
+	
+	define i8 MatchCaptureGroup() {
+		CapturedGroup* NextGroup := this->CaptureGroups[this->CaptureGroupIndex]
+		
+		i32 BeforeGroup := this->InputIndex
+		
+		i8 Matched := this->MatchExpression()
+		
+		Print("MCG %i ? %i\n", this->CaptureGroupIndex, Matched)
+		
+		if (Matched) {
+			NextGroup->Text := &this->Input[BeforeGroup]
+			NextGroup->Length := this->InputIndex - BeforeGroup
+			
+			this->CaptureGroupIndex++
+		}
+		
+		loop {
+			i8 Next := this->NextPatternCharacter()
+			
+			if (Next = PATTERN_CLOSE_PAREN) {
+				break
+			}
+		}
+		
+		return Matched
+	}
+	
+	define i8 MatchNonGroup() {
+		i8 FirstCharacter := this->NextPatternCharacter()
+		i8 Matched := false
+		
+		if (FirstCharacter = PATTERN_OPEN_BRACKET) {
+			Print("MCG (characters)\n")
+			return this->MatchCharacterGroup()
+		}
+		else {
+			this->BacktrackPattern()
+			
+			Print("MNG %c : %c\n", FirstCharacter, this->Input[this->InputIndex])
+			return this->MatchCharacter()
+		}
+	}
+	
+	define i8 MatchSubExpression() {
+		i8 FirstCharacter := this->NextPatternCharacter()
+		
+		if (FirstCharacter = PATTERN_OPEN_PAREN) {
+			Print("MCG (group)\n")
+			return this->MatchCaptureGroup()
+		}
+		else {
+			this->BacktrackPattern()
+			
+			i32 BeforeNonGroup := this->PatternIndex
+			i8 Matched := this->MatchNonGroup()
+			i32 AfterNonGroup := this->PatternIndex
+			
+			i8 Qualifier := this->NextPatternCharacter()
+			
+			if (Qualifier = '*') {
+				if (Matched) {
+					loop {
+						this->PatternIndex := BeforeNonGroup
+						
+						if !(this->MatchNonGroup()) {
+							break
+						}
+					}
+				}
+				
+				Matched := true
+				Qualifier := 1
+			}
+			else if (Qualifier = '+') {
+				if (Matched) {
+					loop {
+						this->PatternIndex := BeforeNonGroup
+						
+						if !(this->MatchNonGroup()) {
+							break
+						}
+					}
+				}
+				
+				Qualifier := 1
+			}
+			else if (Qualifier = '?') {
+				Matched := true
+				Qualifier := 1
+			}
+			else {
+				Qualifier := 0
+			}
+			
+			this->PatternIndex := AfterNonGroup + Qualifier
+			
+			return Matched
+		}
+	}
+	
+	define i8 MatchExpression() {
+		i32 InputStart := this->InputIndex
+		
+		if !(this->MatchSubExpression()) {
+			this->InputIndex := InputStart
+			
+			while (this->NextPatternCharacter() = '|') {
+				if (this->MatchSubExpression()) {
+					break
+				}
+				
+				this->InputIndex := InputStart
+			}
+		}
+		
+		;Print("ME %i = %i\n", this->InputIndex, InputStart)
+		
+		return this->InputIndex != InputStart
+	}
+	
+	define i8 Match() {
+		loop {
+			if (this->PatternIndex >= this->PatternLength) {
+				return true
+			}
+			
+			if !(this->MatchExpression()) {
+				return false
+			}
+		}
+		
+		return false
+	}
+	
+	define i8 Go(i8* Input, i32 InputLength) {
+		this->Input := Input
+		this->InputLength := InputLength
+		
+		this->InputIndex := 0
+		this->PatternIndex := 0
+		
+		return this->Match()
+	}
+	;define i8 Matched() {
+	;	
+	;}
+}
+
+
+define void Main() {
+	Parser P
+	
+	CapturedGroup{5} Groups
+	
+	i8* Pat := "\x5A`[([0-9]+)m"r
+	i32 GroupCount := 1
+	
+	P.Initialize(Pat, StringLength(Pat), Groups, GroupCount)
+	
+	i8 Matched := P.Go("Z[123m", 3)
+	
+	Print("Match? %i\n", Matched)
+	
+	if (Matched) {
+		for (i32 Index := 0, Index < GroupCount, Index++) {
+			i8* GroupText := CloneMemory(Groups[Index]->Text, Groups[Index]->Length)
+			Print("Group %i: '%s'\n", Index + 1, GroupText)
+		}
+	}
+}
