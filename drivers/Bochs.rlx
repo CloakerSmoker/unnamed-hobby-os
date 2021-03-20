@@ -56,8 +56,8 @@ i8* BOCHS_PRINT_STAGE := "N/A"
 
 define void BochsPrint(i8* Format, ... Args) {
 	if (USE_BOCHS_PORT_HACK) {
-		BochsPrintString(BOCHS_PRINT_STAGE)
-		BochsPrintString("	|: ")
+		;BochsPrintString(BOCHS_PRINT_STAGE)
+		;BochsPrintString("	|: ")
 		
 		i32 Length := StringLength(Format)
 		i32 ArgIndex := 1

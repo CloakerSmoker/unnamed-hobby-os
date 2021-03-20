@@ -57,7 +57,11 @@ struct Registers {
 	i64 RBP, i64 RDX, i64 RCX, i64 RBX, i64 RDI, i64 RSI, i64 RAX
 }
 struct InterruptContext {
-	i64 RIP, i64 CS, i64 Flags, i64 RSP, i64 SS
+	i64 RIP
+	i64 CS
+	i64 Flags
+	i64 RSP
+	i64 SS
 }
 
 struct IDTEntry unaligned {
@@ -94,6 +98,7 @@ define void InsertIDTEntry(i32 Index, void* Function, i8 Present) {
 i32 IDT_MAX := 50
 i32 IDT_SIZE := IDT_MAX * #IDTEntry
 
+declare void AddHandlerStubs()
 declare void AddKernelHandlers()
 declare void SetupDeviceInterrupts()
 
@@ -108,6 +113,8 @@ define void SetupInterrupts() {
 	
 	RemapPIC(0x20, 0x28)
 	
+	AddHandlerStubs()
+	
 	AddKernelHandlers()
 	SetupDeviceInterrupts()
 	
@@ -117,4 +124,71 @@ define void SetupInterrupts() {
 	}
 }
 
+define void GenericInterrupt(InterruptContext* Context, Registers* Registers, i32 InterruptNumber) {
+	BochsPrint("UNHANDLED INTERRUPT %i (%x)\n", InterruptNumber, InterruptNumber)
+	
+	BochsPrint("Interrupt Context: {\n")
+	BochsPrint("\tRIP: %x\n", Context->RIP)
+	BochsPrint("\tCS: %i (%x)\n", Context->CS, Context->CS)
+	BochsPrint("\tFlags: %i (%x, %b)\n", Context->Flags, Context->Flags, Context->Flags)
+	BochsPrint("\tRSP: %x\n", Context->RSP)
+	BochsPrint("\tSS: %x\n", Context->SS)
+	BochsPrint("}\n")
+	
+	BochsPrint("Registers: {\n")
+	BochsPrint("\tRAX: %x\n", Registers->RAX)
+	BochsPrint("\tRBX: %x\n", Registers->RBX)
+	BochsPrint("\tRCX: %x\n", Registers->RCX)
+	BochsPrint("\tRDX: %x\n", Registers->RDX)
+	BochsPrint("\tRSP: %x (copy from context)\n", Context->RSP)
+	BochsPrint("\tRBP: %x\n", Registers->RBP)
+	BochsPrint("\tRSI: %x\n", Registers->RSI)
+	BochsPrint("\tRDI: %x\n", Registers->RDI)
+	BochsPrint("\tR8 : %x\n", Registers->R8)
+	BochsPrint("\tR9 : %x\n", Registers->R9)
+	BochsPrint("\tR10: %x\n", Registers->R10)
+	BochsPrint("\tR11: %x\n", Registers->R11)
+	BochsPrint("\tR12: %x\n", Registers->R12)
+	BochsPrint("\tR13: %x\n", Registers->R13)
+	BochsPrint("\tR14: %x\n", Registers->R14)
+	BochsPrint("\tR15: %x\n", Registers->R15)
+	BochsPrint("}\n")
+	
+	BochsPrint("\nStack dump:\n")
+	
+	StackFrame* Last := Registers->RBP As StackFrame*
+	i32 Index := 1
+	
+	while (Last) {
+		if (Last->LastFrame & 1) {
+			StackFrame* Temp := Last->LastFrame - 1
+			
+			BochsPrint("\tStack[%i] Try catch address = %x\n", Index, Last->ReturnAddress, Temp)
+			Index += 1
+			
+			Last := Temp
+		}
+		else {
+			i64* MaybeMagic := (Last - 0x8) As i64*
+			i8** MaybeName := (Last - 0x10) As i8**
+			
+			if (Debug && *MaybeMagic = 0x12345678) {
+				BochsPrint("\tStack[%i] Fn = %s\n", Index, *MaybeName)
+			}
+			else {
+				BochsPrint("\tStack[%i] Fn callsite = %x\n", Index, Last->ReturnAddress, Last->LastFrame)
+			}
+			
+			Index += 1
+			
+			Last := Last->LastFrame
+		}
+	}
+	
+	asm {cli}
+	
+	loop {}
+}
+
+#Require "./src/kernel/core/InterruptStubs.rlx"
 #Require "./src/kernel/core/InterruptHandlers.rlx"

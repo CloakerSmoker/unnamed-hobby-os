@@ -15,7 +15,6 @@ declare void KernelHeapFree(void*)
 
 #Require "./src/kernel/graphics/Font.rlx"
 #Require "./src/kernel/graphics/Screen.rlx"
-#Require "./src/kernel/graphics/Terminal.rlx"
 
 #Require "./src/kernel/core/Paging.rlx"
 #Require "./src/kernel/core/Heap.rlx"
@@ -33,11 +32,14 @@ define void KernelHeapFree(void* Memory) {
 	KernelHeap->Free(Memory)
 }
 
+#Require "./src/utility/Memory.rlx"
+#Require "./src/utility/Exception.rlx"
+
+#Require "./src/kernel/graphics/Terminal.rlx"
+
 #Require "./src/kernel/core/Interrupts.rlx"
 #Require "./src/kernel/core/Devices.rlx"
 
-#Require "./src/utility/Memory.rlx"
-#Require "./src/utility/Exception.rlx"
 #Require "./src/drivers/Ext2.rlx"
 
 Ext2DeviceTraits* RootDevice := null
@@ -104,6 +106,8 @@ define void Main(void* RawFrameBuffer) {
 	RootINode := CloneMemory(FS->ReadINode(2), #INode)
 	
 	SetupShell()
+	
+	Print("^1Fasd\n")
 	
 	Prompt()
 	

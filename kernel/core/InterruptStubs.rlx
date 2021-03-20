@@ -1,0 +1,504 @@
+
+define void OnInterrupt0() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 0
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt1() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 1
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt2() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 2
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt3() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 3
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt4() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 4
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt5() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 5
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt6() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 6
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt7() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 7
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt8() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 8
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt9() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 9
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt10() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 10
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt11() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 11
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt12() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 12
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt13() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 13
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt14() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 14
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt15() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 15
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt16() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 16
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt17() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 17
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt18() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 18
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt19() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 19
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt20() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 20
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt21() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 21
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt22() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 22
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt23() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 23
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt24() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 24
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt25() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 25
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt26() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 26
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt27() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 27
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt28() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 28
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt29() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 29
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt30() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 30
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt31() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 31
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt32() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 32
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt33() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 33
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt34() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 34
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt35() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 35
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt36() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 36
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt37() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 37
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt38() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 38
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt39() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 39
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt40() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 40
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt41() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 41
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt42() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 42
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt43() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 43
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt44() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 44
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt45() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 45
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt46() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 46
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt47() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 47
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt48() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 48
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void OnInterrupt49() asm {
+	call, @InterruptSetup
+	
+	mov, rdx, 49
+	call, @GenericInterrupt
+	
+	jmp, @InterruptReturn
+}
+
+define void AddHandlerStubs() {
+	InsertIDTEntry(0, &OnInterrupt0, true)
+	InsertIDTEntry(1, &OnInterrupt1, true)
+	InsertIDTEntry(2, &OnInterrupt2, true)
+	InsertIDTEntry(3, &OnInterrupt3, true)
+	InsertIDTEntry(4, &OnInterrupt4, true)
+	InsertIDTEntry(5, &OnInterrupt5, true)
+	InsertIDTEntry(6, &OnInterrupt6, true)
+	InsertIDTEntry(7, &OnInterrupt7, true)
+	InsertIDTEntry(8, &OnInterrupt8, true)
+	InsertIDTEntry(9, &OnInterrupt9, true)
+	InsertIDTEntry(10, &OnInterrupt10, true)
+	InsertIDTEntry(11, &OnInterrupt11, true)
+	InsertIDTEntry(12, &OnInterrupt12, true)
+	InsertIDTEntry(13, &OnInterrupt13, true)
+	InsertIDTEntry(14, &OnInterrupt14, true)
+	InsertIDTEntry(15, &OnInterrupt15, true)
+	InsertIDTEntry(16, &OnInterrupt16, true)
+	InsertIDTEntry(17, &OnInterrupt17, true)
+	InsertIDTEntry(18, &OnInterrupt18, true)
+	InsertIDTEntry(19, &OnInterrupt19, true)
+	InsertIDTEntry(20, &OnInterrupt20, true)
+	InsertIDTEntry(21, &OnInterrupt21, true)
+	InsertIDTEntry(22, &OnInterrupt22, true)
+	InsertIDTEntry(23, &OnInterrupt23, true)
+	InsertIDTEntry(24, &OnInterrupt24, true)
+	InsertIDTEntry(25, &OnInterrupt25, true)
+	InsertIDTEntry(26, &OnInterrupt26, true)
+	InsertIDTEntry(27, &OnInterrupt27, true)
+	InsertIDTEntry(28, &OnInterrupt28, true)
+	InsertIDTEntry(29, &OnInterrupt29, true)
+	InsertIDTEntry(30, &OnInterrupt30, true)
+	InsertIDTEntry(31, &OnInterrupt31, true)
+	InsertIDTEntry(32, &OnInterrupt32, true)
+	InsertIDTEntry(33, &OnInterrupt33, true)
+	InsertIDTEntry(34, &OnInterrupt34, true)
+	InsertIDTEntry(35, &OnInterrupt35, true)
+	InsertIDTEntry(36, &OnInterrupt36, true)
+	InsertIDTEntry(37, &OnInterrupt37, true)
+	InsertIDTEntry(38, &OnInterrupt38, true)
+	InsertIDTEntry(39, &OnInterrupt39, true)
+	InsertIDTEntry(40, &OnInterrupt40, true)
+	InsertIDTEntry(41, &OnInterrupt41, true)
+	InsertIDTEntry(42, &OnInterrupt42, true)
+	InsertIDTEntry(43, &OnInterrupt43, true)
+	InsertIDTEntry(44, &OnInterrupt44, true)
+	InsertIDTEntry(45, &OnInterrupt45, true)
+	InsertIDTEntry(46, &OnInterrupt46, true)
+	InsertIDTEntry(47, &OnInterrupt47, true)
+	InsertIDTEntry(48, &OnInterrupt48, true)
+	InsertIDTEntry(49, &OnInterrupt49, true)
+
+}
