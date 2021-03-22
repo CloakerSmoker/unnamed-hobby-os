@@ -195,7 +195,7 @@ struct Terminal {
 			
 			BochsPrint("Switch to style %i\n", Style)
 			
-			;                         Black     Red       Green     Yellow    Blue      Magenta   Cyan      Grey
+			;                          Black     Red       Green     Yellow    Blue      Magenta   Cyan      Grey
 			i32* DarkColors   := {i32: 0x000000, 0xAA0000, 0x00AA00, 0xFFC706, 0x00007F, 0x9C009C, 0x008080, 0xC0C0C0}
 			;i32* BrightColors := {i8: 0x000000, 0xAA0000, 0x00AA00, 0xFFC706
 			

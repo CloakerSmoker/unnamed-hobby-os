@@ -32,6 +32,8 @@ define void KernelHeapFree(void* Memory) {
 	KernelHeap->Free(Memory)
 }
 
+#Require "./src/kernel/core/Descriptors.rlx"
+
 #Require "./src/utility/Memory.rlx"
 #Require "./src/utility/Exception.rlx"
 
@@ -51,26 +53,27 @@ INode* RootINode := null
 define void Main(void* RawFrameBuffer) {
 	BochsPrintString("Main\n")
 	
-	BochsPrint("Len: %i\n", StringLength("\n"))
-	
+	AddressSpace->Initialize(0x20_0000 As void*, BYTES_IN_6MB / PAGE_SIZE)
+	AddressSpace->MapRange(null, 0, PAGE_COUNT_FOR_6MB)
 	AddressSpace->Takeover()
 	
 	BochsPrintString("Paging initialized, AddressSpaceManager in control\n")
 	
 	; Identity map 2mb of memory for the kernel heap
-	void* HeapMemory := AddressSpace->AllocateMappedPages(PAGE_COUNT_FOR_2MB)
+	void* HeapMemory := 0x60_0000 As void*
+	AddressSpace->MapRange(HeapMemory, PAGE_COUNT_FOR_6MB, PAGE_COUNT_FOR_2MB)
 	
 	BochsPrintString("Allocated KernelHeap memory\n")
 	
 	; Remap the next available `FRAMEBUFFER_SIZE` bytes of virtual memory to 0xE000_0000 (or wherever int10 says)
 	i32 FrameBufferPageCount := AddressSpace->SizeToPageCount(FRAMEBUFFER_SIZE)
-	i64 FrameBufferPage := AddressSpace->AllocateContiguousVirtualPages(FrameBufferPageCount)
-	AddressSpace->MapPageRange(FrameBufferPage, AddressSpace->PointerToPageNumber(RawFrameBuffer), FrameBufferPageCount)
+	i8* FrameBuffer := 0x80_0000 As i8*
+	AddressSpace->MapRange(FrameBuffer, AddressSpace->PointerToPageNumber(RawFrameBuffer), FrameBufferPageCount)
 	
-	i8* FrameBuffer := AddressSpace->PageNumberToPointer(FrameBufferPage) As i8*
 	
 	;NativeScreen->Adopt(FrameBuffer, SCREEN_WIDTH, SCREEN_HEIGHT, BYTES_PER_PIXEL, 0, 0x00_00_00)
 	NativeScreen->Adopt(FrameBuffer, SCREEN_WIDTH, SCREEN_HEIGHT, BYTES_PER_PIXEL, 0, 0xFF_FF_FF)
+	NativeScreen->Clear()
 	
 	Terminal->Adopt(NativeScreen)
 	Terminal->SetColors(0x00_00_00, 0xFF_FF_FF)
@@ -84,6 +87,10 @@ define void Main(void* RawFrameBuffer) {
 	Terminal->Print("BOOT: Kernel Heap Initialized: ")
 	KernelHeap->Allocate('Example', 0x222)
 	KernelHeap->Print()
+	
+	SetupGDT()
+	
+	Terminal->PrintLine("BOOT: Setup GDT and TSS")
 	
 	SetupInterrupts()
 	

@@ -46,6 +46,9 @@ define void OnCommand(i8* CommandLine) {
 		
 		Print(" Uptime [ %ih %im %is | %ims ]\n Ticks [ %i ]\n", Hours, Minutes, Seconds, GetUptimeMS(), GetTickCount())
 	}
+	else if (StringEquals(Command, "crash")) {
+		breakpoint:()
+	}
 	else if (StringEquals(Command, "ls")) {
 		i32 NextEntryOffset := FS->StartWalkDirectory(RootINode)
 		
