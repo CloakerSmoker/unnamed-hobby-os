@@ -6,9 +6,7 @@ define void Prompt() {
 	Print("(>")
 }
 
-i8*{0x20} CommandParameters
-
-i8{0x200} ATABuffer
+i8*[0x20] CommandParameters
 
 define void OnCommand(i8* CommandLine) {
 	i32 ParameterStart := 0
@@ -108,24 +106,21 @@ define void OnCommand(i8* CommandLine) {
 		asm {sti}
 	}
 	else if (StringEquals(Command, "clear")) {
-		Terminal->Clear()
+		Print("%sc", ESC)
 	}
-	else if (StringEquals(Command, "ata")) {
-		ATARead(false, 0, 1, ATABuffer)
-		
-		for (i32 Row := 0, Row < 32, Row += 1) {
-			i8* ColumnData := ATABuffer + (Row * 16)
-			
-			for (i32 Column := 0, Column < 16, Column += 1) {
-				i32 NextByte := ColumnData[Column]
-				NextByte &= 0xFF
-				
-				Print("%c", NumberToCharacter((NextByte >> 4) As i8))
-				Print("%c ", NumberToCharacter((NextByte & 0xF) As i8))
+	else if (StringEquals(Command, "colors")) {
+		for (i8 Fore := 0, Fore < 16, Fore++) {
+			for (i8 Back := 0, Back < 16, Back++) {
+				SetColor(Fore, Back)
+				Print("Test")
 			}
 			
+			Print("^R")
 			Print("\n")
 		}
+	}
+	else if (StringEquals(Command, "color")) {
+		Print(Parameters[0], ESC)
 	}
 	else if (StringEquals(Command, "peek")) {
 		i64 TargetAddress := AToI(Parameters[0], 10)
@@ -168,12 +163,12 @@ define void OnCommand(i8* CommandLine) {
 	Prompt()
 }
 
-i8{0x200} CommandBuffer
+i8[0x200] CommandBuffer
 i32 CommandBufferIndex
 
 define void ShellOnKey(i16 ScanCode, i8 ASCIICode) {
 	if (ScanCode = SCANCODE_ENTER_DOWN) {
-		Terminal->NewLine()
+		Print("\n")
 		
 		CommandBuffer[CommandBufferIndex] := 0
 		OnCommand(CommandBuffer)
@@ -183,15 +178,13 @@ define void ShellOnKey(i16 ScanCode, i8 ASCIICode) {
 		if (CommandBufferIndex > 0) {
 			CommandBuffer[--CommandBufferIndex] := 0
 			
-			Terminal->Seek(Terminal->X - 1, Terminal->Y)
-			Terminal->Print(" ", 1)
-			Terminal->Seek(Terminal->X - 1, Terminal->Y)
+			Print("%c", 0x7F)
 		}
 	}
 	else {
 		CommandBuffer[CommandBufferIndex++] := ASCIICode
 		
-		Terminal->Print(&ASCIICode, 1)
+		Print("%c", ASCIICode)
 	}
 }
 

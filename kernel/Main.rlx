@@ -75,28 +75,28 @@ define void Main(void* RawFrameBuffer) {
 	NativeScreen->Adopt(FrameBuffer, SCREEN_WIDTH, SCREEN_HEIGHT, BYTES_PER_PIXEL, 0, 0xFF_FF_FF)
 	NativeScreen->Clear()
 	
-	Terminal->Adopt(NativeScreen)
-	Terminal->SetColors(0x00_00_00, 0xFF_FF_FF)
-	;Terminal->SetColors(0xFF_FF_FF, 0x00_00_00)
-	Terminal->Clear()
+	KernelTerminal := KernelHeapAllocate('Term', #Terminal)
+	KernelTerminal->Adopt(NativeScreen, 0x00_00_00, 0xFF_FF_FF)
+	;KernelTerminal->SetColors(0xFF_FF_FF, 0x00_00_00)
+	KernelTerminal->Clear()
 	
-	Terminal->PrintLine("BOOT: Screen *probably* works")
+	KernelTerminal->PrintLine("BOOT: Screen *probably* works")
 	
 	KernelHeap->Initialize(HeapMemory, BYTES_IN_2MB)
 	
-	Terminal->Print("BOOT: Kernel Heap Initialized: ")
+	KernelTerminal->Print("BOOT: Kernel Heap Initialized: ")
 	KernelHeap->Allocate('Example', 0x222)
 	KernelHeap->Print()
 	
 	SetupGDT()
 	
-	Terminal->PrintLine("BOOT: Setup GDT and TSS")
+	KernelTerminal->PrintLine("BOOT: Setup GDT and TSS")
 	
 	SetupInterrupts()
 	
-	Terminal->SetColors(0x00_00_00, 0xFF_FF_FF)
+	KernelTerminal->SetColors(0x00_00_00, 0xFF_FF_FF)
 	
-	Terminal->PrintLine("BOOT: Mounting disk")
+	KernelTerminal->PrintLine("BOOT: Mounting disk")
 	
 	void* SB := KernelHeapAllocate('SB', 2048)
 	void* TI := KernelHeapAllocate('TI', 1024)
@@ -113,8 +113,6 @@ define void Main(void* RawFrameBuffer) {
 	RootINode := CloneMemory(FS->ReadINode(2), #INode)
 	
 	SetupShell()
-	
-	Print("^1Fasd\n")
 	
 	Prompt()
 	

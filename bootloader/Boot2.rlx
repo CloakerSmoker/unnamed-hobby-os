@@ -34,7 +34,7 @@ struct INode {
 		i32 INodeNumber
 	}
 	
-	i32{12} DirectBlocks,
+	i32[12] DirectBlocks,
 	i32 SingleIndirectBlock,
 	i32 DoubleIndirectBlock,
 	i32 TripleIndirectBlock,
@@ -43,7 +43,7 @@ struct INode {
 	i64 Reserved,
 	i32 FragmentAddress,
 	
-	i32{3} OSValues
+	i32[3] OSValues
 }
 
 i8 DIRECTORY_ENTRY_FILE := 1
@@ -54,7 +54,7 @@ struct DirectoryEntry {
 	i16 EntryLength,
 	i8 NameLength,
 	i8 Flags,
-	i8{1} Name
+	i8[1] Name
 	
 	define i16 TrueSize() {
 		i32 Result := this->NameLength + 8
@@ -162,7 +162,7 @@ struct MinimalExt2 {
 	}
 	
 	define i32 FindINodeDataBlock(INode* TargetNode, i32 DataBlockIndex) {
-		i32{4} BlockPath
+		i32[4] BlockPath
 		
 		i32 BlockCount := this->CalculateDataBlockPath(DataBlockIndex, BlockPath)
 		i32* RootBlock := TargetNode~>DirectBlocks

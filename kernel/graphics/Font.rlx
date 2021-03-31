@@ -1,5 +1,5 @@
 struct Glyph {
-	i8{12} Rows
+	i8[12] Rows
 }
 
 i32 FONT_WIDTH := 8
@@ -7,7 +7,7 @@ i32 FONT_HEIGHT := 12
 
 i8 FIRST_CHARACTER := '!'
 
-Glyph* Font := {i8: 
+Glyph* Font := i8[ 
 0b_00000000
 0b_00000000
 0b_00011000
@@ -1248,7 +1248,7 @@ Glyph* Font := {i8:
 0b_10011001
 0b_01100110
 
-} As Glyph*
+] As Glyph*
 
 i8 LAST_CHARACTER := 127
 

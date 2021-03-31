@@ -1,13 +1,13 @@
-struct Device {
+struct DeviceInfo {
 	i8* Name
 	void* SetupInterruptsFunction
 }
 
 i32 DeviceCount
-Device{20} Devices
+DeviceInfo[20] Devices
 
-define Device* CreateDevice(i8* Name, void* SetupInterruptsFunction) {
-	Device* Device := Devices[DeviceCount++]
+define DeviceInfo* CreateDevice(i8* Name, void* SetupInterruptsFunction) {
+	DeviceInfo* Device := Devices[DeviceCount++]
 	
 	Device->Name := Name
 	Device->SetupInterruptsFunction := SetupInterruptsFunction
@@ -19,13 +19,13 @@ define Device* CreateDevice(i8* Name, void* SetupInterruptsFunction) {
 #Require "./src/drivers/PS2Keyboard.rlx"
 #Require "./src/drivers/ATA.rlx"
 
-define void CallDeviceFunction(Device* this, void* Function) asm {
+define void CallDeviceFunction(DeviceInfo* this, void* Function) asm {
 	jmp, rsi
 }
 
 define void SetupDeviceInterrupts() {
 	for (i32 Index := 0, Index < DeviceCount, Index++) {
-		Device* NextDevice := Devices[Index]
+		DeviceInfo* NextDevice := Devices[Index]
 		
 		if (NextDevice->SetupInterruptsFunction != null) {
 			CallDeviceFunction(NextDevice, NextDevice->SetupInterruptsFunction)

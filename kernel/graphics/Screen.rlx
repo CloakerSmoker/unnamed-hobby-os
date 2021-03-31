@@ -165,8 +165,11 @@ struct Screen {
 		this->DrawText(X, Y, Text, StringLength(Text), ForegroundColor, BackgroundColor)
 	}
 	
+	define void Clear(i32 Color) {
+		this->DrawRectangle(0, 0, this->Width, this->Height, Color)
+	}
 	define void Clear() {
-		this->DrawRectangle(0, 0, this->Width, this->Height, this->FillColor)
+		this->Clear(this->FillColor)
 	}
 	
 	define void VerticalScroll(i32 Offset) {

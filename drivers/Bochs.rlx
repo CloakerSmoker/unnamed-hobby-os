@@ -18,7 +18,7 @@ define void BochsPrintNewLine() {
 	BochsPrintCharacter(10)
 }
 
-i8{96} BochsPrintBuffer
+i8[96] BochsPrintBuffer
 
 define void ClearBochsPrintBuffer() {
 	for (i32 Index := 0, Index < 12, Index += 1) {

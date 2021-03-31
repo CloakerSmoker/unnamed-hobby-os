@@ -77,7 +77,7 @@ define void SetupPIT() {
 	InsertIDTEntry(0x20, &PITInterrupt, true)
 }
 
-Device* PIT := CreateDevice("PIT", &SetupPIT)
+DeviceInfo* PIT := CreateDevice("PIT", &SetupPIT)
 
 define void SetPITMode(PITCounterMode* Mode) {
 	CurrentPITMode := Mode

@@ -52,7 +52,7 @@ define void InterruptReturn() asm {
 	iret
 }
 
-struct Registers {
+struct InterruptRegisters {
 	i64 R15, i64 R14, i64 R13, i64 R12, i64 R11, i64 R10, i64 R9, i64 R8,
 	i64 RBP, i64 RDX, i64 RCX, i64 RBX, i64 RDI, i64 RSI, i64 RAX
 }
@@ -74,16 +74,10 @@ struct IDTEntry unaligned {
 	i32 Padding
 }
 
-struct IDT unaligned {
-	i16 Size,
-	IDTEntry* Start
-}
-
-IDT* IDTHeader
 IDTEntry* IDT
 
 define void InsertIDTEntry(i32 Index, void* Function, i8 Present) {
-	IDTEntry* E := IDT + (Index * #IDTEntry)
+	IDTEntry* E := IDT[Index]
 	
 	MemorySet64(E As i64*, 0, 2)
 	
@@ -105,11 +99,12 @@ declare void SetupDeviceInterrupts()
 define void SetupInterrupts() {
 	asm {cli}
 	
-	IDTHeader := KernelHeap->Allocate('IDTH', 0x10)
+	DescriptorTableHeader IDTHeader
+	
 	IDT := KernelHeap->Allocate('IDT', IDT_SIZE)
 	
-	IDTHeader->Start := IDT
-	IDTHeader->Size := IDT_SIZE As i16
+	IDTHeader.Base := IDT
+	IDTHeader.Limit := IDT_SIZE As i16
 	
 	RemapPIC(0x20, 0x28)
 	
@@ -118,13 +113,13 @@ define void SetupInterrupts() {
 	AddKernelHandlers()
 	SetupDeviceInterrupts()
 	
-	asm (rax := IDTHeader) {
+	asm (rax := &IDTHeader) {
 		lidt, {rax} As i64*
 		sti
 	}
 }
 
-define void GenericInterrupt(InterruptContext* Context, Registers* Registers, i32 InterruptNumber) {
+define void GenericInterrupt(InterruptContext* Context, InterruptRegisters* Registers, i32 InterruptNumber) {
 	BochsPrint("UNHANDLED INTERRUPT %i (%x)\n", InterruptNumber, InterruptNumber)
 	
 	BochsPrint("Interrupt Context: {\n")

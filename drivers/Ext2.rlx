@@ -75,7 +75,7 @@ struct BlockGroupDescriptor {
 	i16 UnallocatedBlocks,
 	i16 UnallocatedINodes,
 	i16 DirectoryCount,
-	i8{14} Padding
+	i8[14] Padding
 }
 
 i8 INODE_FILE := 0x8
@@ -105,7 +105,7 @@ struct INode {
 		i32 INodeNumber
 	}
 	
-	i32{12} DirectBlocks,
+	i32[12] DirectBlocks,
 	i32 SingleIndirectBlock,
 	i32 DoubleIndirectBlock,
 	i32 TripleIndirectBlock,
@@ -114,7 +114,7 @@ struct INode {
 	i64 Reserved,
 	i32 FragmentAddress,
 	
-	i32{3} OSValues
+	i32[3] OSValues
 	
 	define void SetFieldDefaults() {
 		this->Permissions := (0x1FF | 0x8000) As i16
@@ -163,7 +163,7 @@ struct DirectoryEntry {
 	i16 EntryLength,
 	i8 NameLength,
 	i8 Flags,
-	i8{1} Name
+	i8[1] Name
 	
 	define i16 TrueSize() {
 		i32 Result := this->NameLength + 8
@@ -523,7 +523,7 @@ struct Ext2 {
 	define i32 FindINodeDataBlock(INode* TargetNode, i32 DataBlockIndex, i8 AllocateIfNeeded) {
 		;Print("FIDB %i, %i, %i\n", TargetNode->INodeNumber, DataBlockIndex, AllocateIfNeeded)
 		
-		i32{4} BlockPath
+		i32[4] BlockPath
 		
 		i32 BlockCount := this->CalculateDataBlockPath(DataBlockIndex, BlockPath)
 		i32* RootBlock := TargetNode~>DirectBlocks

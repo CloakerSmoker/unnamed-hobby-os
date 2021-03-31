@@ -111,4 +111,4 @@ define void SetupKeyboard() {
 	EnablePICLine(1, true)
 }
 
-Device* PS2Keyboard := CreateDevice("PS/2 Keyboard", &SetupKeyboard)
+DeviceInfo* PS2Keyboard := CreateDevice("PS/2 Keyboard", &SetupKeyboard)
