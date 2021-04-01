@@ -28,7 +28,7 @@ struct Terminal {
 	i32 MaxRow
 	
 	define void Clear() {
-		this->Screen->Clear()
+		this->Screen->Clear(this->BackgroundColor)
 		this->X := 0
 		this->Y := 0
 	}
@@ -81,6 +81,8 @@ struct Terminal {
 		}
 	}
 	
+	i8 CursorShown
+	
 	define void DrawCursor(i8 Enable) {
 		i32 ScreenX := 0
 		i32 ScreenY := 0
@@ -94,12 +96,36 @@ struct Terminal {
 		}
 		
 		this->Screen->DrawRectangle(ScreenX, ScreenY + 10, 8, 2, Color)
+		
+		this->CursorShown := Enable
 	}
 	define void ShowCursor() {
 		this->DrawCursor(true)
 	}
 	define void HideCursor() {
 		this->DrawCursor(false)
+	}
+	
+	i32 IgnoreCursorTicks
+	
+	define void ToggleCursor() {
+		if (this->IgnoreCursorTicks) {
+			this->IgnoreCursorTicks--
+		}
+		else {
+			if (this->CursorShown) {
+				this->HideCursor()
+			}
+			else {
+				this->ShowCursor()
+			}
+		}
+	}
+	
+	Timer* CursorTimer
+	
+	define void SetCursorTimer() {
+		this->CursorTimer := SetTimer(250, &Terminal.ToggleCursor, this)
 	}
 
 	define i32 GetTabLength(i32 AtIndex) {
@@ -234,16 +260,10 @@ struct Terminal {
 				CursorDistance := 1
 			}
 			
-			i32* Value := null
-			i32 Max := 0
-			
 			i32 NewX := this->X
 			i32 NewY := this->Y
 			
 			if (Command = 'A' || Command = 'B') {
-				Value := &this->Y
-				Max := this->MaxRow
-				
 				if (Command = 'A') {
 					NewY -= CursorDistance
 				}
@@ -252,14 +272,11 @@ struct Terminal {
 				}
 			}
 			else if (Command = 'C' || Command = 'D') {
-				Value := &this->X
-				Max := this->MaxColumn
-				
 				if (Command = 'C') {
-					NewX -= CursorDistance
+					NewX += CursorDistance
 				}
 				else {
-					NewY -= CursorDistance
+					NewX -= CursorDistance
 				}
 			}
 			
@@ -349,12 +366,14 @@ struct Terminal {
 				this->RawPrintCharacter(&ScreenX, &ScreenY, Line[Index])
 			}
 		}
-		
-		
 	}
 	
 	define void Print(i8* Text, i32 TextLength) {
-		;this->HideCursor()
+		if !(this->IgnoreCursorTicks) {
+			this->HideCursor()
+		}
+		
+		this->IgnoreCursorTicks := -1
 		
 		i32 LastLineStart := 0
 		
@@ -382,92 +401,10 @@ struct Terminal {
 		if (LastLineStart < TextLength) {
 			this->PrintMarkedUpLine(&Text[LastLineStart], TextLength - LastLineStart)
 		}
+		
+		this->IgnoreCursorTicks := 1
 	}
 	
-	;define void PrintSingleLine(i8* Text, i32 TextLength) {
-	;	i32 ScreenX := 0
-	;	i32 ScreenY := 0
-	;	
-	;	this->ConvertToScreenCoords(this->X, this->Y, &ScreenX, &ScreenY)
-	;	
-	;	i32 PixelsLeft := this->Screen->Width - ScreenX
-	;	i32 CharactersLeft := PixelsLeft / FONT_WIDTH
-	;	
-	;	i32 TextDisplayLength := this->MeasureText(this->X, Text, TextLength)
-	;	
-	;	while (TextDisplayLength > CharactersLeft) {
-	;		i32 DisplayIndex := this->X
-	;		
-	;		for (i32 Index := 0, Index < CharactersLeft, Index++) {
-	;			i8 Next := Text[Index]
-	;			
-	;			if (Next = ASCII_TAB) {
-	;				i32 TabLength := this->GetTabLength(DisplayIndex + Index)
-	;				
-	;				for (i32 Tab := 0, Tab < TabLength, Tab++) {
-	;					Print(" ")
-	;				}
-	;			}
-	;			
-	;		}
-	;		
-	;		
-	;		
-	;		this->Screen->DrawText(ScreenX, ScreenY, Text, CharactersLeft, this->ForegroundColor, this->BackgroundColor)
-	;		
-	;		Text += CharactersLeft
-	;		TextLength -= CharactersLeft
-	;		
-	;		TextDisplayLength := this->MeasureText(this->X, Text, TextLength)
-	;		
-	;		this->NewLine()
-	;		
-	;		this->ConvertToScreenCoords(this->X, this->Y, &ScreenX, &ScreenY)
-	;		
-	;		PixelsLeft := this->Screen->Width - ScreenX
-	;		CharactersLeft := PixelsLeft / FONT_WIDTH
-	;	}
-	;	
-	;	if (TextDisplayLength) {
-	;		this->Screen->DrawText(ScreenX, ScreenY, Text, TextLength, this->ForegroundColor, this->BackgroundColor)
-	;	}
-	;	
-	;	i32 NewX := this->X + TextDisplayLength
-	;	
-	;	this->Y += NewX / this->Screen->Width
-	;	this->X := NewX % this->Screen->Width
-	;}
-	;
-	;define void Print(i8* Text, i32 TextLength) {
-	;	;this->HideCursor()
-	;	
-	;	i32 LastLineStart := 0
-	;	
-	;	for (i32 Index := 0, Index < TextLength, Index += 1) {
-	;		i8 NextCharacter := Text[Index]
-	;		
-	;		if (NextCharacter = 0x0A || NextCharacter = 0x0D) {
-	;			if (NextCharacter = 0x0A) {
-	;				this->Y += 1
-	;			}
-	;			else if (NextCharacter = 0x0D) {
-	;				this->X := 0
-	;			}
-	;			
-	;			i32 LastLineLength := Index - LastLineStart
-	;			
-	;			if (LastLineLength) {
-	;				this->RawPrint(&Text[LastLineStart], LastLineLength)
-	;			}
-	;			
-	;			LastLineStart := Index + 1
-	;		}
-	;	}
-	;	
-	;	if (LastLineStart < TextLength) {
-	;		this->RawPrint(&Text[LastLineStart], TextLength - LastLineStart)
-	;	}
-	;}
 	define void Print(i8* Text) {
 		this->Print(Text, StringLength(Text))
 	}

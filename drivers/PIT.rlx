@@ -34,15 +34,22 @@ define i64 GetUptimeMS() {
 }
 
 PITCounterMode* CurrentPITMode := null
+void* OnTickCallback := null
 
 define void OnPITInterrupt() {
 	TickCount += 1
-	
+
 	PITWhole += CurrentPITMode->WholePerTick
 	PITFraction += CurrentPITMode->FractionPerTick
 	
 	PITWhole += PITFraction / CurrentPITMode->FractionToWholeDivisor
 	PITFraction %= CurrentPITMode->FractionToWholeDivisor
+	
+	if (OnTickCallback) {
+		asm (rax := OnTickCallback, rdi := PITWhole) {
+			call, rax
+		}
+	}
 	
 	SendEOI(0)
 }
@@ -86,6 +93,9 @@ define void SetPITMode(PITCounterMode* Mode) {
 	InitializePIT(Command, Mode->ReloadValue)
 	
 	EnablePICLine(0, true)
+}
+define void SetPITCallback(void* Callback) {
+	OnTickCallback := Callback
 }
 
 define void SleepTicks(i32 Ticks) {

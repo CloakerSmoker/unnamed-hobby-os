@@ -37,9 +37,11 @@ define void KernelHeapFree(void* Memory) {
 #Require "./src/utility/Memory.rlx"
 #Require "./src/utility/Exception.rlx"
 
+#Require "./src/kernel/core/Timer.rlx"
+
 #Require "./src/kernel/graphics/Terminal.rlx"
 
-i8 USE_INTERRUPT_STUBS := false
+i8 USE_INTERRUPT_STUBS := true
 
 #Require "./src/kernel/core/Interrupts.rlx"
 #Require "./src/kernel/core/Devices.rlx"
@@ -51,6 +53,10 @@ Ext2* FS := null
 INode* RootINode := null
 
 #Require "./src/kernel/core/Shell.rlx"
+
+define void TestTimer() {
+	Print("Timer fired!\n")
+}
 
 define void Main(void* RawFrameBuffer) {
 	BochsPrintString("Main\n")
@@ -98,8 +104,10 @@ define void Main(void* RawFrameBuffer) {
 	KernelTerminal->PrintLine("BOOT: Setup GDT and TSS")
 	
 	SetupInterrupts()
+	SetPITMode(PIT_100HZ)
+	SetupTimers()
 	
-	KernelTerminal->SetColors(0x00_00_00, 0xFF_FF_FF)
+	KernelTerminal->SetCursorTimer()
 	
 	KernelTerminal->PrintLine("BOOT: Mounting disk")
 	
@@ -118,6 +126,8 @@ define void Main(void* RawFrameBuffer) {
 	RootINode := CloneMemory(FS->ReadINode(2), #INode)
 	
 	SetupShell()
+	
+	;SetTimer(2000, &TestTimer, null)
 	
 	Prompt()
 	
