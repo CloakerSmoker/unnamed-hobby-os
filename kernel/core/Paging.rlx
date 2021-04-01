@@ -18,8 +18,9 @@ i64 PAGE_FRAMES_BASE := 0x20_0000
 
 i32 PAGE_SIZE               := 0x1000
 
-i64 PAGE_PRESENT := 1
-i64 PAGE_WRITE := 2
+i64 PAGE_NOT_PRESENT := 0
+i64 PAGE_PRESENT     := 1
+i64 PAGE_WRITE       := 2
 
 define void SetCR3(i64**** PML4T) asm {
 	movcr3, rdi
@@ -165,6 +166,11 @@ struct AddressSpaceManager {
 		i64* PageTableEntry := this->RemoveFlags(this->FindOrAddPTEntry(Address))
 		
 		*PageTableEntry := this->PackPTEntry(Page, PAGE_PRESENT | PAGE_WRITE)
+	}
+	define void Map(void* Address, i64 Page, i64 Flags) {
+		i64* PageTableEntry := this->RemoveFlags(this->FindOrAddPTEntry(Address))
+		
+		*PageTableEntry := this->PackPTEntry(Page, Flags)
 	}
 	
 	define void MapRange(void* Address, i64 StartPage, i32 Count) {

@@ -108,7 +108,9 @@ define void SetupInterrupts() {
 	
 	RemapPIC(0x20, 0x28)
 	
-	AddHandlerStubs()
+	if (USE_INTERRUPT_STUBS) {
+		AddHandlerStubs()
+	}
 	
 	AddKernelHandlers()
 	SetupDeviceInterrupts()

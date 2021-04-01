@@ -39,6 +39,8 @@ define void KernelHeapFree(void* Memory) {
 
 #Require "./src/kernel/graphics/Terminal.rlx"
 
+i8 USE_INTERRUPT_STUBS := false
+
 #Require "./src/kernel/core/Interrupts.rlx"
 #Require "./src/kernel/core/Devices.rlx"
 
@@ -75,12 +77,15 @@ define void Main(void* RawFrameBuffer) {
 	NativeScreen->Adopt(FrameBuffer, SCREEN_WIDTH, SCREEN_HEIGHT, BYTES_PER_PIXEL, 0, 0xFF_FF_FF)
 	NativeScreen->Clear()
 	
-	KernelTerminal := KernelHeapAllocate('Term', #Terminal)
 	KernelTerminal->Adopt(NativeScreen, 0x00_00_00, 0xFF_FF_FF)
 	;KernelTerminal->SetColors(0xFF_FF_FF, 0x00_00_00)
 	KernelTerminal->Clear()
 	
 	KernelTerminal->PrintLine("BOOT: Screen *probably* works")
+	
+	AddressSpace->Map(0 As void*, 0, PAGE_NOT_PRESENT)
+	
+	KernelTerminal->PrintLine("BOOT: Unmapped page 0")
 	
 	KernelHeap->Initialize(HeapMemory, BYTES_IN_2MB)
 	

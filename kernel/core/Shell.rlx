@@ -115,12 +115,21 @@ define void OnCommand(i8* CommandLine) {
 				Print("Test")
 			}
 			
-			Print("^R")
-			Print("\n")
+			Print("^R\n")
 		}
 	}
 	else if (StringEquals(Command, "color")) {
 		Print(Parameters[0], ESC)
+	}
+	else if (StringEquals(Command, "scroll")) {
+		if (ParameterCount = 1) {
+			i64 LineOffset := AToI(Parameters[0], 10)
+			
+			Print("^E%iS", LineOffset)
+		}
+		else {
+			Print("^ES")
+		}
 	}
 	else if (StringEquals(Command, "peek")) {
 		i64 TargetAddress := AToI(Parameters[0], 10)

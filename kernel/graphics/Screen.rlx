@@ -173,26 +173,26 @@ struct Screen {
 	}
 	
 	define void VerticalScroll(i32 Offset) {
-		;i32 GapSize := Offset * this->RowSize
-		;
-		;void* TopRow := this->RawFrameBuffer
-		;void* NewTopRow := TopRow + GapSize
-		;
-		;i32 Y := 0
-		;
-		;if (Offset < 0) {
-		;	Offset := -Offset
-		;	
-		;	GapSize := Offset * this->RowSize
-		;	
-		;	NewTopRow := this->RawFrameBuffer
-		;	TopRow := NewTopRow + GapSize
-		;	
-		;	Y := this->Height - Offset
-		;}
-		;
-		;FastMoveMemory(NewTopRow, TopRow, this->FrameBufferSize - GapSize)
-		;this->DrawRectangle(0, Y, this->Width, Offset, this->FillColor)
+		i32 GapSize := Offset * this->RowSize
+		
+		void* TopRow := this->RawFrameBuffer
+		void* NewTopRow := TopRow + GapSize
+		
+		i32 Y := 0
+		
+		if (Offset < 0) {
+			Offset := -Offset
+			
+			GapSize := Offset * this->RowSize
+			
+			NewTopRow := this->RawFrameBuffer
+			TopRow := NewTopRow + GapSize
+			
+			Y := this->Height - Offset
+		}
+		
+		FastMoveMemory(NewTopRow, TopRow, this->FrameBufferSize - GapSize)
+		this->DrawRectangle(0, Y, this->Width, Offset, this->FillColor)
 	}
 }
 

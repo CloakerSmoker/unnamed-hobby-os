@@ -1,7 +1,9 @@
 
 #Require "./src/kernel/graphics/Screen.rlx"
 
-i32 ASCII_TAB := 0x9
+i32 ASCII_TAB  := 0x9
+i32 ASCII_ESC  := 0x1B
+i32 ASCII_BACK := 0x7F
 i32 TAB_SIZE := 4
 
 struct Terminal {
@@ -18,6 +20,12 @@ struct Terminal {
 	
 	i8[20] EscapeBuffer
 	i32 EscapeIndex
+	
+	i32 Width
+	i32 Height
+	
+	i32 MaxColumn
+	i32 MaxRow
 	
 	define void Clear() {
 		this->Screen->Clear()
@@ -36,6 +44,10 @@ struct Terminal {
 		
 		this->X := 0
 		this->Y := 0
+		this->Width  := NewScreen->Width  / FONT_WIDTH
+		this->Height := NewScreen->Height / FONT_HEIGHT
+		this->MaxColumn := this->Width  - 1
+		this->MaxRow    := this->Height - 1
 		
 		this->EscapeIndex := 0
 	}
@@ -46,21 +58,26 @@ struct Terminal {
 	}
 	
 	define void ConvertToScreenCoords(i32 XIn, i32 YIn, i32* XOut, i32* YOut) {
-		*XOut := XIn * 8
-		*YOut := YIn * 12
+		*XOut := XIn * FONT_WIDTH
+		*YOut := YIn * FONT_HEIGHT
+	}
+	
+	define void ScrollUp(i32 LineCount) {
+		i32 ScrollSize := FONT_HEIGHT * LineCount
+		
+		this->Y -= LineCount
+		
+		this->Screen->VerticalScroll(-ScrollSize)
 	}
 	
 	define void NewLine() {
-		this->X := 0
 		this->Y += 1
 		
 		i32 ScreenX := 0
 		i32 ScreenY := 0
 		
-		this->ConvertToScreenCoords(this->X, this->Y, &ScreenX, &ScreenY)
-		
-		if (ScreenY > this->Screen->Height) {
-			this->Clear()
+		if (this->Y >= this->Height) {
+			this->ScrollUp(4)
 		}
 	}
 	
@@ -84,60 +101,9 @@ struct Terminal {
 	define void HideCursor() {
 		this->DrawCursor(false)
 	}
-	
-	define i32 MeasureText(i32 StartDisplayIndex, i8* Text, i32 TextLength) {
-		i32 DisplayIndex := StartDisplayIndex
-		
-		for (i32 Index := 0, Index < TextLength, Index++) {
-			i8 Next := Text[Index]
-			
-			if (Next = ASCII_TAB) {
-				i32 NextAlignmentPointOffset := TAB_SIZE - (DisplayIndex % TAB_SIZE)
-				
-				DisplayIndex += NextAlignmentPointOffset
-			}
-			else {
-				DisplayIndex++
-			}
-		}
-		
-		return DisplayIndex - StartDisplayIndex
-	}
+
 	define i32 GetTabLength(i32 AtIndex) {
 		return TAB_SIZE - (AtIndex % TAB_SIZE)
-	}
-	
-	define void RawPrintCharacter(i32* ScreenX, i32* ScreenY, i8 Character) {
-		this->Screen->DrawCharacter(*ScreenX, *ScreenY, Character, this->ForegroundColor, this->BackgroundColor)
-		*ScreenX += FONT_WIDTH
-	}
-	
-	define void RawPrintLine(i8* Line, i32 LineLength) {
-		i32 ScreenX := 0
-		i32 ScreenY := 0
-		
-		this->ConvertToScreenCoords(this->X, this->Y, &ScreenX, &ScreenY)
-		
-		for (i32 Index := 0, Index < LineLength, Index++) {
-			i8 Next := Line[Index]
-			
-			if (Next = ASCII_TAB) {
-				i32 TabLength := this->GetTabLength(this->X + Index)
-				
-				for (i32 TabIndex := 0, TabIndex < TabLength, TabIndex++) {
-					this->RawPrintCharacter(&ScreenX, &ScreenY, ' ')
-				}
-			}
-			else {
-				this->RawPrintCharacter(&ScreenX, &ScreenY, Next)
-			}
-		}
-		
-		this->X += this->MeasureText(this->X, Line, LineLength)
-	}
-	
-	define void PrintWrappedLine(i8* Line, i32 LineLength) {
-		this->RawPrintLine(Line, LineLength)
 	}
 	
 	define void DoEscape() {
@@ -234,6 +200,82 @@ struct Terminal {
 		else if (Command = 'c') {
 			this->Clear()
 		}
+		else if (Command = 'S') {
+			i32 ScrollDistance := 0
+			
+			if (ParameterCount != 0) {
+				i32 ScrollDistanceLength := ParameterLengths[0]
+				i8* ScrollDistanceText := Parameters[0]
+			
+				for (i32 ScrollDistanceIndex := 0, ScrollDistanceIndex < ScrollDistanceLength, ScrollDistanceIndex++) {
+					ScrollDistance *= 10
+					ScrollDistance += ScrollDistanceText[ScrollDistanceIndex] - '0'
+				}
+			}
+			else {
+				ScrollDistance := 1
+			}
+			
+			this->ScrollUp(ScrollDistance)
+		}
+		else if ('A' <= Command && Command <= 'D') {
+			i32 CursorDistance := 0
+			
+			if (ParameterCount != 0) {
+				i32 CursorDistanceLength := ParameterLengths[0]
+				i8* CursorDistanceText := Parameters[0]
+			
+				for (i32 CursorDistanceIndex := 0, CursorDistanceIndex < CursorDistanceLength, CursorDistanceIndex++) {
+					CursorDistance *= 10
+					CursorDistance += CursorDistanceText[CursorDistanceIndex] - '0'
+				}
+			}
+			else {
+				CursorDistance := 1
+			}
+			
+			i32* Value := null
+			i32 Max := 0
+			
+			i32 NewX := this->X
+			i32 NewY := this->Y
+			
+			if (Command = 'A' || Command = 'B') {
+				Value := &this->Y
+				Max := this->MaxRow
+				
+				if (Command = 'A') {
+					NewY -= CursorDistance
+				}
+				else {
+					NewY += CursorDistance
+				}
+			}
+			else if (Command = 'C' || Command = 'D') {
+				Value := &this->X
+				Max := this->MaxColumn
+				
+				if (Command = 'C') {
+					NewX -= CursorDistance
+				}
+				else {
+					NewY -= CursorDistance
+				}
+			}
+			
+			i8 XInBounds := 0 <= NewX && NewX <= this->MaxColumn
+			i8 YInBounds := 0 <= NewY && NewY <= this->MaxRow
+			
+			if (XInBounds && YInBounds) {
+				this->X := NewX
+				this->Y := NewY
+			}
+			
+			;if      (Command = 'A' && this->Y != 0)              { this->Y -= 1 } ; Cursor Up
+			;else if (Command = 'C' && this->X != 0)              { this->X -= 1 } ; Cursor Down
+			;else if (Command = 'B' && this->Y < this->MaxRow)    { this->Y += 1 } ; Cursor Right
+			;else if (Command = 'D' && this->X < this->MaxColumn) { this->X += 1 } ; Cursor Left
+		}
 	}
 	
 	define i8 IsEscapeCharacter(i8 Character) {
@@ -247,26 +289,46 @@ struct Terminal {
 		return false
 	}
 	
+	define void RawPrintCharacter(i32* ScreenX, i32* ScreenY, i8 Character) {		
+		this->Screen->DrawCharacter(*ScreenX, *ScreenY, Character, this->ForegroundColor, this->BackgroundColor)
+		
+		this->X += 1
+		
+		if (this->X >= this->Width) {
+			this->NewLine()
+			this->X := 0
+		}
+		
+		this->ConvertToScreenCoords(this->X, this->Y, ScreenX, ScreenY)
+	}
+	
 	define void PrintMarkedUpLine(i8* Line, i32 LineLength) {
-		i32 LineMaxIndex := LineLength - 1
+		i32 ScreenX := 0
+		i32 ScreenY := 0
+		
+		this->ConvertToScreenCoords(this->X, this->Y, &ScreenX, &ScreenY)
 		
 		for (i32 Index := 0, Index < LineLength, Index++) {
 			i8 Next := Line[Index]
 			
-			if (Next = 0x1B) {
-				this~>EscapeBuffer[0] := 0x1B
-				this->EscapeIndex := 1
+			if (Next = ASCII_TAB) {
+				i32 TabLength := this->GetTabLength(this->X + Index)
+				
+				for (i32 TabIndex := 0, TabIndex < TabLength, TabIndex++) {
+					this->RawPrintCharacter(&ScreenX, &ScreenY, ' ')
+				}
 			}
-			else if (Next = 0x7F) {
+			else if (Next = ASCII_BACK) {
 				if (this->X) {
 					this->X -= 1
-					
-					i32 ScreenX := 0
-					i32 ScreenY := 0
 					
 					this->ConvertToScreenCoords(this->X, this->Y, &ScreenX, &ScreenY)
 					this->Screen->DrawCharacter(ScreenX, ScreenY, ' ', this->ForegroundColor, this->BackgroundColor)
 				}
+			}
+			else if (Next = ASCII_ESC) {
+				this~>EscapeBuffer[0] := 0x1B
+				this->EscapeIndex := 1
 			}
 			else if (this->EscapeIndex) {
 				if (this->EscapeIndex = 1 && Next != '[') {
@@ -284,7 +346,7 @@ struct Terminal {
 				}
 			}
 			else {
-				this->RawPrintLine(&Line[Index], 1)
+				this->RawPrintCharacter(&ScreenX, &ScreenY, Line[Index])
 			}
 		}
 		
@@ -301,7 +363,7 @@ struct Terminal {
 			
 			if (NextCharacter = 0x0A || NextCharacter = 0x0D) {
 				if (NextCharacter = 0x0A) {
-					this->Y += 1
+					this->NewLine()
 				}
 				else if (NextCharacter = 0x0D) {
 					this->X := 0
@@ -411,7 +473,7 @@ struct Terminal {
 	}
 	define void PrintLine(i8* Text) {
 		this->Print(Text)
-		this->NewLine()
+		this->Print("\n")
 	}
 	
 	define void Seek(i32 X, i32 Y) {
@@ -424,7 +486,9 @@ struct Terminal {
 	}
 }
 
-Terminal* KernelTerminal := null
+
+Terminal RawKernelTerminal
+Terminal* KernelTerminal := &RawKernelTerminal
 
 define void PrintNewLine() {
 	KernelTerminal->NewLine()
@@ -544,19 +608,21 @@ define void Print(i8* Format, ... Args) {
 		else if (Next = '^') {
 			i8 First := Format[++Index]
 			
-			if (First = 'R') {
+			if (First = 'E') {
 				Print(ESC)
-				PrintLiteral('0m')
+			}
+			else if (First = 'R') {
+				Print("^E0m")
 			}
 			else if (First = 'S') {
 				i8 Fore := GetCharacterValue(Format[++Index])
 				
-				Print("%s%im", ESC, TranslateColor(Fore))
+				Print("^E%im", TranslateColor(Fore))
 			}
 			else if (First = 'H') {
 				i8 Back := GetCharacterValue(Format[++Index])
 				
-				Print("%s%im", ESC, TranslateColor(Back) + 10)
+				Print("^E%im", TranslateColor(Back) + 10)
 			}
 			else {
 				Fore := GetCharacterValue(First)
@@ -564,8 +630,8 @@ define void Print(i8* Format, ... Args) {
 				
 				;BochsPrint("Fore %x, Back %x (%x) (format %s)\n", Fore, Back, Format[Index], Format)
 				
-				Print("%s%im", ESC, TranslateColor(Fore))
-				Print("%s%im", ESC, TranslateColor(Back) + 10)
+				Print("^E%im", TranslateColor(Fore))
+				Print("^E%im", TranslateColor(Back) + 10)
 			}
 		}
 		else {
