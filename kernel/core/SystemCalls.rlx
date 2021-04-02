@@ -1,0 +1,99 @@
+
+#Require "./src/utility/x64.rlx"
+#Require "./src/kernel/core/Descriptors.rlx"
+
+
+void* KernelModeStack := null
+void* KernelModeStackBase := null
+
+define void HandleSystemCall(i64 One, i64 Two, i64 Three, i64 Four, void* RSP) {
+	if (One = 0) {
+		Print("Syscall(0), exit user mode\n")
+		Print("Kernel Stack @ %x\n", KernelModeStack)
+		
+		asm (rax := KernelModeStack, rbx := KernelModeStackBase) {
+			mov, rsp, rax
+			mov, rbp, rbx
+			leave
+			ret
+		}
+	}
+	else {
+		Print("Hello from syscall handler, rdi = %x\n", One)
+	}
+}
+
+define void OnSystemCall() asm {
+	mov, r8, rsp
+	mov, rsp, 0x7_0000
+	
+	push, rcx
+	push, r8
+	push, r11
+	
+	call, @HandleSystemCall
+	
+	pop, r11
+	pop, r8
+	pop, rcx
+	
+	mov, rsp, r8
+	
+	sysret
+}
+
+define void SetupSystemCalls() {
+	i64 OldEFER := ReadMSR(AMD64_MSR_EFER)
+	WriteMSR(AMD64_MSR_EFER, OldEFER | 1)
+	
+	WriteMSR(AMD64_MSR_STAR, (KERNEL_CS << 32) | (USER_NULL << 48))
+	
+	WriteMSR(AMD64_MSR_LSTAR, &OnSystemCall As i64)
+	
+	WriteMSR(AMD64_MSR_SFMASK, 0x600)
+}
+
+define void UserModeReturnStub() asm {
+	mov, rdi, 0
+	syscall
+}
+
+define void EnterUserMode(void* EntryPoint, void* Stack) {
+	BochsPrint("EnterUserMode(%x)\n", EntryPoint)
+	
+	KernelModeStack := GetRSP()
+	KernelModeStackBase := GetRBP()
+	
+	Print("Kernel Stack @ %x\n", KernelModeStack)
+	
+	Stack -= 8
+	
+	Stack[0] := &UserModeReturnStub As i64
+	
+	asm (rcx := EntryPoint, rax := Stack) {
+		mov, r11, 0x200
+		mov, rsp, rax
+		xchg, bx, bx
+		sysret
+	}
+}
+
+define void UserModeTest() {
+	;FastSetMemory8(0x80_0000 As void*, 0, 1024 * 768 * 3)
+	
+	asm {
+		mov, rdi, 1
+		syscall
+		
+		mov, rdi, 2
+		syscall
+		
+		xchg, bx, bx
+	}
+	
+	Print("\t^SCHello from userland!^R\n")
+}
+
+define void Test() {
+	EnterUserMode(&UserModeTest, 0x6_0000 As void*)
+}

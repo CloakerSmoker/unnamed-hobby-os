@@ -1,0 +1,160 @@
+
+
+; Flags for Descriptor.S = 1
+
+i8 DESCRIPTOR_TYPE_OPEN_TSS_64 := 0b1001
+
+; Flags for Descriptor.S = 0
+
+i8 DESCRIPTOR_ACCESS_DATA_RD        := 0x00 ; Read-Only
+i8 DESCRIPTOR_ACCESS_DATA_RDWR      := 0x02 ; Read/Write
+i8 DESCRIPTOR_ACCESS_DATA_RDEXPD    := 0x04 ; Read-Only, expand-down
+i8 DESCRIPTOR_ACCESS_DATA_RDWREXPD  := 0x06 ; Read/Write, expand-down
+i8 DESCRIPTOR_ACCESS_CODE_EX        := 0x08 ; Execute-Only
+i8 DESCRIPTOR_ACCESS_CODE_EXRD      := 0x0A ; Execute/Read
+i8 DESCRIPTOR_ACCESS_CODE_EXC       := 0x0C ; Execute-Only, conforming
+i8 DESCRIPTOR_ACCESS_CODE_EXRDC     := 0x0E ; Execute/Read, conforming
+
+i8 DESCRIPTOR_ACCESS_NOT_SYSTEM     := 0x10
+i8 DESCRIPTOR_ACCESS_RING_0         := 0x00
+i8 DESCRIPTOR_ACCESS_RING_1         := 0x20
+i8 DESCRIPTOR_ACCESS_RING_2         := 0x40
+i8 DESCRIPTOR_ACCESS_RING_3         := 0x60
+i8 DESCRIPTOR_ACCESS_PRESENT        := 0x80 As i8
+
+i8 DESCRIPTOR_FLAG_LONG_MODE := 0x2
+i8 DESCRIPTOR_FLAG_SIZE_1B   := 0x0
+i8 DESCRIPTOR_FLAG_SIZE_4K   := 0x8
+
+struct TaskStateSegment unaligned {
+	i32 Reserved_1
+	
+	i64 RSP0
+	i64 RSP1
+	i64 RSP2
+	
+	i64 Reserved_2
+	
+	i64 IST1
+	i64 IST2
+	i64 IST3
+	i64 IST4
+	i64 IST5
+	i64 IST6
+	i64 IST7
+	
+	i64 Reserved_3
+	i16 Reserved_4
+	
+	i16 IOMapBase
+}
+
+i8 DESCRIPTOR_ACCESS_CODE := DESCRIPTOR_ACCESS_NOT_SYSTEM | DESCRIPTOR_ACCESS_CODE_EXRD
+i8 DESCRIPTOR_ACCESS_DATA := DESCRIPTOR_ACCESS_NOT_SYSTEM | DESCRIPTOR_ACCESS_DATA_RDWR
+
+i8 DESCRIPTOR_ACCESS_RING_0_CODE := DESCRIPTOR_ACCESS_RING_0 | DESCRIPTOR_ACCESS_CODE
+i8 DESCRIPTOR_ACCESS_RING_0_DATA := DESCRIPTOR_ACCESS_RING_0 | DESCRIPTOR_ACCESS_DATA
+i8 DESCRIPTOR_ACCESS_RING_3_CODE := DESCRIPTOR_ACCESS_RING_3 | DESCRIPTOR_ACCESS_CODE
+i8 DESCRIPTOR_ACCESS_RING_3_DATA := DESCRIPTOR_ACCESS_RING_3 | DESCRIPTOR_ACCESS_DATA
+i8 DESCRIPTOR_ACCESS_TSS         := DESCRIPTOR_ACCESS_RING_3 | DESCRIPTOR_TYPE_OPEN_TSS_64
+
+i8 DESCRIPTOR_FLAGS_RING_0 := DESCRIPTOR_FLAG_LONG_MODE
+i8 DESCRIPTOR_FLAGS_RING_3 := DESCRIPTOR_FLAG_LONG_MODE
+i8 DESCRIPTOR_FLAGS_TSS    := DESCRIPTOR_FLAG_LONG_MODE
+
+struct GlobalDescriptor {
+	i16 Limit_0_15
+	i16 Base_0_15
+	i8 Base_16_23
+	i8 Access
+	i8 FlagsAndLimit_16_19
+	i8 Base_24_31
+	i32 Base_32_63
+	i64 Unused
+	
+	define void Pack(i64 Base, i32 Limit, i8 Access, i8 Flags) {
+		this->Base_0_15  := (Base & 0xFFFF) As i16
+		Base := Base >> 0x10
+		this->Base_16_23 := (Base & 0xFF) As i8
+		Base := Base >> 0x8
+		this->Base_24_31 := (Base & 0xFF) As i8
+		
+		if !(Flags & DESCRIPTOR_ACCESS_NOT_SYSTEM) {
+			Base := Base >> 0x8
+			this->Base_32_63 := (Base & 0xFFFF_FFFF) As i32
+		}
+		
+		this->Limit_0_15 := (Limit & 0xFFFF) As i16
+		Limit := Limit >> 0x10
+		this->FlagsAndLimit_16_19 := ((Limit & 0xF) | Flags << 4) As i8
+		
+		this->Access := Access | DESCRIPTOR_ACCESS_PRESENT
+	}
+	
+	define void MakeTSS(TaskStateSegment* TSS) {
+		this->Pack(TSS As i64, #TaskStateSegment, DESCRIPTOR_ACCESS_TSS, DESCRIPTOR_ACCESS_TSS)
+	}
+	define void MakeNonSystem(i8 Access, i8 Flags) {
+		this->Pack(0, 0, Access, Flags)
+	}
+}
+
+i64 KERNEL_CS := 0x08
+i64 KERNEL_DS := 0x10
+i64 USER_NULL := 0x18
+i64 USER_DS   := 0x20
+i64 USER_CS   := 0x28
+i64 USER_TSS  := 0x30
+
+i32 KERNEL_CS_INDEX := 1
+i32 KERNEL_DS_INDEX := 2
+i32 USER_NULL_INDEX := 3
+i32 USER_DS_INDEX   := 4
+i32 USER_CS_INDEX   := 5
+i32 USER_TSS_INDEX  := 6
+
+TaskStateSegment* TSS
+
+struct DescriptorTableHeader unaligned {
+	i16 Limit
+	void* Base
+}
+
+define void SetupGDT() {
+	; 2 null descriptors, 2 code/data pairs, one system descriptor (for the TSS)
+	i16 Limit := ((8 + 8) + (8 + 8) + (8 + 8) + 16) As i8
+	
+	void* GDT := KernelHeapAllocate('GDT', Limit)
+	TSS := KernelHeapAllocate('TSS', #TaskStateSegment)
+	
+	GlobalDescriptor* KernelCS := &GDT[KERNEL_CS_INDEX]
+	GlobalDescriptor* KernelDS := &GDT[KERNEL_DS_INDEX]
+	GlobalDescriptor* UserNull := &GDT[USER_NULL_INDEX]
+	GlobalDescriptor* UserCS   := &GDT[USER_CS_INDEX]
+	GlobalDescriptor* UserDS   := &GDT[USER_DS_INDEX]
+	GlobalDescriptor* UserTSS  := &GDT[USER_TSS_INDEX]
+	
+	KernelCS->MakeNonSystem(DESCRIPTOR_ACCESS_RING_0_CODE, DESCRIPTOR_FLAGS_RING_0)
+	KernelDS->MakeNonSystem(DESCRIPTOR_ACCESS_RING_0_DATA, DESCRIPTOR_FLAGS_RING_0)
+	
+	UserNull->MakeNonSystem(0, 0)
+	UserCS->MakeNonSystem(DESCRIPTOR_ACCESS_RING_3_CODE, DESCRIPTOR_FLAGS_RING_3)
+	UserDS->MakeNonSystem(DESCRIPTOR_ACCESS_RING_3_DATA, DESCRIPTOR_FLAGS_RING_3)
+	
+	UserTSS->MakeTSS(TSS)
+	
+	DescriptorTableHeader GDTHeader {Base: GDT, Limit: Limit}
+	
+	asm (rax := &GDTHeader, rbx := USER_TSS | 3) {
+		xchg, bx, bx
+		
+		cli
+		
+		lgdt, {rax} As i64*
+		ltr, bx
+		
+		sti
+	}
+	
+	TSS->RSP0 := 0x6_0000
+}

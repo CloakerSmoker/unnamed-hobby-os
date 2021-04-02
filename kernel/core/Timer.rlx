@@ -1,0 +1,64 @@
+
+
+struct Timer {
+	void* Function
+	void* Parameter
+	i64 LastFiredAt
+	i64 IntervalMS
+	
+	Timer* Next
+	
+	define void MaybeFire(i64 TimeMS) {
+		if ((TimeMS - this->LastFiredAt) >= this->IntervalMS) {
+			
+			asm (rax := this->Function, rdi := this->Parameter) {
+				call, rax
+			}
+			
+			this->LastFiredAt := TimeMS
+		}
+	}
+}
+
+
+Timer* RootTimer := null
+
+define void OnTick(i64 NowMS) {
+	Timer* NextTimer := RootTimer
+	
+	while (NextTimer) {
+		NextTimer->MaybeFire(NowMS)
+		NextTimer := NextTimer->Next
+	}
+}
+
+declare void SetPITCallback(void*)
+
+define void SetupTimers() {
+	asm {cli}
+	SetPITCallback(&OnTick)
+	asm {sti}
+}
+
+define Timer* SetTimer(i64 IntervalMS, void* Function, void* Parameter) {
+	Timer* Result := Alloc(#Timer)
+	
+	Result->Function := Function
+	Result->Parameter := Parameter
+	Result->IntervalMS := IntervalMS
+	
+	if (RootTimer) {
+		Timer* Last := RootTimer
+		
+		while (Last->Next) {
+			Last := Last->Next
+		}
+		
+		Last->Next := Result
+	}
+	else {
+		RootTimer := Result
+	}
+	
+	return Result
+}
