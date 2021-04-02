@@ -19,8 +19,9 @@ i64 PAGE_FRAMES_BASE := 0x20_0000
 i32 PAGE_SIZE               := 0x1000
 
 i64 PAGE_NOT_PRESENT := 0
-i64 PAGE_PRESENT     := 1
-i64 PAGE_WRITE       := 2
+i64 PAGE_PRESENT     := 0b001
+i64 PAGE_WRITE       := 0b010
+i64 PAGE_USER        := 0b100
 
 define void SetCR3(i64**** PML4T) asm {
 	movcr3, rdi
@@ -101,7 +102,7 @@ struct AddressSpaceManager {
 		
 		if !(PDP & PAGE_PRESENT) {
 			PDP := this->AllocatePageFrame()
-			*PML4E := PDP | PAGE_PRESENT | PAGE_WRITE
+			*PML4E := PDP | PAGE_PRESENT | PAGE_WRITE | PAGE_USER
 		}
 		
 		return PML4E
@@ -112,7 +113,7 @@ struct AddressSpaceManager {
 		
 		if !(PD & PAGE_PRESENT) {
 			PD := this->AllocatePageFrame()
-			*PDPE := PD | PAGE_PRESENT | PAGE_WRITE
+			*PDPE := PD | PAGE_PRESENT | PAGE_WRITE | PAGE_USER
 		}
 		
 		return PDPE
@@ -123,7 +124,7 @@ struct AddressSpaceManager {
 		
 		if !(PT & PAGE_PRESENT) {
 			PT := this->AllocatePageFrame()
-			*PDE := PT | PAGE_PRESENT | PAGE_WRITE
+			*PDE := PT | PAGE_PRESENT | PAGE_WRITE | PAGE_USER
 		}
 		
 		return PDE
@@ -165,7 +166,7 @@ struct AddressSpaceManager {
 	define void Map(void* Address, i64 Page) {
 		i64* PageTableEntry := this->RemoveFlags(this->FindOrAddPTEntry(Address))
 		
-		*PageTableEntry := this->PackPTEntry(Page, PAGE_PRESENT | PAGE_WRITE)
+		*PageTableEntry := this->PackPTEntry(Page, PAGE_PRESENT | PAGE_WRITE | PAGE_USER)
 	}
 	define void Map(void* Address, i64 Page, i64 Flags) {
 		i64* PageTableEntry := this->RemoveFlags(this->FindOrAddPTEntry(Address))
@@ -173,7 +174,7 @@ struct AddressSpaceManager {
 		*PageTableEntry := this->PackPTEntry(Page, Flags)
 	}
 	
-	define void MapRange(void* Address, i64 StartPage, i32 Count) {
+	define void MapRange(void* Address, i64 StartPage, i32 Count, i64 Flags) {
 		while (Count != 0) {
 			i64** PDE := this->FindOrAddPDEntry(Address)
 			i64* PT := this->RemoveFlags(*PDE)
@@ -190,13 +191,16 @@ struct AddressSpaceManager {
 			;BochsPrint("Map PT @ %x [%x-%x] to %x-%x\n", PT, PTIndex, PTMax, StartPage, StartPage + PTMax)
 			
 			for (i32 Index := 0, Index < PTMax, Index++) {
-				PT[PTIndex + Index] := this->PackPTEntry(StartPage + Index, PAGE_PRESENT | PAGE_WRITE)
+				PT[PTIndex + Index] := this->PackPTEntry(StartPage + Index, Flags)
 			}
 			
 			Count -= PTMax
 			StartPage += PTMax
 			Address += PTMax * PAGE_SIZE
 		}
+	}
+	define void MapRange(void* Address, i64 StartPage, i32 Count) {
+		this->MapRange(Address, StartPage, Count, PAGE_PRESENT | PAGE_WRITE | PAGE_USER)
 	}
 	
 	define void Takeover() {

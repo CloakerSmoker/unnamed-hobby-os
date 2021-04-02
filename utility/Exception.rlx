@@ -12,11 +12,6 @@ struct StackFrame {
 	i64* ReturnAddress
 }
 
-define i64* GetRBP() asm {
-	mov, rax, rbp
-	ret
-}
-
 define StackFrame* FindHandler(i64* StartingFrame) {
 	; Walks up stack frames looking for one marked as an exception handler
 	

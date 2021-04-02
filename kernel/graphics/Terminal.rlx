@@ -125,7 +125,7 @@ struct Terminal {
 	Timer* CursorTimer
 	
 	define void SetCursorTimer() {
-		this->CursorTimer := SetTimer(250, &Terminal.ToggleCursor, this)
+		this->CursorTimer := SetTimer(500, &Terminal.ToggleCursor, this)
 	}
 
 	define i32 GetTabLength(i32 AtIndex) {

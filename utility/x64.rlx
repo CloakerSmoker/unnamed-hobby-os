@@ -76,3 +76,40 @@ define void OutW(i16 Port, i16 Data) asm {
 	outw
 	ret
 }
+
+define void* GetRSP() asm {
+	lea, rax, {rsp - 8} As i64*
+	ret
+}
+define i64* GetRBP() asm {
+	mov, rax, rbp
+	ret
+}
+
+define void WriteMSR(i64 Number, i64 Value) {
+	i64 Low := Value & 0xFFFF_FFFF
+	i64 High := (Value >> 32) & 0xFFFF_FFFF
+	
+	asm (rax := Low, rdx := High, rcx := Number) {
+		wrmsr
+	}
+}
+
+define i64 ReadMSR(i64 Number) {
+	i64 Low := 0
+	i64 High := 0
+	
+	asm (rdi := &Low, rsi := &High, rcx := Number) {
+		rdmsr
+		mov, {rdi} As i32*, eax
+		mov, {rsi} As i32*, edx
+	}
+	
+	return (High << 32) | Low
+}
+
+i64 AMD64_MSR_EFER   := 0xC0000080
+i64 AMD64_MSR_STAR   := 0xC0000081
+i64 AMD64_MSR_LSTAR  := 0xC0000082
+i64 AMD64_MSR_CSTAR  := 0xC0000083
+i64 AMD64_MSR_SFMASK := 0xC0000084

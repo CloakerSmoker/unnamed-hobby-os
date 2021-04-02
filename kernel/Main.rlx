@@ -46,6 +46,8 @@ i8 USE_INTERRUPT_STUBS := true
 #Require "./src/kernel/core/Interrupts.rlx"
 #Require "./src/kernel/core/Devices.rlx"
 
+#Require "./src/kernel/core/SystemCalls.rlx"
+
 #Require "./src/drivers/Ext2.rlx"
 
 Ext2DeviceTraits* RootDevice := null
@@ -53,10 +55,6 @@ Ext2* FS := null
 INode* RootINode := null
 
 #Require "./src/kernel/core/Shell.rlx"
-
-define void TestTimer() {
-	Print("Timer fired!\n")
-}
 
 define void Main(void* RawFrameBuffer) {
 	BochsPrintString("Main\n")
@@ -77,7 +75,6 @@ define void Main(void* RawFrameBuffer) {
 	i32 FrameBufferPageCount := AddressSpace->SizeToPageCount(FRAMEBUFFER_SIZE)
 	i8* FrameBuffer := 0x80_0000 As i8*
 	AddressSpace->MapRange(FrameBuffer, AddressSpace->PointerToPageNumber(RawFrameBuffer), FrameBufferPageCount)
-	
 	
 	;NativeScreen->Adopt(FrameBuffer, SCREEN_WIDTH, SCREEN_HEIGHT, BYTES_PER_PIXEL, 0, 0x00_00_00)
 	NativeScreen->Adopt(FrameBuffer, SCREEN_WIDTH, SCREEN_HEIGHT, BYTES_PER_PIXEL, 0, 0xFF_FF_FF)
@@ -104,6 +101,14 @@ define void Main(void* RawFrameBuffer) {
 	KernelTerminal->PrintLine("BOOT: Setup GDT and TSS")
 	
 	SetupInterrupts()
+	
+	Print("\nTesting user-mode\n")
+	
+	SetupSystemCalls()
+	Test()
+	
+	Print("Back in kernel code\n\n")
+	
 	SetPITMode(PIT_100HZ)
 	SetupTimers()
 	
@@ -126,8 +131,6 @@ define void Main(void* RawFrameBuffer) {
 	RootINode := CloneMemory(FS->ReadINode(2), #INode)
 	
 	SetupShell()
-	
-	;SetTimer(2000, &TestTimer, null)
 	
 	Prompt()
 	

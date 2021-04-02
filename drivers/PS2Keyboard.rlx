@@ -49,6 +49,7 @@ define void OnPS2Event() {
 }
 
 define void OnPS2Interrupt() asm {
+	xchg, bx, bx
 	call, @InterruptSetup   ; Saves all GPRs
 	call, @OnPS2Event       ; Call the actual handler
 	jmp, @InterruptReturn   ; Pop all GPRs, iretq
