@@ -1,5 +1,4 @@
-#ImageBase 0x34000
-
+#ImageBase 0x50000
 
 #Require "./src/utility/Generic.rlx"
 #Require "./src/utility/x64.rlx"
@@ -56,8 +55,8 @@ INode* RootINode := null
 
 #Require "./src/kernel/core/Shell.rlx"
 
-define void Main(void* RawFrameBuffer) {
-	BochsPrintString("Main\n")
+define void Main(void DummyArgC, void DummyArgV, void* RawFrameBuffer) {
+	BochsPrint("Main, FrameBuffer @ %x\n", RawFrameBuffer)
 	
 	AddressSpace->Initialize(0x20_0000 As void*, BYTES_IN_6MB / PAGE_SIZE)
 	AddressSpace->MapRange(null, 0, PAGE_COUNT_FOR_6MB)
@@ -76,9 +75,13 @@ define void Main(void* RawFrameBuffer) {
 	i8* FrameBuffer := 0x80_0000 As i8*
 	AddressSpace->MapRange(FrameBuffer, AddressSpace->PointerToPageNumber(RawFrameBuffer), FrameBufferPageCount)
 	
+	BochsPrintString("Mapped the framebuffer\n")
+	
 	;NativeScreen->Adopt(FrameBuffer, SCREEN_WIDTH, SCREEN_HEIGHT, BYTES_PER_PIXEL, 0, 0x00_00_00)
 	NativeScreen->Adopt(FrameBuffer, SCREEN_WIDTH, SCREEN_HEIGHT, BYTES_PER_PIXEL, 0, 0xFF_FF_FF)
 	NativeScreen->Clear()
+	
+	BochsPrintString("Adopted screen\n")
 	
 	KernelTerminal->Adopt(NativeScreen, 0x00_00_00, 0xFF_FF_FF)
 	;KernelTerminal->SetColors(0xFF_FF_FF, 0x00_00_00)

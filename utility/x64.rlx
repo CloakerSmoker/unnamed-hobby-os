@@ -1,5 +1,5 @@
 
-define void FastMoveMemory(void* To, void* From, i32 Size) asm {
+define void FastMoveMemory(void* To, void* From, i64 Size) asm {
 	mov, rcx, rdx
 	
 	cmp, rdi, rsi
@@ -21,7 +21,7 @@ MoveDown:
 	ret
 }
 
-define void FastSetMemory8(void* Memory, i64 Value, i32 Count) asm {
+define void FastSetMemory8(void* Memory, i64 Value, i64 Count) asm {
 	mov, rax, rsi
 	mov, rcx, rdx
 	
@@ -29,7 +29,7 @@ define void FastSetMemory8(void* Memory, i64 Value, i32 Count) asm {
 	
 	ret
 }
-define void FastSetMemory16(void* Memory, i64 Value, i32 Count) asm {
+define void FastSetMemory16(void* Memory, i64 Value, i64 Count) asm {
 	mov, rax, rsi
 	mov, rcx, rdx
 	
@@ -37,7 +37,7 @@ define void FastSetMemory16(void* Memory, i64 Value, i32 Count) asm {
 	
 	ret
 }
-define void FastSetMemory32(void* Memory, i64 Value, i32 Count) asm {
+define void FastSetMemory32(void* Memory, i64 Value, i64 Count) asm {
 	mov, rax, rsi
 	mov, rcx, rdx
 	
@@ -45,7 +45,7 @@ define void FastSetMemory32(void* Memory, i64 Value, i32 Count) asm {
 	
 	ret
 }
-define void FastSetMemory64(void* Memory, i64 Value, i32 Count) asm {
+define void FastSetMemory64(void* Memory, i64 Value, i64 Count) asm {
 	mov, rax, rsi
 	mov, rcx, rdx
 	

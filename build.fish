@@ -1,6 +1,6 @@
 ./nasm.exe ./src/bootloader/Boot1.asm -o boot1.bin
 ./new_compiler.exe -i ./src/bootloader/Boot2.rlx -o boot2.bin --bin --crlf
-./new_compiler.exe -i ./src/kernel/Main.rlx -o kernel.bin --bin --crlf --debug
+./new_compiler.exe -i ./src/kernel/Main.rlx -o kernel.bin --elf --crlf --debug --dwarf
 rm disk.img
 echo "
 format

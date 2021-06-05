@@ -249,18 +249,15 @@ void* TempBlock := (0x14_0000 As void*)
 void* TempINode := (0x14_1000 As void*)
 void* TempExtra := (0x14_2000 As void*)
 
-struct BinFile {
-	i64 JumpToMain
-	
-	union {
-		i64 ImageBase
-		void* LoadLocation
-	}
-}
+void* ELFBuffer := (0x15_0000 As void*)
 
 define void StartKernel(void* FrameBuffer, void* KernelMain) asm {
-	jmp, rsi
+	mov, rax, rsi
+	mov, rdx, rdi
+	jmp, rax
 }
+
+#Require "./src/utility/ELF.rlx"
 
 define void Main(void* FrameBuffer) {
 	BOCHS_PRINT_STAGE := "BOOT"
@@ -287,24 +284,31 @@ define void Main(void* FrameBuffer) {
 	
 	FS->ReadINodeData(TempExtra, KernelNode, 0)
 	
-	BinFile* KernelFile := TempExtra
+	i32 KernelSize := KernelNode->FileSizeLow
 	
-	i32 KernelBlockCount := KernelNode->FileSizeLow / 0x400
-	i32 KernelRemainder := KernelNode->FileSizeLow % 0x400
+	i32 KernelBlockCount := KernelSize / 0x400
+	i32 KernelRemainder := KernelSize % 0x400
 	
-	void* Kernel := KernelFile->LoadLocation
+	void* KernelFile := ELFBuffer
 	
 	for (i32 KernelBlockIndex := 0, KernelBlockIndex < KernelBlockCount, KernelBlockIndex += 1) {
-		FS->ReadINodeData(Kernel, KernelNode, KernelBlockIndex)
+		FS->ReadINodeData(KernelFile, KernelNode, KernelBlockIndex)
 		
-		Kernel += 0x400
+		KernelFile += 0x400
 	}
 	
 	if (KernelRemainder) {
-		FS->ReadINodeData(Kernel, KernelNode, KernelBlockIndex)
+		FS->ReadINodeData(KernelFile, KernelNode, KernelBlockIndex)
 	}
 	
-	BochsPrint("Loaded kernel, booting from %x\n", KernelFile->LoadLocation)
+	BochsPrint("Loaded kernel file, reading ELF\n")
 	
-	StartKernel(FrameBuffer, KernelFile->LoadLocation)
+	ELFReader Kernel {
+		Data: ELFBuffer,
+		Size: KernelSize
+	}
+	
+	void* Entry := Kernel.Load()
+	
+	StartKernel(FrameBuffer, Entry)
 }
