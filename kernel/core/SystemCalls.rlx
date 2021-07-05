@@ -25,7 +25,7 @@ define void HandleSystemCall(i64 One, i64 Two, i64 Three, i64 Four, void* RSP) {
 
 define void OnSystemCall() asm {
 	mov, r8, rsp
-	mov, rsp, 0x7_0000
+	mov, rsp, 0x18_0000
 	
 	push, rcx
 	push, r8
@@ -95,5 +95,5 @@ define void UserModeTest() {
 }
 
 define void Test() {
-	EnterUserMode(&UserModeTest, 0x6_0000 As void*)
+	EnterUserMode(&UserModeTest, 0x16_0000 As void*)
 }

@@ -182,7 +182,7 @@ define void GenericInterrupt(InterruptContext* Context, InterruptRegisters* Regi
 		}
 	}
 	
-	asm {cli}
+	asm {cli}	
 	
 	loop {}
 }

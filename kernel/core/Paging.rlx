@@ -23,9 +23,91 @@ i64 PAGE_PRESENT     := 0b001
 i64 PAGE_WRITE       := 0b010
 i64 PAGE_USER        := 0b100
 
+struct Page {
+	i8[0x1000] Data
+}
+
 define void SetCR3(i64**** PML4T) asm {
 	movcr3, rdi
 	ret
+}
+
+define i32 GetPML4Index(void* Address) {
+	return ((Address & 0b_111111111_000000000_000000000_000000000_000000000000) >> 39) As i32
+}
+define i32 GetPDPIndex(void* Address) {
+	return ((Address &           0b_111111111_000000000_000000000_000000000000) >> 30) As i32
+}
+define i32 GetPDIndex(void* Address) {
+	return ((Address &                     0b_111111111_000000000_000000000000) >> 21) As i32
+}
+define i32 GetPTIndex(void* Address) {
+	return ((Address &                               0b_111111111_000000000000) >> 12) As i32
+}
+
+define i64**** GetPML4Entry(i64**** PML4, void* Address) {
+	i32 Index      := ((Address & 0b_111111111_000000000_000000000_000000000_000000000000) >> 39) As i32
+	return &PML4[Index]
+}
+define i64*** GetPDPEntry(i64*** PDT, void* Address) {
+	PDT            &=             0b_111111111_111111111_111111111_111111111_000000000000
+	i32 Index      := ((Address &           0b_111111111_000000000_000000000_000000000000) >> 30) As i32
+	return &PDT[Index]
+}
+define i64** GetPDEntry(i64** PD, void* Address) {
+	PD             &=             0b_111111111_111111111_111111111_111111111_000000000000
+	i32 Index      := ((Address &                     0b_111111111_000000000_000000000000) >> 21) As i32
+	return &PD[Index]
+}
+define i64* GetPTEntry(i64* PT, void* Address) {
+	PT             &=             0b_111111111_111111111_111111111_111111111_000000000000
+	i32 Index      := ((Address &                               0b_111111111_000000000000) >> 12) As i32
+	return &PT[Index]
+}
+
+define void* RemovePageFlags(void* Entry) {
+	Entry &= 0b_111111111_111111111_111111111_111111111_000000000000
+	
+	return Entry
+}
+define i64 PackPageFlags(i64 PageNumber, i64 Flags) {
+	return (PageNumber << 12) | Flags
+}
+
+
+define i32 ExternalMapPage(void* CR3, void* RawTempPages, void* From, i64 To) {
+	Page* TempPages := RawTempPages
+	i32 TempPagesUsed := 0
+	
+	i64**** PML4E := GetPML4Entry(i64****{CR3}, From)
+	i64*** PDP := *PML4E
+	
+	if !(PDP & PAGE_PRESENT) {
+		PDP := i64***{&TempPages[TempPagesUsed++]}
+		*PML4E := PDP | PAGE_PRESENT | PAGE_WRITE | PAGE_USER
+	}
+	
+	i64*** PDPE := GetPDPEntry(*PML4E, From)
+	i64** PD := *PDPE
+	
+	if !(PD & PAGE_PRESENT) {
+		PD := i64**{&TempPages[TempPagesUsed++]}
+		*PDPE := PD | PAGE_PRESENT | PAGE_WRITE | PAGE_USER
+	}
+
+	i64** PDE := GetPDEntry(*PDPE, From)
+	i64* PT := *PDE
+	
+	if !(PT & PAGE_PRESENT) {
+		PT := i64*{&TempPages[TempPagesUsed++]}
+		*PDE := PT | PAGE_PRESENT | PAGE_WRITE | PAGE_USER
+	}
+	
+	i64* PTE := RemovePageFlags(GetPTEntry(*PDE, From))
+	
+	*PTE := To
+	
+	return TempPagesUsed
 }
 
 struct PagePath {
@@ -63,41 +145,8 @@ struct AddressSpaceManager {
 		this->RawPML4 := this->AllocatePageFrame()
 	}
 	
-	define i32 GetPML4Index(void* Address) {
-		return ((Address & 0b_111111111_000000000_000000000_000000000_000000000000) >> 39) As i32
-	}
-	define i32 GetPDPIndex(void* Address) {
-		return ((Address &           0b_111111111_000000000_000000000_000000000000) >> 30) As i32
-	}
-	define i32 GetPDIndex(void* Address) {
-		return ((Address &                     0b_111111111_000000000_000000000000) >> 21) As i32
-	}
-	define i32 GetPTIndex(void* Address) {
-		return ((Address &                               0b_111111111_000000000000) >> 12) As i32
-	}
-	
-	define i64**** GetPML4Entry(void* Address) {
-		i32 Index      := ((Address & 0b_111111111_000000000_000000000_000000000_000000000000) >> 39) As i32
-		return &this->PML4[Index]
-	}
-	define i64*** GetPDPEntry(i64*** PDT, void* Address) {
-		PDT            &=             0b_111111111_111111111_111111111_111111111_000000000000
-		i32 Index      := ((Address &           0b_111111111_000000000_000000000_000000000000) >> 30) As i32
-		return &PDT[Index]
-	}
-	define i64** GetPDEntry(i64** PD, void* Address) {
-		PD             &=             0b_111111111_111111111_111111111_111111111_000000000000
-		i32 Index      := ((Address &                     0b_111111111_000000000_000000000000) >> 21) As i32
-		return &PD[Index]
-	}
-	define i64* GetPTEntry(i64* PT, void* Address) {
-		PT             &=             0b_111111111_111111111_111111111_111111111_000000000000
-		i32 Index      := ((Address &                               0b_111111111_000000000000) >> 12) As i32
-		return &PT[Index]
-	}
-	
 	define i64**** FindOrAddPML4Entry(void* Address) {
-		i64**** PML4E := this->GetPML4Entry(Address)
+		i64**** PML4E := GetPML4Entry(this->PML4, Address)
 		i64*** PDP := *PML4E
 		
 		if !(PDP & PAGE_PRESENT) {
@@ -108,7 +157,7 @@ struct AddressSpaceManager {
 		return PML4E
 	}
 	define i64*** FindOrAddPDPEntry(i64**** PML4E, void* Address) {
-		i64*** PDPE := this->GetPDPEntry(*PML4E, Address)
+		i64*** PDPE := GetPDPEntry(*PML4E, Address)
 		i64** PD := *PDPE
 		
 		if !(PD & PAGE_PRESENT) {
@@ -119,7 +168,7 @@ struct AddressSpaceManager {
 		return PDPE
 	}
 	define i64** FindOrAddPDEntry(i64*** PDPE, void* Address) {
-		i64** PDE := this->GetPDEntry(*PDPE, Address)
+		i64** PDE := GetPDEntry(*PDPE, Address)
 		i64* PT := *PDE
 		
 		if !(PT & PAGE_PRESENT) {
@@ -130,7 +179,7 @@ struct AddressSpaceManager {
 		return PDE
 	}
 	define i64* FindOrAddPTEntry(i64** PDE, void* Address) {
-		i64* PTE := this->GetPTEntry(*PDE, Address)
+		i64* PTE := GetPTEntry(*PDE, Address)
 		
 		return PTE
 	}
@@ -154,31 +203,22 @@ struct AddressSpaceManager {
 		return PTE
 	}
 	
-	define void* RemoveFlags(void* Entry) {
-		Entry &= 0b_111111111_111111111_111111111_111111111_000000000000
+	define void Map(void* Address, i64 PageNumber) {
+		i64* PageTableEntry := RemovePageFlags(this->FindOrAddPTEntry(Address))
 		
-		return Entry
+		*PageTableEntry := PackPageFlags(PageNumber, PAGE_PRESENT | PAGE_WRITE | PAGE_USER)
 	}
-	define i64 PackPTEntry(i64 Page, i64 Flags) {
-		return (Page << 12) | Flags
-	}
-	
-	define void Map(void* Address, i64 Page) {
-		i64* PageTableEntry := this->RemoveFlags(this->FindOrAddPTEntry(Address))
+	define void Map(void* Address, i64 PageNumber, i64 Flags) {
+		i64* PageTableEntry := RemovePageFlags(this->FindOrAddPTEntry(Address))
 		
-		*PageTableEntry := this->PackPTEntry(Page, PAGE_PRESENT | PAGE_WRITE | PAGE_USER)
-	}
-	define void Map(void* Address, i64 Page, i64 Flags) {
-		i64* PageTableEntry := this->RemoveFlags(this->FindOrAddPTEntry(Address))
-		
-		*PageTableEntry := this->PackPTEntry(Page, Flags)
+		*PageTableEntry := PackPageFlags(PageNumber, Flags)
 	}
 	
 	define void MapRange(void* Address, i64 StartPage, i32 Count, i64 Flags) {
 		while (Count != 0) {
 			i64** PDE := this->FindOrAddPDEntry(Address)
-			i64* PT := this->RemoveFlags(*PDE)
-			i32 PTIndex := this->GetPTIndex(Address)
+			i64* PT := RemovePageFlags(*PDE)
+			i32 PTIndex := GetPTIndex(Address)
 			
 			i32 PTSpace := PAGES_PER_PT - PTIndex
 			
@@ -191,7 +231,7 @@ struct AddressSpaceManager {
 			;BochsPrint("Map PT @ %x [%x-%x] to %x-%x\n", PT, PTIndex, PTMax, StartPage, StartPage + PTMax)
 			
 			for (i32 Index := 0, Index < PTMax, Index++) {
-				PT[PTIndex + Index] := this->PackPTEntry(StartPage + Index, Flags)
+				PT[PTIndex + Index] := PackPageFlags(StartPage + Index, Flags)
 			}
 			
 			Count -= PTMax
@@ -206,22 +246,22 @@ struct AddressSpaceManager {
 	define void Takeover() {
 		SetCR3(this->PML4)
 	}
+}
+
+define i32 SizeToPageCount(i32 Size) {
+	i32 PageCount := Size / PAGE_SIZE
 	
-	define i32 SizeToPageCount(i32 Size) {
-		i32 PageCount := Size / PAGE_SIZE
-		
-		if (Size % PAGE_SIZE) {
-			PageCount += 1
-		}
-		
-		return PageCount
+	if (Size % PAGE_SIZE) {
+		PageCount += 1
 	}
-	define void* PageNumberToPointer(i64 PageNumber) {
-		return (PageNumber * 0x1000) As void*
-	}
-	define i64 PointerToPageNumber(void* PageMemory) {
-		return (PageMemory / 0x1000) As i64
-	}
+	
+	return PageCount
+}
+define void* PageNumberToPointer(i64 PageNumber) {
+	return (PageNumber * PAGE_SIZE) As void*
+}
+define i64 PointerToPageNumber(void* PageMemory) {
+	return (PageMemory / PAGE_SIZE) As i64
 }
 
 AddressSpaceManager RawAddressSpace

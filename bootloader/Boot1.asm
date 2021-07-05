@@ -83,10 +83,6 @@ times 510 - ($ - $$) db 0
 dw 0xAA55
 
 TinyStack equ 0x1000
-FS_Base equ 0x14000
 
-KernelStart equ $
-
-KernelLimit equ $
-Stack equ 0x90000
-PageTables equ 0x8000
+PageTables equ 0x1000
+Stack equ 0x20_0000

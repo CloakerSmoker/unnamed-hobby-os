@@ -1,4 +1,4 @@
-#ImageBase 0x50000
+#ImageBase 0x10_0000
 
 #Require "./src/utility/Generic.rlx"
 #Require "./src/utility/x64.rlx"
@@ -55,25 +55,44 @@ INode* RootINode := null
 
 #Require "./src/kernel/core/Shell.rlx"
 
-define void Main(void DummyArgC, void DummyArgV, void* RawFrameBuffer) {
+#Require "./src/kernel/core/PhysicalMemory.rlx"
+
+define void Main(void* CR3, void* RawFrameBuffer, i64 MaxKernelAddress) {
 	BochsPrint("Main, FrameBuffer @ %x\n", RawFrameBuffer)
 	
-	AddressSpace->Initialize(0x20_0000 As void*, BYTES_IN_6MB / PAGE_SIZE)
-	AddressSpace->MapRange(null, 0, PAGE_COUNT_FOR_6MB)
+	PhysicalMemory->AddReserved(0, 0x10_0000) ; < 1mb, bootloader reserved
+	PhysicalMemory->Add(0x10_0000, 0x350_0000) ; free memory
+	
+	i32 KernelSize := (MaxKernelAddress - 0x10_0000) As i32 ; Highest address of kernel data - image base
+	
+	i64 KernelPages     := PhysicalMemory->Reserve(KernelSize) ; Reserve the memory the kernel lives in
+	i64 PageFramesPages := PhysicalMemory->Reserve(BYTES_IN_1MB, PAGE_SIZE)
+	i64 HeapMemoryPages := PhysicalMemory->Reserve(BYTES_IN_2MB, 8)
+	
+	void* KernelBase := 0x10_0000 As void*
+	void* PageFrames := PageFramesPages As void*
+	void* HeapMemory := HeapMemoryPages As void*
+	
+	AddressSpace->Initialize(PageFrames, BYTES_IN_1MB / PAGE_SIZE)
+	
+	; Identity map the memory where the page frames are being written, so after setting CR3 PageFrames resolves to the same
+	;  address as before setting CR3
+	AddressSpace->MapRange(PageFrames, PageFramesPages / PAGE_SIZE, BYTES_IN_1MB / PAGE_SIZE)
+	
+	; Identity map the kernel, so RIP resolves to the same address before/after setting CR3
+	AddressSpace->MapRange(KernelBase, KernelPages / PAGE_SIZE, SizeToPageCount(KernelSize))
+	
+	; Map the heap to wherever
+	AddressSpace->MapRange(HeapMemory, HeapMemoryPages / PAGE_SIZE, PAGE_COUNT_FOR_2MB)
+	
 	AddressSpace->Takeover()
 	
 	BochsPrintString("Paging initialized, AddressSpaceManager in control\n")
 	
-	; Identity map 2mb of memory for the kernel heap
-	void* HeapMemory := 0x60_0000 As void*
-	AddressSpace->MapRange(HeapMemory, PAGE_COUNT_FOR_6MB, PAGE_COUNT_FOR_2MB)
-	
-	BochsPrintString("Allocated KernelHeap memory\n")
-	
 	; Remap the next available `FRAMEBUFFER_SIZE` bytes of virtual memory to 0xE000_0000 (or wherever int10 says)
-	i32 FrameBufferPageCount := AddressSpace->SizeToPageCount(FRAMEBUFFER_SIZE)
+	i32 FrameBufferPageCount := SizeToPageCount(FRAMEBUFFER_SIZE)
 	i8* FrameBuffer := 0x80_0000 As i8*
-	AddressSpace->MapRange(FrameBuffer, AddressSpace->PointerToPageNumber(RawFrameBuffer), FrameBufferPageCount)
+	AddressSpace->MapRange(FrameBuffer, PointerToPageNumber(RawFrameBuffer), FrameBufferPageCount)
 	
 	BochsPrintString("Mapped the framebuffer\n")
 	
