@@ -27,9 +27,10 @@ struct Page {
 	i8[0x1000] Data
 }
 
-define void SetCR3(i64**** PML4T) asm {
+define void SetCR3(i64**** PML4T, void* Continuation, void* Parameter) asm {
 	movcr3, rdi
-	ret
+	mov, rdi, rdx
+	jmp, rsi
 }
 
 define i32 GetPML4Index(void* Address) {
@@ -243,8 +244,8 @@ struct AddressSpaceManager {
 		this->MapRange(Address, StartPage, Count, PAGE_PRESENT | PAGE_WRITE | PAGE_USER)
 	}
 	
-	define void Takeover() {
-		SetCR3(this->PML4)
+	define void Takeover(void* Continuation, void* Parameter){
+		SetCR3(this->PML4, Continuation, Parameter)
 	}
 }
 

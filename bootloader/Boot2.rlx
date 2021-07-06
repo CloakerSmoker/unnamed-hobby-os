@@ -245,11 +245,11 @@ struct MinimalExt2 {
 	}
 }
 
-void* TempBlock := (0x14_0000 As void*)
-void* TempINode := (0x14_1000 As void*)
-void* TempExtra := (0x14_2000 As void*)
+void* TempBlock := 0x4_0000 As void*
+void* TempINode := 0x4_1000 As void*
+void* TempExtra := 0x4_2000 As void*
 
-void* ELFBuffer := (0x15_0000 As void*)
+void* ELFBuffer := 0x5_0000 As void*
 
 define void StartKernel(void* CR3, void* FrameBuffer, i64 MaxKernelAddress, void* KernelMain) asm {
 	jmp, rcx

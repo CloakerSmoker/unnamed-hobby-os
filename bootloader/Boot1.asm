@@ -85,4 +85,4 @@ dw 0xAA55
 TinyStack equ 0x1000
 
 PageTables equ 0x1000
-Stack equ 0x20_0000
+Stack equ 0x6_0000

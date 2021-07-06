@@ -29,9 +29,9 @@ i8 DESCRIPTOR_FLAG_SIZE_4K   := 0x8
 struct TaskStateSegment unaligned {
 	i32 Reserved_1
 	
-	i64 RSP0
-	i64 RSP1
-	i64 RSP2
+	void* RSP0
+	void* RSP1
+	void* RSP2
 	
 	i64 Reserved_2
 	
@@ -156,5 +156,5 @@ define void SetupGDT() {
 		sti
 	}
 	
-	TSS->RSP0 := 0x6_0000
+	TSS->RSP0 := Kernel->ReEntryStack
 }

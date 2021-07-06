@@ -16,6 +16,7 @@ declare void KernelHeapFree(void*)
 #Require "./src/kernel/graphics/Screen.rlx"
 
 #Require "./src/kernel/core/Paging.rlx"
+#Require "./src/kernel/core/PhysicalMemory.rlx"
 #Require "./src/kernel/core/Heap.rlx"
 
 Heap RawKernelHeap
@@ -31,6 +32,24 @@ define void KernelHeapFree(void* Memory) {
 	KernelHeap->Free(Memory)
 }
 
+struct KernelInfo {
+	void* Base
+	i64 PhysicalBase
+	i32 Size
+	i32 PageCount
+	
+	void* FrameBuffer
+	void* HeapMemory
+	void* ReEntryStack
+}
+
+KernelInfo RawKernelInfo {
+	Base: 0x10_0000 As void*,
+	PhysicalBase: 0x10_0000
+}
+
+KernelInfo* Kernel := &RawKernelInfo
+
 #Require "./src/kernel/core/Descriptors.rlx"
 
 #Require "./src/utility/Memory.rlx"
@@ -40,7 +59,7 @@ define void KernelHeapFree(void* Memory) {
 
 #Require "./src/kernel/graphics/Terminal.rlx"
 
-i8 USE_INTERRUPT_STUBS := true
+i8 USE_INTERRUPT_STUBS := false
 
 #Require "./src/kernel/core/Interrupts.rlx"
 #Require "./src/kernel/core/Devices.rlx"
@@ -55,23 +74,42 @@ INode* RootINode := null
 
 #Require "./src/kernel/core/Shell.rlx"
 
-#Require "./src/kernel/core/PhysicalMemory.rlx"
+declare void MainContinuation()
+
+define void RawMainContinuation(void* Stack) asm {
+	mov, rsp, rdi
+	mov, rbp, rsp
+	
+	call, @MainContinuation
+
+stop:
+	jmp, stop
+}
 
 define void Main(void* CR3, void* RawFrameBuffer, i64 MaxKernelAddress) {
 	BochsPrint("Main, FrameBuffer @ %x\n", RawFrameBuffer)
+	
+	Kernel->FrameBuffer := RawFrameBuffer
 	
 	PhysicalMemory->AddReserved(0, 0x10_0000) ; < 1mb, bootloader reserved
 	PhysicalMemory->Add(0x10_0000, 0x350_0000) ; free memory
 	
 	i32 KernelSize := (MaxKernelAddress - 0x10_0000) As i32 ; Highest address of kernel data - image base
 	
-	i64 KernelPages     := PhysicalMemory->Reserve(KernelSize) ; Reserve the memory the kernel lives in
-	i64 PageFramesPages := PhysicalMemory->Reserve(BYTES_IN_1MB, PAGE_SIZE)
-	i64 HeapMemoryPages := PhysicalMemory->Reserve(BYTES_IN_2MB, 8)
+	Kernel->Size := KernelSize
+	Kernel->PageCount := SizeToPageCount(KernelSize)
 	
-	void* KernelBase := 0x10_0000 As void*
-	void* PageFrames := PageFramesPages As void*
-	void* HeapMemory := HeapMemoryPages As void*
+	i64 KernelPages      := PhysicalMemory->Reserve(KernelSize) ; Reserve the memory the kernel lives in
+	i64 PageFramesPages  := PhysicalMemory->Reserve(BYTES_IN_1MB, PAGE_SIZE)
+	i64 HeapMemoryPages  := PhysicalMemory->Reserve(BYTES_IN_2MB, 8)
+	i64 KernelStackPages := PhysicalMemory->Reserve(PAGE_SIZE * 20, PAGE_SIZE)
+	
+	void* KernelBase  := 0x10_0000 As void*
+	void* PageFrames  := PageFramesPages As void*
+	void* HeapMemory  := HeapMemoryPages As void*
+	void* StackMemory := KernelStackPages As void*
+	
+	Kernel->HeapMemory := HeapMemory
 	
 	AddressSpace->Initialize(PageFrames, BYTES_IN_1MB / PAGE_SIZE)
 	
@@ -85,14 +123,19 @@ define void Main(void* CR3, void* RawFrameBuffer, i64 MaxKernelAddress) {
 	; Map the heap to wherever
 	AddressSpace->MapRange(HeapMemory, HeapMemoryPages / PAGE_SIZE, PAGE_COUNT_FOR_2MB)
 	
-	AddressSpace->Takeover()
+	; Map the stack to wherever
+	AddressSpace->MapRange(StackMemory, KernelStackPages / PAGE_SIZE, 20)
 	
+	AddressSpace->Takeover(&RawMainContinuation, StackMemory + (PAGE_SIZE * 20))
+}
+
+define void MainContinuation() {
 	BochsPrintString("Paging initialized, AddressSpaceManager in control\n")
 	
 	; Remap the next available `FRAMEBUFFER_SIZE` bytes of virtual memory to 0xE000_0000 (or wherever int10 says)
 	i32 FrameBufferPageCount := SizeToPageCount(FRAMEBUFFER_SIZE)
 	i8* FrameBuffer := 0x80_0000 As i8*
-	AddressSpace->MapRange(FrameBuffer, PointerToPageNumber(RawFrameBuffer), FrameBufferPageCount)
+	AddressSpace->MapRange(FrameBuffer, PointerToPageNumber(Kernel->FrameBuffer), FrameBufferPageCount)
 	
 	BochsPrintString("Mapped the framebuffer\n")
 	
@@ -112,11 +155,19 @@ define void Main(void* CR3, void* RawFrameBuffer, i64 MaxKernelAddress) {
 	
 	KernelTerminal->PrintLine("BOOT: Unmapped page 0")
 	
-	KernelHeap->Initialize(HeapMemory, BYTES_IN_2MB)
+	KernelHeap->Initialize(Kernel->HeapMemory, BYTES_IN_2MB)
 	
 	KernelTerminal->Print("BOOT: Kernel Heap Initialized: ")
 	KernelHeap->Allocate('Example', 0x222)
 	KernelHeap->Print()
+	
+	
+	i64 ReEntryStackPages := PhysicalMemory->Reserve(PAGE_SIZE * 10, PAGE_SIZE)
+	void* ReEntryStack    := ReEntryStackPages As void*
+	AddressSpace->MapRange(ReEntryStack, ReEntryStackPages / PAGE_SIZE, 10)
+	
+	Kernel->ReEntryStack := ReEntryStack + (PAGE_SIZE * 10)
+	
 	
 	SetupGDT()
 	
@@ -124,15 +175,17 @@ define void Main(void* CR3, void* RawFrameBuffer, i64 MaxKernelAddress) {
 	
 	SetupInterrupts()
 	
+	SetPITMode(PIT_100HZ)
+	SetupTimers()
+	
+	Print("Set up PIT/timers\n")
+	
 	Print("\nTesting user-mode\n")
 	
 	SetupSystemCalls()
 	Test()
 	
 	Print("Back in kernel code\n\n")
-	
-	SetPITMode(PIT_100HZ)
-	SetupTimers()
 	
 	KernelTerminal->SetCursorTimer()
 	
