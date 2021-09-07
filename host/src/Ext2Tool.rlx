@@ -1,0 +1,668 @@
+#Require "./src/lib/Console.rlx"
+#Require "./src/lib/Exception.rlx"
+#Require "../drivers/Ext2.rlx"
+
+define void PrintSuperBlock(SuperBlock* this) {
+	Print("SuperBlock {\n")
+	Print("	TotalINodes: %i\n", this->TotalINodes)
+	Print("	TotalBlocks: %i\n", this->TotalBlocks)
+	Print("	ReservedBlocks: %i\n", this->ReservedBlocks)
+	Print("	UnallocatedBlocks: %i\n", this->UnallocatedBlocks)
+	Print("	UnallocatedINodes: %i\n", this->UnallocatedINodes)
+	Print("	SuperBlockNumber: %i\n", this->SuperBlockNumber)
+	Print("	BlockSize: %i\n", this->BlockSize)
+	Print("	FragmentSize: %i\n", this->FragmentSize)
+	Print("	BlocksPerGroup: %i\n", this->BlocksPerGroup)
+	Print("	FragmentsPerGroup: %i\n", this->FragmentsPerGroup)
+	Print("	INodesPerGroup: %i\n", this->INodesPerGroup)
+	Print("	MountCount: %i\n", this->MountCount)
+	Print("	MaxMountCount: %i\n", this->MaxMountCount)
+	Print("	Magic: %x\n", this->Magic)
+	Print("	State: %i\n", this->State)
+	Print("	ErrorMode: %i\n", this->ErrorMode)
+	Print("	MinorRevision: %i\n", this->MinorRevision)
+	Print("	CheckInterval: %i\n", this->CheckInterval)
+	Print("	CreatorOS: %i\n", this->CreatorOS)
+	Print("	RevisionLevel: %i\n", this->RevisionLevel)
+	Print("}\n")
+}
+define void PrintBlockGroupDescriptor(BlockGroupDescriptor* this) {
+	Print("BlockGroupDescriptor {\n")
+	Print("	BlockBitmap: %i \t(sector %i | offset %x)\n", this->BlockBitmap, this->BlockBitmap * 2, this->BlockBitmap * 1024)
+	Print("	INodeBitmap: %i \t(sector %i | offset %x)\n", this->INodeBitmap, this->INodeBitmap * 2, this->INodeBitmap * 1024)
+	Print("	INodeTable: %i \t(sector %i | offset %x)\n", this->INodeTable, this->INodeTable * 2, this->INodeTable * 1024)
+	Print("	UnallocatedBlocks: %i\n", this->UnallocatedBlocks)
+	Print("	UnallocatedINodes: %i\n", this->UnallocatedINodes)
+	Print("}\n")
+}
+define void PrintINode(INode* this) {
+	Print("INode {\n")
+	Print("\tPermissions: %x\n", this->Permissions)
+	Print("\tUserID: %i\n", this->UserID)
+	Print("\tFileSizeLow: %i\n", this->FileSizeLow)
+	Print("\tLastAccessTime: %i\n", this->LastAccessTime)
+	Print("\tCreationTime: %i\n", this->CreationTime)
+	Print("\tLastModificationTime: %i\n", this->LastModificationTime)
+	Print("\tDeletionTime: %i\n", this->DeletionTime)
+	Print("\tGroupID: %i\n", this->GroupID)
+	Print("\tHardLinkCount: %i\n", this->HardLinkCount)
+	Print("\tFlags: %i\n", this->Flags)
+	Print("\tOSValue: %i\n", this->OSValue)
+	
+	Print("\tBlocks: [\n")
+	for (i32 Index := 0, Index < 15, Index++) {
+		Print("\t\t[%i] = %i\n", Index, this~>DirectBlocks[Index])
+	}
+	Print("\t]\n")
+	
+	Print("}\n")
+}
+
+define i32 SplitPath(i8* Path, i8** Into, i32 Max) {
+	i32 Count := 0
+	i32 Start := 0
+	
+	for (i32 Index := 0, Path[Index] != 0, Index += 1) {
+		if (Path[Index] = '/') {
+			Into[Count] := Path + Start
+			Count += 1
+			
+			if (Count = Max) {
+				return Count
+			}
+			
+			Path[Index] := 0
+			Start := Index + 1
+		}
+	}
+	
+	Into[Count] := Path + Start
+	Count += 1
+	
+	return Count
+}
+
+define void Tabs(i32 Count) {
+	for (i32 Index := 0, Index < Count, Index += 1) {
+		Print("	")
+	}
+}
+
+define void DirectoryTree(Ext2* FS, INode* Root, i32 TabCount) {
+	i32 State := FS->StartWalkDirectory(Root)
+	
+	loop {
+		DirectoryEntry* NextEntry := FS->WalkDirectoryNext(Root, &State)
+		
+		if (NextEntry = null) {
+			break
+		}
+		
+		INode* NextNode := FS->ReadINode(NextEntry->INode)
+		
+		if (NextEntry->NameLength != 0) {
+			Tabs(TabCount)
+			Print("%x	%s\n", NextNode->FileSizeLow, NextEntry~>Name)
+		}
+		
+		if (NextNode->GetType() = 0x4 && NextEntry~>Name[0] != '.') {
+			INode* NextDirectory := CloneMemory(NextNode, #INode)
+			
+			DirectoryTree(FS, NextDirectory, TabCount + 1)
+			
+			Free(NextDirectory)
+		}
+	}
+}
+
+define i32 ParseScale(i8* ScaleString) {
+	i32 Scale := 1
+	
+	if (StringLength(ScaleString) = 1) {
+		i8 ScaleCharacter := ScaleString[0]
+		
+		if      (ScaleCharacter = 'b') { Scale := 1 }
+		else if (ScaleCharacter = 'k') { Scale := 0x400 }
+		else if (ScaleCharacter = 'm') { Scale := 0x10_0000 }
+		else {
+			Print("Unknown scale, using 1\n")
+		}
+	}
+	else {
+		Print("Unknown scale, using 1\n")
+	}
+	
+	return Scale
+}
+
+define void Prompt(Ext2* FS) {
+	if (FS->SuperBlock->SuperBlockNumber) {
+		INode* RootINode := CloneMemory(FS->ReadINode(2), #INode)
+	}
+	
+	loop {
+		Print("^90->^F0")
+		i8* NextLine := ReadLine()
+		
+		i64 ArgC := 0
+		i8** ArgV := null
+		
+		ParseCommandLine(NextLine, &ArgC, &ArgV)
+		i8* Command := ArgV[0]
+		i8* Path := ArgV[1]
+		
+		if (StringEquals(Command, "ls")) {
+			i32 NextEntryOffset := FS->StartWalkDirectory(RootINode)
+			
+			loop {
+				DirectoryEntry* NextEntry := FS->WalkDirectoryNext(RootINode, &NextEntryOffset)
+				
+				if (NextEntry = null) {
+					break
+				}
+				
+				INode* NextNode := FS->ReadINode(NextEntry->INode)
+				
+				if (NextNode->IsDirectory()) {
+					Print(" ^20D^F0 ")
+				}
+				else {
+					Print(" ^A0F^F0 ")
+				}
+				
+				Print("%x	%x	%s\n", NextEntry->INode, NextNode->FileSizeLow, NextEntry~>Name)
+			}
+		}
+		else if (StringEquals(Command, "cd")) {
+			DirectoryEntry* NewRootEntry := FS->FindDirectoryEntryByPath(RootINode, Path)
+			
+			if (NewRootEntry = null || !NewRootEntry->IsDirectory()) {
+				Print(" Could not find directory '^C0%s^F0'\n", Path)
+			}
+			else {
+				Print(" CD to '^A0%s^F0', INode ^A0%x^F0\n", Path, NewRootEntry->INode)
+				
+				Free(RootINode)
+				RootINode := FS->CloneINode(NewRootEntry->INode)
+			}
+		}
+		else if (StringEquals(Command, "bi")) {
+			DirectoryEntry* FoundNodeEntry := FS->FindDirectoryEntryByPath(RootINode, Path)
+			
+			if (FoundNodeEntry = null) {
+				Print(" Could not find file/directory '^C0%s^F0'\n", Path)
+			}
+			else {
+				INode* FoundNode := FS->CloneINode(FoundNodeEntry->INode)
+				
+				i32 BlockCount := FoundNode->FileSizeLow / 1024
+				
+				if (FoundNode->FileSizeLow % 1024) {
+					BlockCount += 1
+				}
+				
+				Print(" ^A0%i^F0 total blocks, ^A0%i^F0 total size\n", BlockCount, FoundNode->FileSizeLow)
+				
+				Print(" INode: ^A0%i^F0\n", FoundNode->INodeNumber - 1)
+				
+				i32 Offset := 0
+				i32 Block := FS->FindINodeBlock(FoundNode->INodeNumber, &Offset)
+				
+				Print(" Location: sector ^A0%i^F0+^20%i^F0 (offset ^A0%x^F0)\n", Block * 2, Offset, (Block * 1024) + Offset)
+				
+				for (i32 BlockIndex := 0, BlockIndex < BlockCount, BlockIndex += 1) {
+					i32 Temp := FS->FindINodeDataBlock(FoundNode, BlockIndex, false)
+					
+					Print("  ^20%i^F0 = Blocks[^20%i^F0] (sector %i | offset %x)\n", BlockIndex, Temp, Temp * 2, Temp * 1024)
+				}
+				
+				Free(FoundNode)
+			}
+		}
+		else if (StringEquals(Command, "cat")) {
+			DirectoryEntry* FoundFileEntry := FS->FindDirectoryEntryByPath(RootINode, Path)
+			
+			if (FoundFileEntry = null || !FoundFileEntry->IsFile()) {
+				Print(" Could not find file '^C0%s^F0'\n", Path)
+			}
+			else {
+				INode* FoundFileNode := FS->CloneINode(FoundFileEntry->INode)
+				
+				i32 FileBlockCount := FoundFileNode->FileSizeLow / 1024
+				
+				if (FoundFileNode->FileSizeLow % 1024) {
+					FileBlockCount += 1
+				}
+				
+				for (i32 FileBlockIndex := 0, FileBlockIndex < FileBlockCount, FileBlockIndex += 1) {
+					i32 FileDataBlock := FS->FindINodeDataBlock(FoundFileNode, FileBlockIndex, false)
+					Print("%s", FS->ReadBlock(FileDataBlock))
+				}
+				
+				Print("\n Done, ^A0%i^F0 blocks printed\n", FileBlockCount)
+				
+				Free(FoundFileNode)
+			}
+		}
+		else if (StringEquals(Command, "touch")) {
+			i32 CreatedFileNodeNumber := FS->MakeFile(RootINode, Path)
+			
+			if (CreatedFileNodeNumber = -1) {
+				Print(" File '^C0%s^F0' already exists\n", Path)
+			}
+			else {
+				Print(" Created new file at '^A0%s^F0', INode ^A0%i^F0\n", Path, CreatedFileNodeNumber)
+			}
+		}
+		else if (StringEquals(Command, "mkdir")) {
+			i32 CreatedDirectoryNodeNumber := FS->MakeDirectory(RootINode, Path)
+			
+			if (CreatedDirectoryNodeNumber = -1) {
+				Print(" Directory '^C0%s^F0' already exists\n", Path)
+			}
+			else {
+				Print(" Created new directory at '^A0%s^F0', INode ^A0%i^F0\n", Path, CreatedDirectoryNodeNumber)
+			}
+		}
+		else if (StringEquals(Command, "bg")) {
+			i32 Index := AToI(Path) As i16
+			Print("%i = \n", Index)
+			BlockGroupDescriptor* BGD := FS->GetBlockGroupDescriptor(Index)
+			
+			PrintBlockGroupDescriptor(BGD)
+		}
+		else if (StringEquals(Command, "tree")) {
+			DirectoryTree(FS, RootINode, 0)
+		}
+		else if (StringEquals(Command, "format")) {
+			Ext2CreationParameters* Parameters := Alloc(#Ext2CreationParameters)
+			Parameters->SetDefaults()
+			
+			i32 Size := 0
+			
+			loop {
+				Print("^90-->^F0")
+				NextLine := ReadLine()
+				
+				ArgC := 0
+				ArgV := null
+				
+				ParseCommandLine(NextLine, &ArgC, &ArgV)
+				Command := ArgV[0]
+				
+				if (StringEquals(Command, "done")) {
+					break
+				}
+				
+				if (ArgC < 2) {
+					Print("- Not enough arguments\n")
+				}
+				
+				i32 Argument := AToI(ArgV[1]) As i32
+				
+				if (StringEquals(Command, "inodes")) {
+					Parameters->INodesPerGroup := Argument * 8
+					Print(" + Set number of INodes per group to %i\n", Parameters->INodesPerGroup)
+				}
+				else if (StringEquals(Command, "blocks")) {
+					Parameters->BlocksPerGroup := Argument
+					Print(" + Set number of blocks per group to %i\n", Parameters->BlocksPerGroup)
+				}
+				else if (StringEquals(Command, "size")) {
+					Size := Argument
+					
+					i32 Scale := 1
+					
+					if (ArgC = 3) {
+						Scale := ParseScale(ArgV[2])
+					}
+					
+					Size *= Scale
+					
+					Print(" + Set size to %x bytes\n", Size)
+				}
+			}
+			
+			Parameters->AssumeFromStorageSize(Size)
+			
+			FS->Format(Parameters)
+			
+			Print(" +------------------------------\n")
+			Print(" + Total FS size: %x bytes\n", Parameters->TotalSize)
+			Print(" + Free blocks: %i\n", Parameters->FreeBlocks)
+			Print(" + Free INodes: %i\n", Parameters->FreeINodes)
+			Print(" +------------------------------\n")
+			Print(" + Number of block groups: %i\n", Parameters->BlockGroupCount)
+			Print(" + Blocks per group: %i\n", Parameters->BlocksPerGroup)
+			Print(" + INodes per group: %i\n", Parameters->INodesPerGroup)
+			Print(" + INodes table size (in blocks): %i\n", Parameters->INodeTableSize)
+			Print(" +------------------------------\n")
+			
+			Print(" + Final group size (in blocks): %i\n", Parameters->FinalGroupSize)
+			
+			if (Parameters->FinalGroupIsPresent) {
+				Print(" + Final group free blocks: %i\n", Parameters->FinalGroupFreeBlocks)
+				Print(" + Final group first free block: %i\n", Parameters->FinalGroupFirstFreeBlock)
+				Print(" + Final group reserved block range: %i - %i\n", Parameters->FinalGroupFirstTailBlock, Parameters->BlocksPerGroup)
+			}
+			else {
+				Print(" + Final group removed (not big enough for INode table)\n")
+			}
+			
+			Print(" +------------------------------\n")
+			
+			RootINode := CloneMemory(FS->ReadINode(2), #INode)
+		}
+		else if (StringEquals(Command, "sb")) {
+			PrintSuperBlock(FS->SuperBlock)
+		}
+		else if (StringEquals(Command, "import")) {
+			if (ArgC != 3) {
+				Print(" - Not enough arguments\n")
+				continue
+			}
+			
+			i8* RealPath := ArgV[1]
+			
+			i64 File := FileOpen(RealPath, FILE_READ)
+			
+			if (File < 0) {
+				Print("Could not open real file '%s', error %i\n", RealPath, File)
+				continue
+			}
+			
+			i32 ImportSize := FileGetSize(File)
+			void* ImportData := FileReadAll(File)
+			
+			i32 NewNodeNumber := FS->AllocateINode()
+			
+			INode* NewNode := FS->ReadINode(NewNodeNumber)
+			NewNode->SetFieldDefaults()
+			FS->WriteINode(NewNode)
+			
+			FS->WriteINodeData(NewNodeNumber, ImportData, ImportSize)
+			
+			Free(ImportData)
+			
+			FS->DirectoryAppendEntry(RootINode, ArgV[2], NewNodeNumber, DIRECTORY_ENTRY_FILE)
+			
+			Print(" + Imported file '%s' to path '%s', %x bytes\n", RealPath, ArgV[2], ImportSize)
+		}
+		else if (StringEquals(Command, "export")) {
+			if (ArgC != 3) {
+				Print(" - Not enough arguments\n")
+				continue
+			}
+			
+			i8* OutputRealPath := ArgV[2]
+			
+			FileDelete(OutputRealPath)
+			
+			i64 OutputFile := FileOpen(OutputRealPath, FILE_READ_WRITE | FILE_CREATE_NEW)
+			
+			if (OutputFile < 0) {
+				Print("Could not open real file '%s', error %i\n", OutputRealPath, OutputFile)
+			}
+			
+			DirectoryEntry* OutputEntry := FS->FindDirectoryEntryByPath(RootINode, Path)
+			
+			if (OutputEntry = null || !OutputEntry->IsFile()) {
+				Print("Specified file does not exist, or is a directory\n")
+				continue
+			}
+			
+			INode* OutputNode := FS->CloneINode(OutputEntry->INode)
+			
+			i32 OutputBlockCount := OutputNode->FileSizeLow / 0x400
+			i32 OutputRemainder := OutputNode->FileSizeLow % 0x400
+			
+			for (i32 OutputBlockIndex := 0, OutputBlockIndex < OutputBlockCount, OutputBlockIndex++) {
+				Print("  + Reading data block %i\n", OutputBlockIndex)
+				
+				FS->ReadINodeData(FS->TempBlock, OutputNode, OutputBlockIndex)
+				
+				FileWrite(OutputFile, FS->TempBlock, 0x400)
+			}
+			
+			if (OutputRemainder) {
+				Print("  + Reading data block %i\n", OutputBlockIndex)
+				
+				FS->ReadINodeData(FS->TempBlock, OutputNode, OutputBlockIndex)
+				
+				FileWrite(OutputFile, FS->TempBlock, OutputRemainder)
+			}
+			
+			FileClose(OutputFile)
+			
+			Print("Wrote %i bytes (%x) from '%s' to real path '%s'\n", OutputNode->FileSizeLow, OutputNode->FileSizeLow, Path, OutputRealPath)
+			
+			Free(OutputNode)
+		}
+		else if (StringEquals(Command, "in")) {
+			i32 DumpINodeNumber := AToI(ArgV[1]) As i32
+			
+			Print("Dumping INode %i\n", DumpINodeNumber)
+			
+			INode* DumpINode := FS->ReadINode(DumpINodeNumber)
+			
+			PrintINode(DumpINode)
+		}
+		else if (StringEquals(Command, "space")) {
+			i32 DataBytes := FS->SuperBlock->UnallocatedBlocks * 1024
+			
+			Print(" + %i (%x) bytes left for data\n", DataBytes, DataBytes)
+			Print(" + %i slots left for files\n", FS->SuperBlock->UnallocatedINodes)
+		}
+		else if (StringEquals(Command, "import-to-node")) {
+			if (ArgC != 3) {
+				Print(" - Not enough arguments\n")
+				continue
+			}
+		
+			i32 ToNodeNumber := AToI(ArgV[2]) As i32
+			
+			i8* InputRealPath := ArgV[1]
+			
+			i64 InputFile := FileOpen(InputRealPath, FILE_READ)
+			
+			if (InputFile < 0) {
+				Print("Could not open real file '%s', error %i\n", InputRealPath, InputFile)
+				continue
+			}
+			
+			i32 InputSize := FileGetSize(InputFile)
+			void* InputData := FileReadAll(InputFile)
+			
+			INode* ToNode := FS->ReadINode(ToNodeNumber)
+			ToNode->SetFieldDefaults()
+			ToNode->MakeFile()
+			FS->WriteINode(ToNode)
+			
+			FS->WriteINodeData(ToNodeNumber, InputData, InputSize)
+			
+			Print("Imported %i bytes from '%s' to INode %i\n", InputSize, InputRealPath, ToNodeNumber)
+			
+			Free(InputData)
+		}
+		else if (StringEquals(Command, "import-to-boot-sector")) {
+			if (ArgC != 2) {
+				Print(" - Not enough arguments\n")
+				continue
+			}
+		
+			i8* BootRealPath := ArgV[1]
+			
+			i64 BootFile := FileOpen(BootRealPath, FILE_READ)
+			
+			if (BootFile < 0) {
+				Print("Could not open real file '%s', error %i\n", BootRealPath, BootFile)
+				continue
+			}
+			
+			i32 BootSize := FileGetSize(BootFile)
+			void* BootData := FileReadAll(BootFile)
+			
+			if (BootSize > 0x400) {
+				Print("Boot sector data must be smaller than 1024 bytes\n")
+				continue
+			}
+			
+			BootData := ReAlloc(BootData, 0x400)
+			
+			FS->WriteBlock(0, BootData)
+			
+			Print("Imported %i bytes from '%s' to boot sector\n", BootSize, BootRealPath)
+			
+			Free(BootData)
+		}
+		else if (StringEquals(Command, "link-to-node")) {
+			if (ArgC != 3) {
+				Print(" - Not enough arguments\n")
+				continue
+			}
+			
+			i32 LinkToNodeNumber := AToI(ArgV[2]) As i32
+			
+			FS->DirectoryAppendEntry(RootINode, Path, LinkToNodeNumber, DIRECTORY_ENTRY_FILE)
+			
+			Print("Linked entry '%s' to INode %i\n", Path, LinkToNodeNumber)
+		}
+		else if (StringEquals(Command, "quit")) {
+			Free(ArgV)
+			break
+		}
+		
+		Free(ArgV)
+	}
+}
+
+#Require "./src/lib/Debug.rlx"
+
+struct Ext2FileBackedDevice {
+	i64 FD
+	
+	define void Read(i32 SectorNumber, void* Buffer) {
+		if (SectorNumber < 0) {
+			Throw(EXT2_EXCEPTION_DEVICE_READ_ERROR)
+		}
+		
+		FileSeek(this->FD, SectorNumber * 512, SEEK_SET)
+		FileRead(this->FD, Buffer, 512)
+	}
+	define void Write(i32 SectorNumber, void* Buffer) {
+		if (SectorNumber < 0) {
+			Throw(EXT2_EXCEPTION_DEVICE_WRITE_ERROR)
+		}
+		
+		FileSeek(this->FD, SectorNumber * 512, SEEK_SET)
+		FileWrite(this->FD, Buffer, 512)
+	}
+	
+	static void Read(Ext2FileBackedDevice* this, i32 Sector, void* Buffer) {
+		this->Read(Sector, Buffer)
+	}
+	static void Write(Ext2FileBackedDevice* this, i32 Sector, void* Buffer) {
+		this->Write(Sector, Buffer)
+	}
+	
+	static Ext2DeviceTraits* New(i64 FD) {
+		Ext2FileBackedDevice* this := Alloc(#Ext2FileBackedDevice)
+		
+		this->FD := FD
+		
+		Ext2DeviceTraits* Traits := Alloc(#Ext2DeviceTraits)
+		
+		Traits->State := this
+		Traits->ReadSector := &Ext2FileBackedDevice:Read
+		Traits->WriteSector := &Ext2FileBackedDevice:Write
+		
+		return Traits
+	}
+}
+
+
+
+define i32 Main(i64 ArgC, i8** ArgV) {
+	GetArgs(&ArgC, &ArgV)
+	
+	if (ArgC != 2) {
+		Print("No file specified\n")
+		return 0
+	}
+	
+	i64 F := FileOpen(ArgV[1], FILE_READ_WRITE | FILE_CREATE_NEW)
+	
+	Print("FD = %x\n", F)
+	
+	Ext2DeviceTraits* Traits := Ext2FileBackedDevice:New(F)
+	
+	Ext2* FS := Alloc(#Ext2)
+	
+	FS->Traits := Traits
+	
+	void* SB := Alloc(2048)
+	void* TI := Alloc(1024)
+	void* TB1 := Alloc(1024)
+	void* TB2 := Alloc(1024)
+	void* BMP := Alloc(1024)
+	
+	FS->Initialize(SB, TI, TB1, TB2, BMP)
+	
+	;Print("SB data\n Block size = %i\n Blocks per group = %i\n INodes per group = %i\n\n", 1024 << (FS->SuperBlock->BlockSize As i8), FS->SuperBlock->BlocksPerGroup, FS->SuperBlock->INodesPerGroup)
+	
+	PrintSuperBlock(FS->SuperBlock)
+	
+	try {
+		Prompt(FS)
+	}
+	catch (i64 Exception) {
+		Print("Ext2 Exception: %s\n", Ext2ExceptionToString(Exception))
+	}
+	
+	return 0
+	
+	;i32 NewNode := FS->AllocateINode()
+	;
+	;i8* Data := "Abc 123 hello asdiausd ipi"
+	;FS->WriteINodeData(NewNode, Data, StringLength(Data))
+	;
+	;FS->DirectoryAppendEntry(2, "Testfile.txt", NewNode, 1)
+	
+	;INode* RootINode := CloneMemory(FS->ReadINode(2), #INode)
+	;
+	;DirectoryTree(FS, RootINode, 1)
+	
+	
+	;i8** Path := Alloc(0x100)
+	;
+	;i32 Count := SplitPath(ArgV[1], Path, 5)
+	;
+	;DirectoryEntry* Result := FS->FindDirectoryEntryByPath(Path, Count, true)
+	;
+	;if (Result > 0x200) {
+	;	Print("Found file '%s' at INode %i\n", Result~>Name, Result->INode)
+	;	;i32 ResultNode := Result->INode
+	;	;
+	;	;/* INode* Found := Ext2ReadINode(FSP, Result->INode)
+	;	;void* Data := Ext2ReadINodeData(FSP, Found, 0) */
+	;	;
+	;	;
+	;	;i32 NewNode := Ext2AllocateINode(FSP)
+	;	;
+	;	;INode* NewNodeData := Alloc(#INode)
+	;	;
+	;	;
+	;	;
+	;	;Ext2WriteINode(FSP, NewNode, NewNodeData)
+	;	;Ext2DirectoryAppendEntry(FSP, ResultNode, "dummyTest", NewNode, 1)
+	;	;
+	;	;i8* Data := "Abcd 123, dummy! aoi"
+	;	;void* Temp := Alloc(0x1000)
+	;	;MemoryCopy(Data, Temp, StringLength(Data))
+	;	;
+	;	;Ext2AllocateAndWriteBlocks(FSP, NewNode, 1, Temp)
+	;}
+	;else {
+	;	Print("Couldn't find file, error %c (%i)\n", Result As i8, Result As i64)
+	;}
+}
