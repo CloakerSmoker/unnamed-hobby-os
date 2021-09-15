@@ -2,10 +2,8 @@
 #Require "./src/utility/x64.rlx"
 #Require "./src/kernel/core/Descriptors.rlx"
 
-AMD64Context KernelContext
-
-define void HandleSystemCall(i64 One, i64 Two, i64 Three, i64 Four, void* RSP) {
-	if (One = 0) {
+define void HandleSystemCall(i64 One, i64 Two, i64 Three, i64 Four, void* RSP, i64 Number) {
+	if (Number = 0) {
 		Print("Syscall(0), exit user mode\n")
 		
 		RestoreContext(&KernelContext)
@@ -21,6 +19,7 @@ define void* GetKernelReEntryStack() {
 
 define void OnSystemCall() asm {
 	mov, r8, rsp
+	mov, r9, rax
 	
 	call, @GetKernelReEntryStack
 	mov, rsp, rax
@@ -52,12 +51,12 @@ define void SetupSystemCalls() {
 }
 
 define void UserModeReturnStub() asm {
-	mov, rdi, 0
+	mov, rax, 0
 	syscall
 }
 
 define void EnterUserMode(void* EntryPoint, void* Stack) {
-	BochsPrint("EnterUserMode(%x)\n", EntryPoint)
+	Print("EnterUserMode(%x, %x)\n", EntryPoint, Stack)
 	
 	if (SaveContext(&KernelContext)) {
 		return
@@ -79,9 +78,11 @@ define void UserModeTest() {
 	;FastSetMemory8(0x80_0000 As void*, 0, 1024 * 768 * 3)
 	
 	asm {
+		mov, rax, 1
 		mov, rdi, 1
 		syscall
 		
+		mov, rax, 1
 		mov, rdi, 2
 		syscall
 		
@@ -92,9 +93,9 @@ define void UserModeTest() {
 }
 
 define void Test() {
-	i64 UserStackPages := PhysicalMemory->Reserve(PAGE_SIZE * 10, PAGE_SIZE)
+	i64 UserStackPages := PhysicalMemory->Reserve('STK', PAGE_SIZE * 10, PAGE_SIZE)
 	void* UserStack    := UserStackPages As void*
-	AddressSpace->MapRange(UserStack, UserStackPages / PAGE_SIZE, 10)
+	KernelAddressSpace->MapRange(UserStack, UserStackPages / PAGE_SIZE, 10)
 	
 	
 	EnterUserMode(&UserModeTest, UserStack + (PAGE_SIZE * 10))

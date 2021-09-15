@@ -202,3 +202,12 @@ define void RestoreContext(AMD64Context* Save) asm {
 	
 	ret
 }
+
+define i64 GetCR2() asm {
+	; mov, rax, cr2
+	emit, 0x0F
+	emit, 0x20
+	emit, 0xD0
+	
+	ret
+}

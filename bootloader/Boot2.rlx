@@ -308,7 +308,7 @@ define void Main(void* FrameBuffer) {
 	
 	i64 MaxKernelAddress := 0
 	
-	ELFProgramHeader* ProgramHeaders := Kernel.GetProgramHeaders()
+	ELFProgramHeader* ProgramHeaders := Kernel.Header->GetProgramHeaders()
 
 	for (i32 Index := 0, Index < Kernel.Header->ProgramHeaderEntryCount, Index++) {
 		ELFProgramHeader* Next := ProgramHeaders[Index]

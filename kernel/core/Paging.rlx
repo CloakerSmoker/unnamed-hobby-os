@@ -247,6 +247,90 @@ struct AddressSpaceManager {
 	define void Takeover(void* Continuation, void* Parameter){
 		SetCR3(this->PML4, Continuation, Parameter)
 	}
+	
+	define i64 EndRun(i64 RunStartAddress, i64 RunStart, i64 RunLastAddress, i64 RunLast, i64 RunLength) {
+		if (RunLength) {
+			Print("%x -> %x\n", RunStartAddress, RunStart)
+			
+			if (RunLength > 1) {
+				Print("...\n")
+				Print("%x -> %x\n\n", RunLastAddress, RunLast)
+			}
+		}
+		
+		return 0
+	}
+	
+	define void Print() {
+		i64**** PML4 := this->PML4
+		
+		i64 RunStartAddress := 0
+		i64 RunStart := 0
+		i64 RunLastAddress := 0
+		i64 RunLast := 0
+		i64 RunLength := 0
+		
+		for (i64 PML4Index := 0, PML4Index < 512, PML4Index++) {
+			i64**** PML4E := GetPML4Entry(PML4, (PML4Index << 39) As void*)
+			
+			if (*PML4E & PAGE_PRESENT) {
+				for (i64 PDPIndex := 0, PDPIndex < 512, PDPIndex++) {
+					i64*** PDPE := GetPDPEntry(*PML4E, (PDPIndex << 30) As void*)
+					
+					if (*PDPE & PAGE_PRESENT) {
+						for (i64 PDIndex := 0, PDIndex < 512, PDIndex++) {
+							i64** PDE := GetPDEntry(*PDPE, (PDIndex << 21) As void*)
+							
+							if (*PDE & PAGE_PRESENT) {
+								for (i64 PTIndex := 0, PTIndex < 512, PTIndex++) {
+									i64* PTE := GetPTEntry(*PDE, (PTIndex << 12) As void*)
+									
+									if (*PTE & PAGE_PRESENT) {
+										i64 Address := (PML4Index << 39) | (PDPIndex << 30) | (PDIndex << 21) | (PTIndex << 12) 
+										
+										if (RunStart = 0 && RunLength = 0) {
+											RunStartAddress := Address
+											RunStart := *PTE
+										}
+										else if ((*PTE) - RunLast >= 0x1300) {
+											RunLength := this->EndRun(RunStartAddress, RunStart, RunLastAddress, RunLast, RunLength)
+											
+											RunStartAddress := Address
+											RunStart := *PTE
+											
+											i8* a := "aaaaaaaaaaaaaaaaaaaaaaa"
+										}
+										
+										RunLength += 1
+										RunLastAddress := Address
+										RunLast := *PTE
+									}
+									else {
+										RunLength := this->EndRun(RunStartAddress, RunStart, RunLastAddress, RunLast, RunLength)
+										RunStart := 0
+									}
+								}
+							}
+							else {
+								RunLength := this->EndRun(RunStartAddress, RunStart, RunLastAddress, RunLast, RunLength)
+								RunStart := 0
+							}
+						}
+					}
+					else {
+						RunLength := this->EndRun(RunStartAddress, RunStart, RunLastAddress, RunLast, RunLength)
+						RunStart := 0
+					}
+				}
+			}
+			else {
+				RunLength := this->EndRun(RunStartAddress, RunStart, RunLastAddress, RunLast, RunLength)
+				RunStart := 0
+			}
+		}
+		
+		RunLength := this->EndRun(RunStartAddress, RunStart, RunLastAddress, RunLast, RunLength)
+	}
 }
 
 define i32 SizeToPageCount(i32 Size) {
@@ -265,5 +349,5 @@ define i64 PointerToPageNumber(void* PageMemory) {
 	return (PageMemory / PAGE_SIZE) As i64
 }
 
-AddressSpaceManager RawAddressSpace
-AddressSpaceManager* AddressSpace := &RawAddressSpace
+AddressSpaceManager RawKernelAddressSpace
+AddressSpaceManager* KernelAddressSpace := &RawKernelAddressSpace

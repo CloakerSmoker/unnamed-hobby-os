@@ -81,6 +81,13 @@ struct ELFHeader unaligned {
 	i16 SectionHeaderEntryCount
 
 	i16 SectionNameSectionIndex
+	
+	define ELFProgramHeader* GetProgramHeaders() {
+		return (this + this->ProgramHeadersOffset) As ELFProgramHeader*
+	}
+	define ELFSectionHeader* GetSectionHeaders() {
+		return (this + this->SectionHeadersOffset) As ELFSectionHeader*
+	}
 }
 
 struct ELFReader {
@@ -90,16 +97,10 @@ struct ELFReader {
 	}
 	
 	i32 Size
-	
-	define ELFProgramHeader* GetProgramHeaders() {
-		return (this->Data + this->Header->ProgramHeadersOffset) As ELFProgramHeader*
-	}
-	define ELFSectionHeader* GetSectionHeaders() {
-		return (this->Data + this->Header->SectionHeadersOffset) As ELFSectionHeader*
-	}
+
 	
 	define void* Load() {
-		ELFProgramHeader* ProgramHeaders := this->GetProgramHeaders()
+		ELFProgramHeader* ProgramHeaders := this->Header->GetProgramHeaders()
 		
 		for (i32 Index := 0, Index < this->Header->ProgramHeaderEntryCount, Index++) {
 			ELFProgramHeader* Next := ProgramHeaders[Index]

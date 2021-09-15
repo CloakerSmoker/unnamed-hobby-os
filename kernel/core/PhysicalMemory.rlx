@@ -1,15 +1,9 @@
-struct PhysicalRangeInfo {
-	i32 Size
-	i8 Busy
-}
-
 struct PhysicalRange {
 	i64 Start
-	
-	union {
-		PhysicalRangeInfo Info
-		i64 Padding
-	}
+	i32 Size
+	i32 Tag
+	i8 Busy
+	i8[3] Padding
 }
 
 struct Physical {
@@ -25,8 +19,8 @@ struct PhysicalMemoryManager {
 		PhysicalRange* Next := this->Ranges[Index]
 		
 		Next->Start := Start
-		Next->Info.Size := Size
-		Next->Info.Busy := Reserved
+		Next->Size := Size
+		Next->Busy := Reserved
 		
 		return Index
 	}
@@ -38,30 +32,30 @@ struct PhysicalMemoryManager {
 		return this->Add(Start, Size, true)
 	}
 	
-	define i64 Reserve(i32 MinimumSize, i32 Alignment) {
+	define i64 Reserve(i32 Tag, i32 MinimumSize, i32 Alignment) {
 		for (i32 Index := 0, Index < this->RangeCount, Index++) {
 			PhysicalRange* Next := this->Ranges[Index]
-			PhysicalRangeInfo* Info := Next~>Info
 			
-			if (Info->Busy = false && Info->Size >= MinimumSize) {
+			if (Next->Busy = false && Next->Size >= MinimumSize) {
 				i64 Remainder := (Next->Start As i64) % Alignment
 				
 				if (Remainder != 0) {
 					i64 Padding := Alignment - Remainder
 					
-					if (Info->Size < (Padding + MinimumSize)) {
+					if (Next->Size < (Padding + MinimumSize)) {
 						continue
 					}
 					
 					Next->Start += Padding
 				}
 				
-				Info->Busy := true
+				Next->Busy := true
+				Next->Tag := Tag
 				
-				i32 SizeDifference := Info->Size - MinimumSize
+				i32 SizeDifference := Next->Size - MinimumSize
 				
 				if (SizeDifference >= 0x1000) {
-					Info->Size := MinimumSize
+					Next->Size := MinimumSize
 					
 					this->Add(Next->Start + MinimumSize, SizeDifference)
 				}
@@ -73,8 +67,26 @@ struct PhysicalMemoryManager {
 		return 0
 	}
 	
-	define i64 Reserve(i32 MinimumSize) {
-		return this->Reserve(MinimumSize, 1)
+	define i64 Reserve(i32 Tag, i32 MinimumSize) {
+		return this->Reserve(Tag, MinimumSize, 1)
+	}
+	
+	define void Print() {
+		Print("PhysicalMemory Dump: %i total ranges {\n", this->RangeCount)
+		
+		for (i32 Index := 0, Index < this->RangeCount, Index++) {
+			PhysicalRange* Next := this->Ranges[Index]
+		
+			Print("\t%x\t - %x \t(%x \tbytes)\t", Next->Start, Next->Start + Next->Size, Next->Size)
+			
+			if (Next->Busy) {			
+				Print(" '%l' : busy", Next->Tag)
+			}
+			
+			Print("\n")
+		}
+		
+		Print("}\n")
 	}
 }
 

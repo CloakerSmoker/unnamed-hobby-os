@@ -50,6 +50,8 @@ KernelInfo RawKernelInfo {
 
 KernelInfo* Kernel := &RawKernelInfo
 
+AMD64Context KernelContext
+
 #Require "./src/kernel/core/Descriptors.rlx"
 
 #Require "./src/utility/Memory.rlx"
@@ -59,7 +61,8 @@ KernelInfo* Kernel := &RawKernelInfo
 
 #Require "./src/kernel/graphics/Terminal.rlx"
 
-i8 USE_INTERRUPT_STUBS := false
+i8 USE_INTERRUPT_STUBS := true
+i8 RECOVER_FROM_USER_PAGE_FAULT := true
 
 #Require "./src/kernel/core/Interrupts.rlx"
 #Require "./src/kernel/core/Devices.rlx"
@@ -99,10 +102,10 @@ define void Main(void* CR3, void* RawFrameBuffer, i64 MaxKernelAddress) {
 	Kernel->Size := KernelSize
 	Kernel->PageCount := SizeToPageCount(KernelSize)
 	
-	i64 KernelPages      := PhysicalMemory->Reserve(KernelSize) ; Reserve the memory the kernel lives in
-	i64 PageFramesPages  := PhysicalMemory->Reserve(BYTES_IN_1MB, PAGE_SIZE)
-	i64 HeapMemoryPages  := PhysicalMemory->Reserve(BYTES_IN_2MB, 8)
-	i64 KernelStackPages := PhysicalMemory->Reserve(PAGE_SIZE * 20, PAGE_SIZE)
+	i64 KernelPages      := PhysicalMemory->Reserve('KNL', KernelSize) ; Reserve the memory the kernel lives in
+	i64 PageFramesPages  := PhysicalMemory->Reserve('PFP', BYTES_IN_1MB, PAGE_SIZE)
+	i64 HeapMemoryPages  := PhysicalMemory->Reserve('HMP', BYTES_IN_2MB, 8)
+	i64 KernelStackPages := PhysicalMemory->Reserve('KSP', PAGE_SIZE * 20, PAGE_SIZE)
 	
 	void* KernelBase  := 0x10_0000 As void*
 	void* PageFrames  := PageFramesPages As void*
@@ -111,22 +114,22 @@ define void Main(void* CR3, void* RawFrameBuffer, i64 MaxKernelAddress) {
 	
 	Kernel->HeapMemory := HeapMemory
 	
-	AddressSpace->Initialize(PageFrames, BYTES_IN_1MB / PAGE_SIZE)
+	KernelAddressSpace->Initialize(PageFrames, BYTES_IN_1MB / PAGE_SIZE)
 	
 	; Identity map the memory where the page frames are being written, so after setting CR3 PageFrames resolves to the same
 	;  address as before setting CR3
-	AddressSpace->MapRange(PageFrames, PageFramesPages / PAGE_SIZE, BYTES_IN_1MB / PAGE_SIZE)
+	KernelAddressSpace->MapRange(PageFrames, PageFramesPages / PAGE_SIZE, BYTES_IN_1MB / PAGE_SIZE)
 	
 	; Identity map the kernel, so RIP resolves to the same address before/after setting CR3
-	AddressSpace->MapRange(KernelBase, KernelPages / PAGE_SIZE, SizeToPageCount(KernelSize))
+	KernelAddressSpace->MapRange(KernelBase, KernelPages / PAGE_SIZE, SizeToPageCount(KernelSize))
 	
 	; Map the heap to wherever
-	AddressSpace->MapRange(HeapMemory, HeapMemoryPages / PAGE_SIZE, PAGE_COUNT_FOR_2MB)
+	KernelAddressSpace->MapRange(HeapMemory, HeapMemoryPages / PAGE_SIZE, PAGE_COUNT_FOR_2MB)
 	
 	; Map the stack to wherever
-	AddressSpace->MapRange(StackMemory, KernelStackPages / PAGE_SIZE, 20)
+	KernelAddressSpace->MapRange(StackMemory, KernelStackPages / PAGE_SIZE, 20)
 	
-	AddressSpace->Takeover(&RawMainContinuation, StackMemory + (PAGE_SIZE * 20))
+	KernelAddressSpace->Takeover(&RawMainContinuation, StackMemory + (PAGE_SIZE * 20))
 }
 
 define void MainContinuation() {
@@ -135,23 +138,24 @@ define void MainContinuation() {
 	; Remap the next available `FRAMEBUFFER_SIZE` bytes of virtual memory to 0xE000_0000 (or wherever int10 says)
 	i32 FrameBufferPageCount := SizeToPageCount(FRAMEBUFFER_SIZE)
 	i8* FrameBuffer := 0x80_0000 As i8*
-	AddressSpace->MapRange(FrameBuffer, PointerToPageNumber(Kernel->FrameBuffer), FrameBufferPageCount)
+	KernelAddressSpace->MapRange(FrameBuffer, PointerToPageNumber(Kernel->FrameBuffer), FrameBufferPageCount)
 	
 	BochsPrintString("Mapped the framebuffer\n")
 	
-	;NativeScreen->Adopt(FrameBuffer, SCREEN_WIDTH, SCREEN_HEIGHT, BYTES_PER_PIXEL, 0, 0x00_00_00)
-	NativeScreen->Adopt(FrameBuffer, SCREEN_WIDTH, SCREEN_HEIGHT, BYTES_PER_PIXEL, 0, 0xFF_FF_FF)
+	NativeScreen->Adopt(FrameBuffer, SCREEN_WIDTH, SCREEN_HEIGHT, BYTES_PER_PIXEL, 0, 0x00_00_00)
+	;NativeScreen->Adopt(FrameBuffer, SCREEN_WIDTH, SCREEN_HEIGHT, BYTES_PER_PIXEL, 0, 0xFF_FF_FF)
 	NativeScreen->Clear()
 	
 	BochsPrintString("Adopted screen\n")
 	
-	KernelTerminal->Adopt(NativeScreen, 0x00_00_00, 0xFF_FF_FF)
+	KernelTerminal->Adopt(NativeScreen, 0xFF_FF_FF, 0x00_00_00)
+	;KernelTerminal->Adopt(NativeScreen, 0x00_00_00, 0xFF_FF_FF)
 	;KernelTerminal->SetColors(0xFF_FF_FF, 0x00_00_00)
 	KernelTerminal->Clear()
 	
 	KernelTerminal->PrintLine("BOOT: Screen *probably* works")
 	
-	AddressSpace->Map(0 As void*, 0, PAGE_NOT_PRESENT)
+	KernelAddressSpace->Map(0 As void*, 0, PAGE_NOT_PRESENT)
 	
 	KernelTerminal->PrintLine("BOOT: Unmapped page 0")
 	
@@ -162,9 +166,9 @@ define void MainContinuation() {
 	KernelHeap->Print()
 	
 	
-	i64 ReEntryStackPages := PhysicalMemory->Reserve(PAGE_SIZE * 10, PAGE_SIZE)
+	i64 ReEntryStackPages := PhysicalMemory->Reserve('REP', PAGE_SIZE * 10, PAGE_SIZE)
 	void* ReEntryStack    := ReEntryStackPages As void*
-	AddressSpace->MapRange(ReEntryStack, ReEntryStackPages / PAGE_SIZE, 10)
+	KernelAddressSpace->MapRange(ReEntryStack, ReEntryStackPages / PAGE_SIZE, 10)
 	
 	Kernel->ReEntryStack := ReEntryStack + (PAGE_SIZE * 10)
 	

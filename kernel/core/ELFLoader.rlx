@@ -1,0 +1,45 @@
+#Require "./src/utility/ELF.rlx"
+
+define void MapELF(ELFHeader* Image, AddressSpaceManager* AddressSpace) {
+	ELFProgramHeader* ProgramHeaders := Image->GetProgramHeaders()
+	
+	for (i32 Index := 0, Index < Image->ProgramHeaderEntryCount, Index++) {
+		ELFProgramHeader* Next := ProgramHeaders[Index]
+		
+		if (Next->Type = ELF_SEGMENT_TYPE_LOAD) {
+			void* SectionData := Image + Next->FileOffset
+			void* SectionMemory := Next->VirtualAddress As void*
+			
+			i32 SectionPageCount := (Next->MemorySize As i32) / PAGE_SIZE
+			
+			if (Next->MemorySize % PAGE_SIZE) {
+				SectionPageCount += 1
+			}
+			
+			i64 SectionPages := PhysicalMemory->Reserve('ELF', SectionPageCount * PAGE_SIZE, PAGE_SIZE)
+			
+			Print("Allocated %i pages starting at %x for section %i of image\n", SectionPageCount, SectionPages / PAGE_SIZE, Index)
+			
+			i64 Flags := PAGE_PRESENT | PAGE_USER
+			
+			if (Next->Flags & ELF_SECTION_FLAGS_WRITE) {
+				Flags |= PAGE_WRITE
+			}
+			
+			Print("Mapping virtual(%x) to physical(%x)\n", SectionMemory & 0xFFFF_FFFF_FFFF_F000, SectionPages)
+			
+			KernelAddressSpace->MapRange(SectionMemory & 0xFFFF_FFFF_FFFF_F000, SectionPages / PAGE_SIZE, SectionPageCount, Flags)
+			
+			if (Next->MemorySize > Next->FileSize) {
+				void* ZeroArea := SectionMemory + Next->FileSize
+				i64 ZeroSize := Next->MemorySize - Next->FileSize
+				
+				FastSetMemory8(ZeroArea, 0, ZeroSize)
+			}
+			
+			FastMoveMemory(SectionMemory, SectionData, Next->FileSize)
+			
+			Print("Wrote %x bytes to section memory\n\n", Next->MemorySize)
+		}
+	}
+}

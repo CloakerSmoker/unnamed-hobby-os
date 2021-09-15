@@ -1,6 +1,7 @@
 
 #Require "./src/utility/ScanCodes.rlx"
 #Require "./src/drivers/ATA.rlx"
+#Require "./src/kernel/core/ELFLoader.rlx"
 
 define void Prompt() {
 	Print("(>")
@@ -164,6 +165,69 @@ define void OnCommand(i8* CommandLine) {
 		}
 		
 		Print(" *(%x) = %x\n", TargetAddress, AddressValue)
+	}
+	else if (StringEquals(Command, "phys")) {
+		PhysicalMemory->Print()
+	}
+	else if (StringEquals(Command, "virt")) {
+		KernelAddressSpace->Print()
+	}
+	else if (StringEquals(Command, "heap")) {
+		KernelHeap->Print()
+	}
+	else if (StringEquals(Command, "exec")) {
+		i8* Path := CommandParameters[1]
+		
+		DirectoryEntry* FoundFileEntry := FS->FindDirectoryEntryByPath(RootINode, Path)
+		
+		if (FoundFileEntry = null || !FoundFileEntry->IsFile()) {
+			Print(" Could not find file '^%s'\n", Path)
+		}
+		else {
+			INode FoundFileNode
+			
+			MoveMemory(&FoundFileNode, FS->ReadINode(FoundFileEntry->INode), #INode)
+			
+			i32 FileBlockCount := FoundFileNode.FileSizeLow / 1024
+			
+			if (FoundFileNode.FileSizeLow % 1024) {
+				FileBlockCount += 1
+			}
+			
+			void* FileData := KernelHeap->Allocate('EXEC', FileBlockCount * 1024)
+			
+			for (i32 FileBlockIndex := 0, FileBlockIndex < FileBlockCount, FileBlockIndex += 1) {
+				i32 FileDataBlock := FS->FindINodeDataBlock(&FoundFileNode, FileBlockIndex, false)
+				
+				MoveMemory(FileData + (FileBlockIndex * 1024), FS->ReadBlock(FileDataBlock), 1024)
+			}
+			
+			Print("Loaded %x byte image @ %x\n", FoundFileNode.FileSizeLow, FileData)
+			
+			ELFHeader* ELFData := FileData As ELFHeader*
+			
+			MapELF(ELFData, KernelAddressSpace)
+			
+			void* Stack := KernelHeap->Allocate(0x400)
+			
+			Stack += 0x300
+			
+			if (Stack & 0xF) {
+				Stack += 0x10 - ((Stack As i64) & 0xF)
+			}
+			
+			EnterUserMode(ELFData->EntryPoint As void*, Stack)
+			
+			Print("Returned from program\n")
+			
+			KernelHeap->Free(FileData)
+			KernelHeap->Free(Stack)
+		}
+	}
+	else if (StringEquals(Command, "ksyscall")) {
+		i64 Value := AToI(CommandParameters[0], 16)
+		
+		syscall:(1, Value)
 	}
 	else {
 		Print(" Unknown command '%s'\n", Command)

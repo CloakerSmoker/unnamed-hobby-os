@@ -1,9 +1,88 @@
 #Require "./src/utility/x64.rlx"
 #Require "./src/drivers/PIC.rlx"
 
-define void _InterruptSetup() asm {
-	xchg, rax, {rsp + 0x10} As i64*
+struct InterruptContext {
+	i64 R15, i64 R14, i64 R13, i64 R12, i64 R11, i64 R10, i64 R9, i64 R8,
+	i64 RBP, i64 RDX, i64 RCX, i64 RBX, i64 RDI, i64 RSI, i64 RAX
+
+	i64 ErrorCode
+	i64 RIP
+	i64 CS
+	i64 Flags
+	i64 RSP
+	i64 SS
 	
+	define void PrintContext() {
+		BochsPrint("Interrupt Context: {\n")
+		BochsPrint("\tErrorCode: %x (%b)\n", this->ErrorCode, this->ErrorCode)
+		BochsPrint("\tRIP: %x\n", this->RIP)
+		BochsPrint("\tCS: %i (%x)\n", this->CS, this->CS)
+		BochsPrint("\tFlags: %i (%x, %b)\n", this->Flags, this->Flags, this->Flags)
+		BochsPrint("\tRSP: %x\n", this->RSP)
+		BochsPrint("\tSS: %x\n", this->SS)
+		BochsPrint("}\n")
+	}
+	
+	define void PrintRegisters() {
+		BochsPrint("Registers: {\n")
+		BochsPrint("\tRAX: %x\n", this->RAX)
+		BochsPrint("\tRBX: %x\n", this->RBX)
+		BochsPrint("\tRCX: %x\n", this->RCX)
+		BochsPrint("\tRDX: %x\n", this->RDX)
+		BochsPrint("\tRSP: %x (copy from context)\n", this->RSP)
+		BochsPrint("\tRBP: %x\n", this->RBP)
+		BochsPrint("\tRSI: %x\n", this->RSI)
+		BochsPrint("\tRDI: %x\n", this->RDI)
+		BochsPrint("\tR8 : %x\n", this->R8)
+		BochsPrint("\tR9 : %x\n", this->R9)
+		BochsPrint("\tR10: %x\n", this->R10)
+		BochsPrint("\tR11: %x\n", this->R11)
+		BochsPrint("\tR12: %x\n", this->R12)
+		BochsPrint("\tR13: %x\n", this->R13)
+		BochsPrint("\tR14: %x\n", this->R14)
+		BochsPrint("\tR15: %x\n", this->R15)
+		BochsPrint("}\n")
+	}
+	
+	define void PrintStackDump() {
+		BochsPrint("\nStack dump:\n")
+		
+		StackFrame* Last := this->RBP As StackFrame*
+		i32 Index := 1
+		
+		while (Last) {
+			if (Last->LastFrame & 1) {
+				StackFrame* Temp := Last->LastFrame - 1
+				
+				BochsPrint("\tStack[%i] Try catch address = %x\n", Index, Last->ReturnAddress, Temp)
+				Index += 1
+				
+				Last := Temp
+			}
+			else {
+				i64* MaybeMagic := (Last - 0x8) As i64*
+				i8** MaybeName := (Last - 0x10) As i8**
+				
+				if (Debug && *MaybeMagic = 0x12345678) {
+					BochsPrint("\tStack[%i] Fn = %s\n", Index, *MaybeName)
+				}
+				else {
+					BochsPrint("\tStack[%i] Fn callsite = %x\n", Index, Last->ReturnAddress, Last->LastFrame)
+				}
+				
+				Index += 1
+				
+				Last := Last->LastFrame
+			}
+		}
+	}
+}
+
+define void InterruptCodeSetup() asm {
+	xchg, rax, {rsp} As i64* ; Swap the user RAX value with our return address
+	
+	push, rsi
+	push, rdi
 	push, rbx
 	push, rcx
 	push, rdx
@@ -16,23 +95,11 @@ define void _InterruptSetup() asm {
 	push, r13
 	push, r14
 	push, r15
-	mov, rsi, rsp
 	
+	mov, rdi, rsp
 	jmp, rax
 }
-define void InterruptCodeSetup() asm {
-	push, rdi
-	xchg, rsi, {rsp + 0x10} As i64*
-	lea, rdi, {rsp + 0x18} As i64*
-	jmp, @_InterruptSetup
-}
-define void InterruptSetup() asm {
-	push, rsi
-	push, rdi
-	lea, rdi, {rsp + 0x18} As i64*  /* Get interrupt context, which is above RDI,RSI,RIP on the stack */ 
-	jmp, @_InterruptSetup
-}
-define void InterruptReturn() asm {
+define void InterruptCodeReturn() asm {
 	pop, r15
 	pop, r14
 	pop, r13
@@ -52,16 +119,61 @@ define void InterruptReturn() asm {
 	iret
 }
 
-struct InterruptRegisters {
-	i64 R15, i64 R14, i64 R13, i64 R12, i64 R11, i64 R10, i64 R9, i64 R8,
-	i64 RBP, i64 RDX, i64 RCX, i64 RBX, i64 RDI, i64 RSI, i64 RAX
+define void InterruptSetup() asm {
+	mov, {rsp - 0x8} As i64*, rax ; Write rax to where it *should* go in the InterruptContext
+	
+	xor, rax, rax
+	xchg, rax, {rsp} As i64* ; Swap a dummy error code in for our return address
+	
+	; sub, rsp, 0x8 (HOW IS THIS NOT IMPLEMENTED?)
+	emit, 0x48
+	emit, 0x83
+	emit, 0xEC
+	emit, 0x08
+	
+	push, rsi
+	push, rdi
+	push, rbx
+	push, rcx
+	push, rdx
+	push, rbp
+	push, r8
+	push, r9
+	push, r10
+	push, r11
+	push, r12
+	push, r13
+	push, r14
+	push, r15
+	
+	mov, rdi, rsp
+	jmp, rax
 }
-struct InterruptContext {
-	i64 RIP
-	i64 CS
-	i64 Flags
-	i64 RSP
-	i64 SS
+define void InterruptReturn() asm {
+	pop, r15
+	pop, r14
+	pop, r13
+	pop, r12
+	pop, r11
+	pop, r10
+	pop, r9
+	pop, r8
+	pop, rbp
+	pop, rdx
+	pop, rcx
+	pop, rbx
+	pop, rdi
+	pop, rsi
+	pop, rax
+	
+	; Free the dummy error code pushed in setup
+	; add, rsp, 0x8 (HOW IS THIS NOT IMPLEMENTED?)
+	emit, 0x48
+	emit, 0x83
+	emit, 0xC4
+	emit, 0x08
+	
+	iret
 }
 
 struct IDTEntry unaligned {
@@ -121,68 +233,14 @@ define void SetupInterrupts() {
 	}
 }
 
-define void GenericInterrupt(InterruptContext* Context, InterruptRegisters* Registers, i32 InterruptNumber) {
+define void GenericInterrupt(InterruptContext* Context, i32 InterruptNumber) {
 	BochsPrint("UNHANDLED INTERRUPT %i (%x)\n", InterruptNumber, InterruptNumber)
 	
-	BochsPrint("Interrupt Context: {\n")
-	BochsPrint("\tRIP: %x\n", Context->RIP)
-	BochsPrint("\tCS: %i (%x)\n", Context->CS, Context->CS)
-	BochsPrint("\tFlags: %i (%x, %b)\n", Context->Flags, Context->Flags, Context->Flags)
-	BochsPrint("\tRSP: %x\n", Context->RSP)
-	BochsPrint("\tSS: %x\n", Context->SS)
-	BochsPrint("}\n")
+	Context->PrintContext()
+	Context->PrintRegisters()
+	Context->PrintStackDump()
 	
-	BochsPrint("Registers: {\n")
-	BochsPrint("\tRAX: %x\n", Registers->RAX)
-	BochsPrint("\tRBX: %x\n", Registers->RBX)
-	BochsPrint("\tRCX: %x\n", Registers->RCX)
-	BochsPrint("\tRDX: %x\n", Registers->RDX)
-	BochsPrint("\tRSP: %x (copy from context)\n", Context->RSP)
-	BochsPrint("\tRBP: %x\n", Registers->RBP)
-	BochsPrint("\tRSI: %x\n", Registers->RSI)
-	BochsPrint("\tRDI: %x\n", Registers->RDI)
-	BochsPrint("\tR8 : %x\n", Registers->R8)
-	BochsPrint("\tR9 : %x\n", Registers->R9)
-	BochsPrint("\tR10: %x\n", Registers->R10)
-	BochsPrint("\tR11: %x\n", Registers->R11)
-	BochsPrint("\tR12: %x\n", Registers->R12)
-	BochsPrint("\tR13: %x\n", Registers->R13)
-	BochsPrint("\tR14: %x\n", Registers->R14)
-	BochsPrint("\tR15: %x\n", Registers->R15)
-	BochsPrint("}\n")
-	
-	BochsPrint("\nStack dump:\n")
-	
-	StackFrame* Last := Registers->RBP As StackFrame*
-	i32 Index := 1
-	
-	while (Last) {
-		if (Last->LastFrame & 1) {
-			StackFrame* Temp := Last->LastFrame - 1
-			
-			BochsPrint("\tStack[%i] Try catch address = %x\n", Index, Last->ReturnAddress, Temp)
-			Index += 1
-			
-			Last := Temp
-		}
-		else {
-			i64* MaybeMagic := (Last - 0x8) As i64*
-			i8** MaybeName := (Last - 0x10) As i8**
-			
-			if (Debug && *MaybeMagic = 0x12345678) {
-				BochsPrint("\tStack[%i] Fn = %s\n", Index, *MaybeName)
-			}
-			else {
-				BochsPrint("\tStack[%i] Fn callsite = %x\n", Index, Last->ReturnAddress, Last->LastFrame)
-			}
-			
-			Index += 1
-			
-			Last := Last->LastFrame
-		}
-	}
-	
-	asm {cli}	
+	asm {cli}
 	
 	loop {}
 }
