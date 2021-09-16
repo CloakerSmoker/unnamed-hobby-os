@@ -119,6 +119,7 @@ struct PagePath {
 }
 
 struct AddressSpaceManager {
+	i8* Bitmap
 	void* Base
 	
 	union {
@@ -126,21 +127,60 @@ struct AddressSpaceManager {
 		void* RawPML4
 	}
 	
-	i32 NextFreePageFrame
 	i32 PageFrameCount
+	
+	define i32 AllocatePageFrameIndex() {
+		for (i32 Index := 0, Index < this->PageFrameCount, Index++) {
+			i32 Byte := Index / 8
+			i32 Bit := Index % 8
+			
+			i32 Mask := 1 << (Bit As i8)
+			
+			if (this->Bitmap[Byte] & Mask = 0) {
+				this->Bitmap[Byte] |= (Mask As i8)
+				
+				return Index
+			}
+		}
+		
+		return -1
+	}
+	define void FreePageFrameIndex(i32 Index) {
+		i32 Byte := Index / 8
+		i32 Bit := Index % 8
+		
+		i32 Mask := 1 << (Bit As i8)
+		
+		this->Bitmap[Byte] &= ~(Mask As i8)
+	}
+	define i32 GetPageFrameIndexStatus(i32 Index) {
+		i32 Byte := Index / 8
+		i32 Bit := Index % 8
+		
+		i32 Mask := 1 << (Bit As i8)
+		
+		return (this->Bitmap[Byte] & Mask) >> (Bit As i8)
+	}
 	
 	define void* GetPageFrame(i32 Index) {
 		return this->Base + (Index * PAGE_SIZE)
 	}
-	define i32 AllocatePageFrameIndex() {
-		return this->NextFreePageFrame++
-	}
 	define void* AllocatePageFrame() {
-		return this->GetPageFrame(this->NextFreePageFrame++)
+		return this->GetPageFrame(this->AllocatePageFrameIndex())
 	}
 	
 	define void Initialize(void* Base, i32 FrameCount) {
-		this->Base := Base
+		i32 BitmapSize := FrameCount / 8 
+		i32 BitmapPages := BitmapSize / PAGE_SIZE
+		
+		if (BitmapSize % PAGE_SIZE) {
+			BitmapPages += 1
+		}
+		
+		FrameCount -= BitmapPages
+		
+		this->Bitmap := Base
+		this->Base := Base + (BitmapPages * PAGE_SIZE)
 		this->PageFrameCount := FrameCount
 		
 		this->RawPML4 := this->AllocatePageFrame()
@@ -248,6 +288,33 @@ struct AddressSpaceManager {
 		SetCR3(this->PML4, Continuation, Parameter)
 	}
 	
+	
+	define void PrintMeta() {
+		i32 Index := 0
+		
+		i32 Rows := this->PageFrameCount / 40
+		
+		for (i32 RowIndex := 0, RowIndex < Rows, RowIndex++) {
+			for (i32 ColumnIndex := 0, ColumnIndex < 40, ColumnIndex++) {
+				i32 Allocated := this->GetPageFrameIndexStatus(Index++)
+				
+				Print("%b", Allocated)
+			}
+			
+			Print("\n")
+		}
+		
+		i32 Remainder := this->PageFrameCount % 40
+		
+		for (i32 ColumnIndex := 0, ColumnIndex < Remainder, ColumnIndex++) {
+			i32 Allocated := this->GetPageFrameIndexStatus(Index++)
+			
+			Print("%b", Allocated)
+		}
+		
+		Print("\n")
+	}
+	
 	define i64 EndRun(i64 RunStartAddress, i64 RunStart, i64 RunLastAddress, i64 RunLast, i64 RunLength) {
 		if (RunLength) {
 			Print("%x -> %x\n", RunStartAddress, RunStart)
@@ -261,7 +328,7 @@ struct AddressSpaceManager {
 		return 0
 	}
 	
-	define void Print() {
+	define void PrintMappings() {
 		i64**** PML4 := this->PML4
 		
 		i64 RunStartAddress := 0
@@ -297,8 +364,6 @@ struct AddressSpaceManager {
 											
 											RunStartAddress := Address
 											RunStart := *PTE
-											
-											i8* a := "aaaaaaaaaaaaaaaaaaaaaaa"
 										}
 										
 										RunLength += 1

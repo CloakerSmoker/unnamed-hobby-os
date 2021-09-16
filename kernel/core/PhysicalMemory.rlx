@@ -33,6 +33,10 @@ struct PhysicalMemoryManager {
 	}
 	
 	define i64 Reserve(i32 Tag, i32 MinimumSize, i32 Alignment) {
+		if (MinimumSize = 0) {
+			return -1
+		}
+		
 		for (i32 Index := 0, Index < this->RangeCount, Index++) {
 			PhysicalRange* Next := this->Ranges[Index]
 			
@@ -64,7 +68,7 @@ struct PhysicalMemoryManager {
 			}
 		}
 		
-		return 0
+		return -1
 	}
 	
 	define i64 Reserve(i32 Tag, i32 MinimumSize) {

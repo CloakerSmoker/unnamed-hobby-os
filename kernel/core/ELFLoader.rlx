@@ -1,6 +1,16 @@
 #Require "./src/utility/ELF.rlx"
 
-define void MapELF(ELFHeader* Image, AddressSpaceManager* AddressSpace) {
+struct ELFMemoryMapping {
+	void* Virtual
+	i64 Physical
+	i64 PageCount
+	ELFMemoryMapping* Next
+}
+
+define ELFMemoryMapping* MapELF(ELFHeader* Image, AddressSpaceManager* AddressSpace) {
+	ELFMemoryMapping* First := null
+	ELFMemoryMapping** LastNext := &First
+	
 	ELFProgramHeader* ProgramHeaders := Image->GetProgramHeaders()
 	
 	for (i32 Index := 0, Index < Image->ProgramHeaderEntryCount, Index++) {
@@ -9,6 +19,7 @@ define void MapELF(ELFHeader* Image, AddressSpaceManager* AddressSpace) {
 		if (Next->Type = ELF_SEGMENT_TYPE_LOAD) {
 			void* SectionData := Image + Next->FileOffset
 			void* SectionMemory := Next->VirtualAddress As void*
+			void* SectionVirtualPage := SectionMemory & 0xFFFF_FFFF_FFFF_F000
 			
 			i32 SectionPageCount := (Next->MemorySize As i32) / PAGE_SIZE
 			
@@ -16,9 +27,9 @@ define void MapELF(ELFHeader* Image, AddressSpaceManager* AddressSpace) {
 				SectionPageCount += 1
 			}
 			
-			i64 SectionPages := PhysicalMemory->Reserve('ELF', SectionPageCount * PAGE_SIZE, PAGE_SIZE)
+			i64 SectionPhysicalPages := PhysicalMemory->Reserve('ELF', SectionPageCount * PAGE_SIZE, PAGE_SIZE)
 			
-			Print("Allocated %i pages starting at %x for section %i of image\n", SectionPageCount, SectionPages / PAGE_SIZE, Index)
+			Print("Allocated %i pages starting at %x for section %i of image\n", SectionPageCount, SectionPhysicalPages / PAGE_SIZE, Index)
 			
 			i64 Flags := PAGE_PRESENT | PAGE_USER
 			
@@ -26,9 +37,18 @@ define void MapELF(ELFHeader* Image, AddressSpaceManager* AddressSpace) {
 				Flags |= PAGE_WRITE
 			}
 			
-			Print("Mapping virtual(%x) to physical(%x)\n", SectionMemory & 0xFFFF_FFFF_FFFF_F000, SectionPages)
+			Print("Mapping virtual(%x) to physical(%x)\n", SectionMemory & 0xFFFF_FFFF_FFFF_F000, SectionPhysicalPages)
 			
-			KernelAddressSpace->MapRange(SectionMemory & 0xFFFF_FFFF_FFFF_F000, SectionPages / PAGE_SIZE, SectionPageCount, Flags)
+			KernelAddressSpace->MapRange(SectionVirtualPage, SectionPhysicalPages / PAGE_SIZE, SectionPageCount, Flags)
+			
+			ELFMemoryMapping* Mapping := KernelHeap->Allocate('ELFM', #ELFMemoryMapping)
+			
+			Mapping->Virtual := SectionVirtualPage
+			Mapping->Physical := SectionPhysicalPages
+			Mapping->PageCount := SectionPageCount
+			
+			*LastNext := Mapping
+			LastNext := Mapping~>Next
 			
 			if (Next->MemorySize > Next->FileSize) {
 				void* ZeroArea := SectionMemory + Next->FileSize
@@ -41,5 +61,14 @@ define void MapELF(ELFHeader* Image, AddressSpaceManager* AddressSpace) {
 			
 			Print("Wrote %x bytes to section memory\n\n", Next->MemorySize)
 		}
+	}
+	
+	return First
+}
+
+define void UnmapELF(ELFMemoryMapping* Next) {
+	while (Next != null) {
+		
+		
 	}
 }

@@ -170,7 +170,9 @@ define void OnCommand(i8* CommandLine) {
 		PhysicalMemory->Print()
 	}
 	else if (StringEquals(Command, "virt")) {
-		KernelAddressSpace->Print()
+		KernelAddressSpace->PrintMeta()
+		Print("\n")
+		KernelAddressSpace->PrintMappings()
 	}
 	else if (StringEquals(Command, "heap")) {
 		KernelHeap->Print()
@@ -208,9 +210,9 @@ define void OnCommand(i8* CommandLine) {
 			
 			MapELF(ELFData, KernelAddressSpace)
 			
-			void* Stack := KernelHeap->Allocate(0x400)
+			void* OriginalStack := KernelHeap->Allocate(0x400)
 			
-			Stack += 0x300
+			void* Stack := OriginalStack + 0x300
 			
 			if (Stack & 0xF) {
 				Stack += 0x10 - ((Stack As i64) & 0xF)
@@ -221,7 +223,7 @@ define void OnCommand(i8* CommandLine) {
 			Print("Returned from program\n")
 			
 			KernelHeap->Free(FileData)
-			KernelHeap->Free(Stack)
+			KernelHeap->Free(OriginalStack)
 		}
 	}
 	else if (StringEquals(Command, "ksyscall")) {
