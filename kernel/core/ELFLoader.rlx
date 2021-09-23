@@ -3,11 +3,11 @@
 struct ELFMemoryMapping {
 	void* Virtual
 	i64 Physical
-	i64 PageCount
+	i32 PageCount
 	ELFMemoryMapping* Next
 }
 
-define ELFMemoryMapping* MapELF(ELFHeader* Image, AddressSpaceManager* AddressSpace) {
+define ELFMemoryMapping* MapELF(AddressSpaceManager* AddressSpace, ELFHeader* Image) {
 	ELFMemoryMapping* First := null
 	ELFMemoryMapping** LastNext := &First
 	
@@ -25,6 +25,10 @@ define ELFMemoryMapping* MapELF(ELFHeader* Image, AddressSpaceManager* AddressSp
 			
 			if (Next->MemorySize % PAGE_SIZE) {
 				SectionPageCount += 1
+			}
+			
+			if (SectionPageCount = 0) {
+				continue
 			}
 			
 			i64 SectionPhysicalPages := PhysicalMemory->Reserve('ELF', SectionPageCount * PAGE_SIZE, PAGE_SIZE)
@@ -66,9 +70,14 @@ define ELFMemoryMapping* MapELF(ELFHeader* Image, AddressSpaceManager* AddressSp
 	return First
 }
 
-define void UnmapELF(ELFMemoryMapping* Next) {
+define void UnmapELF(AddressSpaceManager* AddressSpace, ELFMemoryMapping* Next) {
 	while (Next != null) {
+		AddressSpace->UnmapRange(Next->Virtual, Next->PageCount)
 		
+		ELFMemoryMapping* Last := Next
 		
+		Next := Next->Next
+		
+		KernelHeap->Free(Last)
 	}
 }

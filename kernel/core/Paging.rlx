@@ -14,14 +14,32 @@ i32 PAGES_PER_PT        := 0x0000_0200
 i32 PAGES_PER_PD        := 0x0004_0000
 i32 PAGES_PER_PDP       := 0x0800_0000
 
-i64 PAGE_FRAMES_BASE := 0x20_0000
-
 i32 PAGE_SIZE               := 0x1000
+
+i32 BYTES_PER_PT        := PAGES_PER_PT  * PAGE_SIZE
+i32 BYTES_PER_PD        := PAGES_PER_PD  * PAGE_SIZE
+i32 BYTES_PER_PDP       := PAGES_PER_PDP * PAGE_SIZE
 
 i64 PAGE_NOT_PRESENT := 0
 i64 PAGE_PRESENT     := 0b001
 i64 PAGE_WRITE       := 0b010
 i64 PAGE_USER        := 0b100
+
+define i32 SizeToPageCount(i32 Size) {
+	i32 PageCount := Size / PAGE_SIZE
+	
+	if (Size % PAGE_SIZE) {
+		PageCount += 1
+	}
+	
+	return PageCount
+}
+define void* PageNumberToPointer(i64 PageNumber) {
+	return (PageNumber * PAGE_SIZE) As void*
+}
+define i64 PointerToPageNumber(void* PageMemory) {
+	return (PageMemory / PAGE_SIZE) As i64
+}
 
 struct Page {
 	i8[0x1000] Data
@@ -169,6 +187,10 @@ struct AddressSpaceManager {
 		return this->GetPageFrame(this->AllocatePageFrameIndex())
 	}
 	
+	define i32 PageFramePointerToIndex(void* PageFrame) {
+		return PointerToPageNumber(PageFrame - this->Base) As i32
+	}
+	
 	define void Initialize(void* Base, i32 FrameCount) {
 		i32 BitmapSize := FrameCount / 8 
 		i32 BitmapPages := BitmapSize / PAGE_SIZE
@@ -284,6 +306,69 @@ struct AddressSpaceManager {
 		this->MapRange(Address, StartPage, Count, PAGE_PRESENT | PAGE_WRITE | PAGE_USER)
 	}
 	
+	define void GarbageCollect(i64** TableEntry, i64* Table) {
+		for (i32 Index := 0, Index < 512, Index++) {
+			i64 Entry := Table[Index]
+			
+			if (Entry & PAGE_PRESENT) {
+				return
+			}
+		}
+		
+		this->FreePageFrameIndex(this->PageFramePointerToIndex(Table))
+		
+		*TableEntry := null
+	}
+	
+	define void UnmapRange(void* Address, i32 Count) {
+		void* End := Address + (Count * PAGE_SIZE)
+
+		while (Count != 0) {
+			i64**** PML4E := GetPML4Entry(this->PML4, Address)
+			
+			if !(*PML4E & PAGE_PRESENT) {
+				break
+			}
+			
+			i64*** PDPE := GetPDPEntry(*PML4E, Address)
+			
+			if !(*PDPE & PAGE_PRESENT) {
+				break
+			}
+			
+			i64** PDE := GetPDEntry(*PDPE, Address)
+			
+			if !(*PDE & PAGE_PRESENT) {
+				break
+			}
+			
+			i64* PT := RemovePageFlags(*PDE)
+			
+			i32 PTIndex := GetPTIndex(Address)
+			
+			i32 PTSpace := PAGES_PER_PT - PTIndex
+			
+			i32 PTMax := Count
+			
+			if (Count > PTSpace) {
+				PTMax := PTSpace
+			}
+			
+			;BochsPrint("Map PT @ %x [%x-%x] to %x-%x\n", PT, PTIndex, PTMax, StartPage, StartPage + PTMax)
+			
+			for (i32 Index := 0, Index < PTMax, Index++) {
+				PT[PTIndex + Index] := 0
+			}
+			
+			Count -= PTMax
+			Address += PTMax * PAGE_SIZE
+			
+			this->GarbageCollect(PDE   As i64**, RemovePageFlags(*PDE  ))
+			this->GarbageCollect(PDPE  As i64**, RemovePageFlags(*PDPE ))
+			this->GarbageCollect(PML4E As i64**, RemovePageFlags(*PML4E))
+		}
+	}
+	
 	define void Takeover(void* Continuation, void* Parameter){
 		SetCR3(this->PML4, Continuation, Parameter)
 	}
@@ -396,22 +481,6 @@ struct AddressSpaceManager {
 		
 		RunLength := this->EndRun(RunStartAddress, RunStart, RunLastAddress, RunLast, RunLength)
 	}
-}
-
-define i32 SizeToPageCount(i32 Size) {
-	i32 PageCount := Size / PAGE_SIZE
-	
-	if (Size % PAGE_SIZE) {
-		PageCount += 1
-	}
-	
-	return PageCount
-}
-define void* PageNumberToPointer(i64 PageNumber) {
-	return (PageNumber * PAGE_SIZE) As void*
-}
-define i64 PointerToPageNumber(void* PageMemory) {
-	return (PageMemory / PAGE_SIZE) As i64
 }
 
 AddressSpaceManager RawKernelAddressSpace
