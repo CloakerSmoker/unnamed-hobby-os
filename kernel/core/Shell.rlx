@@ -2,6 +2,7 @@
 #Require "./src/utility/ScanCodes.rlx"
 #Require "./src/drivers/ATA.rlx"
 #Require "./src/kernel/core/ELFLoader.rlx"
+#Require "./src/drivers/Ext2Interface.rlx"
 
 define void Prompt() {
 	Print("(>")
@@ -68,6 +69,48 @@ define void OnCommand(i8* CommandLine) {
 			}
 			
 			Print("%x 	%x 	%s\n", NextEntry->INode, NextNode->FileSizeLow, NextEntry~>Name)
+		}
+	}
+	else if (StringEquals(Command, "mkfile")) {
+		i8* Path := CommandParameters[1]
+		
+		Ext2Close(FS, Ext2Open(FS, Path, OPEN_CREATE))
+	}
+	else if (StringEquals(Command, "mkdirectory")) {
+		i8* Path := CommandParameters[1]
+		
+		Ext2Close(FS, Ext2Open(FS, Path, OPEN_CREATE_DIRECTORY))
+	}
+	else if (StringEquals(Command, "hex")) {
+		i8* Path := CommandParameters[1]
+		
+		i64 Handle := Ext2Open(FS, Path)
+		
+		if (Handle = null) {
+			Print(" Could not find file '^%s'\n", Path)
+		}
+		else {
+			i8[16] HexBuffer
+			
+			loop {
+				i32 BytesRead := 0
+				
+				Handle := Ext2Read(FS, Handle, HexBuffer, 16, &BytesRead)
+				
+				if (BytesRead = 0) {
+					Ext2Close(FS, Handle)
+					
+					break
+				}
+				
+				for (i32 Index := 0, Index < BytesRead, Index++) {
+					i8 NextByte := HexBuffer[Index]
+					
+					Print("%c%c ", NumberToCharacter((NextByte >> 4) As i8 & 0xF), NumberToCharacter(NextByte & 0xF))
+				}
+				
+				Print("\n")
+			}
 		}
 	}
 	else if (StringEquals(Command, "cat")) {

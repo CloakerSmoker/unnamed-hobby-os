@@ -1,0 +1,185 @@
+define i64 Ext2PackHandle(i32 INodeNumber, i32 Offset) {
+	return ((Offset As i64) << 32) | INodeNumber
+	
+}
+define i32 Ext2UnpackHandle(i64 Handle, i32* OutOffset) {
+	if (OutOffset) {
+		*OutOffset := ((Handle >> 32) & 0xFFFF_FFFF) As i32
+	}
+	
+	return (Handle & 0xFFFF_FFFF) As i32
+}
+
+i8 OPEN_IF_EXISTS := 0
+i8 OPEN_CREATE := 1
+i8 OPEN_CREATE_DIRECTORY := 2
+
+define i64 Ext2Open(Ext2* FileSystem, i64 AtHandle, i8* Path, i8 Flags) {
+	i32 AtINodeNumber := Ext2UnpackHandle(AtHandle, null)
+	
+	INode* AtNode := FileSystem->ReadINode(AtINodeNumber)
+	
+	DirectoryEntry* Entry := FileSystem->FindDirectoryEntryByPath(AtNode, Path)
+	
+	if (Entry) {
+		return Entry->INode
+	}
+	else {
+		i32 CreatedNodeNumber := 0
+		
+		if (Flags & OPEN_CREATE) {
+			CreatedNodeNumber := FileSystem->MakeFile(AtNode, Path)
+		}
+		else if (Flags & OPEN_CREATE_DIRECTORY) {
+			CreatedNodeNumber := FileSystem->MakeDirectory(AtNode, Path)
+		}
+		
+		return CreatedNodeNumber
+	}
+} 
+
+define i64 Ext2Open(Ext2* FileSystem, i8* Path, i8 Flags) {
+	return Ext2Open(FileSystem, 2, Path, Flags)
+}
+
+define i64 Ext2Open(Ext2* FileSystem, i8* Path) {
+	return Ext2Open(FileSystem, 2, Path, OPEN_IF_EXISTS)
+}
+
+i8 SEEK_SET := 0
+i8 SEEK_RELATIVE := 1
+i8 SEEK_RELATIVE_END := 2
+
+define i64 Ext2Seek(Ext2* FileSystem, i64 Handle, i32 Offset, i8 Mode) {
+	i32 OldOffset := 0
+	i32 INodeNumber := Ext2UnpackHandle(Handle, &OldOffset)
+
+	if (Mode = SEEK_SET) {
+		return Ext2PackHandle(INodeNumber, Offset)
+	}
+	else if (Mode = SEEK_RELATIVE) {
+		return Ext2PackHandle(INodeNumber, OldOffset + Offset)
+	}
+	else if (Mode = SEEK_RELATIVE_END) {
+		INode* Node := FileSystem->ReadINode(INodeNumber)
+		
+		return Ext2PackHandle(INodeNumber, Node->FileSizeLow + Offset)
+	}
+	
+	return 0
+}
+
+define i64 Ext2Tell(Ext2* FileSystem, i64 Handle) {
+	i32 Offset := 0
+	Ext2UnpackHandle(Handle, &Offset)
+	
+	return Offset
+}
+
+define i64 Ext2Read(Ext2* FileSystem, i64 Handle, void* Buffer, i32 Size, i32* BytesRead) {
+	*BytesRead := 0
+	
+	i32 Offset := 0
+	i32 INodeNumber := Ext2UnpackHandle(Handle, &Offset)
+
+	INode* Node := FileSystem->ReadINode(INodeNumber)
+	
+	if (Offset + Size >= Node->FileSizeLow) {
+		Size := Node->FileSizeLow - Offset
+	}
+	
+	i32 BlockCount := Size / 1024
+	
+	i32 FirstBlock := Offset / 1024
+	
+	if (Offset % 1024) {
+		; Read the first (partial) block
+	
+		FileSystem->ReadINodeData(FileSystem->TempBlock, Node, FirstBlock)
+		
+		i32 FirstBlockRemainder := Offset % 1024
+		i32 FirstBlockSize := 1024 - FirstBlockRemainder
+		
+		if (Size < FirstBlockSize) {
+			FirstBlockSize := Size
+		}
+		
+		MoveMemory(Buffer, FileSystem->TempBlock + FirstBlockRemainder, FirstBlockSize)
+
+		FirstBlock += 1
+		
+		Buffer += FirstBlockSize
+		Size -= FirstBlockSize
+		
+		*BytesRead += FirstBlockSize
+	}
+	
+	; Read any middle (full) blocks, and the last full block (if the last block is full)
+	
+	for (i32 Index := 0, Index < BlockCount, Index++) {
+		FileSystem->ReadINodeData(Buffer, Node, FirstBlock + Index)
+		
+		Buffer += 1024
+		*BytesRead += 1024
+	}
+	
+	if (Size % 1024) {
+		; Read the last (partial) block
+		
+		i32 LastBlock := FirstBlock + BlockCount
+		
+		FileSystem->ReadINodeData(FileSystem->TempBlock, Node, LastBlock)
+		
+		MoveMemory(Buffer, FileSystem->TempBlock, Size % 1024)
+		
+		*BytesRead += Size % 1024
+	}
+	
+	return Ext2PackHandle(INodeNumber, Offset + *BytesRead)
+}
+
+define i64 Ext2Write(Ext2* FileSystem, i64 Handle, void* Data, i32 Size) {
+	i32 Offset := 0
+	i32 INodeNumber := Ext2UnpackHandle(Handle, &Offset)
+
+	INode* Node := FileSystem->ReadINode(INodeNumber)
+	
+	i32 BlockCount := Size / 1024
+	
+	i32 FirstBlock := Offset / 1024
+	
+	i32 FirstBlockRemainder := Offset % 1024
+	
+	if (FirstBlockRemainder) {
+		FS->ReadINodeData(FileSystem->TempBlock, Node, FirstBlock)
+		
+		MoveMemory(FileSystem->TempBlock + FirstBlockRemainder, Data, 1024 - FirstBlockRemainder)
+		
+		FS->WriteINodeBlock(Node, FirstBlock, FileSystem->TempBlock)
+		
+		Data += 1024 - FirstBlockRemainder
+		FirstBlock += 1
+		BlockCount -= 1
+	}
+	
+	for (i32 Index := 0, Index < BlockCount, Index++) {
+		FS->WriteINodeBlock(Node, FirstBlock + Index, Data)
+		
+		Data += 1024
+	}
+	
+	i32 LastBlockSize := Size % 1024
+	
+	if (LastBlockSize) {
+		MoveMemory(FileSystem->TempBlock, Data, LastBlockSize)
+		FastSetMemory8(FileSystem->TempBlock + LastBlockSize, 1024 - LastBlockSize, 0)
+		
+		FS->WriteINodeBlock(Node, FirstBlock + BlockCount, FileSystem->TempBlock)
+	}
+	
+	return Ext2PackHandle(INodeNumber, Size)
+}
+
+define i64 Ext2Close(Ext2* FileSystem, i64 Handle) {
+	return 0
+}
