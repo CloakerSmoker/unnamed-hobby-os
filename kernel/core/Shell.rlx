@@ -240,29 +240,50 @@ define void OnCommand(i8* CommandLine) {
 	Prompt()
 }
 
+i32 GatherInputCount := 0
+i32 GatherInputIndex := 0
+i8* GatherInputBuffer := null
+
 i8[0x200] CommandBuffer
 i32 CommandBufferIndex
 
 define void ShellOnKey(i16 ScanCode, i8 ASCIICode) {
-	if (ScanCode = SCANCODE_ENTER_DOWN) {
-		Print("\n")
-		
-		CommandBuffer[CommandBufferIndex] := 0
-		OnCommand(CommandBuffer)
-		CommandBufferIndex := 0
-	}
-	else if (ScanCode = SCANCODE_BACKSPACE_DOWN) {
-		if (CommandBufferIndex > 0) {
-			CommandBuffer[--CommandBufferIndex] := 0
-			
-			Print("%c", 0x7F)
-		}
-	}
-	else {
-		CommandBuffer[CommandBufferIndex++] := ASCIICode
+	if (GatherInputCount) {
+		GatherInputBuffer[GatherInputIndex++] := ASCIICode
 		
 		Print("%c", ASCIICode)
 	}
+	else {
+		if (ScanCode = SCANCODE_ENTER_DOWN) {
+			Print("\n")
+			
+			CommandBuffer[CommandBufferIndex] := 0
+			OnCommand(CommandBuffer)
+			CommandBufferIndex := 0
+		}
+		else if (ScanCode = SCANCODE_BACKSPACE_DOWN) {
+			if (CommandBufferIndex > 0) {
+				CommandBuffer[--CommandBufferIndex] := 0
+				
+				Print("%c", 0x7F)
+			}
+		}
+		else {
+			CommandBuffer[CommandBufferIndex++] := ASCIICode
+			
+			Print("%c", ASCIICode)
+		}
+	}
+}
+
+define void ShellGatherInput(i8* Destination, i32 Size) {
+	GatherInputCount := Size
+	GatherInputIndex := 0
+	GatherInputBuffer := Destination
+	
+	while (GatherInputIndex < GatherInputCount) {}
+	
+	GatherInputCount := 0
 }
 
 define void SetupShell() {

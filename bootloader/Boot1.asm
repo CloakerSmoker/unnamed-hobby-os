@@ -76,7 +76,8 @@ LongMain:
 	xor ax, ax
 	mov rsp, Stack
 	
-	mov rdi, [FrameBuffer]
+	xor edi, edi
+	mov edi, [FrameBuffer]
 	jmp 0x10000
 
 times 510 - ($ - $$) db 0

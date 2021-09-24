@@ -2,15 +2,65 @@
 #Require "./src/utility/x64.rlx"
 #Require "./src/kernel/core/Descriptors.rlx"
 
-define void HandleSystemCall(i64 One, i64 Two, i64 Three, i64 Four, void* RSP, i64 Number) {
-	if (Number = 0) {
-		Print("Syscall(0), exit user mode\n")
-		
+void*[20] SystemCalls
+
+i32 SYSCALL_MAX_INDEX := 19
+i32 SYSCALL_COUNT := 20
+
+define i64 DoSystemCall(i64 One, i64 Two, i64 Three, i64 Four, void* RSP, void* Function) asm {
+	jmp, r9
+}
+
+i32 SYSCALL_EXIT := 60
+
+define i64 HandleSystemCall(i64 One, i64 Two, i64 Three, i64 Four, void* RSP, i64 Number) {
+	SendEOI(0) ; HACK: PIC gets confused into thinking we've handling a very high priority interrupt
+	SendEOI(8) ;  so we need to convince it otherwise in order to get interrupts while handling syscalls
+	
+	if (Number = SYSCALL_EXIT) {
 		RestoreContext(&KernelContext)
 	}
-	else {
-		Print("Hello from syscall handler, rdi = %x\n", One)
+	
+	if (Number > SYSCALL_MAX_INDEX) {
+		return -1
 	}
+	
+	void* Function := SystemCalls[Number]
+	
+	if (Function != null) {
+		return DoSystemCall(One, Two, Three, Four, RSP, Function)
+	}
+	
+	return -1
+}
+
+define void RegisterSystemCall(i32 Index, void* Function) {
+	SystemCalls[Index] := Function
+}
+
+declare void ShellGatherInput(i8*, i32)
+
+define i64 SystemCallRead(i64 FileDescriptor, i8* Buffer, i32 Size) {
+	if (FileDescriptor = 1) {
+		ShellGatherInput(Buffer, Size)
+	}
+	
+	return -2
+}
+
+define i64 SystemCallWrite(i64 FileDescriptor, i8* Buffer, i32 Size) {
+	if (FileDescriptor = 0) {
+		PrintCharacters(Buffer, Size)
+		
+		return Size
+	}
+	
+	return -2
+}
+define i64 SystemCallDebug(i64 One) {
+	Print("Hello from debug syscall handler, rdi = %x\n", One)
+	
+	return 0
 }
 
 define void* GetKernelReEntryStack() {
@@ -28,6 +78,7 @@ define void OnSystemCall() asm {
 	push, r8
 	push, r11
 	
+	sti
 	call, @HandleSystemCall
 	
 	pop, r11
@@ -48,10 +99,14 @@ define void SetupSystemCalls() {
 	WriteMSR(AMD64_MSR_LSTAR, &OnSystemCall As i64)
 	
 	WriteMSR(AMD64_MSR_SFMASK, 0x600)
+	
+	RegisterSystemCall(0, &SystemCallRead)
+	RegisterSystemCall(1, &SystemCallWrite)
+	RegisterSystemCall(2, &SystemCallDebug)
 }
 
 define void UserModeReturnStub() asm {
-	mov, rax, 0
+	mov, rax, 60
 	syscall
 }
 
@@ -78,11 +133,11 @@ define void UserModeTest() {
 	;FastSetMemory8(0x80_0000 As void*, 0, 1024 * 768 * 3)
 	
 	asm {
-		mov, rax, 1
+		mov, rax, 2
 		mov, rdi, 1
 		syscall
 		
-		mov, rax, 1
+		mov, rax, 2
 		mov, rdi, 2
 		syscall
 		
