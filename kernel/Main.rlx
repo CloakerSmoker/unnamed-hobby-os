@@ -142,14 +142,14 @@ define void MainContinuation() {
 	
 	BochsPrintString("Mapped the framebuffer\n")
 	
-	NativeScreen->Adopt(FrameBuffer, SCREEN_WIDTH, SCREEN_HEIGHT, BYTES_PER_PIXEL, 0, 0x00_00_00)
-	;NativeScreen->Adopt(FrameBuffer, SCREEN_WIDTH, SCREEN_HEIGHT, BYTES_PER_PIXEL, 0, 0xFF_FF_FF)
+	;NativeScreen->Adopt(FrameBuffer, SCREEN_WIDTH, SCREEN_HEIGHT, BYTES_PER_PIXEL, 0, 0x00_00_00)
+	NativeScreen->Adopt(FrameBuffer, SCREEN_WIDTH, SCREEN_HEIGHT, BYTES_PER_PIXEL, 0, 0xFF_FF_FF)
 	NativeScreen->Clear()
 	
 	BochsPrintString("Adopted screen\n")
 	
-	KernelTerminal->Adopt(NativeScreen, 0xFF_FF_FF, 0x00_00_00)
-	;KernelTerminal->Adopt(NativeScreen, 0x00_00_00, 0xFF_FF_FF)
+	;KernelTerminal->Adopt(NativeScreen, 0xFF_FF_FF, 0x00_00_00)
+	KernelTerminal->Adopt(NativeScreen, 0x00_00_00, 0xFF_FF_FF)
 	;KernelTerminal->SetColors(0xFF_FF_FF, 0x00_00_00)
 	KernelTerminal->Clear()
 	

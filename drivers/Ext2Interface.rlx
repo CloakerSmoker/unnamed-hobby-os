@@ -25,7 +25,7 @@ define i64 Ext2Open(Ext2* FileSystem, i64 AtHandle, i8* Path, i8 Flags) {
 		return Entry->INode
 	}
 	else {
-		i32 CreatedNodeNumber := 0
+		i32 CreatedNodeNumber := -1
 		
 		if (Flags & OPEN_CREATE) {
 			CreatedNodeNumber := FileSystem->MakeFile(AtNode, Path)
@@ -36,7 +36,11 @@ define i64 Ext2Open(Ext2* FileSystem, i64 AtHandle, i8* Path, i8 Flags) {
 		
 		return CreatedNodeNumber
 	}
-} 
+}
+
+define i64 Ext2Open(Ext2* FileSystem, i64 AtHandle, i8* Path) {
+	return Ext2Open(FileSystem, AtHandle, Path, OPEN_IF_EXISTS)
+}
 
 define i64 Ext2Open(Ext2* FileSystem, i8* Path, i8 Flags) {
 	return Ext2Open(FileSystem, 2, Path, Flags)
@@ -136,6 +140,77 @@ define i64 Ext2Read(Ext2* FileSystem, i64 Handle, void* Buffer, i32 Size, i32* B
 	}
 	
 	return Ext2PackHandle(INodeNumber, Offset + *BytesRead)
+}
+
+struct Ext2DirectoryEntry {
+	i32 INodeNumber
+	i32 NameLength
+	i8[120] Name
+}
+
+define i64 Ext2ReadDirectoryEntries(Ext2* FileSystem, i64 Handle, Ext2DirectoryEntry* Out, i32 Count, i32* EntriesRead) {
+	*EntriesRead := 0
+	
+	i32 Offset := 0
+	i32 INodeNumber := Ext2UnpackHandle(Handle, &Offset)
+
+	INode* Node := FileSystem->ReadINode(INodeNumber)
+	
+	if (!Node->IsDirectory()) {
+		return -3
+	}
+	
+	i32 WalkHandle := FileSystem->StartWalkDirectory(Node)
+	
+	for (i32 Index := 0, Index < Offset, Index++) {
+		if (FileSystem->WalkDirectoryNext(Node, &WalkHandle) = null) {
+			return -2
+		}
+	}
+	
+	for (i32 Index := 0, Index < Count, Index++) {
+		DirectoryEntry* Next := FileSystem->WalkDirectoryNext(Node, &WalkHandle)
+		
+		if (Next = null) {
+			return -3
+		}
+		
+		*EntriesRead += 1
+		
+		Out->INodeNumber := Next->INode
+		Out->NameLength := Next->NameLength
+		
+		MoveMemory(Out~>Name, Next~>Name, Next->NameLength)
+		
+		Out~>Name[Next->NameLength] := 0
+		
+		Out += #Ext2DirectoryEntry
+	}
+	
+	return Ext2PackHandle(INodeNumber, Offset + *EntriesRead)
+}
+
+struct Ext2Status {
+	i32 INodeNumber
+	i32 Size
+	i8 IsFile
+	i8 IsDirectory
+	i16 Permissions
+}
+
+define i64 Ext2GetStatus(Ext2* FileSystem, i64 Handle, Ext2Status* Out) {
+	i32 Offset := 0
+	i32 INodeNumber := Ext2UnpackHandle(Handle, &Offset)
+
+	INode* Node := FileSystem->ReadINode(INodeNumber)
+	
+	Out->INodeNumber := INodeNumber
+	Out->IsFile := Node->IsFile()
+	Out->IsDirectory := Node->IsDirectory()
+	Out->Permissions := Node->GetPermissions()
+	Out->Size := Node->FileSizeLow
+	
+	return 0
 }
 
 define i64 Ext2Write(Ext2* FileSystem, i64 Handle, void* Data, i32 Size) {

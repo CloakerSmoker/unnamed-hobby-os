@@ -81,6 +81,50 @@ define void OnCommand(i8* CommandLine) {
 		
 		Ext2Close(FS, Ext2Open(FS, Path, OPEN_CREATE_DIRECTORY))
 	}
+	else if (StringEquals(Command, "nls")) {
+		i8* Path := CommandParameters[1]
+		
+		i64 Handle := Ext2Open(FS, Path)
+		
+		if (Handle) {
+			Ext2DirectoryEntry Entry
+			
+			loop {
+				i32 EntriesRead := 0
+				Handle := Ext2ReadDirectoryEntries(FS, Handle, &Entry, 1, &EntriesRead)
+				
+				if (EntriesRead != 1) {
+					break
+				}
+				
+				i64 EntryHandle := Ext2Open(FS, Handle, Entry~>Name)
+				
+				if (EntryHandle < 0) {
+					Print("%s doesn't exist???\n", Entry~>Name)
+				}
+				else {
+					Ext2Status EntryInfo
+					
+					Ext2GetStatus(FS, EntryHandle, &EntryInfo)
+					
+					if (EntryInfo.IsFile) {
+						Print("F\t")
+					}
+					else {
+						Print("D\t")
+					}
+					
+					Print("%s\n", Entry~>Name)
+					
+					Ext2Close(FS, EntryHandle)
+				}
+			}
+			
+			Ext2Close(FS, Handle)
+			
+		}
+		
+	}
 	else if (StringEquals(Command, "hex")) {
 		i8* Path := CommandParameters[1]
 		
