@@ -62,6 +62,7 @@ AMD64Context KernelContext
 #Require "./src/kernel/graphics/Terminal.rlx"
 
 i8 USE_INTERRUPT_STUBS := true
+i8 USE_PAGE_FAULT_HANDLER := true
 i8 RECOVER_FROM_USER_PAGE_FAULT := true
 
 #Require "./src/kernel/core/Interrupts.rlx"

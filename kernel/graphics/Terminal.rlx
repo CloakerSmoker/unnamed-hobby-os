@@ -280,11 +280,23 @@ struct Terminal {
 				}
 			}
 			
-			i8 XInBounds := 0 <= NewX && NewX <= this->MaxColumn
-			i8 YInBounds := 0 <= NewY && NewY <= this->MaxRow
-			
-			if (XInBounds && YInBounds) {
+			if (NewX <= 0) {
+				this->X := 0
+			}
+			else if (NewX >= this->MaxColumn) {
+				this->X := this->MaxColumn - 1
+			}
+			else {
 				this->X := NewX
+			}
+			
+			if (NewY <= 0) {
+				this->Y := 0
+			}
+			else if (NewY >= this->MaxRow) {
+				this->Y := this->MaxRow - 1
+			}
+			else {
 				this->Y := NewY
 			}
 			

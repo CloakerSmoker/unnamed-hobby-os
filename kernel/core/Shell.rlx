@@ -297,15 +297,21 @@ define void OnCommand(i8* CommandLine) {
 			
 			ELFMemoryMapping* Mapping := MapELF(KernelAddressSpace, ELFData)
 			
-			void* OriginalStack := KernelHeap->Allocate(0x400)
+			void* OriginalStack := KernelHeap->Allocate(0x800)
 			
-			void* Stack := OriginalStack + 0x300
+			void* Stack := OriginalStack + 0x700
 			
 			if (Stack & 0xF) {
 				Stack += 0x10 - ((Stack As i64) & 0xF)
 			}
 			
-			EnterUserMode(ELFData->EntryPoint As void*, Stack)
+			AMD64Context Context
+			
+			Context.Zero()
+			Context.RSP := Stack
+			Context.RawRIP := ELFData->EntryPoint
+			
+			EnterUserMode(&Context)
 			
 			Print("Returned from program\n")
 			

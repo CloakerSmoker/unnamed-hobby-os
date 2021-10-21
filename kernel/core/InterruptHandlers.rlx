@@ -13,50 +13,57 @@ i64 PAGE_FAULT_INSTRUCTION_FETCH := 0b10000
 define void PageFault(InterruptContext* Context) {
 	i64 CR2 := GetCR2()
 	i64 CR2Page := (CR2 >> 12) << 12
+	
+	if !(Context->ErrorCode & PAGE_FAULT_USER_SUPERVISOR) {
+		; For a user-mode exception, don't switch print the spooky panic message
+		
+		Print("^E1000A^E1000D")
+		Print("^F1")
+	}
 
-	BochsPrint("Page fault at %x while accessing %x {\n", Context->RIP, CR2) 
+	Print("Page fault at %x while accessing %x {\n", Context->RIP, CR2) 
 	
 	
-	BochsPrint("\tPage %x is present? ", CR2Page)
+	Print("\tPage %x is present? ", CR2Page)
 	
 	if (Context->ErrorCode & PAGE_FAULT_PAGE_PRESENT) {
-		BochsPrint("Yes\n")
+		Print("Yes\n")
 	}
 	else {
-		BochsPrint("No\n")
+		Print("No\n")
 	}
 	
 	
-	BochsPrint("\tPage %x is reserved? ", CR2Page)
+	Print("\tPage %x is reserved? ", CR2Page)
 	
 	if (Context->ErrorCode & PAGE_FAULT_PAGE_RESERVED) {
-		BochsPrint("Yes\n")
+		Print("Yes\n")
 	}
 	else {
-		BochsPrint("No\n")
+		Print("No\n")
 	}
 	
 	
-	BochsPrint("\tAddress %x was being? ", CR2)
+	Print("\tAddress %x was being? ", CR2)
 	
 	if (Context->ErrorCode & PAGE_FAULT_READ_WRITE) {
-		BochsPrint("Written to\n")
+		Print("Written to\n")
 	}
 	else {
-		BochsPrint("Read from\n")
+		Print("Read from\n")
 	}
 	
 	
-	BochsPrint("\tFrom code running in? ")
+	Print("\tFrom code running in? ")
 	
 	if (Context->ErrorCode & PAGE_FAULT_USER_SUPERVISOR) {
-		BochsPrint("User mode\n")
+		Print("User mode\n")
 	}
 	else {
-		BochsPrint("Kernel mode\n")
+		Print("Kernel mode\n")
 	}
 	
-	BochsPrint("}\n\n")
+	Print("}\n\n^R")
 	
 	if (RECOVER_FROM_USER_PAGE_FAULT && (Context->ErrorCode & PAGE_FAULT_USER_SUPERVISOR)) {
 		RestoreContext(&KernelContext)
@@ -72,6 +79,9 @@ define void OnPageFault() asm {
 }
 
 define void AddKernelHandlers() {
-	InsertIDTEntry(0xE, &OnPageFault, true)
+	if (USE_PAGE_FAULT_HANDLER) {
+		InsertIDTEntry(0xE, &OnPageFault, true)
+	}
+	
 	InsertIDTEntry(0x27, &OnSpuriousInterrupt, true)
 }
