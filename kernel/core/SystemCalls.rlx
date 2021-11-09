@@ -67,6 +67,13 @@ define void* GetKernelReEntryStack() {
 	return Kernel->ReEntryStack
 }
 
+define void RestoreUserModeContext(AMD64Context* Context) {
+	Print("Context @ %x\n", Context)
+	Print("New RIP: %x\n", Context->RIP)
+	
+	RestoreContext(Context)
+}
+
 define void OnSystemCall() asm {
 	mov, r8, rsp
 	mov, r9, rax
@@ -108,13 +115,6 @@ define void SetupSystemCalls() {
 define void UserModeReturnStub() asm {
 	mov, rax, 60
 	syscall
-}
-
-define void RestoreUserModeContext(AMD64Context* Context) {
-	Print("Context @ %x\n", Context)
-	Print("New RIP: %x\n", Context->RIP)
-	
-	RestoreContext(Context)
 }
 
 define void EnterUserMode(AMD64Context* Context) {

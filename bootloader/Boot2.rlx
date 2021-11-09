@@ -268,7 +268,7 @@ define void Main(void* FrameBuffer) {
 	
 	INode* RootNode := FS->ReadINode(2)
 	
-	DirectoryEntry* KernelEntry := FS->FindDirectoryEntryByName(RootNode, "kernel.bin")
+	DirectoryEntry* KernelEntry := FS->FindDirectoryEntryByName(RootNode, "kernel.elf")
 	
 	if (KernelEntry = null || !KernelEntry->IsFile()) {
 		Fail(3)
