@@ -49,6 +49,9 @@ define void PageFault(InterruptContext* Context) {
 	if (Context->ErrorCode & PAGE_FAULT_READ_WRITE) {
 		Print("Written to\n")
 	}
+	else if (Context->ErrorCode & PAGE_FAULT_INSTRUCTION_FETCH) {
+		Print("Executed\n")
+	}
 	else {
 		Print("Read from\n")
 	}

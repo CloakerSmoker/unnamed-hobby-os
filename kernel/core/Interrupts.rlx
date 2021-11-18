@@ -179,7 +179,7 @@ define void InterruptReturn() asm {
 struct IDTEntry unaligned {
 	i16 OffsetLow16,
 	i16 Selector,
-	i8 PaddingZero,
+	i8 IST,
 	i8 Flags,
 	i16 OffsetHigh16,
 	i32 OffsetHigh32,
@@ -188,7 +188,16 @@ struct IDTEntry unaligned {
 
 IDTEntry* IDT
 
-define void InsertIDTEntry(i32 Index, void* Function, i8 Present) {
+i8 IST_NONE := 0
+i8 IST_1 := 1
+i8 IST_2 := 1
+i8 IST_3 := 1
+i8 IST_4 := 1
+i8 IST_5 := 1
+i8 IST_6 := 1
+i8 IST_7 := 1
+
+define void InsertIDTEntry(i32 Index, void* Function, i8 Present, i8 IST) {
 	IDTEntry* E := IDT[Index]
 	
 	MemorySet64(E As i64*, 0, 2)
@@ -199,6 +208,10 @@ define void InsertIDTEntry(i32 Index, void* Function, i8 Present) {
 	
 	E->Selector := 0x08
 	E->Flags := 0x0E | (Present << 7) As i8
+}
+
+define void InsertIDTEntry(i32 Index, void* Function, i8 Present) {
+	InsertIDTEntry(Index, Function, Present, IST_NONE)
 }
 
 i32 IDT_MAX := 50

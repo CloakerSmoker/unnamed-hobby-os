@@ -35,13 +35,13 @@ struct TaskStateSegment unaligned {
 	
 	i64 Reserved_2
 	
-	i64 IST1
-	i64 IST2
-	i64 IST3
-	i64 IST4
-	i64 IST5
-	i64 IST6
-	i64 IST7
+	void* IST1
+	void* IST2
+	void* IST3
+	void* IST4
+	void* IST5
+	void* IST6
+	void* IST7
 	
 	i64 Reserved_3
 	i16 Reserved_4
@@ -157,4 +157,5 @@ define void SetupGDT() {
 	}
 	
 	TSS->RSP0 := Kernel->ReEntryStack
+	TSS->IST1 := Kernel->ReEntryStack - (PAGE_SIZE * 5)
 }

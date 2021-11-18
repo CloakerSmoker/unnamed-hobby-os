@@ -1,6 +1,7 @@
 
 struct Process {
 	i64[10] FileDescriptorsToHandles
+	i32 FileDescriptorCount
 	
 	Task Task
 }

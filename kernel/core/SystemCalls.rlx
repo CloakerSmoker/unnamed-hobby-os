@@ -88,7 +88,11 @@ define i64 SystemCallOpen(i8* Path, i32 Flags, i32 Mode) {
 		Ext2Flags := OPEN_CREATE
 	}
 	
-	return Ext2Open(FS, Path, Ext2Flags)
+	i32 FileDescriptor := CurrentProcess->FileDescriptorCount++
+	
+	CurrentProcess->FileDescriptorsToHandles[FileDescriptor] := Ext2Open(FS, Path, Ext2Flags)
+	
+	return FileDescriptor
 }
 
 define i64 SystemCallClose(i64 FileDescriptor) {

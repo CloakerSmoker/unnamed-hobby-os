@@ -108,7 +108,7 @@ define void SetupKeyboard() {
 	PS2SendCommand(PS2_ENABLE)
 	PS2SendCommand(PS2_ENABLE_AUX)
 	
-	InsertIDTEntry(0x21, &OnPS2Interrupt, true)
+	InsertIDTEntry(0x21, &OnPS2Interrupt, true, IST_1)
 	EnablePICLine(1, true)
 }
 
