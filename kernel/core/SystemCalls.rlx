@@ -7,31 +7,40 @@ void*[20] SystemCalls
 i32 SYSCALL_MAX_INDEX := 19
 i32 SYSCALL_COUNT := 20
 
-define i64 DoSystemCall(i64 One, i64 Two, i64 Three, i64 Four, void* RSP, void* Function) asm {
+define i64 DoSystemCall(i64 One, i64 Two, i64 Three, i64 Four, AMD64Context* Context, void* Function) asm {
 	jmp, r9
 }
 
 i32 SYSCALL_EXIT := 60
 
-define i64 HandleSystemCall(i64 One, i64 Two, i64 Three, i64 Four, void* RSP, i64 Number) {
+declare void ResumeUserMode(AMD64Context*)
+
+define void HandleSystemCall(AMD64Context* Context) {
 	SendEOI(0) ; HACK: PIC gets confused into thinking we've handling a very high priority interrupt
 	SendEOI(8) ;  so we need to convince it otherwise in order to get interrupts while handling syscalls
+	
+	i64 Number := Context->RAX
 	
 	if (Number = SYSCALL_EXIT) {
 		RestoreContext(&KernelContext)
 	}
 	
 	if (Number > SYSCALL_MAX_INDEX) {
-		return -1
+		Context->RAX := -1
+		
+		ResumeUserMode(Context)
 	}
 	
 	void* Function := SystemCalls[Number]
 	
-	if (Function != null) {
-		return DoSystemCall(One, Two, Three, Four, RSP, Function)
+	if (Function = null) {
+		Context->RAX := -1
+	}
+	else {
+		Context->RAX := DoSystemCall(Context->RDI, Context->RSI, Context->RDX, Context->R10, Context, Function)
 	}
 	
-	return -1
+	ResumeUserMode(Context)
 }
 
 define void RegisterSystemCall(i32 Index, void* Function) {
@@ -41,22 +50,64 @@ define void RegisterSystemCall(i32 Index, void* Function) {
 declare void ShellGatherInput(i8*, i32)
 
 define i64 SystemCallRead(i64 FileDescriptor, i8* Buffer, i32 Size) {
-	if (FileDescriptor = 1) {
+	if (FileDescriptor = 0) {
 		ShellGatherInput(Buffer, Size)
+		
+		return Size
 	}
 	
-	return -2
+	i32 BytesRead := 0
+	i64 NewHandle := Ext2Read(FS, CurrentProcess->FileDescriptorsToHandles[FileDescriptor], Buffer, Size, &BytesRead)
+	CurrentProcess->FileDescriptorsToHandles[FileDescriptor] := NewHandle
+	
+	return BytesRead
 }
 
 define i64 SystemCallWrite(i64 FileDescriptor, i8* Buffer, i32 Size) {
-	if (FileDescriptor = 0) {
+	if (FileDescriptor = 1) {
 		PrintCharacters(Buffer, Size)
 		
 		return Size
 	}
 	
-	return -2
+	i64 NewHandle := Ext2Write(FS, CurrentProcess->FileDescriptorsToHandles[FileDescriptor], Buffer, Size)
+	CurrentProcess->FileDescriptorsToHandles[FileDescriptor] := NewHandle
+	
+	return Size
 }
+
+i8 LINUX_FILE_READ := 0
+i8 LINUX_FILE_WRITE := 1
+i8 LINUX_FILE_READ_WRITE := 3
+i8 LINUX_FILE_CREATE_NEW := 0x40
+
+define i64 SystemCallOpen(i8* Path, i32 Flags, i32 Mode) {
+	i8 Ext2Flags := OPEN_IF_EXISTS
+	
+	if (Flags & LINUX_FILE_CREATE_NEW) {
+		Ext2Flags := OPEN_CREATE
+	}
+	
+	return Ext2Open(FS, Path, Ext2Flags)
+}
+
+define i64 SystemCallClose(i64 FileDescriptor) {
+	i64 NewHandle := Ext2Close(FS, CurrentProcess->FileDescriptorsToHandles[FileDescriptor])
+	CurrentProcess->FileDescriptorsToHandles[FileDescriptor] := NewHandle
+	
+	return 0
+}
+
+define i64 SystemCallSeek(i64 FileDescriptor, i32 Offset, i8 Mode) {
+	i64 NewHandle := Ext2Seek(FS, CurrentProcess->FileDescriptorsToHandles[FileDescriptor], Offset, Mode)
+	CurrentProcess->FileDescriptorsToHandles[FileDescriptor] := NewHandle
+	
+	Offset := 0
+	Ext2UnpackHandle(NewHandle, &Offset)
+	
+	return Offset
+}
+
 define i64 SystemCallDebug(i64 One) {
 	Print("Hello from debug syscall handler, rdi = %x\n", One)
 	
@@ -68,33 +119,40 @@ define void* GetKernelReEntryStack() {
 }
 
 define void RestoreUserModeContext(AMD64Context* Context) {
-	Print("Context @ %x\n", Context)
-	Print("New RIP: %x\n", Context->RIP)
+	;Print("Context @ %x\n", Context)
+	;Print("New RIP: %x\n", Context->RIP)
 	
-	RestoreContext(Context)
+	RestoreFullContext(Context)
 }
 
 define void OnSystemCall() asm {
-	mov, r8, rsp
-	mov, r9, rax
+	push, rax          ; Clobbered by GetCurrentTaskContext
+	push, rdi          ; Clobbered by SaveContext(GetCurrentTaskContext())
 	
-	call, @GetKernelReEntryStack
+	call, @GetCurrentTaskContext
+	mov, rdi, rax      ; Parameter = CurrentTaskContext
+	call, @SaveContext ; Capure user-mode RSP and everything else (only rcx/r11 are clobbered)
+	; Of course, RIP and flags are lost (but the processor saved them for us)
+	
+	mov, {rdi} As i64*, rcx        ; Context.RIP = rcx
+	mov, {rdi + 0x80} As i64*, r11 ; Context.Flags = r11
+	
+	pop, rax
+	mov, {rdi + 0x38} As i64*, rax ; Context.RDI = UserRDI
+	
+	pop, rax
+	mov, {rdi + 0x88} As i64*, rax ; Context.RAX = UserRAX
+	
+	mov, {rdi + 0x20} As i64*, rsp ; Context.RSP = UserRSP
+	; (since we push rax/rdi, we need to update the saved RSP after our pops)
+	
+	call, @GetKernelReEntryStack   ; Get set for kernel code
 	mov, rsp, rax
 	
-	push, rcx
-	push, r8
-	push, r11
+	push, rdi ; Save the user-mode context (and also pass it as a parameter to HandleSystemCall)
 	
 	sti
-	call, @HandleSystemCall
-	
-	pop, r11
-	pop, r8
-	pop, rcx
-	
-	mov, rsp, r8
-	
-	sysret
+	jmp, @HandleSystemCall
 }
 
 define void SetupSystemCalls() {
@@ -109,12 +167,26 @@ define void SetupSystemCalls() {
 	
 	RegisterSystemCall(0, &SystemCallRead)
 	RegisterSystemCall(1, &SystemCallWrite)
-	RegisterSystemCall(2, &SystemCallDebug)
+	RegisterSystemCall(2, &SystemCallOpen)
+	RegisterSystemCall(3, &SystemCallClose)
+	RegisterSystemCall(4, &SystemCallDebug)
+	RegisterSystemCall(8, &SystemCallSeek)
 }
 
 define void UserModeReturnStub() asm {
 	mov, rax, 60
 	syscall
+}
+
+define void ResumeUserMode(AMD64Context* Context) {
+	void* TerribleHack := &RestoreUserModeContext
+	
+	asm (rax := Context->RSP, rdi := Context, rcx := TerribleHack) {
+		mov, r11, 0x200
+		mov, rsp, rax
+		xchg, bx, bx
+		sysret
+	}
 }
 
 define void EnterUserMode(AMD64Context* Context) {
@@ -128,25 +200,18 @@ define void EnterUserMode(AMD64Context* Context) {
 	
 	Context->RSP[0] := &UserModeReturnStub As i64
 	
-	void* TerribleHack := &RestoreUserModeContext
-	
-	asm (rax := Context->RSP, rdi := Context, rcx := TerribleHack) {
-		mov, r11, 0x200
-		mov, rsp, rax
-		xchg, bx, bx
-		sysret
-	}
+	ResumeUserMode(Context)
 }
 
 define void UserModeTest() {
 	;FastSetMemory8(0x80_0000 As void*, 0, 1024 * 768 * 3)
 	
 	asm {
-		mov, rax, 2
+		mov, rax, 4
 		mov, rdi, 1
 		syscall
 		
-		mov, rax, 2
+		mov, rax, 4
 		mov, rdi, 2
 		syscall
 		
@@ -161,6 +226,8 @@ define void Test() {
 	void* UserStack    := UserStackPages As void*
 	KernelAddressSpace->MapRange(UserStack, UserStackPages / PAGE_SIZE, 10)
 	
+	Task Dummy
+	CurrentTask := &Dummy
 	
 	AMD64Context Context
 	

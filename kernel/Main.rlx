@@ -61,20 +61,24 @@ AMD64Context KernelContext
 
 #Require "./src/kernel/graphics/Terminal.rlx"
 
-i8 USE_INTERRUPT_STUBS := true
-i8 USE_PAGE_FAULT_HANDLER := true
-i8 RECOVER_FROM_USER_PAGE_FAULT := true
+i8 USE_INTERRUPT_STUBS := false
+i8 USE_PAGE_FAULT_HANDLER := false
+i8 RECOVER_FROM_USER_PAGE_FAULT := false
 
 #Require "./src/kernel/core/Interrupts.rlx"
 #Require "./src/kernel/core/Devices.rlx"
-
-#Require "./src/kernel/core/SystemCalls.rlx"
 
 #Require "./src/drivers/ATAExt2.rlx"
 
 Ext2DeviceTraits* RootDevice := null
 Ext2* FS := null
 INode* RootINode := null
+
+#Require "./src/drivers/Ext2Interface.rlx"
+
+#Require "./src/kernel/core/Tasks.rlx"
+#Require "./src/kernel/core/Process.rlx"
+#Require "./src/kernel/core/SystemCalls.rlx"
 
 #Require "./src/kernel/core/Shell.rlx"
 

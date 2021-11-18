@@ -1,5 +1,5 @@
 define void PrintCharacters(i8* Characters, i32 Count) {
-	syscall:(1, 0, Characters, Count)
+	syscall:(1, 1, Characters, Count)
 }
 
 define i32 StringLength(i8* String) {
@@ -13,7 +13,7 @@ define void PrintString(i8* String) {
 }
 
 define void Read(i8* Destination, i32 Size) {
-	syscall:(0, 1, Destination, Size)
+	syscall:(0, 0, Destination, Size)
 }
 
 define void Main() {

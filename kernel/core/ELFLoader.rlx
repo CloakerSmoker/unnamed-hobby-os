@@ -21,9 +21,15 @@ define ELFMemoryMapping* MapELF(AddressSpaceManager* AddressSpace, ELFHeader* Im
 			void* SectionMemory := Next->VirtualAddress As void*
 			void* SectionVirtualPage := SectionMemory & 0xFFFF_FFFF_FFFF_F000
 			
+			Print("Section %i is %i (%x) bytes\n", Index, Next->MemorySize, Next->MemorySize)
+			
 			i32 SectionPageCount := (Next->MemorySize As i32) / PAGE_SIZE
 			
 			if (Next->MemorySize % PAGE_SIZE) {
+				SectionPageCount += 1
+			}
+			
+			if (Next->FileOffset % PAGE_SIZE) {
 				SectionPageCount += 1
 			}
 			
@@ -35,11 +41,16 @@ define ELFMemoryMapping* MapELF(AddressSpaceManager* AddressSpace, ELFHeader* Im
 			
 			Print("Allocated %i pages starting at %x for section %i of image\n", SectionPageCount, SectionPhysicalPages / PAGE_SIZE, Index)
 			
+			Print("Pages are PRESENT | USER")
+			
 			i64 Flags := PAGE_PRESENT | PAGE_USER
 			
-			if (Next->Flags & ELF_SECTION_FLAGS_WRITE) {
+			if (Next->Flags & ELF_SEGMENT_FLAGS_WRITE) {
+				Print(" | WRITE ")
 				Flags |= PAGE_WRITE
 			}
+			
+			Print("\n")
 			
 			Print("Mapping virtual(%x) to physical(%x)\n", SectionMemory & 0xFFFF_FFFF_FFFF_F000, SectionPhysicalPages)
 			

@@ -1,0 +1,9 @@
+
+struct Process {
+	i64[10] FileDescriptorsToHandles
+	
+	Task Task
+}
+
+Process RawCurrentProcess
+Process* CurrentProcess := &RawCurrentProcess

@@ -1,0 +1,97 @@
+i8 InUserMode := false
+
+Task* CurrentTask := null
+
+define Task* GetCurrentTaskContext() {
+	return CurrentTask ; For inline assembly to call
+}
+
+declare void EnterUserMode(AMD64Context*)
+
+struct Task {
+	AMD64Context Context ; MUST be the first field
+	
+	i32 Priority
+	
+	Task* Next
+	
+	i8 NeedsUserMode
+	
+	static Task* New(i32 Priority) {
+		Task* this := Alloc(#Task)
+		
+		this->Priority := Priority
+		
+		return this
+	}
+	
+	define void Resume() {
+		CurrentTask := this
+
+		if (this->NeedsUserMode) {
+			EnterUserMode(this~>Context)
+		}
+		else {
+			RestoreContext(this~>Context)
+		}
+	}
+	
+	define void End() {
+		Task* Next := this->Next
+		
+		Free(this)
+		
+		Next->Resume()
+	}
+}
+
+struct TaskQueue {
+	Task* Next
+	
+	define Task* Allocate() {
+		return Alloc(#Task)
+	}
+	
+	define void Enqueue(Task* NewTask) {
+		if (this->Next = null) {
+			this->Next := NewTask
+		}
+		else {
+			Task* Next := this->Next
+			
+			while (Next->Next && Next->Priority > NewTask->Priority) {
+				Next := Next->Next
+			}
+			
+			NewTask->Next := Next->Next
+			Next->Next := NewTask
+		}
+	}
+	define Task* Dequeue() {
+		Task* Result := this->Next
+		
+		this->Next := Result->Next
+		
+		return Result
+	}
+	define void RunNext() {
+		Task* Target := this->Dequeue()
+		
+		if !(Target) {
+			return
+		}
+		
+		Target->Resume()
+	}
+}
+
+define void DispatchTask() {
+	Task* Tail := CurrentTask->Next
+	
+	while (Tail != null) {
+		if (Tail~>Context->RIP = &DispatchTask) {
+			return
+		}
+		
+	}
+}

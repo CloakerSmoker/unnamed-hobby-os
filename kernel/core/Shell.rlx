@@ -1,8 +1,6 @@
 
 #Require "./src/utility/ScanCodes.rlx"
-#Require "./src/drivers/ATA.rlx"
 #Require "./src/kernel/core/ELFLoader.rlx"
-#Require "./src/drivers/Ext2Interface.rlx"
 
 define void Prompt() {
 	Print("(>")
@@ -297,9 +295,9 @@ define void OnCommand(i8* CommandLine) {
 			
 			ELFMemoryMapping* Mapping := MapELF(KernelAddressSpace, ELFData)
 			
-			void* OriginalStack := KernelHeap->Allocate(0x800)
+			void* OriginalStack := KernelHeap->Allocate(0x2000)
 			
-			void* Stack := OriginalStack + 0x700
+			void* Stack := OriginalStack + 0x1F00
 			
 			if (Stack & 0xF) {
 				Stack += 0x10 - ((Stack As i64) & 0xF)
@@ -318,7 +316,11 @@ define void OnCommand(i8* CommandLine) {
 			KernelHeap->Free(FileData)
 			KernelHeap->Free(OriginalStack)
 			
+			Print("Free file/stack\n")
+			
 			UnmapELF(KernelAddressSpace, Mapping)
+			
+			Print("Unmap\n")
 		}
 	}
 	else if (StringEquals(Command, "ksyscall")) {

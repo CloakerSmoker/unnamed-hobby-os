@@ -148,6 +148,8 @@ struct AMD64Context {
 	
 	i64 Flags
 	
+	i64 RAX
+	
 	define AMD64Context* Zero() {
 		FastSetMemory8(this, 0, #AMD64Context)
 		
@@ -185,6 +187,40 @@ define i8 SaveContext(AMD64Context* Save) asm {
 	xchg, rax, rbx
 	
 	jmp, rbx
+}
+
+define void RestoreFullContext(AMD64Context* Save) asm {
+	; For when you don't want the function to "return" 1/0, and want an "original" value
+	;  for RAX
+	
+	mov, rsp, {rdi + 0x20} As i64* ; Restore RSP/RBP
+	mov, rbp, {rdi + 0x28} As i64* 
+	
+	push, {rdi} As i64* ; Push RIP onto the restored stack, so we can `ret` to it
+	
+	mov, rbx, {rdi + 0x8 } As i64*
+	mov, rcx, {rdi + 0x10} As i64*
+	mov, rdx, {rdi + 0x18} As i64*
+	mov, rsi, {rdi + 0x30} As i64*
+
+	mov, r8 , {rdi + 0x40} As i64*
+	mov, r9 , {rdi + 0x48} As i64*
+	mov, r10, {rdi + 0x50} As i64*
+	mov, r11, {rdi + 0x58} As i64*
+	mov, r12, {rdi + 0x60} As i64*
+	mov, r13, {rdi + 0x68} As i64*
+	mov, r14, {rdi + 0x70} As i64*
+	mov, r15, {rdi + 0x78} As i64*
+	
+	push, {rdi + 0x80} As i64*
+	emit, 0x48
+	emit, 0x9D ; POPFQ
+	
+	mov, rax, {rdi + 0x88} As i64*
+	
+	mov, rdi, {rdi + 0x38} As i64*
+	
+	ret
 }
 
 define void RestoreContext(AMD64Context* Save) asm {
