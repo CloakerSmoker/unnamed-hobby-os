@@ -225,12 +225,13 @@ define void UserModeTest() {
 	Print("\t^SCHello from userland!^R\n")
 }
 
+Task Dummy
+
 define void Test() {
 	i64 UserStackPages := PhysicalMemory->Reserve('STK', PAGE_SIZE * 10, PAGE_SIZE)
 	void* UserStack    := UserStackPages As void*
 	KernelAddressSpace->MapRange(UserStack, UserStackPages / PAGE_SIZE, 10)
 	
-	Task Dummy
 	CurrentTask := &Dummy
 	
 	AMD64Context Context

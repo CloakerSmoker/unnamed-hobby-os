@@ -246,13 +246,23 @@ define i64 Ext2Write(Ext2* FileSystem, i64 Handle, void* Data, i32 Size) {
 	i32 LastBlockSize := Size % 1024
 	
 	if (LastBlockSize) {
+		i32 LastBlock := FirstBlock + BlockCount
+		
+		FS->ReadINodeData(FileSystem->TempBlock, Node, LastBlock)
+		
 		MoveMemory(FileSystem->TempBlock, Data, LastBlockSize)
 		FastSetMemory8(FileSystem->TempBlock + LastBlockSize, 1024 - LastBlockSize, 0)
 		
-		FS->WriteINodeBlock(Node, FirstBlock + BlockCount, FileSystem->TempBlock)
+		FS->WriteINodeBlock(Node, LastBlock, FileSystem->TempBlock)
 	}
 	
-	return Ext2PackHandle(INodeNumber, Size)
+	Offset += Size
+	
+	Node->FileSizeLow := Offset
+	
+	FS->WriteINode(Node)
+	
+	return Ext2PackHandle(INodeNumber, Offset)
 }
 
 define i64 Ext2Close(Ext2* FileSystem, i64 Handle) {
