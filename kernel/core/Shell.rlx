@@ -355,7 +355,7 @@ define void ShellOnKey(i16 ScanCode, i8 ASCIICode) {
 		KeyboardBuffer->Write("\n", 2)
 	}
 	else if (ScanCode = SCANCODE_BACKSPACE_DOWN) {
-		
+		KeyboardBuffer->Write(&ASCII_BACK, 1)
 	}
 	else {
 		KeyboardBuffer->Write(&ASCIICode, 1)
@@ -393,8 +393,17 @@ define void Shell() {
 				i16 LineEnding := 0x0A0D
 				
 				CommandLine[Index + Size] := 0
-				Print("%s", &CommandLine[Index])
-				Index += Size
+				
+				if (CommandLine[Index] = ASCII_BACK) {
+					if (Index != 0) {
+						Print("%s", &CommandLine[Index])
+						Index -= 1
+					}
+				}
+				else {
+					Print("%s", &CommandLine[Index])
+					Index += Size
+				}
 				
 				;Print("(%x %x)", Tail, LineEnding)
 				
