@@ -156,6 +156,6 @@ define void SetupGDT() {
 		sti
 	}
 	
-	TSS->RSP0 := Kernel->ReEntryStack
-	TSS->IST1 := Kernel->ReEntryStack - (PAGE_SIZE * 5)
+	TSS->RSP0 := Kernel->InterruptStack
+	TSS->IST1 := Kernel->InterruptStack - (PAGE_SIZE * 5)
 }

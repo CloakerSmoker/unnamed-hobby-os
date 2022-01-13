@@ -10,9 +10,66 @@ i64 PAGE_FAULT_USER_SUPERVISOR   := 0b00100
 i64 PAGE_FAULT_PAGE_RESERVED     := 0b01000
 i64 PAGE_FAULT_INSTRUCTION_FETCH := 0b10000
 
+i8 PAGE_FAULT_CHANCE := 0
+
 define void PageFault(InterruptContext* Context) {
+	PAGE_FAULT_CHANCE++
+	
+	if (PAGE_FAULT_CHANCE > 2) {
+		BochsPrint("PANIC!!!! NOW!!!!!!!")
+		loop {}
+	}
+	
 	i64 CR2 := GetCR2()
 	i64 CR2Page := (CR2 >> 12) << 12
+	
+	BochsPrint("Page fault") ; Split prints just for when BochsPrint formatting is page faulting
+	BochsPrint(" at %x while accessing %x {\n", Context->RIP, CR2) 
+	
+	BochsPrint("\tPage %x is present? ", CR2Page)
+	
+	if (Context->ErrorCode & PAGE_FAULT_PAGE_PRESENT) {
+		BochsPrint("Yes\n")
+	}
+	else {
+		BochsPrint("No\n")
+	}
+	
+	
+	BochsPrint("\tPage %x is reserved? ", CR2Page)
+	
+	if (Context->ErrorCode & PAGE_FAULT_PAGE_RESERVED) {
+		BochsPrint("Yes\n")
+	}
+	else {
+		BochsPrint("No\n")
+	}
+	
+	
+	BochsPrint("\tAddress %x was being? ", CR2)
+	
+	if (Context->ErrorCode & PAGE_FAULT_READ_WRITE) {
+		BochsPrint("Written to\n")
+	}
+	else if (Context->ErrorCode & PAGE_FAULT_INSTRUCTION_FETCH) {
+		BochsPrint("Executed\n")
+	}
+	else {
+		BochsPrint("Read from\n")
+	}
+	
+	
+	BochsPrint("\tFrom code running in? ")
+	
+	if (Context->ErrorCode & PAGE_FAULT_USER_SUPERVISOR) {
+		BochsPrint("User mode\n")
+	}
+	else {
+		BochsPrint("Kernel mode\n")
+	}
+	
+	BochsPrintStackDump(Context->RBP)
+	BochsPrint("}\n")
 	
 	if !(Context->ErrorCode & PAGE_FAULT_USER_SUPERVISOR) {
 		; For a user-mode exception, don't switch print the spooky panic message
@@ -67,6 +124,8 @@ define void PageFault(InterruptContext* Context) {
 	}
 	
 	Print("}\n\n^R")
+	
+	PAGE_FAULT_CHANCE--
 	
 	if (RECOVER_FROM_USER_PAGE_FAULT && (Context->ErrorCode & PAGE_FAULT_USER_SUPERVISOR)) {
 		RestoreContext(&KernelContext)

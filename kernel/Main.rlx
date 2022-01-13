@@ -40,7 +40,9 @@ struct KernelInfo {
 	
 	void* FrameBuffer
 	void* HeapMemory
-	void* ReEntryStack
+	
+	void* InterruptStack
+	void* SystemCallStack
 }
 
 KernelInfo RawKernelInfo {
@@ -137,6 +139,8 @@ define void Main(void* CR3, void* RawFrameBuffer, i64 MaxKernelAddress) {
 	KernelAddressSpace->Takeover(&RawMainContinuation, StackMemory + (PAGE_SIZE * 20))
 }
 
+declare void DebugInsertUnhandledExceptionHandler()
+
 define void MainContinuation() {
 	BochsPrintString("Paging initialized, AddressSpaceManager in control\n")
 	
@@ -164,6 +168,7 @@ define void MainContinuation() {
 	
 	KernelTerminal->PrintLine("BOOT: Unmapped page 0")
 	
+	
 	KernelHeap->Initialize(Kernel->HeapMemory, BYTES_IN_2MB)
 	
 	KernelTerminal->Print("BOOT: Kernel Heap Initialized: ")
@@ -175,8 +180,18 @@ define void MainContinuation() {
 	void* ReEntryStack    := ReEntryStackPages As void*
 	KernelAddressSpace->MapRange(ReEntryStack, ReEntryStackPages / PAGE_SIZE, 10)
 	
-	Kernel->ReEntryStack := ReEntryStack + (PAGE_SIZE * 10)
+	KernelAddressSpace->UnmapRange(ReEntryStack, 1)
+	KernelAddressSpace->UnmapRange(ReEntryStack + (PAGE_SIZE * 6), 1)
 	
+	Kernel->InterruptStack  := ReEntryStack + (PAGE_SIZE * 5)
+	Kernel->SystemCallStack := ReEntryStack + (PAGE_SIZE * 10)
+	
+	Print("Kernel {\n")
+	Print("\tInterruptStack  Top   : %x,\n", Kernel->InterruptStack)
+	Print("\tInterruptStack  Guard : %x,\n", ReEntryStack)
+	Print("\tSystemCallStack Top   : %x,\n", Kernel->SystemCallStack)
+	Print("\tSystemCallStack Guard : %x\n", ReEntryStack + (PAGE_SIZE * 6))
+	Print("}\n")
 	
 	SetupGDT()
 	
@@ -198,6 +213,8 @@ define void MainContinuation() {
 	
 	KernelTerminal->SetCursorTimer()
 	
+	DebugInsertUnhandledExceptionHandler()
+	
 	KernelTerminal->PrintLine("BOOT: Mounting disk")
 	
 	void* SB := KernelHeapAllocate('SB', 2048)
@@ -217,6 +234,70 @@ define void MainContinuation() {
 	SetupShell()
 	
 	Prompt()
+	Shell()
 	
 	loop {}
+}
+
+
+define void PrintStackDump(i32 IgnoreFrames) {
+	StackFrame* Last := GetRBP() As StackFrame*
+	i32 Index := 1
+	
+	while (Last) {
+		if (Last->LastFrame & 1) {
+			StackFrame* Temp := Last->LastFrame - 1
+			
+			if (IgnoreFrames) {
+				IgnoreFrames -= 1
+			}
+			else {
+				Print("	Stack[%i] Try catch address = %x\n", Index, Last->ReturnAddress, Temp)
+				Index += 1
+			}
+			
+			Last := Temp
+		}
+		else {
+			if (IgnoreFrames) {
+				IgnoreFrames -= 1
+			}
+			else {
+				i64* MaybeMagic := (Last - 0x8) As i64*
+				i8** MaybeName := (Last - 0x10) As i8**
+				
+				if (Debug && *MaybeMagic = 0x12345678) {
+					Print("	Stack[%i] Fn = %s\n", Index, *MaybeName)
+				}
+				else {
+					Print("	Stack[%i] Fn callsite = %x\n", Index, Last->ReturnAddress, Last->LastFrame)
+				}
+				
+				Index += 1
+			}
+			
+			Last := Last->LastFrame
+		}
+	}
+}
+define void PrintStackDump() {
+	PrintStackDump(0)
+}
+
+define void UnhandledExceptionHandler(i64 Code) {
+	Print("\n\n----------------------\n")
+	Print("Unhandled exception %x (%l) with call stack:\n", Code, Code)
+	PrintStackDump(3)
+	Print("Aborting...\n")
+	Print("----------------------\n\n\n")
+}
+
+define void* DebugInsertUnhandledExceptionHandler() {
+	UnhandledExceptionHandler := &UnhandledExceptionHandler
+	
+	if !(Debug) {
+		Print("^60Warning: Debug library included without '--debug' compiler flag, stack traces will only contain raw addresses.^F0\n")
+	}
+	
+	return null
 }

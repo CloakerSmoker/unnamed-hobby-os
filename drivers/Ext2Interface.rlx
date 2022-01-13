@@ -225,7 +225,7 @@ define i64 Ext2Write(Ext2* FileSystem, i64 Handle, void* Data, i32 Size) {
 	
 	i32 FirstBlockRemainder := Offset % 1024
 	
-	if (FirstBlockRemainder) {
+	if (FirstBlockRemainder && Node->FileSizeLow > 0) {
 		FS->ReadINodeData(FileSystem->TempBlock, Node, FirstBlock)
 		
 		MoveMemory(FileSystem->TempBlock + FirstBlockRemainder, Data, 1024 - FirstBlockRemainder)
@@ -248,7 +248,9 @@ define i64 Ext2Write(Ext2* FileSystem, i64 Handle, void* Data, i32 Size) {
 	if (LastBlockSize) {
 		i32 LastBlock := FirstBlock + BlockCount
 		
-		FS->ReadINodeData(FileSystem->TempBlock, Node, LastBlock)
+		if (LastBlock * 1024 < Node->FileSizeLow) {
+			FS->ReadINodeData(FileSystem->TempBlock, Node, LastBlock)
+		}
 		
 		MoveMemory(FileSystem->TempBlock, Data, LastBlockSize)
 		FastSetMemory8(FileSystem->TempBlock + LastBlockSize, 1024 - LastBlockSize, 0)

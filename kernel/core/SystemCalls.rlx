@@ -118,8 +118,8 @@ define i64 SystemCallDebug(i64 One) {
 	return 0
 }
 
-define void* GetKernelReEntryStack() {
-	return Kernel->ReEntryStack
+define void* GetKernelSystemCallStack() {
+	return Kernel->SystemCallStack
 }
 
 define void RestoreUserModeContext(AMD64Context* Context) {
@@ -150,7 +150,7 @@ define void OnSystemCall() asm {
 	mov, {rdi + 0x20} As i64*, rsp ; Context.RSP = UserRSP
 	; (since we push rax/rdi, we need to update the saved RSP after our pops)
 	
-	call, @GetKernelReEntryStack   ; Get set for kernel code
+	call, @GetKernelSystemCallStack   ; Get stack for kernel code
 	mov, rsp, rax
 	
 	push, rdi ; Save the user-mode context (and also pass it as a parameter to HandleSystemCall)
@@ -183,6 +183,8 @@ define void UserModeReturnStub() asm {
 }
 
 define void ResumeUserMode(AMD64Context* Context) {
+	;Print("[ResumeUserMode %x]", Context->RIP)
+	
 	void* TerribleHack := &RestoreUserModeContext
 	
 	asm (rax := Context->RSP, rdi := Context, rcx := TerribleHack) {
