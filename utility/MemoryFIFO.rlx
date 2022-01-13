@@ -1,0 +1,57 @@
+struct MemoryFIFO {
+	union {
+		void* RawBuffer
+		i8* Buffer
+	}
+	i32 Size
+	i32 WriteOffset
+	i32 ReadOffset
+	
+	static MemoryFIFO* New() {
+		MemoryFIFO* this := Alloc(#MemoryFIFO)
+		
+		this->Size := 0x100
+		this->Buffer := Alloc(this->Size)
+		
+		return this
+	}
+	define void Free() {
+		Free(this->Buffer)
+		Free(this)
+	}
+	
+	define i32 Available() {
+		return this->WriteOffset - this->ReadOffset
+	}
+	
+	define i8* BytePosition(i32 Offset) {
+		return &this->Buffer[Offset % this->Size]
+	}
+	
+	define void Peek(void* RawOut, i32 Size) {
+		i8* Out := RawOut
+		
+		for (i32 Index := 0, Index < Size, Index++) {
+			Out[Index] := *this->BytePosition(this->WriteOffset - Size + Index)
+		}
+	}
+	
+	define void Read(void* RawOut, i32 Size) {
+		i8* Out := RawOut
+		
+		for (i32 Index := 0, Index < Size, Index++) {
+			Out[Index] := *this->BytePosition(this->ReadOffset + Index)
+		}
+		
+		this->ReadOffset += Size
+	}
+	define void Write(void* RawIn, i32 Size) {
+		i8* In := RawIn
+		
+		for (i32 Index := 0, Index < Size, Index++) {
+			*this->BytePosition(this->WriteOffset + Index) := In[Index]
+		}
+		
+		this->WriteOffset += Size
+	}
+}

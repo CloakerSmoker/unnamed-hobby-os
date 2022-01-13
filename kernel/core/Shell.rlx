@@ -1,5 +1,6 @@
 
 #Require "./src/utility/ScanCodes.rlx"
+#Require "./src/utility/MemoryFIFO.rlx"
 #Require "./src/kernel/core/ELFLoader.rlx"
 
 define void Prompt() {
@@ -7,6 +8,9 @@ define void Prompt() {
 }
 
 i8*[0x20] CommandParameters
+
+i8 RunningProgram := false
+MemoryFIFO* RunningProgramInput := null
 
 define void OnCommand(i8* CommandLine) {
 	i32 ParameterStart := 0
@@ -271,6 +275,8 @@ define void OnCommand(i8* CommandLine) {
 			Print(" Could not find file '^%s'\n", Path)
 		}
 		else {
+			RunningProgram := true
+			
 			INode FoundFileNode
 			
 			MoveMemory(&FoundFileNode, FS->ReadINode(FoundFileEntry->INode), #INode)
@@ -321,6 +327,8 @@ define void OnCommand(i8* CommandLine) {
 			UnmapELF(KernelAddressSpace, Mapping)
 			
 			Print("Unmap\n")
+			
+			RunningProgram := false
 		}
 	}
 	else if (StringEquals(Command, "ksyscall")) {
@@ -335,52 +343,70 @@ define void OnCommand(i8* CommandLine) {
 	Prompt()
 }
 
-i32 GatherInputCount := 0
-i32 GatherInputIndex := 0
-i8* GatherInputBuffer := null
-
-i8[0x200] CommandBuffer
-i32 CommandBufferIndex
+i8[0x100] RawKeyboardBuffer
+MemoryFIFO _KeyboardBuffer {
+	Buffer: RawKeyboardBuffer,
+	Size: 0x100
+}
+MemoryFIFO* KeyboardBuffer := &_KeyboardBuffer
 
 define void ShellOnKey(i16 ScanCode, i8 ASCIICode) {
-	if (GatherInputCount) {
-		GatherInputBuffer[GatherInputIndex++] := ASCIICode
+	if (ScanCode = SCANCODE_ENTER_DOWN) {
+		KeyboardBuffer->Write("\n", 2)
+	}
+	else if (ScanCode = SCANCODE_BACKSPACE_DOWN) {
 		
-		Print("%c", ASCIICode)
 	}
 	else {
-		if (ScanCode = SCANCODE_ENTER_DOWN) {
-			Print("\n")
-			
-			CommandBuffer[CommandBufferIndex] := 0
-			OnCommand(CommandBuffer)
-			CommandBufferIndex := 0
-		}
-		else if (ScanCode = SCANCODE_BACKSPACE_DOWN) {
-			if (CommandBufferIndex > 0) {
-				CommandBuffer[--CommandBufferIndex] := 0
-				
-				Print("%c", 0x7F)
-			}
-		}
-		else {
-			CommandBuffer[CommandBufferIndex++] := ASCIICode
-			
-			Print("%c", ASCIICode)
-		}
+		KeyboardBuffer->Write(&ASCIICode, 1)
 	}
 }
 
 define void ShellGatherInput(i8* Destination, i32 Size) {
-	GatherInputCount := Size
-	GatherInputIndex := 0
-	GatherInputBuffer := Destination
+	;Print("GatherInput(%x, %i)", Destination, Size)
 	
-	while (GatherInputIndex < GatherInputCount) {}
+	while (KeyboardBuffer->Available() < Size) {}
 	
-	GatherInputCount := 0
+	KeyboardBuffer->Read(Destination, Size)
 }
 
 define void SetupShell() {
 	SetOnKeyCallback(&ShellOnKey)
+}
+
+i8[100] CommandLine
+
+define void Shell() {
+	i32 Index := 0
+	
+	loop {
+		i32 Size := KeyboardBuffer->Available()
+		
+		if (Size) {
+			if (RunningProgram) {
+				Index := 0
+			}
+			else {
+				KeyboardBuffer->Read(&CommandLine[Index], Size)
+				
+				i16 Tail := *(&CommandLine[Index + Size - 2] As i16*)
+				i16 LineEnding := 0x0A0D
+				
+				CommandLine[Index + Size] := 0
+				Print("%s", &CommandLine[Index])
+				Index += Size
+				
+				;Print("(%x %x)", Tail, LineEnding)
+				
+				if (Tail = LineEnding) {
+					CommandLine[Index - 2] := 0
+					
+					OnCommand(CommandLine)
+					
+					Index := 0
+				}
+			}
+		}
+	}
+	
 }
