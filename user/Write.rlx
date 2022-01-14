@@ -1,0 +1,46 @@
+#Require "$/FileBase.rlx"
+#Require "$/ConsoleBase.rlx"
+
+define void Main() {
+	Print("File name: ")
+	
+	i8[255] Name
+	i32 Index
+	
+	for (i32 Index := 0, Index < 30, Index++) {
+		i8 Next := ReadCharacter()
+		
+		if (Next = 0xD && ReadCharacter() = 0xA) {
+			break
+		}
+		
+		Print("%c", Next)
+		
+		Name[Index] := Next
+	}
+	
+	i64 File := FileOpen(Name, FILE_WRITE | FILE_CREATE_NEW)
+	
+	if (File < 0) {
+		Print("Couldn't open '%s'\n", Name)
+		return
+	}
+	
+	Print("\n[ Writing to '%s', | to stop ]\n", Name)
+	
+	for (i32 Index := 0, Index < 255, Index++) {
+		i8 Next := ReadCharacter()
+		
+		Print("%c", Next)
+		
+		if (Next = '|') {
+			break
+		}
+		
+		FileWrite(File, &Next, 1)
+	}
+	
+	FileClose(File)
+	
+	Print("\nDone, %i characters written\n", Index)
+}
