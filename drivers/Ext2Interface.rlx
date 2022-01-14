@@ -223,24 +223,44 @@ define i64 Ext2Write(Ext2* FileSystem, i64 Handle, void* Data, i32 Size) {
 	
 	i32 BlockCount := Size / 1024
 	
-	i32 FirstBlock := Offset / 1024
+	i32 NextBlock := Offset / 1024
 	
-	i32 FirstBlockRemainder := Offset % 1024
+	i32 FirstBlockExistingData := Offset % 1024
 	
-	if (FirstBlockRemainder && Node->FileSizeLow > 0) {
-		FS->ReadINodeData(Ext2WriteBuffer, Node, FirstBlock)
+	if (FirstBlockExistingData && Node->FileSizeLow > 0) {
+		; Writing data which starts in the middle of a block, which means that we need to read the old data
+		;  and overwrite it, then write this first block back
 		
-		MoveMemory(Ext2WriteBuffer + FirstBlockRemainder, Data, 1024 - FirstBlockRemainder)
+		FS->ReadINodeData(Ext2WriteBuffer, Node, NextBlock) ; Get old data
 		
-		FS->WriteINodeBlock(Node, FirstBlock, Ext2WriteBuffer)
+		; Figure out where to start writing/how much to write. 
+		; This covers a [---|XXX|---] style write along with a [---|XXX|YYY] style write
 		
-		Data += 1024 - FirstBlockRemainder
-		FirstBlock += 1
+		i32 FirstBlockWriteStart := FirstBlockExistingData
+		i32 FirstBlockWriteSize := Size
+		
+		if (FirstBlockWriteSize > 1024) {
+			; [---|XXX|YYY] style, we need to figure out how big [XXX|YYY] is, aka 1024 - [---]
+			
+			FirstBlockWriteSize := 1024 - FirstBlockExistingData
+		}
+		
+		MoveMemory(Ext2WriteBuffer + FirstBlockWriteStart, Data, FirstBlockWriteSize)
+		
+		FS->WriteINodeBlock(Node, NextBlock, Ext2WriteBuffer)
+		
+		;Print("[wrote %x bytes to offset %x of first block]", FirstBlockWriteSize, NewFirstBlockSize)
+		
+		Offset += FirstBlockWriteSize
+		Data += FirstBlockWriteSize
+		Size -= FirstBlockWriteSize
+		
+		NextBlock += 1
 		BlockCount -= 1
 	}
 	
 	for (i32 Index := 0, Index < BlockCount, Index++) {
-		FS->WriteINodeBlock(Node, FirstBlock + Index, Data)
+		FS->WriteINodeBlock(Node, NextBlock + Index, Data)
 		
 		Data += 1024
 	}
@@ -248,14 +268,16 @@ define i64 Ext2Write(Ext2* FileSystem, i64 Handle, void* Data, i32 Size) {
 	i32 LastBlockSize := Size % 1024
 	
 	if (LastBlockSize) {
-		i32 LastBlock := FirstBlock + BlockCount
+		i32 LastBlock := NextBlock + BlockCount
 		
 		if (LastBlock * 1024 < Node->FileSizeLow) {
 			FS->ReadINodeData(Ext2WriteBuffer, Node, LastBlock)
+			;Print("[Read %s from tail block]", Ext2WriteBuffer)
 		}
 		
 		MoveMemory(Ext2WriteBuffer, Data, LastBlockSize)
 		FastSetMemory8(Ext2WriteBuffer + LastBlockSize, 1024 - LastBlockSize, 0)
+		;Print("[Writing %s to tail block]", Ext2WriteBuffer)
 		
 		FS->WriteINodeBlock(Node, LastBlock, Ext2WriteBuffer)
 	}

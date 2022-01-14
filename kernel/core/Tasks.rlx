@@ -8,14 +8,20 @@ define Task* GetCurrentTaskContext() {
 
 declare void EnterUserMode(AMD64Context*)
 
+i8 TASK_CAN_RUN := 0
+i8 TASK_BLOCKED := 1
+i8 TASK_STOPPED := 2
+
 struct Task {
 	AMD64Context Context ; MUST be the first field
 	
 	i32 Priority
 	
 	Task* Next
+	Task* AwaitedBy
 	
 	i8 NeedsUserMode
+	i8 State
 	
 	static Task* New(i32 Priority) {
 		Task* this := Alloc(#Task)
@@ -36,13 +42,32 @@ struct Task {
 		}
 	}
 	
+	define Task* FindNextRunnable() {
+		return null
+	}
+	
 	define void End() {
+		Task* Waiter := this->AwaitedBy
+		
+		while (Waiter) {
+			Waiter->State := TASK_CAN_RUN
+			
+			Waiter := Waiter->AwaitedBy
+		}
+		
 		Task* Next := this->Next
 		
 		Free(this)
 		
 		Next->Resume()
 	}
+}
+
+Task RawDispatchTask
+Task* DispatchTask := &RawDispatchTask
+
+define void EndCurrentTask() {
+	CurrentTask->End()
 }
 
 struct TaskQueue {
