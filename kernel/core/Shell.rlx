@@ -299,7 +299,7 @@ define void OnCommand(i8* CommandLine) {
 			
 			ELFHeader* ELFData := FileData As ELFHeader*
 			
-			ELFMemoryMapping* Mapping := MapELF(KernelAddressSpace, ELFData)
+			MemoryMappingGroup* Mappings := MapELF(KernelAddressSpace, ELFData)
 			
 			void* OriginalStack := KernelHeap->Allocate(0x2000)
 			
@@ -324,7 +324,7 @@ define void OnCommand(i8* CommandLine) {
 			
 			Print("Free file/stack\n")
 			
-			UnmapELF(KernelAddressSpace, Mapping)
+			Mappings->Delete()
 			
 			Print("Unmap\n")
 			

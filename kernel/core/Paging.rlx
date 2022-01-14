@@ -400,13 +400,40 @@ struct AddressSpaceManager {
 		Print("\n")
 	}
 	
+	define void PrintPTE(i64 Virtual, i64 Entry) {
+		Print("%x -> %x ", Virtual, RemovePageFlags(Entry As void*))
+		
+		if (Entry & PAGE_PRESENT) {
+			Print("[Present] ")
+		}
+		else {
+			Print("[Not Present] ")
+		}
+		
+		if (Entry & PAGE_WRITE) {
+			Print("[Write] ")
+		}
+		else {
+			Print("[Read only] ")
+		}
+		
+		if (Entry & PAGE_USER) {
+			Print("[User] ")
+		}
+		else {
+			Print("[Supervisor] ")
+		}
+		
+		Print("\n")
+	}
+	
 	define i64 EndRun(i64 RunStartAddress, i64 RunStart, i64 RunLastAddress, i64 RunLast, i64 RunLength) {
 		if (RunLength) {
-			Print("%x -> %x\n", RunStartAddress, RunStart)
+			this->PrintPTE(RunStartAddress, RunStart)
 			
 			if (RunLength > 1) {
 				Print("...\n")
-				Print("%x -> %x\n\n", RunLastAddress, RunLast)
+				this->PrintPTE(RunLastAddress, RunLast)
 			}
 		}
 		

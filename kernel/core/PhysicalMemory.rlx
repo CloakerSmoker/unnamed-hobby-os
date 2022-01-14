@@ -6,10 +6,6 @@ struct PhysicalRange {
 	i8[3] Padding
 }
 
-struct Physical {
-	i8 Dummy
-}
-
 struct PhysicalMemoryManager {
 	PhysicalRange[20] Ranges
 	i32 RangeCount
