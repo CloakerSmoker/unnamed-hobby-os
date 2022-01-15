@@ -1,21 +1,39 @@
 
 #Require "./src/utility/x64.rlx"
 
-define void ATAWait() {
-	loop {
-		i8 Status := InB(0x1F7)
-		
-		if (Status & 0x88 = 0x8) || (Status & 0x21 = 0x21) {
+i8 ATAPIO_STATUS_ERR := 0b0000_0001
+i8 ATAPIO_STATUS_DRQ := 0b0000_1000
+i8 ATAPIO_STATUS_RDY := 0b0100_0000
+i8 ATAPIO_STATUS_BSY := 0b1000_0000 As i8
+
+define void ATAWaitNotBusy() {
+	for (i32 Index := 0, Index < 0x100_0000, Index++) {
+		if !(InB(0x1F7) & ATAPIO_STATUS_BSY) {
 			return
 		}
 	}
+	
+	Info("ATA not busy wait failed, last status %b (%x)", InB(0x1F7), InB(0x1F7))
+	Throw('fail')
 }
+
+define void ATAWaitDataRequest() {
+	for (i32 Index := 0, Index < 0x100_0000, Index++) {
+		if (InB(0x1F7) & ATAPIO_STATUS_DRQ) {
+			return
+		}
+	}
+	
+	Info("ATA data request wait failed, last status %b (%x)", InB(0x1F7), InB(0x1F7))
+	Throw('fail')
+}
+
 
 define void ATAReadWrite(i8 Slave, i32 LBA, i32 Sectors, i8 Command) {
 	i8 Device := ((0xE + Slave) << 4) As i8
 	i8 HighLBA := ((LBA >> 24) & 0xF) As i8
 	
-	OutB(0x1F6, Device | HighLBA)
+	OutB(0x1F6, (0xE0 As i8) | Device | HighLBA)
 	OutB(0x1F2, Sectors As i8)
 	OutB(0x1F3, (LBA & 0xFF) As i8)
 	OutB(0x1F4, ((LBA >> 8) & 0xFF) As i8)
@@ -26,10 +44,11 @@ define void ATAReadWrite(i8 Slave, i32 LBA, i32 Sectors, i8 Command) {
 define void ATARead(i8 FromSlave, i32 LBA, i32 SectorsToRead, void* RawIntoBuffer) {
 	i16* IntoBuffer := RawIntoBuffer
 	
+	ATAWaitNotBusy()
 	ATAReadWrite(FromSlave, LBA, SectorsToRead, 0x20)
 	
 	for (i32 SectorIndex := 0, SectorIndex < SectorsToRead, SectorIndex += 1) {
-		ATAWait()
+		ATAWaitDataRequest()
 		
 		for (i32 WordIndex := 0, WordIndex < 256, WordIndex += 1) {
 			IntoBuffer[WordIndex] := InW(0x1F0)
@@ -39,16 +58,20 @@ define void ATARead(i8 FromSlave, i32 LBA, i32 SectorsToRead, void* RawIntoBuffe
 	}
 }
 define void ATAWrite(i8 ToSlave, i32 LBA, i32 SectorsToWrite, void* FromBuffer) {
-	ATAReadWrite(ToSlave, LBA, SectorsToWrite, 0x30)
-	
 	i16* WordBuffer := FromBuffer As i16*
 	
+	ATAWaitNotBusy()
+	ATAReadWrite(ToSlave, LBA, SectorsToWrite, 0x30)
+	
 	for (i32 SectorIndex := 0, SectorIndex < SectorsToWrite, SectorIndex += 1) {
-		ATAWait()
+		ATAWaitNotBusy()
+		ATAWaitDataRequest()
 		
 		for (i32 WordIndex := 0, WordIndex < 256, WordIndex += 1) {
 			OutW(0x1F0, WordBuffer[WordIndex])
 		}
+		
+		OutB(0x1F7, 0xE7 As i8)
 		
 		WordBuffer += 512
 	}

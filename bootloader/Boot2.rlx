@@ -1,10 +1,10 @@
-#Require "./src/drivers/ATA.rlx"
-
 i8 USE_SERIAL_OUTPUT := true
 i16 SERIAL_OUTPUT_PORT := 1
 i8 USE_BOCHS_PORT_HACK := true
 
 #Require "./src/utility/DebugOutput.rlx"
+
+#Require "./src/drivers/ATA.rlx"
 
 define void Fail(i8 Location) {
 	Info("Ext2 fail at checkpoint %i\n", Location)
