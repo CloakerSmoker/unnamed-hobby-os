@@ -1,0 +1,276 @@
+#Require "./src/utility/String.rlx"
+#Require "./src/utility/Exception.rlx"
+
+i16 COM_1 := 0x3F8
+i16 COM_2 := 0x2F8
+i16 COM_3 := 0x3E8
+i16 COM_4 := 0x2E8
+
+i16* COM_PORT_BASES := i16[0, 0x3F8, 0x2F8, 0x3E8, 0x2E8]
+
+i16 COM_REGISTER_DATA             := 0
+i16 COM_REGISTER_DIVISOR_LSB      := 0
+i16 COM_REGISTER_INTERRUPT_ENABLE := 1
+i16 COM_REGISTER_DIVISOR_MSB      := 1
+i16 COM_REGISTER_INTERRUPT_ID     := 2
+i16 COM_REGISTER_LINE_CONTROL     := 3
+i16 COM_REGISTER_MODEM_CONTROL    := 4
+i16 COM_REGISTER_LINE_STATUS      := 5
+i16 COM_REGISTER_MODEM_STATUS     := 6
+i16 COM_REGISTER_SCRATCH          := 7
+
+i8 COM_DLAB := 0b1000_0000 As i8
+
+i16 COM_DIVISOR_115200 := 1
+i16 COM_DIVISOR_57600  := 2
+i16 COM_DIVISOR_38400  := 3
+i16 COM_DIVISOR_19200  := 6
+i16 COM_DIVISOR_9600   := 12
+
+i8 COM_DATA_BITS_MASK := 0b00_000_0_11
+i8 COM_DATA_BITS_5    := 0b00_000_0_00
+i8 COM_DATA_BITS_6    := 0b00_000_0_01
+i8 COM_DATA_BITS_7    := 0b00_000_0_10
+i8 COM_DATA_BITS_8    := 0b00_000_0_11
+
+i8 COM_STOP_BITS_MASK := 0b00_000_1_00
+i8 COM_STOP_BITS_1    := 0b00_000_0_00
+i8 COM_STOP_BITS_2    := 0b00_000_1_00
+
+i8 COM_PARITY_MASK  := 0b00_111_0_00
+i8 COM_PARITY_NONE  := 0b00_000_0_00
+i8 COM_PARITY_ODD   := 0b00_001_0_00
+i8 COM_PARITY_EVEN  := 0b00_011_0_00
+i8 COM_PARITY_MARK  := 0b00_101_0_00
+i8 COM_PARITY_SPACE := 0b00_111_0_00
+
+i8 COM_INTERRUPT_MASK      := 0b0000_1111
+i8 COM_INTERRUPT_ON_DATA   := 0b0000_0001
+i8 COM_INTERRUPT_ON_EMPTY  := 0b0000_0010
+i8 COM_INTERRUPT_ON_BREAK  := 0b0000_0100
+i8 COM_INTERRUPT_ON_STATUS := 0b0000_1000
+
+i8 COM_DATA_TERMINAL_READY_MASK := 0b000_00001
+i8 COM_REQUEST_TO_SEND_MASK     := 0b000_00010
+i8 COM_LOOP_MASK                := 0b000_10000
+
+i8 COM_STATUS_DATA_READY    := 0b0000_0001
+i8 COM_STATUS_OVERRUN_ERROR := 0b0000_0010
+i8 COM_STATUS_PARITY_ERROR  := 0b0000_0100
+i8 COM_STATUS_FRAMING_ERROR := 0b0000_1000
+i8 COM_STATUS_BREAK_MARKER  := 0b0001_0000
+i8 COM_STATUS_CAN_SEND      := 0b0010_0000
+;i8 COM_STATUS_CAN_SEND_2 := 0b0100_0000
+i8 COM_STATUS_HAS_ERROR     := 0b1000_0000 As i8
+
+i8[96] SerialPrintBuffer
+
+define void ClearSerialPrintBuffer() {
+	for (i32 Index := 0, Index < 12, Index += 1) {
+		(SerialPrintBuffer As i64*)[Index] := 0
+	}
+}
+
+struct SerialPort {
+	i16 PortBase
+	
+	define void Write(i16 Register, i8 Value) {
+		OutB(this->PortBase + Register, Value)
+	}
+	define i8 Read(i16 Register) {
+		return InB(this->PortBase + Register)
+	}
+	
+	define void SetBuad(i16 Divisor) {
+		this->Write(COM_REGISTER_LINE_CONTROL, this->Read(COM_REGISTER_LINE_CONTROL) | COM_DLAB)
+		this->Write(COM_REGISTER_DIVISOR_LSB, (Divisor & 0xFF) As i8)
+		this->Write(COM_REGISTER_DIVISOR_MSB, ((Divisor >> 8) & 0xFF) As i8)
+		this->Write(COM_REGISTER_LINE_CONTROL, this->Read(COM_REGISTER_LINE_CONTROL) & ~COM_DLAB)
+	}
+	
+	define void SetLineControlField(i8 Mask, i8 NewValue) {
+		i8 Value := this->Read(COM_REGISTER_LINE_CONTROL)
+		
+		Value &= ~Mask
+		Value |= NewValue
+		
+		this->Write(COM_REGISTER_LINE_CONTROL, Value)
+	}
+	
+	define void SetDataBits(i8 Mode) {
+		this->SetLineControlField(COM_DATA_BITS_MASK, Mode)
+	}
+	define void SetStopBits(i8 Mode) {
+		this->SetLineControlField(COM_STOP_BITS_MASK, Mode)
+	}
+	define void SetParity(i8 Mode) {
+		this->SetLineControlField(COM_PARITY_MASK, Mode)
+	}
+	
+	define void SetInterruptMode(i8 Mode) {
+		this->Write(COM_REGISTER_INTERRUPT_ENABLE, Mode)
+	}
+	
+	define void SetModemControlField(i8 Mask, i8 NewValue) {
+		i8 Value := this->Read(COM_REGISTER_MODEM_CONTROL)
+		
+		Value &= ~Mask
+		Value |= NewValue
+		
+		this->Write(COM_REGISTER_MODEM_CONTROL, Value)
+	}
+	
+	define void SetDataTerminalReady(i8 Value) {
+		this->SetModemControlField(COM_DATA_TERMINAL_READY_MASK, Value)
+	}
+	define void SetRequestToSend(i8 Value) {
+		this->SetModemControlField(COM_REQUEST_TO_SEND_MASK, Value)
+	}
+	define void SetLoop(i8 Value) {
+		this->SetModemControlField(COM_LOOP_MASK, Value)
+	}
+	
+	define i8 GetLineStatus() {
+		return this->Read(COM_REGISTER_LINE_STATUS)
+	}
+	
+	define i8 ReadByte() {
+		return this->Read(COM_REGISTER_DATA)
+	}
+	define void WriteByte(i8 Byte) {
+		this->Write(COM_REGISTER_DATA, Byte)
+	}
+	
+	define void Initialize(i16 PortBase, i16 Divisor, i8 LineControl) {
+		this->PortBase := PortBase
+		
+		this->SetBuad(Divisor)
+		this->Write(COM_REGISTER_LINE_CONTROL, LineControl)
+		this->SetInterruptMode(COM_INTERRUPT_ON_DATA | COM_INTERRUPT_ON_DATA | COM_INTERRUPT_ON_STATUS)
+		this->Write(COM_REGISTER_MODEM_CONTROL, COM_REQUEST_TO_SEND_MASK)
+	}
+
+
+	; Generic `Print()` adapter output below
+
+	define void PrintCharacter(i8 Character) {
+		while !(this->GetLineStatus() & COM_STATUS_CAN_SEND) {}
+		
+		this->WriteByte(Character)
+	}
+	define void PrintCharacters(i8* Characters, i32 Count) {
+		for (i32 Index := 0, Index < Count, Index++) {
+			this->PrintCharacter(Characters[Index])
+		}
+	}
+	define void PrintString(i8* String) {
+		this->PrintCharacters(String, StringLength(String))
+	}
+	define void PrintNewLine() {
+		this->PrintCharacter(13)
+		this->PrintCharacter(10)
+	}
+
+	define void Print(i64 Number) {
+		ClearSerialPrintBuffer()
+		IToA(Number, 10, SerialPrintBuffer)
+		this->PrintString(SerialPrintBuffer)
+	}
+	define void PrintHex(i64 Number, i8 WithZeroX) {
+		ClearSerialPrintBuffer()
+		IToA(Number, 16, SerialPrintBuffer, WithZeroX)
+		this->PrintString(SerialPrintBuffer)
+	}
+	define void PrintBinary(i64 Number) {
+		ClearSerialPrintBuffer()
+		IToA(Number, 2, SerialPrintBuffer)
+		this->PrintString(SerialPrintBuffer)
+	}
+	define void PrintHex(i64 Number) {
+		this->PrintHex(Number, true)
+	}
+	define void PrintLiteral(i64 PackedCharacters) {
+		i8* Characters := (&PackedCharacters) As i8*
+		
+		for (i32 Length := 0, (Length < 8) && (Characters[Length] != 0), Length += 1) {}
+		
+		this->PrintCharacters(Characters, Length)
+	}
+	
+	define void RawPrint(i8* Format, void* Args) {
+		i32 Length := StringLength(Format)
+		i32 ArgIndex := 1
+		
+		for (i32 Index := 0, Index < Length, Index += 1) {
+			i8 Next := Format[Index]
+			
+			if (Next = '%') {
+				Index += 1
+				Next := Format[Index]
+				void NextArg := Args[ArgIndex]
+				
+				if (Next = 'i') {
+					this->Print(NextArg As i64)
+				}
+				else if (Next = 'x') {
+					this->PrintHex(NextArg As i64)
+				}
+				else if (Next = 'c') {
+					this->PrintCharacter(NextArg As i8)
+				}
+				else if (Next = 's') {
+					this->PrintString(NextArg As i8*)
+				}
+				else if (Next = 'l') {
+					this->PrintLiteral(NextArg As i64)
+				}
+				else if (Next = 'b') {
+					this->PrintBinary(NextArg As i64)
+				}
+				
+				ArgIndex += 1
+			}
+			else {
+				this->PrintCharacter(Next)
+			}
+		}
+	}
+
+	define void Print(i8* Format, ... Args) {
+		this->RawPrint(Format, Args)
+	}
+
+	define void PrintStackDump(i64 RBP) {
+		this->Print("\nStack dump:\n")
+		
+		StackFrame* Last := RBP As StackFrame*
+		i32 Index := 1
+		
+		while (Last) {
+			if (Last->LastFrame & 1) {
+				StackFrame* Temp := Last->LastFrame - 1
+				
+				this->Print("\tStack[%i] Try catch address = %x\n", Index, Last->ReturnAddress, Temp)
+				Index += 1
+				
+				Last := Temp
+			}
+			else {
+				i64* MaybeMagic := (Last - 0x8) As i64*
+				i8** MaybeName := (Last - 0x10) As i8**
+				
+				if (Debug && *MaybeMagic = 0x12345678) {
+					this->Print("\tStack[%i] Fn = (%x) %s\n", Index, Last->ReturnAddress, *MaybeName)
+				}
+				else {
+					this->Print("\tStack[%i] Fn callsite = %x\n", Index, Last->ReturnAddress, Last->LastFrame)
+				}
+				
+				Index += 1
+				
+				Last := Last->LastFrame
+			}
+		}
+	}
+}
+

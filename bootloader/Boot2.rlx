@@ -1,11 +1,13 @@
 #Require "./src/drivers/ATA.rlx"
 
+i8 USE_SERIAL_OUTPUT := true
+i16 SERIAL_OUTPUT_PORT := 1
 i8 USE_BOCHS_PORT_HACK := true
 
-#Require "./src/drivers/Bochs.rlx"
+#Require "./src/utility/DebugOutput.rlx"
 
 define void Fail(i8 Location) {
-	BochsPrint("Ext2 fail at checkpoint %i\n", Location)
+	Info("Ext2 fail at checkpoint %i\n", Location)
 	
 	loop {}
 }
@@ -274,7 +276,7 @@ define void Main(void* FrameBuffer) {
 		Fail(3)
 	}
 	
-	BochsPrint("Found kernel\n")
+	Info("Found kernel\n")
 	
 	INode* KernelNode := FS->ReadINode(KernelEntry->INode)
 	
@@ -297,7 +299,7 @@ define void Main(void* FrameBuffer) {
 		FS->ReadINodeData(KernelFile, KernelNode, KernelBlockIndex)
 	}
 	
-	BochsPrint("Loaded kernel file, reading ELF\n")
+	Info("Loaded kernel file, reading ELF\n")
 	
 	ELFReader Kernel {
 		Data: ELFBuffer,

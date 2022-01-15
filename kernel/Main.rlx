@@ -4,9 +4,11 @@
 #Require "./src/utility/x64.rlx"
 #Require "./src/utility/String.rlx"
 
+i8 USE_SERIAL_OUTPUT := true
+i16 SERIAL_OUTPUT_PORT := 1
 i8 USE_BOCHS_PORT_HACK := true
 
-#Require "./src/drivers/Bochs.rlx"
+#Require "./src/utility/DebugOutput.rlx"
 
 declare void* KernelHeapAllocate(i64, i32)
 declare void* KernelHeapExtendAllocation(void*, i32)
@@ -97,7 +99,7 @@ stop:
 }
 
 define void Main(void* CR3, void* RawFrameBuffer, i64 MaxKernelAddress) {
-	BochsPrint("Main, FrameBuffer @ %x\n", RawFrameBuffer)
+	Info("Main, FrameBuffer @ %x\n", RawFrameBuffer)
 	
 	Kernel->FrameBuffer := RawFrameBuffer
 	
@@ -142,20 +144,20 @@ define void Main(void* CR3, void* RawFrameBuffer, i64 MaxKernelAddress) {
 declare void DebugInsertUnhandledExceptionHandler()
 
 define void MainContinuation() {
-	BochsPrintString("Paging initialized, AddressSpaceManager in control\n")
+	Info("Paging initialized, AddressSpaceManager in control\n")
 	
 	; Remap the next available `FRAMEBUFFER_SIZE` bytes of virtual memory to 0xE000_0000 (or wherever int10 says)
 	i32 FrameBufferPageCount := SizeToPageCount(FRAMEBUFFER_SIZE)
 	i8* FrameBuffer := 0x80_0000 As i8*
 	KernelAddressSpace->MapRange(FrameBuffer, PointerToPageNumber(Kernel->FrameBuffer), FrameBufferPageCount)
 	
-	BochsPrintString("Mapped the framebuffer\n")
+	Info("Mapped the framebuffer\n")
 	
 	;NativeScreen->Adopt(FrameBuffer, SCREEN_WIDTH, SCREEN_HEIGHT, BYTES_PER_PIXEL, 0, 0x00_00_00)
 	NativeScreen->Adopt(FrameBuffer, SCREEN_WIDTH, SCREEN_HEIGHT, BYTES_PER_PIXEL, 0, 0xFF_FF_FF)
 	NativeScreen->Clear()
 	
-	BochsPrintString("Adopted screen\n")
+	Info("Adopted screen\n")
 	
 	;KernelTerminal->Adopt(NativeScreen, 0xFF_FF_FF, 0x00_00_00)
 	KernelTerminal->Adopt(NativeScreen, 0x00_00_00, 0xFF_FF_FF)

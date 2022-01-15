@@ -26,7 +26,7 @@ define void ClearBochsPrintBuffer() {
 	}
 }
 
-define void BochsPrint(i64 Number) {
+define void _BochsPrint(i64 Number) {
 	ClearBochsPrintBuffer()
 	IToA(Number, 10, BochsPrintBuffer)
 	BochsPrintString(BochsPrintBuffer)
@@ -52,7 +52,7 @@ define void BochsPrintLiteral(i64 PackedCharacters) {
 	BochsPrintCharacters(Characters, Length)
 }
 
-define void BochsPrint(i8* Format, ... Args) {
+define void BochsRawPrint(i8* Format, void* Args) {
 	if (USE_BOCHS_PORT_HACK) {
 		i32 Length := StringLength(Format)
 		i32 ArgIndex := 1
@@ -66,7 +66,7 @@ define void BochsPrint(i8* Format, ... Args) {
 				void NextArg := Args[ArgIndex]
 				
 				if (Next = 'i') {
-					BochsPrint(NextArg As i64)
+					_BochsPrint(NextArg As i64)
 				}
 				else if (Next = 'x') {
 					BochsPrintHex(NextArg As i64)
@@ -92,11 +92,14 @@ define void BochsPrint(i8* Format, ... Args) {
 		}
 	}
 }
+define void _BochsPrint(i8* Format, ... Args) {
+	BochsRawPrint(Format, Args)
+}
 
 #Require "./src/utility/Exception.rlx"
 
 define void BochsPrintStackDump(i64 RBP) {
-	BochsPrint("\nStack dump:\n")
+	_BochsPrint("\nStack dump:\n")
 	
 	StackFrame* Last := RBP As StackFrame*
 	i32 Index := 1
@@ -105,7 +108,7 @@ define void BochsPrintStackDump(i64 RBP) {
 		if (Last->LastFrame & 1) {
 			StackFrame* Temp := Last->LastFrame - 1
 			
-			BochsPrint("\tStack[%i] Try catch address = %x\n", Index, Last->ReturnAddress, Temp)
+			_BochsPrint("\tStack[%i] Try catch address = %x\n", Index, Last->ReturnAddress, Temp)
 			Index += 1
 			
 			Last := Temp
@@ -115,10 +118,10 @@ define void BochsPrintStackDump(i64 RBP) {
 			i8** MaybeName := (Last - 0x10) As i8**
 			
 			if (Debug && *MaybeMagic = 0x12345678) {
-				BochsPrint("\tStack[%i] Fn = (%x) %s\n", Index, Last->ReturnAddress, *MaybeName)
+				_BochsPrint("\tStack[%i] Fn = (%x) %s\n", Index, Last->ReturnAddress, *MaybeName)
 			}
 			else {
-				BochsPrint("\tStack[%i] Fn callsite = %x\n", Index, Last->ReturnAddress, Last->LastFrame)
+				_BochsPrint("\tStack[%i] Fn callsite = %x\n", Index, Last->ReturnAddress, Last->LastFrame)
 			}
 			
 			Index += 1

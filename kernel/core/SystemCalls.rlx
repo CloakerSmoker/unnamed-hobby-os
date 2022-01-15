@@ -224,7 +224,7 @@ define void UserModeTest() {
 		xchg, bx, bx
 	}
 	
-	Print("\t^SCHello from userland!^R\n")
+	;Print("\t^SCHello from userland!^R\n")
 }
 
 Task Dummy

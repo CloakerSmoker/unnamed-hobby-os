@@ -13,39 +13,39 @@ struct InterruptContext {
 	i64 SS
 	
 	define void PrintContext() {
-		BochsPrint("Interrupt Context: {\n")
-		BochsPrint("\tErrorCode: %x (%b)\n", this->ErrorCode, this->ErrorCode)
-		BochsPrint("\tRIP: %x\n", this->RIP)
-		BochsPrint("\tCS: %i (%x)\n", this->CS, this->CS)
-		BochsPrint("\tFlags: %i (%x, %b)\n", this->Flags, this->Flags, this->Flags)
-		BochsPrint("\tRSP: %x\n", this->RSP)
-		BochsPrint("\tSS: %x\n", this->SS)
-		BochsPrint("}\n")
+		Info("Interrupt Context: {\n")
+		Info("\tErrorCode: %x (%b)\n", this->ErrorCode, this->ErrorCode)
+		Info("\tRIP: %x\n", this->RIP)
+		Info("\tCS: %i (%x)\n", this->CS, this->CS)
+		Info("\tFlags: %i (%x, %b)\n", this->Flags, this->Flags, this->Flags)
+		Info("\tRSP: %x\n", this->RSP)
+		Info("\tSS: %x\n", this->SS)
+		Info("}\n")
 	}
 	
 	define void PrintRegisters() {
-		BochsPrint("Registers: {\n")
-		BochsPrint("\tRAX: %x\n", this->RAX)
-		BochsPrint("\tRBX: %x\n", this->RBX)
-		BochsPrint("\tRCX: %x\n", this->RCX)
-		BochsPrint("\tRDX: %x\n", this->RDX)
-		BochsPrint("\tRSP: %x (copy from context)\n", this->RSP)
-		BochsPrint("\tRBP: %x\n", this->RBP)
-		BochsPrint("\tRSI: %x\n", this->RSI)
-		BochsPrint("\tRDI: %x\n", this->RDI)
-		BochsPrint("\tR8 : %x\n", this->R8)
-		BochsPrint("\tR9 : %x\n", this->R9)
-		BochsPrint("\tR10: %x\n", this->R10)
-		BochsPrint("\tR11: %x\n", this->R11)
-		BochsPrint("\tR12: %x\n", this->R12)
-		BochsPrint("\tR13: %x\n", this->R13)
-		BochsPrint("\tR14: %x\n", this->R14)
-		BochsPrint("\tR15: %x\n", this->R15)
-		BochsPrint("}\n")
+		Info("Registers: {\n")
+		Info("\tRAX: %x\n", this->RAX)
+		Info("\tRBX: %x\n", this->RBX)
+		Info("\tRCX: %x\n", this->RCX)
+		Info("\tRDX: %x\n", this->RDX)
+		Info("\tRSP: %x (copy from context)\n", this->RSP)
+		Info("\tRBP: %x\n", this->RBP)
+		Info("\tRSI: %x\n", this->RSI)
+		Info("\tRDI: %x\n", this->RDI)
+		Info("\tR8 : %x\n", this->R8)
+		Info("\tR9 : %x\n", this->R9)
+		Info("\tR10: %x\n", this->R10)
+		Info("\tR11: %x\n", this->R11)
+		Info("\tR12: %x\n", this->R12)
+		Info("\tR13: %x\n", this->R13)
+		Info("\tR14: %x\n", this->R14)
+		Info("\tR15: %x\n", this->R15)
+		Info("}\n")
 	}
 	
 	define void PrintStackDump() {
-		BochsPrint("\nStack dump:\n")
+		Info("\nStack dump:\n")
 		
 		StackFrame* Last := this->RBP As StackFrame*
 		i32 Index := 1
@@ -54,7 +54,7 @@ struct InterruptContext {
 			if (Last->LastFrame & 1) {
 				StackFrame* Temp := Last->LastFrame - 1
 				
-				BochsPrint("\tStack[%i] Try catch address = %x\n", Index, Last->ReturnAddress, Temp)
+				Info("\tStack[%i] Try catch address = %x\n", Index, Last->ReturnAddress, Temp)
 				Index += 1
 				
 				Last := Temp
@@ -64,10 +64,10 @@ struct InterruptContext {
 				i8** MaybeName := (Last - 0x10) As i8**
 				
 				if (Debug && *MaybeMagic = 0x12345678) {
-					BochsPrint("\tStack[%i] Fn = %s\n", Index, *MaybeName)
+					Info("\tStack[%i] Fn = %s\n", Index, *MaybeName)
 				}
 				else {
-					BochsPrint("\tStack[%i] Fn callsite = %x\n", Index, Last->ReturnAddress, Last->LastFrame)
+					Info("\tStack[%i] Fn callsite = %x\n", Index, Last->ReturnAddress, Last->LastFrame)
 				}
 				
 				Index += 1
@@ -247,7 +247,7 @@ define void SetupInterrupts() {
 }
 
 define void GenericInterrupt(InterruptContext* Context, i32 InterruptNumber) {
-	BochsPrint("UNHANDLED INTERRUPT %i (%x)\n", InterruptNumber, InterruptNumber)
+	Info("UNHANDLED INTERRUPT %i (%x)\n", InterruptNumber, InterruptNumber)
 	
 	Context->PrintContext()
 	Context->PrintRegisters()

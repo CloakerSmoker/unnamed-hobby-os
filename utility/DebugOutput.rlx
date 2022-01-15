@@ -1,0 +1,29 @@
+#Require "./src/drivers/Serial.rlx"
+#Require "./src/drivers/Bochs.rlx"
+
+SerialPort RawOutputPort
+SerialPort* OutputPort := &RawOutputPort
+
+define void InitializeOutputPort() {
+	if (USE_SERIAL_OUTPUT && !OutputPort->PortBase) {
+		i16 PortBase := COM_PORT_BASES[SERIAL_OUTPUT_PORT]
+		
+		OutputPort->Initialize(PortBase, COM_DIVISOR_115200, COM_DATA_BITS_8 | COM_PARITY_NONE | COM_STOP_BITS_1)
+	}
+}
+
+void EarlyInitializeOutputPort := InitializeOutputPort()
+
+define void Info(i8* Format, ... Args) {
+	if (USE_BOCHS_PORT_HACK) {
+		BochsRawPrint(Format, Args)
+	}
+	
+	if (USE_SERIAL_OUTPUT) {
+		if !(OutputPort->PortBase) {
+			InitializeOutputPort()
+		}
+		
+		OutputPort->RawPrint(Format, Args)
+	}
+}
