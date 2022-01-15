@@ -1,0 +1,161 @@
+struct GPTDeviceTraits {
+	void* State
+	void* ReadSector
+	void* WriteSector
+	
+	static void Call(void* State, i64 Paramter, void* Data, void* Function) asm {
+		jmp, rcx
+	}
+	
+	define void ReadSectors(i64 StartSectorNumber, i32 SectorCount, void* Buffer) {
+		i64 EndSectorNumber := StartSectorNumber + SectorCount
+		
+		for (i64 Sector := StartSectorNumber, Sector < EndSectorNumber, Sector++) {
+			GPTDeviceTraits:Call(this->State, Sector As i32, Buffer, this->ReadSector)
+			Buffer += 0x200
+		}
+	}
+	define void WriteSectors(i64 StartSectorNumber, i32 SectorCount, void* Buffer) {
+		i64 EndSectorNumber := StartSectorNumber + SectorCount
+		
+		for (i64 Sector := StartSectorNumber, Sector < EndSectorNumber, Sector++) {
+			GPTDeviceTraits:Call(this->State, Sector As i32, Buffer, this->WriteSector)
+			Buffer += 0x200
+		}
+	}
+}
+
+struct GPTPartitionTraits {
+	GPTDeviceTraits* BackingDevice
+	i64 Base
+	i64 Limit
+	
+	define void ReadSectors(i64 StartSectorNumber, i32 SectorCount, void* Buffer) {
+		this->BackingDevice->ReadSectors(this->Base + StartSectorNumber, SectorCount, Buffer)
+	}
+	define void WriteSectors(i64 StartSectorNumber, i32 SectorCount, void* Buffer) {
+		this->BackingDevice->WriteSectors(this->Base + StartSectorNumber, SectorCount, Buffer)
+	}
+}
+
+i8* GPT_MAGIC := "EFI PART"
+i32 GPT_VERSION_1_0 := 0x1_0000
+
+struct GPTPartitionTableHeader {
+	i8[8] Signature
+	i32 Version
+	i32 HeaderSize
+	i32 Checksum
+	i32 Reserved
+	
+	i64 ThisHeaderLBA
+	i64 AlternateHeaderLBA
+	
+	i64 FirstUsableBlock
+	i64 LastUsableBlock
+	
+	i8[16] DiskGUID
+	
+	i64 PartitionEntryArrayLBA
+	i32 PartitionEntryCount
+	i32 PartitionEntrySize
+	i32 PartitionEntryArrayChecksum
+}
+
+struct GPTPartitionEntry {
+	i8[16] PartitionTypeGUID
+	i8[16] PartitionGUID
+	i64 StartingLBA
+	i64 EndingLBA
+	i64 Attributes
+	i16[36] PartitionName
+}
+
+struct GPTDevice {
+	GPTDeviceTraits* Traits
+	
+	union {
+		GPTPartitionTableHeader RawHeader
+		i8[0x200] TempHeader
+	}
+	
+	GPTPartitionTableHeader* Header
+	
+	i32 PartitionEntriesPerSector
+	
+	i8[0x200] TempSector
+	
+	define void WriteHeader(GPTPartitionTableHeader* Header) {
+		this->Traits->WriteSectors(Header->ThisHeaderLBA, 1, Header)
+	}
+	
+	define void ReadHeader(i64 From) {
+		this->Traits->ReadSectors(From, 1, this~>RawHeader)
+		this->Header := this~>RawHeader
+		
+		if (this->Header->Version = GPT_VERSION_1_0) {
+			this->PartitionEntriesPerSector := 0x200 / this->Header->PartitionEntrySize
+		}
+	}
+	
+	define GPTPartitionEntry* ReadPartitionEntry(i32 Index) {
+		i32 SectorIndex := Index / this->PartitionEntriesPerSector
+		i32 OffsetInSector := (Index % this->PartitionEntriesPerSector) * this->Header->PartitionEntrySize
+		
+		this->Traits->ReadSectors(this->Header->PartitionEntryArrayLBA + SectorIndex, 1, this->TempSector)
+		
+		return (this->TempSector + OffsetInSector) As GPTPartitionEntry*
+	}
+	define void WritePartitionEntry(i32 Index, GPTPartitionEntry* Entry) {
+		i32 SectorIndex := Index / this->PartitionEntriesPerSector
+		i32 OffsetInSector := (Index % this->PartitionEntriesPerSector) * this->Header->PartitionEntrySize
+		
+		this->Traits->ReadSectors(this->Header->PartitionEntryArrayLBA + SectorIndex, 1, this->TempSector)
+
+		MoveMemory(this->TempSector + OffsetInSector, Entry, #GPTPartitionEntry)
+		
+		this->Traits->WriteSectors(this->Header->PartitionEntryArrayLBA + SectorIndex, 1, this->TempSector)
+	}
+	
+	define void Format(i32 TotalBlocks) {
+		this->Header := this~>RawHeader
+		
+		i32 LastLBA := TotalBlocks - 1
+		
+		MoveMemory(this->Header->Signature, "EFI PART", 8)
+		
+		this->Header->Version := GPT_VERSION_1_0
+		this->Header->HeaderSize := #GPTPartitionTableHeader
+		
+		this->Header->ThisHeaderLBA := 1
+		this->Header->AlternateHeaderLBA := LastLBA
+		
+		this->Header->FirstUsableBlock := 22 ; MBR, GPT Header, 128x GPT Partition Entries (4x per sector)
+		this->Header->LastUsableBlock := TotalBlocks - 2
+		
+		this->Header->PartitionEntryArrayLBA := 2
+		this->Header->PartitionEntryCount := 128
+		this->Header->PartitionEntrySize := #GPTPartitionEntry
+		
+		this->WriteHeader(this->Header)
+		
+		this->Header->ThisHeaderLBA := LastLBA
+		this->Header->AlternateHeaderLBA := 1
+		
+		this->WriteHeader(this->Header)
+	}
+	
+	define i32 AddPartition(GPTPartitionEntry* Entry) {
+		for (i32 Index := 0, Index < this->Header->PartitionEntryCount, Index++) {
+			GPTPartitionEntry* NextPartition := this->ReadPartitionEntry(Index)
+			
+			if (NextPartition->StartingLBA = 0 && NextPartition->EndingLBA = 0) {
+				this->WritePartitionEntry(Index, Entry)
+				
+				return Index
+			}
+		}
+		
+		return -1
+	}
+}

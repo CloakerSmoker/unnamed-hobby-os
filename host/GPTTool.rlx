@@ -1,0 +1,273 @@
+#Require "$/Console.rlx"
+#Require "$/Exception.rlx"
+#Require "$/String.rlx"
+#Require "$/File.rlx"
+#Require "$/Debug.rlx"
+
+#Require "./src/drivers/GPT.rlx"
+
+struct GPTFileBackedDevice {
+	i64 FD
+	
+	define void Read(i32 SectorNumber, void* Buffer) {
+		FileSeek(this->FD, SectorNumber * 512, SEEK_SET)
+		FileRead(this->FD, Buffer, 512)
+	}
+	define void Write(i32 SectorNumber, void* Buffer) {
+		FileSeek(this->FD, SectorNumber * 512, SEEK_SET)
+		FileWrite(this->FD, Buffer, 512)
+	}
+	
+	static void Read(GPTFileBackedDevice* this, i32 Sector, void* Buffer) {
+		this->Read(Sector, Buffer)
+	}
+	static void Write(GPTFileBackedDevice* this, i32 Sector, void* Buffer) {
+		this->Write(Sector, Buffer)
+	}
+	
+	static GPTDeviceTraits* New(i64 FD) {
+		GPTFileBackedDevice* this := Alloc(#GPTFileBackedDevice)
+		
+		this->FD := FD
+		
+		GPTDeviceTraits* Traits := Alloc(#GPTDeviceTraits)
+		
+		Traits->State := this
+		Traits->ReadSector := &GPTFileBackedDevice:Read
+		Traits->WriteSector := &GPTFileBackedDevice:Write
+		
+		return Traits
+	}
+}
+
+define void PrintByte(i64 Number) {
+	PrintCharacter(NumberToCharacter(((Number >> 4) & 0xF) As i8))
+	PrintCharacter(NumberToCharacter((Number & 0xF) As i8))
+}
+
+define void PrintGUID(i8* this) {
+	Print("{")
+	
+	for (i32 Index := 0, Index < 4, Index++) {
+		PrintByte(this[Index])
+	}
+	
+	Print("-")
+	
+	for (i32 Index := 4, Index < 6, Index++) {
+		PrintByte(this[Index])
+	}
+	
+	Print("-")
+	
+	for (i32 Index := 6, Index < 8, Index++) {
+		PrintByte(this[Index])
+	}
+	
+	Print("-")
+	
+	for (i32 Index := 8, Index < 10, Index++) {
+		PrintByte(this[Index])
+	}
+	
+	Print("-")
+	
+	for (i32 Index := 10, Index < 16, Index++) {
+		PrintByte(this[Index])
+	}
+	
+	Print("}")
+}
+
+define void PrintGPTPartitionTableHeader(GPTPartitionTableHeader* this) {
+	Print("GPTPartitionTableHeader {\n")
+	Print("\tSignature                  : %s\n", this~>Signature)
+	Print("\tVersion                    : %x\n", this->Version)
+	Print("\tHeaderSize                 : %x\n", this->HeaderSize)
+	Print("\tChecksum                   : %i\n", this->Checksum)
+	
+	Print("\tThisHeaderLBA              : %x\n", this->ThisHeaderLBA)
+	Print("\tAlternateHeaderLBA         : %x\n", this->AlternateHeaderLBA)
+	
+	Print("\tFirstUsableBlock           : %x\n", this->FirstUsableBlock)
+	Print("\tLastUsableBlock            : %x\n", this->LastUsableBlock)
+	
+	Print("\tDiskGUID                   : ")
+	PrintGUID(this->DiskGUID)
+	Print("\n")
+	
+	Print("\tPartitionEntryArrayLBA     : %x\n", this->PartitionEntryArrayLBA)
+	Print("\tPartitionEntryCount        : %x (%i)\n", this->PartitionEntryCount, this->PartitionEntryCount)
+	Print("\tPartitionEntrySize         : %x\n", this->PartitionEntrySize)
+	Print("\tPartitionEntryArrayChecksum: %i\n", this->PartitionEntryArrayChecksum)
+	Print("}\n")
+}
+
+define void PrintGPTPartitionEntry(GPTPartitionEntry* this) {
+	if (this->StartingLBA = 0 && this->EndingLBA = 0) {
+		return
+	}
+	
+	Print("GPTPartitionEntry {\n")
+	
+	Print("\tPartitionTypeGUID: ")
+	PrintGUID(this->PartitionTypeGUID)
+	Print("\n")
+	
+	Print("\tPartitionGUID    : ")
+	PrintGUID(this->PartitionGUID)
+	Print("\n")
+	
+	Print("\tStartingLBA      : %x\n", this->StartingLBA)
+	Print("\tEndingLBA        : %x\n", this->EndingLBA)
+	Print("\tAttributes       : %x (%b)\n", this->Attributes, this->Attributes)
+	
+	Print("\tName             : %s\n", WToA(this~>PartitionName))
+	Print("}\n")
+}
+
+define void Prompt(GPTDevice* Device) {
+	Device->ReadHeader(1)
+	PrintGPTPartitionTableHeader(Device->Header)
+	
+	loop {
+		Print("^90->^F0")
+		i8* NextLine := ReadLine()
+		
+		i64 ArgC := 0
+		i8** ArgV := null
+		
+		ParseCommandLine(NextLine, &ArgC, &ArgV)
+		i8* Command := ArgV[0]
+		i8* Path := ArgV[1]
+		
+		if (StringEquals(Command, "ls")) {
+			for (i32 Index := 0, Index < Device->Header->PartitionEntryCount, Index++) {
+				GPTPartitionEntry* NextPartition := Device->ReadPartitionEntry(Index)
+				
+				PrintGPTPartitionEntry(NextPartition)
+			}
+		}
+		else if (StringEquals(Command, "format")) {
+			Device->Format(0x1000)
+			Device->ReadHeader(1)
+			PrintGPTPartitionTableHeader(Device->Header)
+		}
+		else if (StringEquals(Command, "headers")) {
+			Device->ReadHeader(1)
+			PrintGPTPartitionTableHeader(Device->Header)
+			
+			Device->ReadHeader(Device->Header->AlternateHeaderLBA)
+			PrintGPTPartitionTableHeader(Device->Header)
+		}
+		else if (StringEquals(Command, "create")) {
+			GPTPartitionEntry NewEntry
+			
+			loop {
+				Print("^90-->^F0")
+				NextLine := ReadLine()
+				
+				ArgC := 0
+				ArgV := null
+				
+				ParseCommandLine(NextLine, &ArgC, &ArgV)
+				Command := ArgV[0]
+				
+				if (StringEquals(Command, "done")) {
+					break
+				}
+				
+				i64 Argument := AToI(ArgV[1]) As i64
+				
+				if (StringEquals(Command, "start")) {
+					NewEntry.StartingLBA := Argument
+					Print(" + Set entry StartingLBA to %x\n", Argument)
+				}
+				else if (StringEquals(Command, "end")) {
+					NewEntry.EndingLBA := Argument
+					Print(" + Set entry EndingLBA to %x\n", Argument)
+				}
+				else if (StringEquals(Command, "name")) {
+					i32 NameLength := StringLength(ArgV[1])
+					
+					MoveMemory(NewEntry.PartitionName, AToW(ArgV[1], NameLength), NameLength * 2)
+					Print(" + Set entry name to '%s'\n", ArgV[1])
+				}
+			}
+			
+			i32 Index := Device->AddPartition(&NewEntry)
+			
+			if (Index = -1) {
+				Print("Could not add entry, partition entry table has no free slots\n")
+			}
+			else {
+				Print("Added entry in slot %i\n", Index)
+			}
+		}
+		else if (StringEquals(Command, "update")) {
+			i32 UpdateEntryIndex := AToI(ArgV[1]) As i32
+			
+			GPTPartitionEntry UpdateEntry
+			
+			MoveMemory(&UpdateEntry, Device->ReadPartitionEntry(UpdateEntryIndex), #GPTPartitionEntry)
+			
+			Print("Updating:\n")
+			PrintGPTPartitionEntry(&UpdateEntry)
+			
+			loop {
+				Print("^90-->^F0")
+				NextLine := ReadLine()
+				
+				ArgC := 0
+				ArgV := null
+				
+				ParseCommandLine(NextLine, &ArgC, &ArgV)
+				Command := ArgV[0]
+				
+				if (StringEquals(Command, "done")) {
+					break
+				}
+				
+				i64 Argument := AToI(ArgV[1]) As i64
+				
+				if (StringEquals(Command, "start")) {
+					UpdateEntry.StartingLBA := Argument
+					Print(" + Set entry StartingLBA to %x\n", Argument)
+				}
+				else if (StringEquals(Command, "end")) {
+					UpdateEntry.EndingLBA := Argument
+					Print(" + Set entry EndingLBA to %x\n", Argument)
+				}
+				else if (StringEquals(Command, "name")) {
+					i32 NameLength := StringLength(ArgV[1])
+					
+					MoveMemory(&UpdateEntry.PartitionName, AToW(ArgV[1], NameLength), NameLength * 2)
+					UpdateEntry.PartitionName[NameLength] := 0
+					Print(" + Set entry name to '%s'\n", ArgV[1])
+				}
+			}
+			
+			Device->WritePartitionEntry(UpdateEntryIndex, &UpdateEntry)
+			
+			Print("Updated entry in slot %i\n", UpdateEntryIndex)
+		}
+	}
+}
+
+define i32 Main(i64 ArgC, i8** ArgV) {
+	GetArgs(&ArgC, &ArgV)
+	
+	i64 F := FileOpen(ArgV[1], FILE_READ_WRITE | FILE_CREATE_NEW)
+	
+	Print("FD = %x\n", F)
+	
+	GPTDeviceTraits* Traits := GPTFileBackedDevice:New(F)
+	
+	GPTDevice* Device := Alloc(#GPTDevice)
+	
+	Device->Traits := Traits
+	
+	Prompt(Device)
+	
+	return 0
+}

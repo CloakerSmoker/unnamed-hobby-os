@@ -1,6 +1,10 @@
-#Require "./src/lib/Console.rlx"
-#Require "./src/lib/Exception.rlx"
-#Require "../drivers/Ext2.rlx"
+#Require "$/Console.rlx"
+#Require "$/Exception.rlx"
+#Require "$/String.rlx"
+#Require "$/File.rlx"
+#Require "$/Debug.rlx"
+
+#Require "./src/drivers/Ext2.rlx"
 
 define void PrintSuperBlock(SuperBlock* this) {
 	Print("SuperBlock {\n")
@@ -535,8 +539,6 @@ define void Prompt(Ext2* FS) {
 		Free(ArgV)
 	}
 }
-
-#Require "./src/lib/Debug.rlx"
 
 struct Ext2FileBackedDevice {
 	i64 FD
