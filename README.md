@@ -2,8 +2,10 @@
 
 Expects to be cloned with the structure
 * any_name/
-    * src
+    * src/
         * \<this-repo\>
+    * build/
+        * Nothing, just needs to exist for compiled binaries
     * `Ext2Tool.elf` (compile `./src/host/Ext2Tool.rlx`, used to create the ext2 disk image)
 * `nasm` (somewhere on path)
 
@@ -22,7 +24,7 @@ and then
 * import the kernel executable to `kernel.elf`
 * import test files
 
-which will then get `disk.img` (hopefully) ready to boot.
+which will then get `./build/disk.img` (hopefully) ready to boot.
 
 ## Configuration
 
@@ -30,7 +32,9 @@ which will then get `disk.img` (hopefully) ready to boot.
 
 Most options live in `./src/kernel/Main.rlx` as global variables (but end up getting evaulated at compile time, don't worry). 
 
-The big one is `USE_BOCHS_PORT_HACK` which needs to be disabled when compiling for anything but Bochs. Disclaimer: I haven't ran this on anything but Bochs.
+The big one is `USE_BOCHS_PORT_HACK` which needs to be disabled when compiling for anything but Bochs.
+
+The only other ones worth looking at are `USE_SERIAL_OUTPUT`/`SERIAL_OUTPUT_PORT` which control printing debug info (same info as printed to Bochs) out over a serial port. `SERIAL_OUTPUT_PORT` should be 1-4 to pick a port.
 
 ## Other
 
