@@ -1,3 +1,6 @@
+#Require "./src/utility/CRC.rlx"
+#Require "./src/utility/MBR.rlx"
+
 struct GPTDeviceTraits {
 	void* State
 	void* ReadSector
@@ -29,6 +32,7 @@ struct GPTPartitionTraits {
 	GPTDeviceTraits* BackingDevice
 	i64 Base
 	i64 Limit
+	i32 BackingEntryIndex
 	
 	define void ReadSectors(i64 StartSectorNumber, i32 SectorCount, void* Buffer) {
 		this->BackingDevice->ReadSectors(this->Base + StartSectorNumber, SectorCount, Buffer)
@@ -60,6 +64,20 @@ struct GPTPartitionTableHeader {
 	i32 PartitionEntryCount
 	i32 PartitionEntrySize
 	i32 PartitionEntryArrayChecksum
+	
+	define i8 IsValid() {
+		i32 OriginalCRC := this->Checksum
+		this->Checksum := 0
+		
+		i32 CurrentCRC := CalculateCRC(this, #GPTPartitionTableHeader)
+		this->Checksum := OriginalCRC
+		
+		return OriginalCRC = CurrentCRC
+	}
+	define void UpdateCRC() {
+		this->Checksum := 0
+		this->Checksum := CalculateCRC(this, #GPTPartitionTableHeader)
+	}
 }
 
 struct GPTPartitionEntry {
@@ -71,6 +89,30 @@ struct GPTPartitionEntry {
 	i16[36] PartitionName
 }
 
+i8* GPT_PARTITION_GUID_TEMPLATE := i8[0xDB, 0x5B, 0xD6, 0xDA, 0x7D, 0x88, 0x45, 0x39, 0x9C, 0xBF, 0xBF, 0xA8, 0x05, 0x2A, 0x54, 0x2D]
+
+i32 GUIDCounter := 0
+
+define void GenerateGUID(i8* Out) {
+	MoveMemory(Out, GPT_PARTITION_GUID_TEMPLATE, 16)
+	
+	Out[4] := GUIDCounter As i8
+	Out[7] := (Out As i8) ^ (GUIDCounter As i8)
+	
+	GUIDCounter += 0x123F_ABCD ^ (Out As i32)
+}
+
+i8* GPT_PARTITION_TYPE_NONE := i8[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+
+i8* GPT_PARTITION_TYPE_SYSTEM := i8[0xC1, 0x2A, 0x73, 0x28, 0xF8, 0x1F, 0x11, 0xD2, 0xBA, 0x4B, 0x00, 0xA0, 0xC9, 0x3E, 0xC9, 0x3B]
+
+; chosen by 16 fair dice rolls
+
+i8* GPT_PARTITION_TYPE_CUSTOM := i8[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01]
+
+i64 GPT_PARTITION_ATTRIBUTE_REQUIRED := 1
+i64 GPT_PARTITION_ATTRIBUTE_NOT_BLOCK := 2
+
 struct GPTDevice {
 	GPTDeviceTraits* Traits
 	
@@ -81,66 +123,107 @@ struct GPTDevice {
 	
 	GPTPartitionTableHeader* Header
 	
-	i32 PartitionEntriesPerSector
-	
 	i8[0x200] TempSector
-	
-	define void WriteHeader(GPTPartitionTableHeader* Header) {
-		this->Traits->WriteSectors(Header->ThisHeaderLBA, 1, Header)
-	}
 	
 	define void ReadHeader(i64 From) {
 		this->Traits->ReadSectors(From, 1, this~>RawHeader)
 		this->Header := this~>RawHeader
-		
-		if (this->Header->Version = GPT_VERSION_1_0) {
-			this->PartitionEntriesPerSector := 0x200 / this->Header->PartitionEntrySize
-		}
+	}
+	define void WriteHeader(GPTPartitionTableHeader* Header) {
+		this->Traits->WriteSectors(Header->ThisHeaderLBA, 1, Header)
 	}
 	
+	define i32 CalculatePartitionEntryArrayCRC() {
+		i32 PartitionEntryArraySize := this->Header->PartitionEntryCount * this->Header->PartitionEntrySize
+		
+		i32 PartitionEntryArrayBlocks := PartitionEntryArraySize / 0x200
+		
+		if (PartitionEntryArraySize % 0x200) {
+			PartitionEntryArrayBlocks += 1
+		}
+		
+		i64 CRC := StartCRC()
+		
+		for (i32 Index := 0, Index < PartitionEntryArrayBlocks, Index++) {
+			this->Traits->ReadSectors(this->Header->PartitionEntryArrayLBA + Index, 1, this->TempSector)
+			
+			CRC := UpdateCRC(CRC, this->TempSector, 0x200)
+		}
+		
+		return FinalizeCRC(CRC)
+	}
 	define GPTPartitionEntry* ReadPartitionEntry(i32 Index) {
-		i32 SectorIndex := Index / this->PartitionEntriesPerSector
-		i32 OffsetInSector := (Index % this->PartitionEntriesPerSector) * this->Header->PartitionEntrySize
+		i32 PartitionEntriesPerSector := 0x200 / this->Header->PartitionEntrySize
+		i32 SectorIndex := Index / PartitionEntriesPerSector
+		i32 OffsetInSector := (Index % PartitionEntriesPerSector) * this->Header->PartitionEntrySize
 		
 		this->Traits->ReadSectors(this->Header->PartitionEntryArrayLBA + SectorIndex, 1, this->TempSector)
 		
 		return (this->TempSector + OffsetInSector) As GPTPartitionEntry*
 	}
 	define void WritePartitionEntry(i32 Index, GPTPartitionEntry* Entry) {
-		i32 SectorIndex := Index / this->PartitionEntriesPerSector
-		i32 OffsetInSector := (Index % this->PartitionEntriesPerSector) * this->Header->PartitionEntrySize
+		i32 PartitionEntriesPerSector := 0x200 / this->Header->PartitionEntrySize
+		i32 SectorIndex := Index / PartitionEntriesPerSector
+		i32 OffsetInSector := (Index % PartitionEntriesPerSector) * this->Header->PartitionEntrySize
 		
 		this->Traits->ReadSectors(this->Header->PartitionEntryArrayLBA + SectorIndex, 1, this->TempSector)
 
 		MoveMemory(this->TempSector + OffsetInSector, Entry, #GPTPartitionEntry)
 		
 		this->Traits->WriteSectors(this->Header->PartitionEntryArrayLBA + SectorIndex, 1, this->TempSector)
+		
+		
+		i32 PartitionEntryArrayChecksum := this->CalculatePartitionEntryArrayCRC()
+		
+		for (i32 Index := 0, Index < 2, Index++) {
+			this->Header->PartitionEntryArrayChecksum := PartitionEntryArrayChecksum
+			this->Header->UpdateCRC()
+			this->WriteHeader(this->Header)
+			
+			this->ReadHeader(this->Header->AlternateHeaderLBA)
+		}
 	}
 	
-	define void Format(i32 TotalBlocks) {
+	define void WriteMBR() {
+		this->Traits->ReadSectors(0, 1, this->TempSector)
+		
+		(this~>TempSector As MBR*)->WriteDefaults(MBR_PARTITION_TYPE_GPT)
+		
+		this->Traits->WriteSectors(0, 1, this->TempSector)
+	}
+	
+	define void Format(i64 TotalBlocks) {
+		this->WriteMBR()
+		
 		this->Header := this~>RawHeader
 		
-		i32 LastLBA := TotalBlocks - 1
+		i64 LastLBA := TotalBlocks - 1
 		
 		MoveMemory(this->Header->Signature, "EFI PART", 8)
 		
 		this->Header->Version := GPT_VERSION_1_0
 		this->Header->HeaderSize := #GPTPartitionTableHeader
 		
+		GenerateGUID(this->Header->DiskGUID)
+		
 		this->Header->ThisHeaderLBA := 1
 		this->Header->AlternateHeaderLBA := LastLBA
 		
-		this->Header->FirstUsableBlock := 22 ; MBR, GPT Header, 128x GPT Partition Entries (4x per sector)
+		this->Header->FirstUsableBlock := 34 ; spec says so?
 		this->Header->LastUsableBlock := TotalBlocks - 2
 		
 		this->Header->PartitionEntryArrayLBA := 2
 		this->Header->PartitionEntryCount := 128
 		this->Header->PartitionEntrySize := #GPTPartitionEntry
+		this->Header->PartitionEntryArrayChecksum := 0
+		
+		this->Header->UpdateCRC()
 		
 		this->WriteHeader(this->Header)
 		
 		this->Header->ThisHeaderLBA := LastLBA
 		this->Header->AlternateHeaderLBA := 1
+		this->Header->UpdateCRC()
 		
 		this->WriteHeader(this->Header)
 	}
@@ -157,5 +240,50 @@ struct GPTDevice {
 		}
 		
 		return -1
+	}
+	
+	define GPTPartitionTraits* MakePartitionTraits(i32 ForEntryIndex, GPTPartitionEntry* ForEntry) {
+		GPTPartitionTraits* Result := Alloc(#GPTPartitionTraits)
+		
+		Result->BackingDevice := this->Traits
+		Result->BackingEntryIndex := ForEntryIndex
+		Result->Base := ForEntry->StartingLBA
+		Result->Limit := ForEntry->EndingLBA
+		
+		return Result
+	}
+	
+	define GPTPartitionTraits* GetPartitionTraits(i32 Index) {
+		return this->MakePartitionTraits(Index, this->ReadPartitionEntry(Index))
+	}
+	
+	define i8 WideStringEquals(i16* Left, i16* Right) {
+		i32 Length := StringLength(Left)
+		
+		if (StringLength(Right) != Length) {
+			return false
+		}
+		
+		for (i32 Index := 0, Index < Length, Index++) {
+			if (Left[Index] != Right[Index]) {
+				return false
+			}
+		}
+		
+		return true
+	}
+	
+	define GPTPartitionTraits* GetPartitionTraits(i16* Name) {
+		for (i32 Index := 0, Index < this->Header->PartitionEntryCount, Index++) {
+			GPTPartitionEntry* NextPartition := this->ReadPartitionEntry(Index)
+			
+			if (NextPartition->StartingLBA != 0 || NextPartition->EndingLBA != 0) {
+				if (this->WideStringEquals(NextPartition->PartitionName, Name)) {
+					return this->MakePartitionTraits(Index, this->ReadPartitionEntry(Index))
+				}
+			}
+		}
+		
+		return null
 	}
 }

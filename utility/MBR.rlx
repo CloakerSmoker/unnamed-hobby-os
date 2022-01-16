@@ -1,0 +1,42 @@
+struct MBREntry {
+	i8 BootIndicator
+	
+	i8 StartHead
+	i16 StartSectorCylinder
+	
+	i8 SystemID
+	
+	i8 EndingHead
+	i16 EndSectorCylinder
+	
+	i32 RelativeSector
+	i32 TotalSectors
+}
+
+i8* MBR_BOOT_MARKER := i8[0x55, 0xAA]
+i8 MBR_PARTITION_CAN_BOOT := 0x80 As i8
+i8 MBR_PARTITION_TYPE_GPT := 0xEE As i8
+
+struct MBR {
+	i8[446] BootCode
+	MBREntry[4] Partitions
+	i8[2] BootMarker
+	
+	define void WriteDefaults(i8 ProtectivePartitionType) {
+		MoveMemory(this->BootMarker, MBR_BOOT_MARKER, 2)
+		
+		MBREntry* ProtectivePartition := this->Partitions[0]
+		
+		ProtectivePartition->BootIndicator := 0
+		
+		ProtectivePartition->StartSectorCylinder := 2
+		
+		ProtectivePartition->SystemID := ProtectivePartitionType
+		
+		ProtectivePartition->EndingHead := 0xFE As i8
+		ProtectivePartition->EndSectorCylinder := 0xD5BF As i16
+		
+		ProtectivePartition->RelativeSector := 1
+		ProtectivePartition->TotalSectors := 0xFFFF_FFFF As i32
+	}
+}
