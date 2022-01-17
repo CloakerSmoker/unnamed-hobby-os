@@ -1,0 +1,306 @@
+#Require "$/Console.rlx"
+#Require "$/Exception.rlx"
+#Require "$/String.rlx"
+#Require "$/File.rlx"
+#Require "$/Debug.rlx"
+
+define i64 AToI(i8* String, i32 Length, i64 Base) {
+	i64 Result := 0
+	i64 Negative := 0
+	
+	i8 FirstCharacter := String[0] As i8
+	
+	if !(IsNumeric(FirstCharacter, Base)) {
+		return 0
+	}
+		
+	for (i32 Index := 0, Index < Length, Index += 1) {
+		i8 NextCharacter := String[Index] As i8
+		
+		if !(IsNumeric(NextCharacter, Base)) {
+			Break
+		}
+		
+		Result *= Base
+		Result += GetCharacterValue(NextCharacter)
+	}
+	
+	return Result
+}
+define i64 AToI(i8* String, i64 Base) {
+	return AToI(String, StringLength(String), Base)
+}
+
+define i64 ParseInteger(i8* ValueString) {
+	i64 Value := AToI(ValueString)
+	
+	if (ValueString[0] = '0' && ValueString[1] = 'x') {
+		Value := AToI(&ValueString[2], 16)
+	}
+	
+	return Value
+}
+
+#Require "./src/drivers/FAT32.rlx"
+
+struct FAT32FileBackedDevice {
+	i64 FD
+	
+	define void Read(i32 SectorNumber, void* Buffer) {
+		;Print("Read %x\n", SectorNumber)
+		FileSeek(this->FD, SectorNumber * 512, SEEK_SET)
+		FileRead(this->FD, Buffer, 512)
+	}
+	define void Write(i32 SectorNumber, void* Buffer) {
+		;Print("Write %x\n", SectorNumber)
+		FileSeek(this->FD, SectorNumber * 512, SEEK_SET)
+		FileWrite(this->FD, Buffer, 512)
+	}
+	
+	static void Read(FAT32FileBackedDevice* this, i32 Sector, void* Buffer) {
+		this->Read(Sector, Buffer)
+	}
+	static void Write(FAT32FileBackedDevice* this, i32 Sector, void* Buffer) {
+		this->Write(Sector, Buffer)
+	}
+	
+	static FAT32DeviceTraits* New(i64 FD) {
+		FAT32FileBackedDevice* this := Alloc(#FAT32FileBackedDevice)
+		
+		this->FD := FD
+		
+		FAT32DeviceTraits* Traits := Alloc(#FAT32DeviceTraits)
+		
+		Traits->State := this
+		Traits->ReadSector := &FAT32FileBackedDevice:Read
+		Traits->WriteSector := &FAT32FileBackedDevice:Write
+		
+		return Traits
+	}
+}
+
+define void PrintFAT32DirectoryEntry(FAT32DirectoryEntry* this) {
+	if (this->Name[0]) {
+		if (this->IsLongNameEntry()) {
+			FAT32LongDirectoryEntry* Long := this As FAT32LongDirectoryEntry*
+			
+			Print("FAT32LongDirectoryEntry {\n")
+			Print("\tOrder: %x\n", Long->Order)
+			Print("\tFirstFive: %s\n", WToA(Long->FirstFive, 5))
+			Print("\tAttributes: %x\n", Long->Attributes)
+			Print("\tLongEntryType: %x\n", Long->LongEntryType)
+			Print("\tNextSix: %s\n", WToA(Long->NextSix, 6))
+			Print("\tLastTwo: %s\n", WToA(Long->LastTwo, 2))
+			Print("}\n")
+			
+		}
+		else {
+			Print("FAT32DirectoryEntry {\n")
+			Print("\tName: %s\n", this->Name)
+			Print("\tAttributes: %x\n", this->Attributes)
+			Print("\tFirstClusterHigh: %x\n", this->FirstClusterHigh)
+			Print("\tFirstClusterLow: %x\n", this->FirstClusterLow)
+			Print("\tFirstCluster: %x\n", this->GetFirstCluster())
+			Print("\tFileSize: %x\n", this->FileSize)
+			Print("}\n")
+		}
+	}
+}
+
+define void PrintFAT32DirectoryEntryCluster(FAT32DirectoryCluster* this) {
+	for (i32 Index := 0, Index < 16, Index++) {
+		FAT32DirectoryEntry* Next := this->Entries[Index]
+		
+		PrintFAT32DirectoryEntry(Next)
+	}
+}
+
+define void PrintFAT32Header(FAT32BootSector* this) {
+	Print("FAT32BootSector {\n")
+	
+	Print("\tBytesPerSector      : %x\n", this->BytesPerSector)
+	Print("\tSectorsPerCluster   : %x\n", this->SectorsPerCluster)
+	Print("\tReservedSectorCount : %x\n", this->ReservedSectorCount)
+	Print("\tFATCount            : %x\n", this->FATCount)
+	Print("\tDirectoryEntryCount : %x\n", this->DirectoryEntryCount)
+	Print("\tVolumeSectorCount   : %x\n", this->VolumeSectorCount)
+	Print("\tMediaDescriptorType : %x\n", this->MediaDescriptorType)
+	Print("\tHiddenSectorCount   : %x\n", this->HiddenSectorCount)
+	Print("\tLargeSectorCount    : %x\n", this->LargeSectorCount)
+	Print("\tSectorsPerFAT       : %x\n", this->SectorsPerFAT)
+	Print("\tVersion             : %x\n", this->Version)
+	Print("\tRootDirectoryCluster: %x\n", this->RootDirectoryCluster)
+	Print("\tFSInfoSector        : %x\n", this->FSInfoSector)
+	Print("\tBackupBootSector    : %x\n", this->BackupBootSector)
+	Print("\tDriveNumber         : %x\n", this->DriveNumber)
+	Print("\tSignature           : %x\n", this->Signature)
+	Print("\tVolumeID            : %x\n", this->VolumeID)
+	Print("\tVolumeLabel         : %s\n", this->VolumeLabel)
+	
+	Print("}\n")
+}
+
+define i32 PathToCluster(FAT32Device* Device, i32 CurrentDirectoryCluster, i8* Path) {
+	if (StringEquals(Path, ".")) {
+		return CurrentDirectoryCluster
+	}
+	else if (StringEquals(Path, "~")) {
+		return Device->Header->RootDirectoryCluster
+	}
+	else {
+		FAT32DirectoryEntry* Directory := Device->FindDirectoryEntryByPath(CurrentDirectoryCluster, Path)
+		
+		if !(Directory) {
+			Print("Could not find directory '%s'\n", Path)
+			return -1
+		}
+		
+		return Directory->GetFirstCluster()
+	}
+}
+
+define void Prompt(FAT32Device* Device) {
+	Device->ReadHeader(0)
+	PrintFAT32Header(Device->Header)
+	
+	i32 CurrentDirectoryCluster := Device->Header->RootDirectoryCluster
+	
+	loop {
+		Print("^90->^F0")
+		i8* NextLine := ReadLine()
+		
+		i64 ArgC := 0
+		i8** ArgV := null
+		
+		ParseCommandLine(NextLine, &ArgC, &ArgV)
+		i8* Command := ArgV[0]
+		i8* Path := ArgV[1]
+		
+		if (StringEquals(Command, "ls")) {
+			i32 DirectoryCluster := PathToCluster(Device, CurrentDirectoryCluster, Path)
+			
+			if (DirectoryCluster = -1) {
+				continue
+			}
+			
+			i32 WalkData := Device->StartWalkDirectory(DirectoryCluster)
+	
+			loop {
+				FAT32DirectoryEntry* Next := Device->WalkDirectoryNext(DirectoryCluster, &WalkData)
+				
+				if !(Next) {
+					break
+				}
+				
+				if !(Next->IsLongNameEntry()) {
+					i8[16] LongName
+					
+					Next->GetName(LongName)
+					
+					if (Next->IsFile()) {
+						Print("%s\n", LongName)
+					}
+					else {
+						Print("%s/\n", LongName)
+					}
+				}
+			}
+		}
+		else if (StringEquals(Command, "cd")) {
+			i32 DirectoryCluster := PathToCluster(Device, CurrentDirectoryCluster, Path)
+			
+			if (DirectoryCluster = -1) {
+				continue
+			}
+			
+			CurrentDirectoryCluster := DirectoryCluster
+		}
+		else if (StringEquals(Command, "deinfo_s")) {
+			FAT32DirectoryEntry* Directory := Device->FindDirectoryEntryByPath(CurrentDirectoryCluster, Path)
+		
+			if !(Directory) {
+				Print("Could not find entry '%s'\n", Path)
+				continue
+			}
+			
+			PrintFAT32DirectoryEntry(Directory)
+		}
+		else if (StringEquals(Command, "deinfo_i")) {
+			i32 EntryIndex := ParseInteger(ArgV[1]) As i32
+			FAT32DirectoryEntry* Directory := Device->GetDirectoryEntry(CurrentDirectoryCluster, EntryIndex)
+		
+			if !(Directory) {
+				Print("Could not find entry [%x]\n", EntryIndex)
+				continue
+			}
+			
+			PrintFAT32DirectoryEntry(Directory)
+		}
+		else if (StringEquals(Command, "ctos")) {
+			i32 ClusterNumber := ParseInteger(ArgV[1]) As i32
+			
+			Print("Cluster %x is sector %x\n", ClusterNumber, Device->ClusterToSector(ClusterNumber))
+		}
+		else if (StringEquals(Command, "stoo")) {
+			i32 SectorNumber := ParseInteger(ArgV[1]) As i32
+			
+			Print("Sector %x is offset %x\n", SectorNumber, SectorNumber * 0x200)
+		}
+		else if (StringEquals(Command, "rename")) {
+			FAT32DirectoryEntry* Entry := Device->FindDirectoryEntryByPath(CurrentDirectoryCluster, Path)
+			
+			i8[16] Name
+			Entry->GetName(Name)
+			
+			FAT32DirectoryEntry* EntryClone := CloneMemory(Entry, #FAT32DirectoryEntry)
+			
+			EntryClone->SetName(ArgV[2])
+			
+			Device->UpdateDirectoryEntry(CurrentDirectoryCluster, Path, EntryClone)
+		}
+		else if (StringEquals(Command, "cat")) {
+			FAT32DirectoryEntry* FileEntry := Device->FindDirectoryEntryByPath(CurrentDirectoryCluster, Path)
+			
+			if !(FileEntry) {
+				Print("Could not find file '%s'\n", Path)
+			}
+			
+			i32 CurrentCluster := FileEntry->GetFirstCluster()
+			
+			loop {
+				Device->ReadClusterData(CurrentCluster, 0, Device->TempSector)
+				
+				Print("%s", Device->TempSector)
+				
+				CurrentCluster := Device->LookupClusterChain(CurrentCluster, 1)
+				
+				if (CurrentCluster = -1) {
+					break
+				}
+			}
+			
+		}
+		
+	}
+}
+
+define i32 Main(i64 ArgC, i8** ArgV) {
+	GetArgs(&ArgC, &ArgV)
+	
+	i8* ProgramDirectory := GetAbsolutePath(Concatenate(ArgV[0], "/../"))
+	SetWorkingDirectory(ProgramDirectory)
+	
+	i64 F := FileOpen(ArgV[1], FILE_READ_WRITE | FILE_CREATE_NEW)
+	
+	Print("FD = %x\n", F)
+	
+	FAT32DeviceTraits* Traits := FAT32FileBackedDevice:New(F)
+	
+	FAT32Device* Device := Alloc(#FAT32Device)
+	
+	Device->Traits := Traits
+	
+	Prompt(Device)
+	
+	return 0
+}
