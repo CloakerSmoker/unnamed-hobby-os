@@ -147,8 +147,18 @@ struct FAT32DirectoryEntry {
 	define void SetName(i8* In) {
 		i32 Length := StringLength(In)
 		
-		i32 ExtensionIndex := 0
-		i32 NameLength := 0
+		if (StringEquals(In, ".") || StringEquals(In, "..")) {
+			MoveMemory(this->Name, In, Length)
+			
+			for (i32 Index := Length, Index < 11, Index++) {
+				this->Name[Index] := ' '
+			}
+			
+			return
+		}
+		
+		i32 ExtensionIndex := Length
+		i32 NameLength := Length
 		
 		for (i32 Index := 0, Index < Length, Index++) {
 			if (In[Index] = '.') {
@@ -640,8 +650,9 @@ struct FAT32Device {
 		FAT32DirectoryEntry* New := this~>TempDirectoryEntry
 		
 		New->SetName(Name)
-		New->Attributes := Attributes
 		New->SetFirstCluster(FirstCluster)
+		New->Attributes := Attributes
+		New->FileSize := Size
 		
 		return this->AddDirectoryEntry(DirectoryCluster, New)
 	}
@@ -679,9 +690,7 @@ struct FAT32Device {
 		
 		i32 FinalSector := SectorCount - 1
 		
-		i32 FirstFATSector := ReservedSectorCount
-		i32 SecondFATFirstSector := FirstFATSector + SectorsPerFAT
-		i32 FirstClusterSector := SecondFATFirstSector + SectorsPerFAT
+		this->Traits->WriteSectors(FinalSector, 1, this->Header)
 		
 		MoveMemory(this->Header->OEMIdentitier, "FAT32rlx", 8)
 		
