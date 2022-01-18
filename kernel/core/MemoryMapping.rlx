@@ -1,0 +1,61 @@
+#Require "./src/kernel/core/Paging.rlx"
+
+struct MemoryMapping {
+	void* Virtual
+	i64 Physical
+	i32 PageCount
+	MemoryMapping* Next
+}
+
+struct MemoryMappingGroup {
+	AddressSpaceManager* AddressSpace
+	MemoryMapping* First
+	
+	static MemoryMappingGroup* New(AddressSpaceManager* AddressSpace) {
+		MemoryMappingGroup* this := Alloc(#MemoryMappingGroup)
+		
+		this->AddressSpace := AddressSpace
+		
+		return this
+	}
+	
+	define void Add(void* Virtual, i64 Physical, i32 Count, i64 Flags) {
+		Physical /= PAGE_SIZE
+		
+		MemoryMapping* New := Alloc(#MemoryMapping)
+		
+		New->Virtual := Virtual
+		New->PageCount := Count
+		New->Physical := Physical
+		
+		if (this->First) {
+			New->Next := this->First
+			this->First := New
+		}
+		else {
+			this->First := New
+		}
+		
+		this->AddressSpace->MapRange(Virtual, Physical, Count, Flags)
+	}
+	
+	define void UnMap() {
+		MemoryMapping* Current := this->First
+		
+		while (Current) {
+			this->AddressSpace->UnmapRange(Current->Virtual, Current->PageCount)
+			
+			MemoryMapping* Last := Current
+			Current := Last->Next
+			
+			Free(Last)
+		}
+		
+		this->First := null
+	}
+	
+	define void Delete() {
+		this->UnMap()
+		Free(this)
+	}
+}
