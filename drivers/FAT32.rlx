@@ -63,6 +63,9 @@ struct FAT32Info {
 	i8[2] BootMarker
 }
 
+i32 FAT32_FAT_ENTRY_RESERVED_OR_EOF := 0x0FFF_FFFF
+i32 FAT32_FAT_ENTRIES_PER_SECTOR := 0x80
+
 i8 FAT32_DIRECTORY_ENTRY_ATTRIBUTE_READ_ONLY := 1
 i8 FAT32_DIRECTORY_ENTRY_ATTRIBUTE_HIDDEN := 2
 i8 FAT32_DIRECTORY_ENTRY_ATTRIBUTE_SYSTEM := 4
@@ -145,15 +148,16 @@ struct FAT32DirectoryEntry {
 		i32 Length := StringLength(In)
 		
 		i32 ExtensionIndex := 0
+		i32 NameLength := 0
 		
 		for (i32 Index := 0, Index < Length, Index++) {
 			if (In[Index] = '.') {
 				ExtensionIndex := Index + 1
+				NameLength := Index
 			}
 		}
 		
 		i32 ExtensionLength := Length - ExtensionIndex
-		i32 NameLength := Length - 1 - ExtensionLength
 		
 		if (NameLength > 8) {
 			NameLength := 8
@@ -254,6 +258,10 @@ struct FAT32Device {
 	i32 SectorsPerCluster
 	i32 RootDirectoryCluster
 	i32 ClusterCount
+	i32 ClusterSize
+	
+	i32[0x80] CachedFATSector
+	i32 CachedFATSectorNumber
 	
 	define FAT32Device* Initialize(FAT32DeviceTraits* Traits) {
 		this->Traits := Traits
@@ -261,6 +269,8 @@ struct FAT32Device {
 		this->Header := this~>RawHeader
 		this->Info := this~>RawInfo
 		this->TempDirectorySector := this~>RawTempDirectorySector
+		
+		this->CachedFATSectorNumber := -1
 		
 		return this
 	}
@@ -273,7 +283,8 @@ struct FAT32Device {
 			this->FirstClusterSector := this->FirstFATSector + (this->Header->FATCount * this->Header->SectorsPerFAT)
 			this->SectorsPerCluster := this->Header->SectorsPerCluster
 			this->RootDirectoryCluster := this->Header->RootDirectoryCluster
-			this->ClusterCount := this->Header->SectorsPerFAT / this->SectorsPerCluster
+			this->ClusterCount := this->Header->SectorsPerFAT * FAT32_FAT_ENTRIES_PER_SECTOR
+			this->ClusterSize := this->SectorsPerCluster * this->Header->BytesPerSector
 		}
 		
 		return this->Header
@@ -301,36 +312,62 @@ struct FAT32Device {
 		return this->FirstClusterSector + (Cluster - 2) * this->SectorsPerCluster
 	}
 	
-	i32[0x80] CachedFATSector
-	i32 CachedFATSectorNumber
-	
 	define i32 ReadFAT(i32 Index) {
-		i32 Sector := Index / 0x80
-		i32 IndexInSector := Index % 0x80
+		i32 Sector := Index / FAT32_FAT_ENTRIES_PER_SECTOR
+		i32 IndexInSector := Index % FAT32_FAT_ENTRIES_PER_SECTOR
 		
 		if (Sector != this->CachedFATSectorNumber) {
+			this->CachedFATSectorNumber := Sector
 			this->Traits->ReadSectors(this->FirstFATSector + Sector, 1, this->CachedFATSector)
 		}
 		
 		return this->CachedFATSector[IndexInSector]
 	}
 	
-	define void WriteFAT(i32 FATIndex, i32 Index, i32 Link) {
-		i32 Sector := (FATIndex * this->Header->SectorsPerFAT) + (Index / 0x80)
-		i32 IndexInSector := Index % 0x80
+	define void WriteFAT(i32 FATNumber, i32 Index, i32 Link) {
+		i32 FATBase := this->FirstFATSector + (FATNumber * this->Header->SectorsPerFAT)
+		
+		i32 Sector := Index / FAT32_FAT_ENTRIES_PER_SECTOR
+		i32 IndexInSector := Index % FAT32_FAT_ENTRIES_PER_SECTOR
 		
 		if (Sector != this->CachedFATSectorNumber) {
-			this->Traits->ReadSectors(this->FirstFATSector + Sector, 1, this->CachedFATSector)
+			this->CachedFATSectorNumber := Sector
+			this->Traits->ReadSectors(FATBase + Sector, 1, this->CachedFATSector)
 		}
 		
 		this->CachedFATSector[IndexInSector] := Link
 		
-		this->Traits->WriteSectors(this->FirstFATSector + Sector, 1, this->CachedFATSector)
+		this->Traits->WriteSectors(FATBase + Sector, 1, this->CachedFATSector)
 	}
 	
 	define void WriteFAT(i32 Index, i32 Link) {
 		this->WriteFAT(0, Index, Link)
 		this->WriteFAT(1, Index, Link)
+	}
+	
+	define i32 AllocateCluster() {
+		for (i32 Index := 0, Index < this->ClusterCount, Index++) {
+			if (this->ReadFAT(Index) = 0) {
+				this->WriteFAT(Index, 0xFFFF_FFFF As i32)
+				
+				this->Info->FirstAvailableCluster := Index + 1
+				this->Info->LastKnownFreeSectorCount -= 1
+				
+				this->WriteInfo()
+				
+				return Index
+			}
+		}
+		
+		return -1
+	}
+	
+	define i32 AllocateChainedCluster(i32 Previous) {
+		i32 Result := this->AllocateCluster()
+		
+		this->WriteFAT(Previous, Result)
+		
+		return Result
 	}
 	
 	define i32 LookupClusterChain(i32 First, i32 Offset) {
@@ -355,10 +392,50 @@ struct FAT32Device {
 		
 		this->Traits->ReadSectors(this->ClusterToSector(Cluster), 1, Data)
 	}
+	define void ReadClusterData(i32 Cluster, void* Data) {
+		this->Traits->ReadSectors(this->ClusterToSector(Cluster), 1, Data)
+	}
+	
 	define void WriteClusterData(i32 First, i32 Offset, void* Data) {
 		i32 Cluster := this->LookupClusterChain(First, Offset)
 		
 		this->Traits->WriteSectors(this->ClusterToSector(Cluster), 1, Data)
+	}
+	define void WriteClusterData(i32 Cluster, void* Data) {
+		this->Traits->WriteSectors(this->ClusterToSector(Cluster), 1, Data)
+	}
+	
+	define void WriteClusterData(i32 Cluster, void* Data, i32 Size) {
+		i32 FullClusterCount := Size / this->ClusterSize
+		
+		i32 LastCluster := 0
+		i32 CurrentCluster := Cluster
+		
+		for (i32 Index := 0, Index < FullClusterCount, Index++) {
+			if (Index != 0) {
+				CurrentCluster := this->AllocateChainedCluster(LastCluster)
+			}
+			
+			this->WriteClusterData(CurrentCluster, Data)
+			
+			Data += this->ClusterSize
+			LastCluster := CurrentCluster
+		}
+		
+		i32 LastClusterSize := Size % this->ClusterSize
+		
+		if (LastClusterSize) {
+			i8* LastClusterBuffer := Alloc(this->ClusterSize)
+			MoveMemory(LastClusterBuffer, Data, LastClusterSize)
+			
+			if (Index != 0) {
+				CurrentCluster := this->AllocateChainedCluster(LastCluster)
+			}
+			
+			this->WriteClusterData(CurrentCluster, LastClusterBuffer)
+			
+			Free(LastClusterBuffer)
+		}
 	}
 	
 	define FAT32DirectoryEntry* GetDirectoryEntry(i32 DirectoryCluster, i32 EntryIndex) {
@@ -392,32 +469,7 @@ struct FAT32Device {
 		return Result
 	}
 	
-	define i32 AllocateCluster() {
-		for (i32 Index := 0, Index < this->ClusterCount, Index++) {
-			if (this->ReadFAT(Index) = 0) {
-				this->WriteFAT(Index, 0xFFFF_FFFF As i32)
-				
-				this->Info->FirstAvailableCluster := Index + 1
-				this->Info->LastKnownFreeSectorCount -= 1
-				
-				this->WriteInfo()
-				
-				return Index
-			}
-		}
-		
-		return -1
-	}
-	
-	define i32 AllocateChainedCluster(i32 Previous) {
-		i32 Result := this->AllocateCluster()
-		
-		this->WriteFAT(Previous, Result)
-		
-		return Result
-	}
-	
-	define void AddDirectoryEntry(i32 DirectoryCluster, FAT32DirectoryEntry* New) {
+	define i32 AddDirectoryEntry(i32 DirectoryCluster, FAT32DirectoryEntry* New) {
 		i32 EntryIndex := 0
 		
 		loop {
@@ -459,8 +511,10 @@ struct FAT32Device {
 				}
 			}
 			
-			return
+			return EntryIndex
 		}
+		
+		return -1
 	}
 	
 	define i32 FindDirectoryEntryIndexByName(i32 DirectoryCluster, i8* Name) {
@@ -480,14 +534,17 @@ struct FAT32Device {
 		return -1
 	}
 	
-	define void UpdateDirectoryEntry(i32 DirectoryCluster, i8* Name, FAT32DirectoryEntry* Entry) {
-		i32 EntryIndex := this->FindDirectoryEntryIndexByName(DirectoryCluster, Name)
+	define void UpdateDirectoryEntry(i32 DirectoryCluster, i32 EntryIndex, FAT32DirectoryEntry* Entry) {
 		i32 ClusterIndex := EntryIndex / 16
 		i32 IndexInCluster := EntryIndex % 16
 		
 		MoveMemory(this->TempDirectorySector->At(IndexInCluster), Entry, #FAT32DirectoryEntry)
 		
 		this->WriteClusterData(DirectoryCluster, ClusterIndex, this->TempDirectorySector)
+	}
+	
+	define void UpdateDirectoryEntry(i32 DirectoryCluster, i8* Name, FAT32DirectoryEntry* Entry) {
+		this->UpdateDirectoryEntry(DirectoryCluster, this->FindDirectoryEntryIndexByName(DirectoryCluster, Name), Entry)
 	}
 	
 	define FAT32DirectoryEntry* FindDirectoryEntryByName(i32 DirectoryCluster, i8* Name) {
@@ -575,43 +632,45 @@ struct FAT32Device {
 		FAT32DirectoryEntry TempDirectoryEntry
 	}
 	
-	define void MakeDirectoryEntry(i32 DirectoryCluster, i8* Name, i8 Attributes, i32 FirstCluster) {
+	define i32 MakeDirectoryEntry(i32 DirectoryCluster, i8* Name, i8 Attributes, i32 Size, i32 FirstCluster) {
 		for (i32 Index := 0, Index < 32, Index++) {
 			this->TempDirectoryEntryBuffer[Index] := 0
 		}
 		
 		FAT32DirectoryEntry* New := this~>TempDirectoryEntry
 		
-		MoveMemory(New->Name, Name, 11)
+		New->SetName(Name)
 		New->Attributes := Attributes
 		New->SetFirstCluster(FirstCluster)
 		
-		this->AddDirectoryEntry(DirectoryCluster, New)
+		return this->AddDirectoryEntry(DirectoryCluster, New)
 	}
-	define void MakeFile(i32 DirectoryCluster, i8* Name) {
-		this->MakeDirectoryEntry(DirectoryCluster, Name, 0, this->AllocateCluster())
+	define i32 MakeDirectoryEntry(i32 DirectoryCluster, i8* Name, i8 Attributes, i32 FirstCluster) {
+		return this->MakeDirectoryEntry(DirectoryCluster, Name, Attributes, 0, FirstCluster)
 	}
-	define void MakeDirectory(i32 DirectoryCluster, i8* Name) {
+	define i32 MakeFile(i32 DirectoryCluster, i8* Name) {
+		return this->MakeDirectoryEntry(DirectoryCluster, Name, 0, this->AllocateCluster())
+	}
+	define i32 MakeDirectory(i32 DirectoryCluster, i8* Name) {
 		i32 NewDirectoryCluster := this->AllocateCluster()
 		
-		this->MakeDirectoryEntry(DirectoryCluster, Name, FAT32_DIRECTORY_ENTRY_ATTRIBUTE_DIRECTORY, NewDirectoryCluster)
+		i32 Result := this->MakeDirectoryEntry(DirectoryCluster, Name, FAT32_DIRECTORY_ENTRY_ATTRIBUTE_DIRECTORY, NewDirectoryCluster)
 		this->MakeDirectoryEntry(NewDirectoryCluster, ".", FAT32_DIRECTORY_ENTRY_ATTRIBUTE_DIRECTORY, NewDirectoryCluster)
-		this->MakeDirectoryEntry(NewDirectoryCluster, "..", FAT32_DIRECTORY_ENTRY_ATTRIBUTE_DIRECTORY, DirectoryCluster)
+		this->MakeDirectoryEntry(NewDirectoryCluster, "..", FAT32_DIRECTORY_ENTRY_ATTRIBUTE_DIRECTORY, 0)
+		
+		return Result
 	}
 	
 	
 	
 	
 	define void Format(i32 SectorCount) {
-		i32 ClustersPerFATSector := 0x80
-		
-		i32 FATSectorCount := SectorCount / ClustersPerFATSector
-		i32 HeaderSectorCount := 2
-		i32 ReservedSectorCount := HeaderSectorCount + 0x18
+		i32 FATSectorCount := SectorCount / FAT32_FAT_ENTRIES_PER_SECTOR
+		i32 ReservedSectorCount := 0x20
 		
 		i32 ClusterCount := SectorCount - ReservedSectorCount - (FATSectorCount * 2)
 		
-		i32 SectorsPerFAT := ClusterCount / ClustersPerFATSector
+		i32 SectorsPerFAT := ClusterCount / FAT32_FAT_ENTRIES_PER_SECTOR
 		
 		Print("SectorCount    : %x\n", SectorCount)
 		Print("FATSectorCount : %x\n", FATSectorCount)
@@ -636,7 +695,7 @@ struct FAT32Device {
 		this->Header->SectorsPerTrack := 0xF8 As i8
 		this->Header->HeadCount       := 0x40
 		
-		this->Header->LargeSectorCount := ReservedSectorCount + (FATSectorCount * 2) + ClusterCount
+		this->Header->LargeSectorCount := ReservedSectorCount + (SectorsPerFAT * 2) + ClusterCount
 		this->Header->SectorsPerFAT    := SectorsPerFAT
 		
 		this->Header->RootDirectoryCluster := 2
@@ -655,11 +714,11 @@ struct FAT32Device {
 		this->Info->FirstAvailableCluster := 2
 		this->Info->LastKnownFreeSectorCount := ClusterCount
 		
-		this->WriteFAT(0, 0xFFFFF00 | FAT32_MEDIA_TYPE_FIXED)
-		this->WriteFAT(1, 0xFFFFF00 | FAT32_MEDIA_TYPE_FIXED)
-		
 		this->Sync()
-		
 		this->ReadHeader()
+		
+		this->WriteFAT(0, 0xFFFFF00 | FAT32_MEDIA_TYPE_FIXED)
+		this->WriteFAT(1, FAT32_FAT_ENTRY_RESERVED_OR_EOF)
+		this->WriteFAT(2, FAT32_FAT_ENTRY_RESERVED_OR_EOF)
 	}
 }
