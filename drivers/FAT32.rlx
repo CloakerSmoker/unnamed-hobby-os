@@ -1,4 +1,11 @@
 
+
+i8 FAT32_MEDIA_TYPE_FIXED := 0xF8 As i8
+i8 FAT32_MEDIA_TYPE_REMOVABLE := 0xF0 As i8
+
+i8 FAT32_SIGNATURE := 0x29
+i8* FAT32_IDENTIFIER_STRING := "FAT32   "
+
 struct FAT32BootSector unaligned {
 	i8[3] JumpStub
 	i8[8] OEMIdentitier
@@ -42,6 +49,9 @@ struct FAT32BootSector unaligned {
 	i8[420] BootCode
 	i8[2] BootMarker
 }
+
+i32 FAT32_INFO_FIRST_SIGNATURE := 0x41615252
+i32 FAT32_INFO_SECOND_SIGNATURE := 0x61417272
 
 struct FAT32Info {
 	i32 FirstSignature
@@ -233,6 +243,9 @@ struct FAT32Device {
 	FAT32BootSector RawHeader
 	FAT32BootSector* Header
 	
+	FAT32Info RawInfo
+	FAT32Info* Info
+	
 	FAT32DirectoryCluster RawTempDirectorySector
 	FAT32DirectoryCluster* TempDirectorySector
 	
@@ -242,17 +255,46 @@ struct FAT32Device {
 	i32 RootDirectoryCluster
 	i32 ClusterCount
 	
-	define void ReadHeader(i32 Sector) {
+	define FAT32Device* Initialize(FAT32DeviceTraits* Traits) {
+		this->Traits := Traits
+		
 		this->Header := this~>RawHeader
+		this->Info := this~>RawInfo
 		this->TempDirectorySector := this~>RawTempDirectorySector
 		
-		this->Traits->ReadSectors(Sector, 1, this->Header)
+		return this
+	}
+	
+	define FAT32BootSector* ReadHeader() {
+		this->Traits->ReadSectors(0, 1, this->Header)
 		
-		this->FirstFATSector := this->Header->ReservedSectorCount
-		this->FirstClusterSector := this->FirstFATSector + (this->Header->FATCount * this->Header->SectorsPerFAT)
-		this->SectorsPerCluster := this->Header->SectorsPerCluster
-		this->RootDirectoryCluster := this->Header->RootDirectoryCluster
-		this->ClusterCount := this->Header->SectorsPerFAT / this->SectorsPerCluster
+		if (this->Header->LargeSectorCount != 0) {
+			this->FirstFATSector := this->Header->ReservedSectorCount
+			this->FirstClusterSector := this->FirstFATSector + (this->Header->FATCount * this->Header->SectorsPerFAT)
+			this->SectorsPerCluster := this->Header->SectorsPerCluster
+			this->RootDirectoryCluster := this->Header->RootDirectoryCluster
+			this->ClusterCount := this->Header->SectorsPerFAT / this->SectorsPerCluster
+		}
+		
+		return this->Header
+	}
+	define void WriteHeader() {
+		this->Traits->WriteSectors(0, 1, this->Header)
+		this->Traits->WriteSectors(this->Header->BackupBootSector, 1, this->Header)
+	}
+	
+	define FAT32Info* ReadInfo() {
+		this->Traits->ReadSectors(this->Header->FSInfoSector, 1, this->Info)
+		
+		return this->Info
+	}
+	define void WriteInfo() {
+		this->Traits->WriteSectors(this->Header->FSInfoSector, 1, this->Info)
+	}
+	
+	define void Sync() {
+		this->WriteHeader()
+		this->WriteInfo()
 	}
 	
 	define i32 ClusterToSector(i32 Cluster) {
@@ -261,8 +303,6 @@ struct FAT32Device {
 	
 	i32[0x80] CachedFATSector
 	i32 CachedFATSectorNumber
-	
-	i8[0x200] TempSector
 	
 	define i32 ReadFAT(i32 Index) {
 		i32 Sector := Index / 0x80
@@ -274,8 +314,9 @@ struct FAT32Device {
 		
 		return this->CachedFATSector[IndexInSector]
 	}
-	define void WriteFAT(i32 Index, i32 Link) {
-		i32 Sector := Index / 0x80
+	
+	define void WriteFAT(i32 FATIndex, i32 Index, i32 Link) {
+		i32 Sector := (FATIndex * this->Header->SectorsPerFAT) + (Index / 0x80)
 		i32 IndexInSector := Index % 0x80
 		
 		if (Sector != this->CachedFATSectorNumber) {
@@ -285,6 +326,11 @@ struct FAT32Device {
 		this->CachedFATSector[IndexInSector] := Link
 		
 		this->Traits->WriteSectors(this->FirstFATSector + Sector, 1, this->CachedFATSector)
+	}
+	
+	define void WriteFAT(i32 Index, i32 Link) {
+		this->WriteFAT(0, Index, Link)
+		this->WriteFAT(1, Index, Link)
 	}
 	
 	define i32 LookupClusterChain(i32 First, i32 Offset) {
@@ -351,12 +397,18 @@ struct FAT32Device {
 			if (this->ReadFAT(Index) = 0) {
 				this->WriteFAT(Index, 0xFFFF_FFFF As i32)
 				
+				this->Info->FirstAvailableCluster := Index + 1
+				this->Info->LastKnownFreeSectorCount -= 1
+				
+				this->WriteInfo()
+				
 				return Index
 			}
 		}
 		
 		return -1
 	}
+	
 	define i32 AllocateChainedCluster(i32 Previous) {
 		i32 Result := this->AllocateCluster()
 		
@@ -540,7 +592,11 @@ struct FAT32Device {
 		this->MakeDirectoryEntry(DirectoryCluster, Name, 0, this->AllocateCluster())
 	}
 	define void MakeDirectory(i32 DirectoryCluster, i8* Name) {
-		this->MakeDirectoryEntry(DirectoryCluster, Name, FAT32_DIRECTORY_ENTRY_ATTRIBUTE_DIRECTORY, this->AllocateCluster())
+		i32 NewDirectoryCluster := this->AllocateCluster()
+		
+		this->MakeDirectoryEntry(DirectoryCluster, Name, FAT32_DIRECTORY_ENTRY_ATTRIBUTE_DIRECTORY, NewDirectoryCluster)
+		this->MakeDirectoryEntry(NewDirectoryCluster, ".", FAT32_DIRECTORY_ENTRY_ATTRIBUTE_DIRECTORY, NewDirectoryCluster)
+		this->MakeDirectoryEntry(NewDirectoryCluster, "..", FAT32_DIRECTORY_ENTRY_ATTRIBUTE_DIRECTORY, DirectoryCluster)
 	}
 	
 	
@@ -550,10 +606,60 @@ struct FAT32Device {
 		i32 ClustersPerFATSector := 0x80
 		
 		i32 FATSectorCount := SectorCount / ClustersPerFATSector
-		i32 ReservedSectorCount := 0x22
+		i32 HeaderSectorCount := 2
+		i32 ReservedSectorCount := HeaderSectorCount + 0x18
 		
 		i32 ClusterCount := SectorCount - ReservedSectorCount - (FATSectorCount * 2)
 		
+		i32 SectorsPerFAT := ClusterCount / ClustersPerFATSector
 		
+		Print("SectorCount    : %x\n", SectorCount)
+		Print("FATSectorCount : %x\n", FATSectorCount)
+		Print("ClusterCount   : %x\n", ClusterCount)
+		Print("SectorsPerFAT  : %x\n", SectorsPerFAT)
+		
+		i32 FinalSector := SectorCount - 1
+		
+		i32 FirstFATSector := ReservedSectorCount
+		i32 SecondFATFirstSector := FirstFATSector + SectorsPerFAT
+		i32 FirstClusterSector := SecondFATFirstSector + SectorsPerFAT
+		
+		MoveMemory(this->Header->OEMIdentitier, "FAT32rlx", 8)
+		
+		this->Header->BytesPerSector      := 0x200
+		this->Header->SectorsPerCluster   := 1
+		this->Header->ReservedSectorCount := ReservedSectorCount As i16
+		this->Header->FATCount            := 2
+		
+		this->Header->MediaDescriptorType := FAT32_MEDIA_TYPE_FIXED
+		
+		this->Header->SectorsPerTrack := 0xF8 As i8
+		this->Header->HeadCount       := 0x40
+		
+		this->Header->LargeSectorCount := ReservedSectorCount + (FATSectorCount * 2) + ClusterCount
+		this->Header->SectorsPerFAT    := SectorsPerFAT
+		
+		this->Header->RootDirectoryCluster := 2
+		this->Header->FSInfoSector         := 1
+		this->Header->BackupBootSector     := 6
+		
+		this->Header->DriveNumber := 0x80 As i8
+		this->Header->Signature   := FAT32_SIGNATURE
+		this->Header->VolumeID    := 0x7613646D
+		
+		MoveMemory(this->Header->VolumeLabel, "NO NAME    ", 11)
+		MoveMemory(this->Header->SystemIdentiferString, FAT32_IDENTIFIER_STRING, 8)
+		
+		this->Info->FirstSignature := FAT32_INFO_FIRST_SIGNATURE
+		this->Info->SecondSignature := FAT32_INFO_SECOND_SIGNATURE
+		this->Info->FirstAvailableCluster := 2
+		this->Info->LastKnownFreeSectorCount := ClusterCount
+		
+		this->WriteFAT(0, 0xFFFFF00 | FAT32_MEDIA_TYPE_FIXED)
+		this->WriteFAT(1, 0xFFFFF00 | FAT32_MEDIA_TYPE_FIXED)
+		
+		this->Sync()
+		
+		this->ReadHeader()
 	}
 }

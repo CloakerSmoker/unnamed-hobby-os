@@ -41,6 +41,21 @@ define i64 ParseInteger(i8* ValueString) {
 	return Value
 }
 
+define i64 ParseSectorCount(i8* ValueString, i8* Scale) {
+	i64 Value := ParseInteger(ValueString)
+	
+	if (Scale != null) {
+		if (Scale[0] = 'm') {
+			Value *= 0x1000	
+		}
+		else {
+			Print("Unknown scale '%s', defaulting to 1\n", Scale)
+		}
+	}
+	
+	return Value
+}
+
 #Require "./src/drivers/FAT32.rlx"
 
 struct FAT32FileBackedDevice {
@@ -118,6 +133,7 @@ define void PrintFAT32DirectoryEntryCluster(FAT32DirectoryCluster* this) {
 define void PrintFAT32Header(FAT32BootSector* this) {
 	Print("FAT32BootSector {\n")
 	
+	Print("\tOEMIdentitier       : %s\n", this->OEMIdentitier)
 	Print("\tBytesPerSector      : %x\n", this->BytesPerSector)
 	Print("\tSectorsPerCluster   : %x\n", this->SectorsPerCluster)
 	Print("\tReservedSectorCount : %x\n", this->ReservedSectorCount)
@@ -125,6 +141,9 @@ define void PrintFAT32Header(FAT32BootSector* this) {
 	Print("\tDirectoryEntryCount : %x\n", this->DirectoryEntryCount)
 	Print("\tVolumeSectorCount   : %x\n", this->VolumeSectorCount)
 	Print("\tMediaDescriptorType : %x\n", this->MediaDescriptorType)
+	Print("\tOldSectorsPerFAT    : %x\n", this->OldSectorsPerFAT)
+	Print("\tSectorsPerTrack     : %x\n", this->MediaDescriptorType)
+	Print("\tHeadCount           : %x\n", this->HeadCount)
 	Print("\tHiddenSectorCount   : %x\n", this->HiddenSectorCount)
 	Print("\tLargeSectorCount    : %x\n", this->LargeSectorCount)
 	Print("\tSectorsPerFAT       : %x\n", this->SectorsPerFAT)
@@ -136,6 +155,17 @@ define void PrintFAT32Header(FAT32BootSector* this) {
 	Print("\tSignature           : %x\n", this->Signature)
 	Print("\tVolumeID            : %x\n", this->VolumeID)
 	Print("\tVolumeLabel         : %s\n", this->VolumeLabel)
+	
+	Print("}\n")
+}
+
+define void PrintFAT32Info(FAT32Info* this) {
+	Print("FAT32Info {\n")
+	
+	Print("\tFirstSignature          : %x\n", this->FirstSignature)
+	Print("\tSecondSignature         : %x\n", this->SecondSignature)
+	Print("\tLastKnownFreeSectorCount: %x\n", this->LastKnownFreeSectorCount)
+	Print("\tFirstAvailableCluster   : %x\n", this->FirstAvailableCluster)
 	
 	Print("}\n")
 }
@@ -160,8 +190,8 @@ define i32 PathToCluster(FAT32Device* Device, i32 CurrentDirectoryCluster, i8* P
 }
 
 define void Prompt(FAT32Device* Device) {
-	Device->ReadHeader(0)
-	PrintFAT32Header(Device->Header)
+	PrintFAT32Header(Device->ReadHeader())
+	PrintFAT32Info(Device->ReadInfo())
 	
 	i32 CurrentDirectoryCluster := Device->Header->RootDirectoryCluster
 	
@@ -176,7 +206,19 @@ define void Prompt(FAT32Device* Device) {
 		i8* Command := ArgV[0]
 		i8* Path := ArgV[1]
 		
-		if (StringEquals(Command, "ls")) {
+		if (StringEquals(Command, "header")) {
+			Device->Sync()
+			PrintFAT32Header(Device->ReadHeader())
+		}
+		else if (StringEquals(Command, "info")) {
+			Device->Sync()
+			PrintFAT32Info(Device->ReadInfo())
+		}
+		else if (StringEquals(Command, "ls")) {
+			if (ArgC = 1) {
+				Path := "."
+			}
+			
 			i32 DirectoryCluster := PathToCluster(Device, CurrentDirectoryCluster, Path)
 			
 			if (DirectoryCluster = -1) {
@@ -267,10 +309,12 @@ define void Prompt(FAT32Device* Device) {
 			
 			i32 CurrentCluster := FileEntry->GetFirstCluster()
 			
+			i8[0x200] TempSector
+			
 			loop {
-				Device->ReadClusterData(CurrentCluster, 0, Device->TempSector)
+				Device->ReadClusterData(CurrentCluster, 0, TempSector)
 				
-				Print("%s", Device->TempSector)
+				Print("%s", TempSector)
 				
 				CurrentCluster := Device->LookupClusterChain(CurrentCluster, 1)
 				
@@ -278,9 +322,16 @@ define void Prompt(FAT32Device* Device) {
 					break
 				}
 			}
-			
 		}
-		
+		else if (StringEquals(Command, "format")) {
+			Device->Format(ParseSectorCount(ArgV[1], ArgV[2]) As i32)
+		}
+		else if (StringEquals(Command, "mkdir")) {
+			Device->MakeDirectory(CurrentDirectoryCluster, ArgV[1])
+		}
+		else if (StringEquals(Command, "touch")) {
+			Device->MakeFile(CurrentDirectoryCluster, ArgV[1])
+		}
 	}
 }
 
@@ -294,11 +345,9 @@ define i32 Main(i64 ArgC, i8** ArgV) {
 	
 	Print("FD = %x\n", F)
 	
-	FAT32DeviceTraits* Traits := FAT32FileBackedDevice:New(F)
-	
 	FAT32Device* Device := Alloc(#FAT32Device)
 	
-	Device->Traits := Traits
+	Device->Initialize(FAT32FileBackedDevice:New(F))
 	
 	Prompt(Device)
 	
