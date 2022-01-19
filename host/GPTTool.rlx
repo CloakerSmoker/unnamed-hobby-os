@@ -5,26 +5,26 @@
 #Require "$/Debug.rlx"
 
 #Require "./src/drivers/GPT.rlx"
-#Require "./src/utility/CRC.rlx"
+#Require "./src/utility/EFICRC.rlx"
 
 struct GPTFileBackedDevice {
 	i64 FD
 	
-	define void Read(i32 SectorNumber, void* Buffer) {
+	define void Read(i32 SectorNumber, i32 Count, void* Buffer) {
 		FileSeek(this->FD, SectorNumber * 512, SEEK_SET)
-		FileRead(this->FD, Buffer, 512)
+		FileRead(this->FD, Buffer, Count * 512)
 	}
-	define void Write(i32 SectorNumber, void* Buffer) {
-		Print("Write %x\n", SectorNumber)
+	define void Write(i32 SectorNumber, i32 Count, void* Buffer) {
+		;Print("Write %x\n", SectorNumber)
 		FileSeek(this->FD, SectorNumber * 512, SEEK_SET)
-		FileWrite(this->FD, Buffer, 512)
+		FileWrite(this->FD, Buffer, Count * 512)
 	}
 	
-	static void Read(GPTFileBackedDevice* this, i32 Sector, void* Buffer) {
-		this->Read(Sector, Buffer)
+	static void Read(GPTFileBackedDevice* this, i32 Sector, i32 Count, void* Buffer) {
+		this->Read(Sector, Count, Buffer)
 	}
-	static void Write(GPTFileBackedDevice* this, i32 Sector, void* Buffer) {
-		this->Write(Sector, Buffer)
+	static void Write(GPTFileBackedDevice* this, i32 Sector, i32 Count, void* Buffer) {
+		this->Write(Sector, Count, Buffer)
 	}
 	
 	static GPTDeviceTraits* New(i64 FD) {
@@ -35,8 +35,8 @@ struct GPTFileBackedDevice {
 		GPTDeviceTraits* Traits := Alloc(#GPTDeviceTraits)
 		
 		Traits->State := this
-		Traits->ReadSector := &GPTFileBackedDevice:Read
-		Traits->WriteSector := &GPTFileBackedDevice:Write
+		Traits->ReadSectors := &GPTFileBackedDevice:Read
+		Traits->WriteSectors := &GPTFileBackedDevice:Write
 		
 		return Traits
 	}
@@ -190,7 +190,7 @@ define i64 ParseBlockCount(i8* ValueString, i8* Scale) {
 	
 	if (Scale != null) {
 		if (Scale[0] = 'm') {
-			Value *= 0x1000	
+			Value *= 0x800	
 		}
 		else {
 			Print("Unknown scale '%s', defaulting to 1\n", Scale)
@@ -281,6 +281,9 @@ define void PromptPartitionUpdate(GPTDevice* Device, GPTPartitionEntry* Entry) {
 			Print(" + Updated entry attributes to ")
 			PrintGPTPartitionEntryAttributes(Entry->Attributes)
 			Print("\n")
+		}
+		else {
+			return
 		}
 	}
 }

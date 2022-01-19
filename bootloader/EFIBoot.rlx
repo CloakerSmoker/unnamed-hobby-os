@@ -1,0 +1,9 @@
+#Require "./src/utility/EFI.rlx"
+
+define i64 Main(void* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) x64 {
+    i64 Status := 0
+
+    Status := SystemTable->ConsoleOutput->OutputString("Hello EFI world!\n"w)
+
+    return Status
+}

@@ -1,30 +1,20 @@
-#Require "./src/utility/CRC.rlx"
+#Require "./src/utility/EFICRC.rlx"
 #Require "./src/utility/MBR.rlx"
 
 struct GPTDeviceTraits {
 	void* State
-	void* ReadSector
-	void* WriteSector
+	void* ReadSectors
+	void* WriteSectors
 	
-	static void Call(void* State, i64 Paramter, void* Data, void* Function) asm {
-		jmp, rcx
+	static void Call(void* State, i64 Sector, i32 Count, void* Data, void* Function) asm {
+		jmp, r8
 	}
 	
 	define void ReadSectors(i64 StartSectorNumber, i32 SectorCount, void* Buffer) {
-		i64 EndSectorNumber := StartSectorNumber + SectorCount
-		
-		for (i64 Sector := StartSectorNumber, Sector < EndSectorNumber, Sector++) {
-			GPTDeviceTraits:Call(this->State, Sector As i32, Buffer, this->ReadSector)
-			Buffer += 0x200
-		}
+		GPTDeviceTraits:Call(this->State, StartSectorNumber, SectorCount, Buffer, this->ReadSectors)
 	}
 	define void WriteSectors(i64 StartSectorNumber, i32 SectorCount, void* Buffer) {
-		i64 EndSectorNumber := StartSectorNumber + SectorCount
-		
-		for (i64 Sector := StartSectorNumber, Sector < EndSectorNumber, Sector++) {
-			GPTDeviceTraits:Call(this->State, Sector As i32, Buffer, this->WriteSector)
-			Buffer += 0x200
-		}
+		GPTDeviceTraits:Call(this->State, StartSectorNumber, SectorCount, Buffer, this->WriteSectors)
 	}
 }
 
@@ -69,14 +59,14 @@ struct GPTPartitionTableHeader {
 		i32 OriginalCRC := this->Checksum
 		this->Checksum := 0
 		
-		i32 CurrentCRC := CalculateCRC(this, #GPTPartitionTableHeader)
+		i32 CurrentCRC := EFICalculateCRC(this, #GPTPartitionTableHeader)
 		this->Checksum := OriginalCRC
 		
 		return OriginalCRC = CurrentCRC
 	}
 	define void UpdateCRC() {
 		this->Checksum := 0
-		this->Checksum := CalculateCRC(this, #GPTPartitionTableHeader)
+		this->Checksum := EFICalculateCRC(this, #GPTPartitionTableHeader)
 	}
 }
 
@@ -142,15 +132,15 @@ struct GPTDevice {
 			PartitionEntryArrayBlocks += 1
 		}
 		
-		i64 CRC := StartCRC()
+		i64 CRC := EFIStartCRC()
 		
 		for (i32 Index := 0, Index < PartitionEntryArrayBlocks, Index++) {
 			this->Traits->ReadSectors(this->Header->PartitionEntryArrayLBA + Index, 1, this->TempSector)
 			
-			CRC := UpdateCRC(CRC, this->TempSector, 0x200)
+			CRC := EFIUpdateCRC(CRC, this->TempSector, 0x200)
 		}
 		
-		return FinalizeCRC(CRC)
+		return EFIFinalizeCRC(CRC)
 	}
 	define GPTPartitionEntry* ReadPartitionEntry(i32 Index) {
 		i32 PartitionEntriesPerSector := 0x200 / this->Header->PartitionEntrySize

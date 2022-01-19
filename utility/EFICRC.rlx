@@ -45,7 +45,7 @@ i64* CRCTable := i64[
     0xB40BBE37, 0xC30C8EA1, 0x5A05DF1B, 0x2D02EF8D
 ]
 
-define i32 CalculateCRC(void* RawBuffer, i32 Size) {
+define i32 EFICalculateCRC(void* RawBuffer, i32 Size) {
 	i8* Buffer := RawBuffer
 	i64 Result := 0xFFFF_FFFF
 	
@@ -59,11 +59,11 @@ define i32 CalculateCRC(void* RawBuffer, i32 Size) {
 	return (Result ^ 0xFFFF_FFFF) As i32
 }
 
-define i64 StartCRC() {
+define i64 EFIStartCRC() {
 	return 0xFFFF_FFFF
 }
 
-define i64 UpdateCRC(i64 Result, void* RawBuffer, i32 Size) {
+define i64 EFIUpdateCRC(i64 Result, void* RawBuffer, i32 Size) {
 	i8* Buffer := RawBuffer
 	
 	for (i32 Index := 0, Index < Size, Index++) {
@@ -76,6 +76,6 @@ define i64 UpdateCRC(i64 Result, void* RawBuffer, i32 Size) {
 	return Result
 }
 
-define i32 FinalizeCRC(i64 Result) {
+define i32 EFIFinalizeCRC(i64 Result) {
 	return (Result ^ 0xFFFF_FFFF) As i32
 }

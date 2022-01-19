@@ -46,7 +46,7 @@ define i64 ParseSectorCount(i8* ValueString, i8* Scale) {
 	
 	if (Scale != null) {
 		if (Scale[0] = 'm') {
-			Value *= 0x1000	
+			Value *= 0x800	
 		}
 		else {
 			Print("Unknown scale '%s', defaulting to 1\n", Scale)
@@ -379,6 +379,9 @@ define void Prompt(FAT32Device* Device) {
 			i32 FirstCluster := Device->AllocateCluster()
 			Device->MakeDirectoryEntry(CurrentDirectoryCluster, Destination, 0, ImportSize, FirstCluster)
 			Device->WriteClusterData(FirstCluster, ImportData, ImportSize)
+		}
+		else {
+			return
 		}
 	}
 }
