@@ -1,9 +1,146 @@
-#Require "./src/utility/EFI.rlx"
+#Require "./src/drivers/EFI.rlx"
+#Require "./src/drivers/Ext2.rlx"
+#Require "./src/drivers/EFIExt2.rlx"
 
-define i64 Main(void* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) x64 {
+define void PrintCharacter(EFI_SYSTEM_TABLE* SystemTable, i8 Character) {
+	i8[4] Temp {Character, 0, 0, 0}
+	
+	SystemTable->ConsoleOutput->OutputString(Temp As i16*)
+}
+
+define void PrintString(EFI_SYSTEM_TABLE* SystemTable, i8* String) {
+	for (i32 Index := 0, Index < StringLength(String), Index++) {
+		PrintCharacter(SystemTable, String[Index])
+	}
+}
+
+define void PrintHex(EFI_SYSTEM_TABLE* SystemTable, i64 Number) {
+	i8[100] Buff
+	
+	for (i32 Index := 0, Index < 100, Index++) { Buff[Index] := 0 }
+	
+	IToA(Number, 16, Buff)
+	
+	PrintString(SystemTable, Buff)
+}
+
+define i64 Main(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) x64 {
     i64 Status := 0
 
     Status := SystemTable->ConsoleOutput->OutputString("Hello EFI world!\n"w)
+	
+	SystemTable->ConsoleInput->Reset()
+	SystemTable->BootServices->WaitForEvent(SystemTable->ConsoleInput->WaitForKey)
+	
+	EFI_DEVICE_PATH_TO_TEXT_PROTOCOL* ToText := null
+	SystemTable->BootServices->LocateProtocol(EFI_DEVICE_PATH_TO_TEXT_PROTOCOL_GUID, &ToText As void**)
+	
+	EFI_DEVICE_PATH_UTILITIES_PROTOCOL* DevicePathHelpers := null
+	SystemTable->BootServices->LocateProtocol(EFI_DEVICE_PATH_UTILITIES_PROTOCOL_GUID, &DevicePathHelpers As void**)
+	
+	if !(ToText) || !(DevicePathHelpers) {
+		PrintString(SystemTable, "Can't find to text or device path helper protocol\n")
+		return 0
+	}
+	
+	EFI_LOADED_IMAGE_PROTOCOL* LoadedImage := null
+	SystemTable->BootServices->HandleProtocol(ImageHandle, EFI_LOADED_IMAGE_PROTOCOL_GUID, &LoadedImage As void**)
+	
+	EFI_DEVICE_PATH_PROTOCOL* LoadedImageDevicePath := null
+	SystemTable->BootServices->HandleProtocol(LoadedImage->DeviceHandle, EFI_DEVICE_PATH_PROTOCOL_GUID, &LoadedImageDevicePath As void**)
+	
+	i16* LoadedImageDevicePathText := ToText->ConvertDevicePathToText(LoadedImageDevicePath, true, true)
+	
+	PrintString(SystemTable, "Boot Device Path: ")
+	SystemTable->ConsoleOutput->OutputString(LoadedImageDevicePathText)
+	PrintString(SystemTable, "\n")
+	
+	SystemTable->BootServices->FreePool(LoadedImageDevicePathText)
+	
+	EFI_DEVICE_PATH_PROTOCOL* RootDevicePath := DevicePathHelpers->DuplicateDevicePath(LoadedImageDevicePath)
+	RootDevicePath->PopNode()
+	
+	
+	i16* RootDevicePathText := ToText->ConvertDevicePathToText(RootDevicePath, true, true)
+	
+	PrintString(SystemTable, "Boot Device Parent Path: ")
+	SystemTable->ConsoleOutput->OutputString(RootDevicePathText)
+	PrintString(SystemTable, "\n")
+	
+	SystemTable->BootServices->FreePool(RootDevicePathText)
+	
+	i32 SizeNeeded := 0
+	SystemTable->BootServices->LocateHandle(EFI_LOCATE_SEARCH_TYPE_BY_PROTOCOL, EFI_BLOCK_IO_PROTOCOL_GUID, null, &SizeNeeded, null)
+	EFI_HANDLE** Handles := SystemTable->BootServices->AllocatePool(SizeNeeded)
+	SystemTable->BootServices->LocateHandle(EFI_LOCATE_SEARCH_TYPE_BY_PROTOCOL, EFI_BLOCK_IO_PROTOCOL_GUID, null, &SizeNeeded, Handles)
+	i32 Count := SizeNeeded / 8
+	
+	i32 ChildIndex := 0
+	
+	for (i32 Index := 0, Index < Count, Index++) {
+		EFI_DEVICE_PATH_PROTOCOL* HandlePath := null
+		
+		SystemTable->BootServices->HandleProtocol(Handles[Index], EFI_DEVICE_PATH_PROTOCOL_GUID, &HandlePath As void**)
+		
+		if (HandlePath->Equals(RootDevicePath)) {
+			continue
+		}
+		
+		EFI_DEVICE_PATH_PROTOCOL* HandleParentPath := DevicePathHelpers->DuplicateDevicePath(HandlePath)
+		
+		HandleParentPath->PopNode()
+		
+		if (HandleParentPath->Equals(RootDevicePath)) {
+			i16* DeviceText := ToText->ConvertDevicePathToText(HandlePath, true, true)
+			
+			PrintString(SystemTable, "Child ")
+			PrintHex(SystemTable, ChildIndex++)
+			PrintString(SystemTable, ": ")
+			SystemTable->ConsoleOutput->OutputString(DeviceText)
+			PrintString(SystemTable, "\n")
+			
+			SystemTable->BootServices->FreePool(DeviceText)
+		}
+		
+		SystemTable->BootServices->FreePool(HandleParentPath)
+	}
+	
+	i32 SizeNeeded := 0
+	SystemTable->BootServices->LocateHandle(EFI_LOCATE_SEARCH_TYPE_BY_PROTOCOL, EFI_BLOCK_IO_PROTOCOL_GUID, null, &SizeNeeded, null)
+	EFI_HANDLE** Handles := SystemTable->BootServices->AllocatePool(SizeNeeded)
+	SystemTable->BootServices->LocateHandle(EFI_LOCATE_SEARCH_TYPE_BY_PROTOCOL, EFI_BLOCK_IO_PROTOCOL_GUID, null, &SizeNeeded, Handles)
+	i32 Count := SizeNeeded / 8
+	
+	PrintString(SystemTable, "There are ")
+	PrintHex(SystemTable, Count)
+	PrintString(SystemTable, " block devices\n")
+	
+	for (i32 Index := 0, Index < Count, Index++) {
+		EFI_BLOCK_IO_PROTOCOL* HandleBlockIO := null
+		
+		SystemTable->BootServices->HandleProtocol(Handles[Index], EFI_BLOCK_IO_PROTOCOL_GUID, &HandleBlockIO As void**)
+		
+		if (HandleBlockIO) {
+			EFI_DEVICE_PATH_PROTOCOL* HandlePath := null
+			
+			SystemTable->BootServices->HandleProtocol(Handles[Index], EFI_DEVICE_PATH_PROTOCOL_GUID, &HandlePath As void**)
+			
+			i16* DeviceText := ToText->ConvertDevicePathToText(HandlePath, true, true)
+			
+			PrintString(SystemTable, "Device ")
+			PrintHex(SystemTable, Index)
+			PrintString(SystemTable, ": ")
+			SystemTable->ConsoleOutput->OutputString(DeviceText)
+			PrintString(SystemTable, "\n")
+			
+			SystemTable->BootServices->FreePool(DeviceText)
+		}
+	}
+	
+	SystemTable->BootServices->FreePool(Handles)
+	
+	SystemTable->ConsoleInput->Reset()
+	SystemTable->BootServices->WaitForEvent(SystemTable->ConsoleInput->WaitForKey)
 
     return Status
 }

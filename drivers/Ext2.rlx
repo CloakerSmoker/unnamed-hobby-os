@@ -1,3 +1,15 @@
+#Require "$/MemoryBase.rlx"
+
+define void TerminateAfterUnhandledException(i64 Code) {
+	asm (rax := 0x12345678, rbx := Code, rcx := 0) {
+		mov, {rcx} As i8*, 0
+	}
+	
+	loop {}
+}
+
+#Require "$/ExceptionBase.rlx"
+
 i16 EXT2_SUPER_MAGIC := 0xEF53 As i16
 
 i16 EXT2_VALID_FS := 1
@@ -65,6 +77,10 @@ struct SuperBlock {
 		
 		this->CreatorOS := 0
 		this->RevisionLevel := 0
+	}
+	
+	define i8 IsValid() {
+		return this->Magic = EXT2_SUPER_MAGIC
 	}
 }
 
@@ -451,9 +467,9 @@ struct Ext2 {
 		
 		return Result
 	}
-	define INode* CloneINode(i32 INodeNumber) {
-		return CloneMemory(this->ReadINode(INodeNumber), #INode)
-	}
+	;define INode* CloneINode(i32 INodeNumber) {
+	;	return CloneMemory(this->ReadINode(INodeNumber), #INode)
+	;}
 	define void RefreshINode(INode* Node) {
 		INode* NewData := this->ReadINode(Node->INodeNumber)
 		
