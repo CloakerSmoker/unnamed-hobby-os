@@ -1,0 +1,199 @@
+
+#Require "$/ExceptionBase.rlx"
+
+; ATA(0)>Remap(512)>GPT('Dog')>Remap(1024)
+
+struct BlockDevicePrototype {
+	void* Read
+	void* Write
+	void* GetBytesPerBlock
+	void* Initialize
+	
+	i8* Name
+	
+	i32 DataSize
+	
+	union {
+		i8 IsRoot
+		i8 ShouldHaveNoParent
+	}
+	
+	union {
+		i8 IsLeaf
+		i8 ShouldHaveNoChild
+	}
+	
+	i8 CanHaveMultipleChildren
+	
+	define void Initialize(BlockDevice* Instance, i8** Options, i64 OptionCount) {
+		asm (rax := this->Initialize, rdi := Instance, rsi := Options, rdx := OptionCount) {
+			call, rax
+		}
+	}
+}
+
+i32 BlockDevicePrototypeCount
+BlockDevicePrototype*[10] BlockDevicePrototypes
+
+define i32 RegisterBlockDevicePrototype(BlockDevicePrototype* Prototype) {
+	i32 Index := BlockDevicePrototypeCount++
+	
+	BlockDevicePrototypes[Index] := Prototype
+	
+	return Index
+}
+
+struct BlockDeviceInstanceLink {
+	#Include "./src/drivers/block-device/BlockDeviceInstance.rlx"
+}
+
+struct BlockDevice {
+	union {
+		BlockDeviceInstanceLink Link
+		i8[0] Data
+	}
+	
+	define void Read(i64 FirstBlock, i64 BlockCount, void* Buffer) {
+		asm (rax := this~>Link->Prototype->Read, rdi := this, rsi := FirstBlock, rdx := BlockCount, rcx := Buffer) {
+			call, rax
+		}
+	}
+	define void Write(i64 FirstBlock, i64 BlockCount, void* Buffer) {
+		asm (rax := this~>Link->Prototype->Write, rdi := this, rsi := FirstBlock, rdx := BlockCount, rcx := Buffer) {
+			call, rax
+		}
+	}
+	define i64 GetBytesPerBlock() {
+		asm (rax := this~>Link->Prototype->GetBytesPerBlock, rdi := this) {
+			call, rax
+			leave
+			ret
+		}
+		
+		return 0
+	}
+	
+	define i8 IsValid() {
+		i8 HasNoParent := this~>Link->Parent = null
+		
+		if (HasNoParent != this~>Link->Prototype->ShouldHaveNoParent) {
+			return false
+		}
+		
+		return true
+	}
+}
+
+define BlockDevice* NewBlockDevice(BlockDevice* Parent, BlockDevicePrototype* Prototype, ... RawOptions) {
+	i64 OptionCount := (RawOptions As i64*)[0]
+	i8** Options := (RawOptions As i8**) + 0x8
+	
+	BlockDevice* Result := Alloc(Prototype->DataSize)
+	
+	Result~>Link->Parent := Parent
+	Result~>Link->Prototype := Prototype
+	
+	Prototype->Initialize(Result, Options, OptionCount)
+	
+	return Result
+}
+define BlockDevice* InstantiateBlockDevice(BlockDevice* Parent, BlockDevicePrototype* Prototype, i8** Options, i64 OptionCount) {	
+	BlockDevice* Result := Alloc(Prototype->DataSize)
+	
+	Result~>Link->Parent := Parent
+	Result~>Link->Prototype := Prototype
+	
+	Prototype->Initialize(Result, Options, OptionCount)
+	
+	return Result
+}
+
+define BlockDevice* InstantiateBlockDeviceChainFromPath(i8* Path) {
+	i32 DeviceCount := 0
+	i8*[10] Devices
+	
+	i8* LastDeviceStart := Path
+	
+	for (i32 Index := 0, Index < StringLength(Path), Index++) {
+		if (Path[Index] = '>') {
+			Devices[DeviceCount++] := LastDeviceStart
+			
+			Path[Index] := 0
+			LastDeviceStart := &Path[Index + 1]
+		}
+	}
+	
+	Devices[DeviceCount++] := LastDeviceStart
+	
+	BlockDevice* Parent := null
+	
+	for (i32 Index := 0, Index < DeviceCount, Index++) {
+		i8* Device := Devices[Index]
+		i32 DeviceLength := StringLength(Device)
+		
+		Print("Device %i: %s\n", Index, Device)
+		
+		for (i32 NameIndex := 0, NameIndex < DeviceLength, NameIndex++) {
+			if (Device[NameIndex] = '(') {
+				Device[NameIndex] := 0
+				break
+			}
+		}
+		
+		for (i32 OptionsIndex := NameIndex, OptionsIndex < DeviceLength, OptionsIndex++) {
+			if (Device[OptionsIndex] = ')') {
+				Device[OptionsIndex] := 0
+				break
+			}
+		}
+		
+		i8* Name := Device
+		
+		Print("Name: %s\n", Name)
+		
+		i32 OptionCount := 0
+		i8*[10] Options
+		
+		i8* OptionsText := &Device[NameIndex + 1]
+		
+		Print("Options: %s\n", OptionsText)
+		
+		i8* LastOptionStart := OptionsText
+		
+		for (i32 OptionsIndex := 0, OptionsIndex < StringLength(OptionsText), OptionsIndex++) {
+			if (OptionsText[OptionsIndex] = ',') {
+				Options[OptionCount++] := LastOptionStart
+				
+				OptionsText[OptionsIndex] := 0
+				LastOptionStart := &OptionsText[OptionsIndex + 1]
+			}
+		}
+		
+		Options[OptionCount++] := LastOptionStart
+		
+		for (i32 OptionIndex := 0, OptionIndex < OptionCount, OptionIndex++) {
+			Print("Option %i: %s\n", OptionIndex, Options[OptionIndex])
+		}
+		
+		BlockDevicePrototype* FoundPrototype := null
+		
+		for (i32 PrototypeIndex := 0, PrototypeIndex < BlockDevicePrototypeCount, PrototypeIndex++) {
+			Print("%s = %s?\n", Name, BlockDevicePrototypes[PrototypeIndex]->Name)
+			
+			if (StringEquals(Name, BlockDevicePrototypes[PrototypeIndex]->Name)) {
+				Print("yes\n")
+				
+				FoundPrototype := BlockDevicePrototypes[PrototypeIndex]
+				break
+			}
+		}
+		
+		if !(FoundPrototype) {
+			return null
+		}
+		
+		Parent := InstantiateBlockDevice(Parent, FoundPrototype, Options, OptionCount)
+	}
+	
+	return Parent
+}

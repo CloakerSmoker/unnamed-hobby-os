@@ -4,6 +4,10 @@
 #Require "$/File.rlx"
 #Require "$/Debug.rlx"
 
+#Require "./src/drivers/block-device/BlockDevice.rlx"
+#Require "./src/drivers/block-device/FileBlockDevice.rlx"
+#Require "./src/drivers/block-device/GPTBlockDevice.rlx"
+
 define i64 AToI(i8* String, i32 Length, i64 Base) {
 	i64 Result := 0
 	i64 Negative := 0
@@ -57,42 +61,6 @@ define i64 ParseSectorCount(i8* ValueString, i8* Scale) {
 }
 
 #Require "./src/drivers/FAT32.rlx"
-
-struct FAT32FileBackedDevice {
-	i64 FD
-	
-	define void Read(i32 SectorNumber, void* Buffer) {
-		;Print("Read %x\n", SectorNumber)
-		FileSeek(this->FD, SectorNumber * 512, SEEK_SET)
-		FileRead(this->FD, Buffer, 512)
-	}
-	define void Write(i32 SectorNumber, void* Buffer) {
-		;Print("Write %x\n", SectorNumber)
-		FileSeek(this->FD, SectorNumber * 512, SEEK_SET)
-		FileWrite(this->FD, Buffer, 512)
-	}
-	
-	static void Read(FAT32FileBackedDevice* this, i32 Sector, void* Buffer) {
-		this->Read(Sector, Buffer)
-	}
-	static void Write(FAT32FileBackedDevice* this, i32 Sector, void* Buffer) {
-		this->Write(Sector, Buffer)
-	}
-	
-	static FAT32DeviceTraits* New(i64 FD) {
-		FAT32FileBackedDevice* this := Alloc(#FAT32FileBackedDevice)
-		
-		this->FD := FD
-		
-		FAT32DeviceTraits* Traits := Alloc(#FAT32DeviceTraits)
-		
-		Traits->State := this
-		Traits->ReadSector := &FAT32FileBackedDevice:Read
-		Traits->WriteSector := &FAT32FileBackedDevice:Write
-		
-		return Traits
-	}
-}
 
 define void PrintFAT32DirectoryEntry(FAT32DirectoryEntry* this) {
 	if (this->Name[0]) {
@@ -392,15 +360,15 @@ define i32 Main(i64 ArgC, i8** ArgV) {
 	i8* ProgramDirectory := GetAbsolutePath(Concatenate(ArgV[0], "/../"))
 	SetWorkingDirectory(ProgramDirectory)
 	
-	i64 F := FileOpen(ArgV[1], FILE_READ_WRITE | FILE_CREATE_NEW)
+	BlockDevice* Device := InstantiateBlockDeviceChainFromPath(ArgV[1])
 	
-	Print("FD = %x\n", F)
+	Print("Device = %x\n", Device)
 	
-	FAT32Device* Device := Alloc(#FAT32Device)
+	FAT32Device* FATDevice := Alloc(#FAT32Device)
 	
-	Device->Initialize(FAT32FileBackedDevice:New(F))
+	FATDevice->Initialize(Device)
 	
-	Prompt(Device)
+	Prompt(FATDevice)
 	
 	return 0
 }

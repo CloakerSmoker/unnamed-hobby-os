@@ -1,0 +1,54 @@
+#Require "./src/drivers/block-device/BlockDevice.rlx"
+
+struct BlockSizeRemapperDeviceInstance {
+	#Include "./src/kernel/core/block/BlockDeviceInstance.rlx"
+	
+	i32 RealBytesPerBlock
+	i32 VirtualBytesPerBlock
+	
+	define i64 Convert(i64 Value, i64 Exception) {
+		i64 Bytes := FirstBlock * this->VirtualBytesPerBlock
+		i64 RealBlock := FirstByteOffset / this->RealBytesPerBlock
+		
+		if (Bytes % this->RealBytesPerBlock) {
+			Throw(Exception)
+		}
+		
+		return RealBlock
+	}
+	
+	define void Read(i64 FirstBlock, i64 BlockCount, void* Buffer) {
+		i64 RealFirstBlock := this->Convert(FirstBlock, BLOCK_DEVICE_EXCEPTION_UNALIGNED_READ_BASE)
+		i64 RealBlockCount := this->Convert(BlockCount, BLOCK_DEVICE_EXCEPTION_UNALIGNED_READ_SIZE)
+		
+		this->Parent->Read(RealFirstBlock, RealBlockCount, Buffer)
+	}
+	define void Write(i64 FirstBlock, i64 BlockCount, void* Buffer) {
+		i64 RealFirstBlock := this->Convert(FirstBlock, BLOCK_DEVICE_EXCEPTION_UNALIGNED_READ_BASE)
+		i64 RealBlockCount := this->Convert(BlockCount, BLOCK_DEVICE_EXCEPTION_UNALIGNED_READ_SIZE)
+		
+		this->Parent->Write(RealFirstBlock, RealBlockCount, Buffer)
+	}
+	
+	define i64 GetBytesPerBlock() {
+		return this->VirtualBytesPerBlock
+	}
+	
+	define BlockSizeRemapperInstance* Initialize(i8** Options, i64 OptionCount) {
+		this->RealBytesPerBlock := this->Parent->Prototype->GetBytesPerBlock()
+		
+		this->VirtualBytesPerBlock := AToI(Options[0])
+	}
+}
+
+BlockDevicePrototype BlockSizeRemapperPrototype {
+	DataSize: #BlockSizeRemapperInstance,
+	
+	Read: &BlockSizeRemapperDeviceInstance.Read,
+	Write: &BlockSizeRemapperDeviceInstance.Write,
+	GetBytesPerBlock: &BlockSizeRemapperDeviceInstance.GetBytesPerBlock,
+	Initialize: &BlockSizeRemapperDeviceInstance.Initialize,
+	
+	IsRoot: false,
+	IsLeaf: false
+} 

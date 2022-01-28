@@ -1,0 +1,45 @@
+#Require "./src/drivers/block-device/BlockDevice.rlx"
+#Require "$/File.rlx"
+
+struct FileBlockDeviceInstance {
+	#Include "./src/drivers/block-device/BlockDeviceInstance.rlx"
+	
+	i64 Handle
+	i32 BytesPerBlock
+	
+	define void Read(i64 FirstBlock, i64 BlockCount, void* Buffer) {
+		FileSeek(this->Handle, (FirstBlock * this->BytesPerBlock) As i32, SEEK_SET)
+		FileRead(this->Handle, Buffer, (BlockCount * this->BytesPerBlock) As i32)
+	}
+	define void Write(i64 FirstBlock, i64 BlockCount, void* Buffer) {
+		FileSeek(this->Handle, (FirstBlock * this->BytesPerBlock) As i32, SEEK_SET)
+		FileWrite(this->Handle, Buffer, (BlockCount * this->BytesPerBlock) As i32)
+	}
+	define i64 GetBytesPerBlock() {
+		return this->BytesPerBlock
+	}
+	define void Initialize(i8** Options, i32 OptionCount) {
+		Print("File(%s,%s)\n", Options[0], Options[1])
+		
+		this->Handle := FileOpen(Options[0], FILE_READ_WRITE | FILE_CREATE_NEW)
+		this->BytesPerBlock := AToI(Options[1]) As i32
+	}
+}
+
+BlockDevicePrototype FileBlockDevicePrototype {
+	DataSize: #FileBlockDeviceInstance,
+	
+	Read: &FileBlockDeviceInstance.Read,
+	Write: &FileBlockDeviceInstance.Write,
+	GetBytesPerBlock: &FileBlockDeviceInstance.GetBytesPerBlock,
+	Initialize: &FileBlockDeviceInstance.Initialize,
+	
+	IsRoot: false,
+	IsLeaf: false,
+	
+	Name: "File",
+	
+	CanHaveMultipleChildren: true
+}
+
+i32 FILE_BLOCK_DEVICE_PROTOTYPE_ID := RegisterBlockDevicePrototype(&FileBlockDevicePrototype)

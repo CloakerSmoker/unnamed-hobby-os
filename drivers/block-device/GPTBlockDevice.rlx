@@ -242,7 +242,7 @@ i32 GPTDeviceBindingCount
 GPTDeviceBinding[10] GPTDeviceBindings
 
 define void AddGPTDeviceBinding(BlockDevice* Parent, GPTDevice* Device) {
-	GPTDeviceBinding* Slot := &GPTDeviceBindings[GPTDeviceBindingCount++]
+	GPTDeviceBinding* Slot := GPTDeviceBindings[GPTDeviceBindingCount++]
 	
 	Slot->Parent := Parent
 	Slot->Device := Device
@@ -250,7 +250,7 @@ define void AddGPTDeviceBinding(BlockDevice* Parent, GPTDevice* Device) {
 
 define GPTDevice* FindGPTDeviceBinding(BlockDevice* Parent) {
 	for (i32 Index := 0, Index < GPTDeviceBindingCount, Index++) {
-		GPTDeviceBinding* Slot := &GPTDeviceBindings[Index]
+		GPTDeviceBinding* Slot := GPTDeviceBindings[Index]
 		
 		if (Slot->Parent = Parent) {
 			return Slot->Device
@@ -263,16 +263,16 @@ define GPTDevice* FindGPTDeviceBinding(BlockDevice* Parent) {
 struct GPTPartitionBlockDeviceInstance {
 	#Include "./src/drivers/block-device/BlockDeviceInstance.rlx"
 	
-	i32 EntryIndex
 	GPTPartitionEntry Entry
+	i32 EntryIndex
 	
 	GPTDevice* GPTParent
 	
 	define void Read(i64 FirstBlock, i64 BlockCount, void* Buffer) {
-		this->Parent->Read(this->Base + FirstBlock, BlockCount, Buffer)
+		this->Parent->Read(this~>Entry->StartingLBA + FirstBlock, BlockCount, Buffer)
 	}
 	define void Write(i64 FirstBlock, i64 BlockCount, void* Buffer) {
-		this->Parent->Write(this->Base + FirstBlock, BlockCount, Buffer)
+		this->Parent->Write(this~>Entry->StartingLBA + FirstBlock, BlockCount, Buffer)
 	}
 	define i64 GetBytesPerBlock() {
 		return 0x200
@@ -284,7 +284,7 @@ struct GPTPartitionBlockDeviceInstance {
 		;	this->Parent := InstantiateBlockDevice(OldParent, BlockSizeRemapperPrototype, "0x200")
 		;}
 		
-		i32 Index := AToI(Options[0])
+		i32 Index := AToI(Options[0]) As i32
 		
 		GPTDevice* GPTParent := FindGPTDeviceBinding(this->Parent)
 		
@@ -295,10 +295,26 @@ struct GPTPartitionBlockDeviceInstance {
 			AddGPTDeviceBinding(this->Parent, GPTParent)
 		}
 		
-		GPTParent->ReadHeader()
+		GPTParent->ReadHeader(1)
 		
 		MoveMemory(this~>Entry, GPTParent->ReadPartitionEntry(Index), #GPTPartitionEntry)
 		
 		this->GPTParent := GPTParent
 	}
 }
+
+BlockDevicePrototype GPTPartitionBlockDevicePrototype {
+	DataSize: #GPTPartitionBlockDeviceInstance,
+	
+	Read: &GPTPartitionBlockDeviceInstance.Read,
+	Write: &GPTPartitionBlockDeviceInstance.Write,
+	GetBytesPerBlock: &GPTPartitionBlockDeviceInstance.GetBytesPerBlock,
+	Initialize: &GPTPartitionBlockDeviceInstance.Initialize,
+	
+	IsRoot: false,
+	IsLeaf: false,
+	
+	Name: "GPT"
+}
+
+i32 GPT_PARTITION_BLOCK_DEVICE_PROTOTYPE_ID := RegisterBlockDevicePrototype(&GPTPartitionBlockDevicePrototype)

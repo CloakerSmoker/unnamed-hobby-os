@@ -1,0 +1,34 @@
+#Require "./src/drivers/block-device/BlockDevice.rlx"
+
+struct ATABlockDeviceInstance {
+	#Include "./src/drivers/block-device/BlockDeviceInstance.rlx"
+	
+	define void Read(i64 FirstBlock, i64 BlockCount, void* Buffer) {
+		ATARead(FirstBlock, BlockCount, Buffer)
+	}
+	define void Write(i64 FirstBlock, i64 BlockCount, void* Buffer) {
+		ATAWrite(FirstBlock, BlockCount, Buffer)
+	}
+	define i64 GetBytesPerBlock() {
+		return 512
+	}
+	define void Initialize(i8** Options, i32 OptionCount) {
+		
+	}
+}
+
+BlockDevicePrototype ATABlockDevicePrototype {
+	DataSize: #ATABlockDeviceInstance,
+	
+	Read: &ATABlockDeviceInstance.Read,
+	Write: &ATABlockDeviceInstance.Write,
+	GetBytesPerBlock: &ATABlockDeviceInstance.GetBytesPerBlock,
+	Initialize: &ATABlockDeviceInstance.Initialize,
+	
+	Name: "ATAPIO",
+	
+	IsRoot: true,
+	IsLeaf: false
+}
+
+i32 ATA_BLOCK_DEVICE_PROTOTYPE_ID := RegisterBlockDevicePrototype(&ATABlockDevicePrototype)

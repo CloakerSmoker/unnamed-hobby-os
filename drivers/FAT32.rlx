@@ -1,4 +1,4 @@
-
+#Require "./src/drivers/block-device/BlockDevice.rlx"
 
 i8 FAT32_MEDIA_TYPE_FIXED := 0xF8 As i8
 i8 FAT32_MEDIA_TYPE_REMOVABLE := 0xF0 As i8
@@ -224,35 +224,8 @@ struct FAT32DirectoryCluster {
 	}
 }
 
-struct FAT32DeviceTraits {
-	void* State
-	void* ReadSector
-	void* WriteSector
-	
-	static void Call(void* State, i64 Paramter, void* Data, void* Function) asm {
-		jmp, rcx
-	}
-	
-	define void ReadSectors(i64 StartSectorNumber, i32 SectorCount, void* Buffer) {
-		i64 EndSectorNumber := StartSectorNumber + SectorCount
-		
-		for (i64 Sector := StartSectorNumber, Sector < EndSectorNumber, Sector++) {
-			FAT32DeviceTraits:Call(this->State, Sector As i32, Buffer, this->ReadSector)
-			Buffer += 0x200
-		}
-	}
-	define void WriteSectors(i64 StartSectorNumber, i32 SectorCount, void* Buffer) {
-		i64 EndSectorNumber := StartSectorNumber + SectorCount
-		
-		for (i64 Sector := StartSectorNumber, Sector < EndSectorNumber, Sector++) {
-			FAT32DeviceTraits:Call(this->State, Sector As i32, Buffer, this->WriteSector)
-			Buffer += 0x200
-		}
-	}
-}
-
 struct FAT32Device {
-	FAT32DeviceTraits* Traits
+	BlockDevice* Device
 	
 	FAT32BootSector RawHeader
 	FAT32BootSector* Header
@@ -273,8 +246,8 @@ struct FAT32Device {
 	i32[0x80] CachedFATSector
 	i32 CachedFATSectorNumber
 	
-	define FAT32Device* Initialize(FAT32DeviceTraits* Traits) {
-		this->Traits := Traits
+	define FAT32Device* Initialize(BlockDevice* Device) {
+		this->Device := Device
 		
 		this->Header := this~>RawHeader
 		this->Info := this~>RawInfo
@@ -286,7 +259,7 @@ struct FAT32Device {
 	}
 	
 	define FAT32BootSector* ReadHeader() {
-		this->Traits->ReadSectors(0, 1, this->Header)
+		this->Device->Read(0, 1, this->Header)
 		
 		if (this->Header->LargeSectorCount != 0) {
 			this->FirstFATSector := this->Header->ReservedSectorCount
@@ -300,17 +273,17 @@ struct FAT32Device {
 		return this->Header
 	}
 	define void WriteHeader() {
-		this->Traits->WriteSectors(0, 1, this->Header)
-		this->Traits->WriteSectors(this->Header->BackupBootSector, 1, this->Header)
+		this->Device->Write(0, 1, this->Header)
+		this->Device->Write(this->Header->BackupBootSector, 1, this->Header)
 	}
 	
 	define FAT32Info* ReadInfo() {
-		this->Traits->ReadSectors(this->Header->FSInfoSector, 1, this->Info)
+		this->Device->Read(this->Header->FSInfoSector, 1, this->Info)
 		
 		return this->Info
 	}
 	define void WriteInfo() {
-		this->Traits->WriteSectors(this->Header->FSInfoSector, 1, this->Info)
+		this->Device->Write(this->Header->FSInfoSector, 1, this->Info)
 	}
 	
 	define void Sync() {
@@ -328,7 +301,7 @@ struct FAT32Device {
 		
 		if (Sector != this->CachedFATSectorNumber) {
 			this->CachedFATSectorNumber := Sector
-			this->Traits->ReadSectors(this->FirstFATSector + Sector, 1, this->CachedFATSector)
+			this->Device->Read(this->FirstFATSector + Sector, 1, this->CachedFATSector)
 		}
 		
 		return this->CachedFATSector[IndexInSector]
@@ -342,12 +315,12 @@ struct FAT32Device {
 		
 		if (Sector != this->CachedFATSectorNumber) {
 			this->CachedFATSectorNumber := Sector
-			this->Traits->ReadSectors(FATBase + Sector, 1, this->CachedFATSector)
+			this->Device->Read(FATBase + Sector, 1, this->CachedFATSector)
 		}
 		
 		this->CachedFATSector[IndexInSector] := Link
 		
-		this->Traits->WriteSectors(FATBase + Sector, 1, this->CachedFATSector)
+		this->Device->Write(FATBase + Sector, 1, this->CachedFATSector)
 	}
 	
 	define void WriteFAT(i32 Index, i32 Link) {
@@ -400,19 +373,19 @@ struct FAT32Device {
 	define void ReadClusterData(i32 First, i32 Offset, void* Data) {
 		i32 Cluster := this->LookupClusterChain(First, Offset)
 		
-		this->Traits->ReadSectors(this->ClusterToSector(Cluster), 1, Data)
+		this->Device->Read(this->ClusterToSector(Cluster), 1, Data)
 	}
 	define void ReadClusterData(i32 Cluster, void* Data) {
-		this->Traits->ReadSectors(this->ClusterToSector(Cluster), 1, Data)
+		this->Device->Read(this->ClusterToSector(Cluster), 1, Data)
 	}
 	
 	define void WriteClusterData(i32 First, i32 Offset, void* Data) {
 		i32 Cluster := this->LookupClusterChain(First, Offset)
 		
-		this->Traits->WriteSectors(this->ClusterToSector(Cluster), 1, Data)
+		this->Device->Write(this->ClusterToSector(Cluster), 1, Data)
 	}
 	define void WriteClusterData(i32 Cluster, void* Data) {
-		this->Traits->WriteSectors(this->ClusterToSector(Cluster), 1, Data)
+		this->Device->Write(this->ClusterToSector(Cluster), 1, Data)
 	}
 	
 	define void WriteClusterData(i32 Cluster, void* Data, i32 Size) {
@@ -690,7 +663,7 @@ struct FAT32Device {
 		
 		i32 FinalSector := SectorCount - 1
 		
-		this->Traits->WriteSectors(FinalSector, 1, this->Header)
+		this->Device->Write(FinalSector, 1, this->Header)
 		
 		MoveMemory(this->Header->OEMIdentitier, "FAT32rlx", 8)
 		
