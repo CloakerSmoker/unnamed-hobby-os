@@ -131,7 +131,7 @@ define BlockDevice* InstantiateBlockDeviceChainFromPath(i8* Path) {
 		i8* Device := Devices[Index]
 		i32 DeviceLength := StringLength(Device)
 		
-		Print("Device %i: %s\n", Index, Device)
+		;Print("Device %i: %s\n", Index, Device)
 		
 		for (i32 NameIndex := 0, NameIndex < DeviceLength, NameIndex++) {
 			if (Device[NameIndex] = '(') {
@@ -149,14 +149,14 @@ define BlockDevice* InstantiateBlockDeviceChainFromPath(i8* Path) {
 		
 		i8* Name := Device
 		
-		Print("Name: %s\n", Name)
+		;Print("Name: %s\n", Name)
 		
 		i32 OptionCount := 0
 		i8*[10] Options
 		
 		i8* OptionsText := &Device[NameIndex + 1]
 		
-		Print("Options: %s\n", OptionsText)
+		;Print("Options: %s\n", OptionsText)
 		
 		i8* LastOptionStart := OptionsText
 		
@@ -172,16 +172,16 @@ define BlockDevice* InstantiateBlockDeviceChainFromPath(i8* Path) {
 		Options[OptionCount++] := LastOptionStart
 		
 		for (i32 OptionIndex := 0, OptionIndex < OptionCount, OptionIndex++) {
-			Print("Option %i: %s\n", OptionIndex, Options[OptionIndex])
+			;Print("Option %i: %s\n", OptionIndex, Options[OptionIndex])
 		}
 		
 		BlockDevicePrototype* FoundPrototype := null
 		
 		for (i32 PrototypeIndex := 0, PrototypeIndex < BlockDevicePrototypeCount, PrototypeIndex++) {
-			Print("%s = %s?\n", Name, BlockDevicePrototypes[PrototypeIndex]->Name)
+			;Print("%s = %s?\n", Name, BlockDevicePrototypes[PrototypeIndex]->Name)
 			
 			if (StringEquals(Name, BlockDevicePrototypes[PrototypeIndex]->Name)) {
-				Print("yes\n")
+				;Print("yes\n")
 				
 				FoundPrototype := BlockDevicePrototypes[PrototypeIndex]
 				break

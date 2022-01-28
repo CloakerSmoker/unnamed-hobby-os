@@ -1,6 +1,13 @@
 #Require "./src/drivers/EFI.rlx"
+
+define void TerminateAfterUnhandledException(i64 Code) {
+	*(Code As i64*) := 0
+}
+define void* Alloc(i32 Size) {
+	return null
+}
+
 #Require "./src/drivers/Ext2.rlx"
-#Require "./src/drivers/EFIExt2.rlx"
 
 define void PrintCharacter(EFI_SYSTEM_TABLE* SystemTable, i8 Character) {
 	i8[4] Temp {Character, 0, 0, 0}

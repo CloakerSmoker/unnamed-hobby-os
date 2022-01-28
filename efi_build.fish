@@ -3,12 +3,18 @@ rm EFIBoot.img
 nrlx -i ./src/bootloader/EFIBoot.rlx -o ./build/EFIBoot.efi --pe --crlf --pe-subsystem 10; or exit
 
 echo "
-format 80 m
+format 120 m
 create
 name \"EFI System\"
 type system
 start 0x32
 end 70 m
+done
+create
+name \"Boot\"
+type custom
+start 71 m
+end 119 m
 done
 quit
 " | ./GPTTool.elf 'File(EFIBoot.img,512)'
@@ -23,6 +29,13 @@ import ./build/EFIBoot.efi BOOTX64.EFI
 quit
 " | ./FAT32Tool.elf 'File(EFIBoot.img,512)>GPT(0)'
 
-mv EFIBoot.img ./build/EFIBoot.img
+echo "
+format 32 m
+import ./build/kernel.elf kernel.elf
+import ./build/TestProgram.elf test.elf
+import ./build/Write.elf write
+import TestFile.txt test.txt
+quit
+" | ./Ext2Tool.elf 'File(EFIBoot.img,512)>GPT(1)'
 
 echo "Done!"

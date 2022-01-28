@@ -1,14 +1,5 @@
+#Require "./src/drivers/block-device/BlockDevice.rlx"
 #Require "$/MemoryBase.rlx"
-
-define void TerminateAfterUnhandledException(i64 Code) {
-	asm (rax := 0x12345678, rbx := Code, rcx := 0) {
-		mov, {rcx} As i8*, 0
-	}
-	
-	loop {}
-}
-
-#Require "$/ExceptionBase.rlx"
 
 i16 EXT2_SUPER_MAGIC := 0xEF53 As i16
 
@@ -77,10 +68,6 @@ struct SuperBlock {
 		
 		this->CreatorOS := 0
 		this->RevisionLevel := 0
-	}
-	
-	define i8 IsValid() {
-		return this->Magic = EXT2_SUPER_MAGIC
 	}
 }
 
@@ -232,34 +219,6 @@ struct DirectoryEntry {
 
 i32 EXT2_SUPERBLOCK_NUMBER := 1
 i32 EXT2_BLOCK_GROUP_DESCRIPTOR_TABLE_NUMBER := 2
-
-struct Ext2DeviceTraits {
-	void* State
-	void* ReadSector
-	void* WriteSector
-	
-	static void Call(void* State, i32 Paramter, void* Data, void* Function) asm {
-		jmp, rcx
-	}
-	
-	define void ReadSectors(i32 StartSectorNumber, i32 SectorCount, void* Buffer) {
-		i32 EndSectorNumber := StartSectorNumber + SectorCount
-		
-		for (i32 Sector := StartSectorNumber, Sector < EndSectorNumber, Sector++) {
-			Ext2DeviceTraits:Call(this->State, Sector, Buffer, this->ReadSector)
-			Buffer += 0x200
-		}
-	}
-	define void WriteSectors(i32 StartSectorNumber, i32 SectorCount, void* Buffer) {
-		i32 EndSectorNumber := StartSectorNumber + SectorCount
-		
-		for (i32 Sector := StartSectorNumber, Sector < EndSectorNumber, Sector++) {
-			Ext2DeviceTraits:Call(this->State, Sector, Buffer, this->WriteSector)
-			Buffer += 0x200
-		}
-	}
-}
-
 i32 EXT2_RESERVED_BLOCKS_PER_GROUP := 4
 
 struct Ext2CreationParameters {
@@ -359,6 +318,8 @@ define i8* Ext2ExceptionToString(i64 Exception) {
 	}
 }
 
+;#Require "$/ExceptionBase.rlx"
+
 struct Ext2 {
 	SuperBlock* SuperBlock
 	BlockGroupDescriptor* BlockGroupTable
@@ -372,10 +333,10 @@ struct Ext2 {
 	
 	void* TempBitmap
 	
-	Ext2DeviceTraits* Traits
+	BlockDevice* Device
 	
 	define void ReadSectors(i32 SectorNumber, i32 SectorCount, void* Buffer) {
-		this->Traits->ReadSectors(SectorNumber, SectorCount, Buffer)
+		this->Device->Read(SectorNumber, SectorCount, Buffer)
 	}
 	define void* ReadBlock(i32 BlockNumber, void* Buffer) {
 		this->ReadSectors(BlockNumber * 2, 2, Buffer)
@@ -418,7 +379,7 @@ struct Ext2 {
 	define void WriteSectors(i32 SectorNumber, i32 SectorCount, void* Data) {
 		;Print("Writing %x bytes to %x\n", SectorCount * 512, SectorNumber * 512)
 		
-		this->Traits->WriteSectors(SectorNumber, SectorCount, Data)
+		this->Device->Write(SectorNumber, SectorCount, Data)
 	}
 	define void WriteBlock(i32 BlockNumber, void* Data) {
 		this->WriteSectors(BlockNumber * 2, 2, Data)
@@ -467,9 +428,6 @@ struct Ext2 {
 		
 		return Result
 	}
-	;define INode* CloneINode(i32 INodeNumber) {
-	;	return CloneMemory(this->ReadINode(INodeNumber), #INode)
-	;}
 	define void RefreshINode(INode* Node) {
 		INode* NewData := this->ReadINode(Node->INodeNumber)
 		

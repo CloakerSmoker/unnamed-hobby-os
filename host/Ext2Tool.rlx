@@ -1,10 +1,14 @@
 #Require "$/Console.rlx"
-#Require "$/Exception.rlx"
 #Require "$/String.rlx"
 #Require "$/File.rlx"
-#Require "$/Debug.rlx"
+#Require "$/Exception.rlx"
 
+#Require "./src/drivers/block-device/BlockDevice.rlx"
+#Require "./src/drivers/block-device/FileBlockDevice.rlx"
+#Require "./src/drivers/block-device/GPTBlockDevice.rlx"
 #Require "./src/drivers/Ext2.rlx"
+
+#Require "$/Debug.rlx"
 
 define void PrintSuperBlock(SuperBlock* this) {
 	Print("SuperBlock {\n")
@@ -187,7 +191,7 @@ define void Prompt(Ext2* FS) {
 				Print(" CD to '^A0%s^F0', INode ^A0%x^F0\n", Path, NewRootEntry->INode)
 				
 				Free(RootINode)
-				RootINode := FS->CloneINode(NewRootEntry->INode)
+				RootINode := CloneMemory(FS->ReadINode(NewRootEntry->INode), #INode)
 			}
 		}
 		else if (StringEquals(Command, "bi")) {
@@ -197,7 +201,7 @@ define void Prompt(Ext2* FS) {
 				Print(" Could not find file/directory '^C0%s^F0'\n", Path)
 			}
 			else {
-				INode* FoundNode := FS->CloneINode(FoundNodeEntry->INode)
+				INode* FoundNode := CloneMemory(FS->ReadINode(FoundNodeEntry->INode), #INode)
 				
 				i32 BlockCount := FoundNode->FileSizeLow / 1024
 				
@@ -230,7 +234,7 @@ define void Prompt(Ext2* FS) {
 				Print(" Could not find file '^C0%s^F0'\n", Path)
 			}
 			else {
-				INode* FoundFileNode := FS->CloneINode(FoundFileEntry->INode)
+				INode* FoundFileNode := CloneMemory(FS->ReadINode(FoundFileEntry->INode), #INode)
 				
 				i32 FileBlockCount := FoundFileNode->FileSizeLow / 1024
 				
@@ -284,46 +288,61 @@ define void Prompt(Ext2* FS) {
 			
 			i32 Size := 0
 			
-			loop {
-				Print("^90-->^F0")
-				NextLine := ReadLine()
-				
-				ArgC := 0
-				ArgV := null
-				
-				ParseCommandLine(NextLine, &ArgC, &ArgV)
-				Command := ArgV[0]
-				
-				if (StringEquals(Command, "done")) {
-					break
-				}
-				
-				if (ArgC < 2) {
-					Print("- Not enough arguments\n")
-				}
-				
-				i32 Argument := AToI(ArgV[1]) As i32
-				
-				if (StringEquals(Command, "inodes")) {
-					Parameters->INodesPerGroup := Argument * 8
-					Print(" + Set number of INodes per group to %i\n", Parameters->INodesPerGroup)
-				}
-				else if (StringEquals(Command, "blocks")) {
-					Parameters->BlocksPerGroup := Argument
-					Print(" + Set number of blocks per group to %i\n", Parameters->BlocksPerGroup)
-				}
-				else if (StringEquals(Command, "size")) {
-					Size := Argument
+			if (ArgC >= 2) {
+				Size := AToI(ArgV[1]) As i32
 					
-					i32 Scale := 1
+				i32 Scale := 1
+				
+				if (ArgC = 3) {
+					Scale := ParseScale(ArgV[2])
+				}
+				
+				Size *= Scale
+				
+				Print(" + Set size to %x bytes\n", Size)
+			}
+			else {
+				loop {
+					Print("^90-->^F0")
+					NextLine := ReadLine()
 					
-					if (ArgC = 3) {
-						Scale := ParseScale(ArgV[2])
+					ArgC := 0
+					ArgV := null
+					
+					ParseCommandLine(NextLine, &ArgC, &ArgV)
+					Command := ArgV[0]
+					
+					if (StringEquals(Command, "done")) {
+						break
 					}
 					
-					Size *= Scale
+					if (ArgC < 2) {
+						Print("- Not enough arguments\n")
+					}
 					
-					Print(" + Set size to %x bytes\n", Size)
+					i32 Argument := AToI(ArgV[1]) As i32
+					
+					if (StringEquals(Command, "inodes")) {
+						Parameters->INodesPerGroup := Argument * 8
+						Print(" + Set number of INodes per group to %i\n", Parameters->INodesPerGroup)
+					}
+					else if (StringEquals(Command, "blocks")) {
+						Parameters->BlocksPerGroup := Argument
+						Print(" + Set number of blocks per group to %i\n", Parameters->BlocksPerGroup)
+					}
+					else if (StringEquals(Command, "size")) {
+						Size := Argument
+						
+						i32 Scale := 1
+						
+						if (ArgC = 3) {
+							Scale := ParseScale(ArgV[2])
+						}
+						
+						Size *= Scale
+						
+						Print(" + Set size to %x bytes\n", Size)
+					}
 				}
 			}
 			
@@ -415,7 +434,7 @@ define void Prompt(Ext2* FS) {
 				continue
 			}
 			
-			INode* OutputNode := FS->CloneINode(OutputEntry->INode)
+			INode* OutputNode := CloneMemory(FS->ReadINode(OutputEntry->INode), #INode)
 			
 			i32 OutputBlockCount := OutputNode->FileSizeLow / 0x400
 			i32 OutputRemainder := OutputNode->FileSizeLow % 0x400
@@ -540,67 +559,19 @@ define void Prompt(Ext2* FS) {
 	}
 }
 
-struct Ext2FileBackedDevice {
-	i64 FD
-	
-	define void Read(i32 SectorNumber, void* Buffer) {
-		if (SectorNumber < 0) {
-			Throw(EXT2_EXCEPTION_DEVICE_READ_ERROR)
-		}
-		
-		FileSeek(this->FD, SectorNumber * 512, SEEK_SET)
-		FileRead(this->FD, Buffer, 512)
-	}
-	define void Write(i32 SectorNumber, void* Buffer) {
-		if (SectorNumber < 0) {
-			Throw(EXT2_EXCEPTION_DEVICE_WRITE_ERROR)
-		}
-		
-		FileSeek(this->FD, SectorNumber * 512, SEEK_SET)
-		FileWrite(this->FD, Buffer, 512)
-	}
-	
-	static void Read(Ext2FileBackedDevice* this, i32 Sector, void* Buffer) {
-		this->Read(Sector, Buffer)
-	}
-	static void Write(Ext2FileBackedDevice* this, i32 Sector, void* Buffer) {
-		this->Write(Sector, Buffer)
-	}
-	
-	static Ext2DeviceTraits* New(i64 FD) {
-		Ext2FileBackedDevice* this := Alloc(#Ext2FileBackedDevice)
-		
-		this->FD := FD
-		
-		Ext2DeviceTraits* Traits := Alloc(#Ext2DeviceTraits)
-		
-		Traits->State := this
-		Traits->ReadSector := &Ext2FileBackedDevice:Read
-		Traits->WriteSector := &Ext2FileBackedDevice:Write
-		
-		return Traits
-	}
-}
-
-
-
 define i32 Main(i64 ArgC, i8** ArgV) {
 	GetArgs(&ArgC, &ArgV)
 	
-	if (ArgC != 2) {
-		Print("No file specified\n")
-		return 0
-	}
+	i8* ProgramDirectory := GetAbsolutePath(Concatenate(ArgV[0], "/../"))
+	SetWorkingDirectory(ProgramDirectory)
 	
-	i64 F := FileOpen(ArgV[1], FILE_READ_WRITE | FILE_CREATE_NEW)
+	BlockDevice* Device := InstantiateBlockDeviceChainFromPath(ArgV[1])
 	
-	Print("FD = %x\n", F)
-	
-	Ext2DeviceTraits* Traits := Ext2FileBackedDevice:New(F)
+	Print("Device = %x\n", Device)
 	
 	Ext2* FS := Alloc(#Ext2)
 	
-	FS->Traits := Traits
+	FS->Device := Device
 	
 	void* SB := Alloc(2048)
 	void* TI := Alloc(1024)
