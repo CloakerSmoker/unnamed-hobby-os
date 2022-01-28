@@ -22,6 +22,12 @@ struct FileBlockDeviceInstance {
 		Print("File(%s,%s)\n", Options[0], Options[1])
 		
 		this->Handle := FileOpen(Options[0], FILE_READ_WRITE | FILE_CREATE_NEW)
+		
+		if (this->Handle < 0) {
+			Print("Could not open '%s', error %x\n", Options[0], FileGetError(this->Handle))
+			Throw(FileGetError(this->Handle))
+		}
+		
 		this->BytesPerBlock := AToI(Options[1]) As i32
 	}
 }
