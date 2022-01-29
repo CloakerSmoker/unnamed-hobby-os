@@ -1,0 +1,81 @@
+#Require "./src/drivers/EFI.rlx"
+
+EFI_HANDLE* IMAGE_HANDLE
+EFI_SYSTEM_TABLE* SYSTEM_TABLE
+
+define void PrintCharacter(i8 Character) {
+	i8[4] Temp {Character, 0, 0, 0}
+	
+	SYSTEM_TABLE->ConsoleOutput->OutputString(Temp As i16*)
+}
+
+#Require "./src/utility/Print.rlx"
+
+define void DoWideStringPrint(PrintOutputAdapterPrototype* this, i8* Format, i32* FormatIndex, void* Parameters, i32 ParameterCount, i32* ParameterIndex) {
+	i32 Index := 0
+	i16* String := Parameters[*ParameterIndex] As i16*
+	
+	loop {
+		i16 Next := String[Index++]
+		
+		if (Next = 0) {
+			break
+		}
+		
+		this->PrintCharacter(Next As i8)
+	}
+	
+	*ParameterIndex += 1
+}
+
+PrintFormatPrototype WideStringFormatPrototype {
+	Name: "w",
+	DoFormat: &DoWideStringPrint
+}
+
+define void TerminateAfterUnhandledException(i64 Code) {
+	*(Code As i64*) := 0
+}
+
+#Require "$/ExceptionBase.rlx"
+
+#Require "$/MemoryBase.rlx"
+
+struct EFIAllocation {
+	i32 Size
+	i32 Dummy
+	i8[0] Data
+}
+
+define void* Alloc(i32 Size) {
+	EFIAllocation* Result := SYSTEM_TABLE->BootServices->AllocatePool(8 + Size)
+	
+	Result->Size := Size
+	
+	return Result~>Data
+}
+define void Free(void* RawMemory) {
+	EFIAllocation* Memory := (RawMemory - 8) As EFIAllocation*
+
+	SYSTEM_TABLE->BootServices->FreePool(Memory As void*)
+}
+define void* ReAlloc(void* Old, i32 Size) {
+	EFIAllocation* Memory := (Old - 8) As EFIAllocation*
+	
+	void* New := Alloc(Size)
+	MoveMemory(New, Old, Memory->Size)
+	Free(Old)
+	
+	return New
+}
+
+i32 WIDE_STRING_PROTOTYPE_ID := AddPrintFormat(&WideStringFormatPrototype)
+
+declare i64 EFIMain(EFI_HANDLE*, EFI_SYSTEM_TABLE*)
+
+define i64 Main(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) x64 {
+	IMAGE_HANDLE := ImageHandle
+	SYSTEM_TABLE := SystemTable
+	
+	return EFIMain(ImageHandle, SystemTable)
+}
