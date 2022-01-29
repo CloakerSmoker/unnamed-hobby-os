@@ -1,3 +1,5 @@
+#Require "./src/drivers/Ext2.rlx"
+
 define i64 Ext2PackHandle(i32 INodeNumber, i32 Offset) {
 	return ((Offset As i64) << 32) | INodeNumber
 	

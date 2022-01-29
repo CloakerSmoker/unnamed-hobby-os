@@ -200,7 +200,7 @@ i8 IST_7 := 1
 define void InsertIDTEntry(i32 Index, void* Function, i8 Present, i8 IST) {
 	IDTEntry* E := IDT[Index]
 	
-	MemorySet64(E As i64*, 0, 2)
+	SetMemory(E As i64*, 0, 2)
 	
 	E->OffsetLow16 := (Function & 0xFFFF) As i16
 	E->OffsetHigh16 := ((Function >> 16) & 0xFFFF) As i16

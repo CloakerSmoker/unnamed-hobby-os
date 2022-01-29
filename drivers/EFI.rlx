@@ -160,7 +160,7 @@ struct EFI_BLOCK_IO_PROTOCOL {
 		return EFICall(this, null, this->_Reset)
 	}
 	
-	define i64 ReadBlocks(i32 MediaID, i64 LBA, i32 BlockCount, void* Buffer) {
+	define i64 ReadBlocks(i32 MediaID, i64 LBA, i64 BlockCount, void* Buffer) {
 		return EFICall(this,
 		               MediaID As void*,
 					   LBA As void*,
@@ -168,7 +168,7 @@ struct EFI_BLOCK_IO_PROTOCOL {
 					   Buffer,
 					   this->_ReadBlocks)
 	}
-	define i64 ReadBlocks(i64 LBA, i32 BlockCount, void* Buffer) {
+	define i64 ReadBlocks(i64 LBA, i64 BlockCount, void* Buffer) {
 		return EFICall(this,
 		               this->Media->MediaID As void*,
 					   LBA As void*,
@@ -177,7 +177,7 @@ struct EFI_BLOCK_IO_PROTOCOL {
 					   this->_ReadBlocks)
 	}
 	
-	define i64 WriteBlocks(i32 MediaID, i64 LBA, i32 BlockCount, void* Buffer) {
+	define i64 WriteBlocks(i32 MediaID, i64 LBA, i64 BlockCount, void* Buffer) {
 		return EFICall(this, 
 		               MediaID As void*,
 					   LBA As void*,
@@ -185,7 +185,7 @@ struct EFI_BLOCK_IO_PROTOCOL {
 					   Buffer,
 					   this->_WriteBlocks)
 	}
-	define i64 WriteBlocks(i64 LBA, i32 BlockCount, void* Buffer) {
+	define i64 WriteBlocks(i64 LBA, i64 BlockCount, void* Buffer) {
 		return EFICall(this,
 		               this->Media->MediaID As void*,
 					   LBA As void*,
@@ -226,6 +226,28 @@ EFI_GUID* EFI_SIMPLE_FILE_SYSTEM_PROTOCOL := i8[0x22, 0x5b, 0x4e, 0x96, 0x59, 0x
 
 EFI_GUID* EFI_PARTITION_INFO_PROTOCOL_GUID := i8[0x2c, 0xf6, 0xf2, 0x8c, 0x9b, 0xbc, 0x21, 0x48, 0x80, 0x8d, 0xec, 0x9e, 0xc4, 0x21, 0xa1, 0xa0
 ] As EFI_GUID*
+
+struct EFI_PARTITION_ENTRY {
+	EFI_GUID Type
+	EFI_GUID GUID
+	i64 StartingLBA
+	i64 EndingLBA
+	i64 Attributes
+	i16[36] PartitionName
+}
+
+i32 EFI_PARTITION_INFO_TYPE_OTHER := 0
+i32 EFI_PARTITION_INFO_TYPE_MBR := 1
+i32 EFI_PARTITION_INFO_TYPE_GPT := 2
+
+struct EFI_PARTITION_INFO_PROTOCOL {
+	i32 Revision
+	i32 Type
+	i8 System
+	i8[7] Reserved
+	
+	EFI_PARTITION_ENTRY Entry
+}
 
 EFI_GUID* EFI_DEVICE_PATH_PROTOCOL_GUID := i8[0x91, 0x6e, 0x57, 0x09, 0x3f, 0x6d, 0xd2, 0x11, 0x8e, 0x39, 0x00, 0xa0, 0xc9, 0x69, 0x72, 0x3b] As EFI_GUID*
 
@@ -357,6 +379,173 @@ struct EFI_LOADED_IMAGE_PROTOCOL {
 	void* _Unload
 }
 
+EFI_GUID* EFI_DEBUG_SUPPORT_PROTOCOL_GUID := i8[0x0C, 0x59, 0x55, 0x27, 0x3C, 0x6F, 0xFA, 0x42, 0x9E, 0xA4, 0xA3, 0xBA, 0x54, 0x3C, 0xDA, 0x25] As EFI_GUID*
+
+struct EFI_FX_SAVE_STATE_X64 {
+	i16 Fcw
+	i16 Csw
+	i16 Ftw
+	i16 Opcode
+	i64 RIP
+	i64 DataOffset
+	
+	i8[8] Reserved1
+	
+	i8[10] St0Mm0
+	i8[6] Reserved2
+	i8[10] St0Mm1
+	i8[6] Reserved3
+	i8[10] St0Mm2
+	i8[6] Reserved4
+	i8[10] St0Mm3
+	i8[6] Reserved5
+	i8[10] St0Mm4
+	i8[6] Reserved6
+	i8[10] St0Mm5
+	i8[6] Reserved7
+	i8[10] St0Mm6
+	i8[6] Reserved8
+	i8[10] St0Mm7
+	i8[6] Reserved9
+	
+	i8[16] Xmm0
+	i8[16] Xmm1
+	i8[16] Xmm2
+	i8[16] Xmm3
+	i8[16] Xmm4
+	i8[16] Xmm5
+	i8[16] Xmm6
+	i8[16] Xmm7
+	
+	i8[224] Reserved11 ; 14 * 16
+}
+
+struct EFI_SYSTEM_CONTEXT_X64 {
+	i64 ExceptionData
+	
+	EFI_FX_SAVE_STATE_X64 FxSaveState
+	
+	i64[6] Dr
+	i64[6] Cr
+	
+	i64 Flags
+	
+	i64 LDTR
+	i64 TR
+	i64[2] GDTR
+	i64[2] IDTR
+	
+	i64 RIP
+	
+	i64 GS
+	i64 FS
+	i64 ES
+	i64 DS
+	i64 CS
+	i64 SS
+	
+	i64 RDI
+	i64 RSI
+	i64 RBP
+	i64 RSP
+	i64 RBX
+	i64 RDX
+	i64 RCX
+	i64 RAX
+	i64 R8
+	i64 R9
+	i64 R10
+	i64 R11
+	i64 R12
+	i64 R13
+	i64 R14
+	i64 R15
+}
+
+i64 EFI_DEBUG_SUPPORT_ARCHITECTURE_X64 := 0x8664
+
+i32 EFI_EXCEPTION_X64_INVALID_OPCODE := 6
+i32 EFI_EXCEPTION_X64_PROTECTION_FAULT := 13
+i32 EFI_EXCEPTION_X64_PAGE_FAULT := 14
+
+struct EFI_DEBUG_SUPPORT_PROTOCOL {
+	i64 Architecture
+	void* _GetMaximumProcessorIndex
+	void* _RegisterPeriodicCallback
+	void* _RegisterExceptionCallback
+	void* _InvalidateInstructionCache
+	
+	define i64 RegisterExceptionCallback(i32 Type, void* Callback) {
+		return EFICall(this, null, Callback, Type As void*, this->_RegisterExceptionCallback)
+	}
+}
+
+EFI_GUID* EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID := i8[0xde, 0xa9, 0x42, 0x90, 0xdc, 0x23, 0x38, 0x4a, 0x96, 0xfb, 0x7a, 0xde, 0xd0, 0x80, 0x51, 0x6a] As EFI_GUID*
+
+i32 EFI_GRAPHICS_PIXEL_FORMAT_RGB_8 := 0
+i32 EFI_GRAPHICS_PIXEL_FORMAT_BGR_8 := 1
+i32 EFI_GRAPHICS_PIXEL_FORMAT_MASK := 2
+i32 EFI_GRAPHICS_PIXEL_FORMAT_BLOCK_TRANSFER_ONLY := 3
+
+struct EFI_PIXEL_BITMASK {
+	i32 RedMask
+	i32 GreenMask
+	i32 BlueMask
+	i32 ReservedMask
+}
+
+struct EFI_GRAPHICS_OUTPUT_MODE_INFORMATION {
+	i32 Version
+	i32 HorizontalResolution
+	i32 VerticalResolution
+	i32 PixelFormat
+	i32 PixelInformation
+	i32 PixelsPerScanLine
+}
+
+struct EFI_GRAPHICS_OUTPUT_MODE {
+	i32 MaxMode
+	i32 CurrentMode
+	EFI_GRAPHICS_OUTPUT_MODE_INFORMATION* Info
+	i32 SizeOfInfo
+	void* FrameBufferBase
+	i64 FrameBufferSize
+}
+
+struct EFI_GRAPHICS_OUTPUT_PROTOCOL {
+	void* _QueryMode
+	void* _SetMode
+	void* _BlockTransfer
+	EFI_GRAPHICS_OUTPUT_MODE* Mode
+	
+	define EFI_GRAPHICS_OUTPUT_MODE_INFORMATION* QueryMode(i32 ModeNumber) {
+		i64 SizeOfInfo := #EFI_GRAPHICS_OUTPUT_MODE_INFORMATION
+		EFI_GRAPHICS_OUTPUT_MODE_INFORMATION* Result := null
+		
+		EFICall(this, ModeNumber As void*, &SizeOfInfo, &Result, this->_QueryMode)
+		
+		return Result
+	}
+	define i64 SetMode(i32 ModeNumber) {
+		return EFICall(this, ModeNumber As void*, this->_SetMode)
+	}
+}
+
+
+i32 EFI_MEMORY_ALLOCATE_ANY := 0
+i32 EFI_MEMORY_ALLOCATE_MAX_ADDRESS := 1
+i32 EFI_MEMORY_ALLOCATE_ADDRESS := 2
+
+i32 EFI_MEMORY_DESCRIPTOR_VERSION := 1
+
+struct EFI_MEMORY_DESCRIPTOR {
+	i32 Type
+	i64 PhysicalStart
+	void* VirtualStart
+	i64 NumberOfPages
+	i64 Attribute
+}
+
 i32 EFI_MEMORY_TYPE_LOADER_CODE := 1
 i32 EFI_MEMORY_TYPE_LOADER_DATA := 2
 i32 EFI_MEMORY_TYPE_BOOT_SERVICE_CODE := 3
@@ -430,6 +619,40 @@ struct EFI_BOOT_SERVICES {
     void* _SetMem
     void* _CreateEventEx
 	
+	define i64 AllocatePages(i32 AllocateType, i32 MemoryType, i32 PageCount, void** Memory) {
+		return EFICall(AllocateType As void*, MemoryType As void*, PageCount As void*, Memory, this->_AllocatePages)
+	}
+	define i64 AllocatePages(i32 AllocateType, i32 PageCount, void** Memory) {
+		return EFICall(AllocateType As void*, EFI_MEMORY_TYPE_BOOT_SERVICE_DATA As void*, PageCount As void*, Memory, this->_AllocatePages)
+	}
+	define void* AllocatePages(i32 PageCount) {
+		void* Result := null
+		
+		this->AllocatePages(EFI_MEMORY_ALLOCATE_ANY, EFI_MEMORY_TYPE_BOOT_SERVICE_DATA, PageCount, &Result)
+		
+		return Result
+	}
+	define i64 FreePages(void* Memory, i32 PageCount) {
+		return EFICall(Memory, PageCount As void*, this->_FreePages)
+	}
+	
+	define i64 GetMemoryMapSize() {
+		i64 Size := 0
+		i64 MapKey := 0
+		i64 DescriptorSize := 0
+		i64 DescriptorVersion := EFI_MEMORY_DESCRIPTOR_VERSION
+		
+		EFICall(&Size, null, &MapKey, &DescriptorSize, &DescriptorVersion, this->_GetMemoryMap)
+		
+		return Size
+	}
+	define i64 GetMemoryMap(i64 Size, EFI_MEMORY_DESCRIPTOR* Out, i64* MapKey) {
+		i64 DescriptorSize := 0
+		i64 DescriptorVersion := EFI_MEMORY_DESCRIPTOR_VERSION
+		
+		return EFICall(&Size, Out, MapKey, &DescriptorSize, &DescriptorVersion, this->_GetMemoryMap)
+	}
+	
 	define i64 AllocatePool(i32 PoolType, i64 Size, void** Buffer) {
 		return EFICall(PoolType As void*, Size As void*, Buffer, this->_AllocatePool)
 	}
@@ -455,6 +678,10 @@ struct EFI_BOOT_SERVICES {
 		i32 SignalIndex := 0
 		
 		return EFICall(1 As void*, &Event, &SignalIndex , this->_WaitForEvent)
+	}
+	
+	define i64 ExitBootServices(EFI_HANDLE* ImageHandle, i64 MapKey) {
+		return EFICall(ImageHandle, MapKey As void*, this->_ExitBootServices)
 	}
 	
 	define i64 HandleProtocol(EFI_HANDLE* Handle, EFI_GUID* Protocol, void** Interface) {
@@ -494,8 +721,8 @@ struct EFI_SYSTEM_TABLE {
 	void* ConsoleOutputHandle
 	SIMPLE_TEXT_OUTPUT_INTERFACE* ConsoleOutput
 
-	void* StandardErrorHandle
-	SIMPLE_TEXT_OUTPUT_INTERFACE* StandardError
+	void* ConsoleErrorHandle
+	SIMPLE_TEXT_OUTPUT_INTERFACE* ConsoleError
 	
 	EFI_RUNTIME_SERVICES* RuntimeServices
 	EFI_BOOT_SERVICES* BootServices

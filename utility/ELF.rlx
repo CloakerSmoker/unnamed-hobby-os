@@ -90,6 +90,8 @@ struct ELFHeader unaligned {
 	}
 }
 
+#Require "$/MemoryBase.rlx"
+
 struct ELFReader {
 	union {
 		void* Data
@@ -97,7 +99,6 @@ struct ELFReader {
 	}
 	
 	i32 Size
-
 	
 	define void* Load() {
 		ELFProgramHeader* ProgramHeaders := this->Header->GetProgramHeaders()
@@ -113,10 +114,10 @@ struct ELFReader {
 					void* ZeroArea := SectionMemory + Next->FileSize
 					i64 ZeroSize := Next->MemorySize - Next->FileSize
 					
-					FastSetMemory8(ZeroArea, 0, ZeroSize)
+					SetMemory(ZeroArea, 0, ZeroSize)
 				}
 				
-				FastMoveMemory(SectionMemory, SectionData, Next->FileSize)
+				MoveMemory(SectionMemory, SectionData, Next->FileSize As i32)
 			}
 		}
 		

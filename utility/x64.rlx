@@ -85,10 +85,6 @@ define void* GetRSP() asm {
 	lea, rax, {rsp - 8} As i64*
 	ret
 }
-define i64* GetRBP() asm {
-	mov, rax, rbp
-	ret
-}
 
 define void WriteMSR(i64 Number, i64 Value) {
 	i64 Low := Value & 0xFFFF_FFFF

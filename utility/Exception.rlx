@@ -1,60 +1,56 @@
-define void RestoreHandlerContextAndTransferControl(i64 Code, void* Handler, void* OldRBP, void* OldRSP) asm {
-	; Restores the execution context to how the function containing the handler expects, and then
-	;  calls the handler passing the exception code
-	
-	mov, rbp, rdx
-	mov, rsp, rcx
-	jmp, rsi
+declare void Print(i8*, ...)
+declare void PrintStackDump(i32)
+
+define void TerminateAfterUnhandledException(i64 Code) {
+	Print("\n\n----------------------\n")
+	Print("Unhandled exception %x (%l) with call stack:\n", Code, Code)
+	PrintStackDump(3)
+	Print("Aborting...\n")
+	Print("----------------------\n\n\n")
 }
 
-struct StackFrame {
-	StackFrame* LastFrame,
-	i64* ReturnAddress
-}
+#Require "$/ExceptionBase.rlx"
 
-define StackFrame* FindHandler(i64* StartingFrame) {
-	; Walks up stack frames looking for one marked as an exception handler
-	
-	StackFrame* Last := StartingFrame As StackFrame*
+define void PrintStackDump(i32 IgnoreFrames) {
+	StackFrame* Last := GetRBP() As StackFrame*
+	i32 Index := 1
 	
 	while (Last) {
 		if (Last->LastFrame & 1) {
-			return Last
+			StackFrame* Temp := Last->LastFrame - 1
+			
+			if (IgnoreFrames) {
+				IgnoreFrames -= 1
+			}
+			else {
+				Print("	Stack[%i] Try catch address = %x\n", Index, Last->ReturnAddress, Temp)
+				Index += 1
+			}
+			
+			Last := Temp
 		}
-		
-		Last := Last->LastFrame
+		else {
+			if (IgnoreFrames) {
+				IgnoreFrames -= 1
+			}
+			else {
+				i64* MaybeMagic := (Last - 0x8) As i64*
+				i8** MaybeName := (Last - 0x10) As i8**
+				
+				if (Debug && *MaybeMagic = 0x12345678) {
+					Print("	Stack[%i] Fn = %s\n", Index, *MaybeName)
+				}
+				else {
+					Print("	Stack[%i] Fn callsite = %x\n", Index, Last->ReturnAddress, Last->LastFrame)
+				}
+				
+				Index += 1
+			}
+			
+			Last := Last->LastFrame
+		}
 	}
-	
-	return null
 }
-
-void* UnhandledExceptionHandler := null
-
-define void CallUnhandledExceptionFilter(i64 Code, void* Handler) asm {
-	jmp, rsi
-}
-
-i8 EXCEPTION_WAS_LAST_CHANCE := false
-
-define void CallUnhandledExceptionHandler(i64 Code) {
-	if (UnhandledExceptionHandler != null && !EXCEPTION_WAS_LAST_CHANCE) {
-		EXCEPTION_WAS_LAST_CHANCE := true
-		
-		CallUnhandledExceptionFilter(Code, UnhandledExceptionHandler)
-	}
-	
-	loop {}
-}
-
-define void Throw(i64 Code) {
-	; Calls the first exception handler found in the call stack
-	
-	StackFrame* Last := FindHandler(GetRBP())
-	
-	if (Last = null) {
-		CallUnhandledExceptionHandler(Code)
-	}
-	else {
-		RestoreHandlerContextAndTransferControl(Code, Last->ReturnAddress, Last, Last->LastFrame - 1)
-	}
+define void PrintStackDump() {
+	PrintStackDump(0)
 }

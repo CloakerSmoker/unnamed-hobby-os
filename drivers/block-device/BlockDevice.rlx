@@ -84,7 +84,7 @@ struct BlockDevice {
 	}
 }
 
-define BlockDevice* NewBlockDevice(BlockDevice* Parent, BlockDevicePrototype* Prototype, ... RawOptions) {
+define void* NewBlockDevice(BlockDevice* Parent, BlockDevicePrototype* Prototype, ... RawOptions) {
 	i64 OptionCount := (RawOptions As i64*)[0]
 	i8** Options := (RawOptions As i8**) + 0x8
 	

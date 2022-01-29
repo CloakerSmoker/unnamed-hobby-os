@@ -1,6 +1,6 @@
 #ImageBase 0x10_0000
 
-#Require "./src/utility/Generic.rlx"
+#Require "$/MemoryBase.rlx"
 #Require "./src/utility/x64.rlx"
 #Require "./src/utility/String.rlx"
 
@@ -15,6 +15,12 @@ declare void* KernelHeapExtendAllocation(void*, i32)
 declare void KernelHeapFree(void*)
 
 #Require "./src/kernel/graphics/Font.rlx"
+
+i32 SCREEN_WIDTH := 1024
+i32 SCREEN_HEIGHT := 768
+i32 COLOR_DEPTH := 32
+i32 BYTES_PER_PIXEL := 4
+
 #Require "./src/kernel/graphics/Screen.rlx"
 
 #Require "./src/kernel/core/Paging.rlx"
@@ -72,9 +78,6 @@ i8 RECOVER_FROM_USER_PAGE_FAULT := false
 #Require "./src/kernel/core/Interrupts.rlx"
 #Require "./src/kernel/core/Devices.rlx"
 
-#Require "./src/drivers/ATAExt2.rlx"
-
-Ext2DeviceTraits* RootDevice := null
 Ext2* FS := null
 INode* RootINode := null
 
@@ -98,7 +101,7 @@ stop:
 	jmp, stop
 }
 
-define void Main(void* CR3, void* RawFrameBuffer, i64 MaxKernelAddress) {
+define void Main(void* CR3, void* RawFrameBuffer, i32 KernelSize) {
 	Info("Main, FrameBuffer @ %x\n", RawFrameBuffer)
 	
 	Kernel->FrameBuffer := RawFrameBuffer
@@ -106,7 +109,7 @@ define void Main(void* CR3, void* RawFrameBuffer, i64 MaxKernelAddress) {
 	PhysicalMemory->AddReserved(0, 0x10_0000) ; < 1mb, bootloader reserved
 	PhysicalMemory->Add(0x10_0000, 0x350_0000) ; free memory
 	
-	i32 KernelSize := (MaxKernelAddress - 0x10_0000) As i32 ; Highest address of kernel data - image base
+	;i32 KernelSize := (MaxKernelAddress - 0x10_0000) As i32 ; Highest address of kernel data - image base
 	
 	Kernel->Size := KernelSize
 	Kernel->PageCount := SizeToPageCount(KernelSize)
@@ -140,8 +143,6 @@ define void Main(void* CR3, void* RawFrameBuffer, i64 MaxKernelAddress) {
 	
 	KernelAddressSpace->Takeover(&RawMainContinuation, StackMemory + (PAGE_SIZE * 20))
 }
-
-declare void DebugInsertUnhandledExceptionHandler()
 
 define void MainContinuation() {
 	Info("Paging initialized, AddressSpaceManager in control\n")
@@ -215,23 +216,21 @@ define void MainContinuation() {
 	
 	KernelTerminal->SetCursorTimer()
 	
-	DebugInsertUnhandledExceptionHandler()
-	
 	KernelTerminal->PrintLine("BOOT: Mounting disk")
 	
-	void* SB := KernelHeapAllocate('SB', 2048)
-	void* TI := KernelHeapAllocate('TI', 1024)
-	void* TB1 := KernelHeapAllocate('TB1', 1024)
-	void* TB2 := KernelHeapAllocate('TB2', 1024)
-	void* BMP := KernelHeapAllocate('BMP', 1024)
+	;void* SB := KernelHeapAllocate('SB', 2048)
+	;void* TI := KernelHeapAllocate('TI', 1024)
+	;void* TB1 := KernelHeapAllocate('TB1', 1024)
+	;void* TB2 := KernelHeapAllocate('TB2', 1024)
+	;void* BMP := KernelHeapAllocate('BMP', 1024)
 	
-	FS := KernelHeapAllocate('Root', #Ext2)
-	RootDevice := Ext2ATADevice:New()
-	FS->Traits := RootDevice
-	
-	FS->Initialize(SB, TI, TB1, TB2, BMP)
-	
-	RootINode := CloneMemory(FS->ReadINode(2), #INode)
+	;FS := KernelHeapAllocate('Root', #Ext2)
+	;RootDevice := Ext2ATADevice:New()
+	;FS->Traits := RootDevice
+	;
+	;FS->Initialize(SB, TI, TB1, TB2, BMP)
+	;
+	;RootINode := CloneMemory(FS->ReadINode(2), #INode)
 	
 	SetupShell()
 	
@@ -239,67 +238,4 @@ define void MainContinuation() {
 	Shell()
 	
 	loop {}
-}
-
-
-define void PrintStackDump(i32 IgnoreFrames) {
-	StackFrame* Last := GetRBP() As StackFrame*
-	i32 Index := 1
-	
-	while (Last) {
-		if (Last->LastFrame & 1) {
-			StackFrame* Temp := Last->LastFrame - 1
-			
-			if (IgnoreFrames) {
-				IgnoreFrames -= 1
-			}
-			else {
-				Print("	Stack[%i] Try catch address = %x\n", Index, Last->ReturnAddress, Temp)
-				Index += 1
-			}
-			
-			Last := Temp
-		}
-		else {
-			if (IgnoreFrames) {
-				IgnoreFrames -= 1
-			}
-			else {
-				i64* MaybeMagic := (Last - 0x8) As i64*
-				i8** MaybeName := (Last - 0x10) As i8**
-				
-				if (Debug && *MaybeMagic = 0x12345678) {
-					Print("	Stack[%i] Fn = %s\n", Index, *MaybeName)
-				}
-				else {
-					Print("	Stack[%i] Fn callsite = %x\n", Index, Last->ReturnAddress, Last->LastFrame)
-				}
-				
-				Index += 1
-			}
-			
-			Last := Last->LastFrame
-		}
-	}
-}
-define void PrintStackDump() {
-	PrintStackDump(0)
-}
-
-define void UnhandledExceptionHandler(i64 Code) {
-	Print("\n\n----------------------\n")
-	Print("Unhandled exception %x (%l) with call stack:\n", Code, Code)
-	PrintStackDump(3)
-	Print("Aborting...\n")
-	Print("----------------------\n\n\n")
-}
-
-define void* DebugInsertUnhandledExceptionHandler() {
-	UnhandledExceptionHandler := &UnhandledExceptionHandler
-	
-	if !(Debug) {
-		Print("^60Warning: Debug library included without '--debug' compiler flag, stack traces will only contain raw addresses.^F0\n")
-	}
-	
-	return null
 }

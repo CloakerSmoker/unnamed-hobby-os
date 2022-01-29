@@ -101,6 +101,7 @@ struct PrintOutputAdapterPrototype {
 	define void PrintString(i8* String) {
 		this->PrintCharacters(String, StringLength(String))
 	}
+	
 	define void PrintIntegerBase(i64 Number, i64 Base) {
 		i8[65] Buffer
 		
@@ -111,6 +112,7 @@ struct PrintOutputAdapterPrototype {
 	define void PrintInteger(i64 Number) {
 		this->PrintIntegerBase(Number, 10)
 	}
+	
 	define void PrintHex(i64 Number) {
 		this->PrintIntegerBase(Number, 16)
 	}
@@ -118,12 +120,20 @@ struct PrintOutputAdapterPrototype {
 		this->PrintString("0x")
 		this->PrintIntegerBase(Number, 16)
 	}
+	
 	define void PrintBinary(i64 Number) {
 		this->PrintIntegerBase(Number, 2)
 	}
 	define void PrintPrefixedBinary(i64 Number) {
 		this->PrintString("0b")
 		this->PrintIntegerBase(Number, 2)
+	}
+	
+	define void PrintByte(i64 Number) {
+		Number &= 0xFF
+		
+		this->PrintCharacter(NumberToCharacter(((Number >> 4) & 0xF) As i8))
+		this->PrintCharacter(NumberToCharacter((Number & 0xF) As i8))
 	}
 	define void PrintLiteral(i64 PackedCharacters) {
 		i8* Characters := &PackedCharacters As i8*

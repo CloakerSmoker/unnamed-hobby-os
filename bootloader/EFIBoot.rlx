@@ -1,9 +1,53 @@
 #Require "./src/utility/EFIApplication.rlx"
 
+#Require "./src/drivers/block-device/BlockDevice.rlx"
+#Require "./src/drivers/block-device/EFIBlockDevice.rlx"
+#Require "./src/drivers/FAT32.rlx"
+#Require "./src/drivers/Ext2.rlx"
+#Require "./src/drivers/GPT.rlx"
+#Require "./src/utility/ELF.rlx"
+
+define void* EFILoadELF(EFI_SYSTEM_TABLE* SystemTable, ELFHeader* Header) {
+	void* Data := Header
+	
+	ELFProgramHeader* ProgramHeaders := Header->GetProgramHeaders()
+	
+	for (i32 Index := 0, Index < Header->ProgramHeaderEntryCount, Index++) {
+		ELFProgramHeader* Next := ProgramHeaders[Index]
+		
+		if (Next->Type = ELF_SEGMENT_TYPE_LOAD) {
+			void* SectionData := Data + Next->FileOffset
+			void* SectionMemory := null + Next->VirtualAddress
+			
+			i32 SectionPageCount := (Next->MemorySize / 0x1000) As i32
+			
+			if (Next->MemorySize % 0x1000) {
+				SectionPageCount += 1
+			}
+			
+			SystemTable->BootServices->AllocatePages(EFI_MEMORY_ALLOCATE_ADDRESS, SectionPageCount, &SectionMemory)
+			
+			if (Next->MemorySize > Next->FileSize) {
+				void* ZeroArea := SectionMemory + Next->FileSize
+				i64 ZeroSize := Next->MemorySize - Next->FileSize
+				
+				SetMemory(ZeroArea, 0, ZeroSize)
+			}
+			
+			MoveMemory(SectionMemory, SectionData, Next->FileSize As i32)
+		}
+	}
+	
+	return null + Header->EntryPoint
+}
+
+define void StartKernel(void* CR3, void* FrameBuffer, i64 MaxKernelAddress, void* KernelMain) asm {
+	jmp, rcx
+}
+
 define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
     i64 Status := 0
 
-    ;Status := SystemTable->ConsoleOutput->OutputString("Hello EFI world!\n"w)
 	Print("Hello new EFI world!\n")
 	
 	SystemTable->ConsoleInput->Reset()
@@ -50,10 +94,18 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	
 	i32 ChildIndex := 0
 	
+	EFI_HANDLE* SystemPartition := null
+	EFI_PARTITION_ENTRY* SystemPartitionEntry := null
+	
+	EFI_HANDLE* OSPartition := null
+	EFI_PARTITION_ENTRY* OSPartitionEntry := null
+	
 	for (i32 Index := 0, Index < Count, Index++) {
+		EFI_HANDLE* Next := Handles[Index]
+		
 		EFI_DEVICE_PATH_PROTOCOL* HandlePath := null
 		
-		SystemTable->BootServices->HandleProtocol(Handles[Index], EFI_DEVICE_PATH_PROTOCOL_GUID, &HandlePath As void**)
+		SystemTable->BootServices->HandleProtocol(Next, EFI_DEVICE_PATH_PROTOCOL_GUID, &HandlePath As void**)
 		
 		if (HandlePath->Equals(RootDevicePath)) {
 			continue
@@ -66,13 +118,153 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 		if (HandleParentPath->Equals(RootDevicePath)) {
 			i16* DeviceText := ToText->ConvertDevicePathToText(HandlePath, true, true)
 			
-			Print("Child #%i: %w\n", ChildIndex++, DeviceText)
+			Print("Child #%i:\n\t%w\n", ChildIndex++, DeviceText)
 			
 			SystemTable->BootServices->FreePool(DeviceText)
+			
+			EFI_PARTITION_INFO_PROTOCOL* ChildPartitionInfo := null
+			
+			SystemTable->BootServices->HandleProtocol(Next, EFI_PARTITION_INFO_PROTOCOL_GUID, &ChildPartitionInfo As void**)
+			
+			if !(ChildPartitionInfo) {
+				Print("\tNo partition info\n")
+				continue
+			}
+			
+			if (ChildPartitionInfo->Type != EFI_PARTITION_INFO_TYPE_GPT) {
+				Print("\tNon-GPT partition\n")
+				continue
+			}
+			
+			Print("\tType: %guid\n\tGUID: %guid\n", ChildPartitionInfo~>Entry~>Type, ChildPartitionInfo~>Entry~>GUID)
+			
+			if (CompareMemory(ChildPartitionInfo~>Entry~>Type, GPT_PARTITION_TYPE_SYSTEM, 16)) {
+				SystemPartition := Next
+				SystemPartitionEntry := ChildPartitionInfo~>Entry
+				
+				Print("\tIs system partition\n")
+			}
+			else if (CompareMemory(ChildPartitionInfo~>Entry~>Type, GPT_PARTITION_TYPE_CUSTOM, 16)) {
+				OSPartition := Next
+				OSPartitionEntry := ChildPartitionInfo~>Entry
+				
+				Print("\tIs OS partition\n")
+			}
 		}
 		
 		SystemTable->BootServices->FreePool(HandleParentPath)
 	}
+	
+	SystemTable->BootServices->FreePool(Handles)
+	
+	EFI_GRAPHICS_OUTPUT_PROTOCOL* Graphics := null
+	SystemTable->BootServices->LocateProtocol(EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID, &Graphics As void**)
+	
+	Print("Device has %i modes\n", Graphics->Mode->MaxMode)
+	
+	for (i32 Index := 0, Index < Graphics->Mode->MaxMode, Index++) {
+		EFI_GRAPHICS_OUTPUT_MODE_INFORMATION* Mode := Graphics->QueryMode(Index)
+		
+		Print("\t%ix%i %x\n", Mode->HorizontalResolution, Mode->VerticalResolution, Mode->PixelFormat)
+		
+		if (Mode->HorizontalResolution = 1024 && Mode->VerticalResolution = 768) {
+			if (Graphics->Mode->CurrentMode != Index) {
+				Graphics->SetMode(Index)
+			}
+			
+			break
+		}
+	}
+	
+	SystemTable->ConsoleOutput->Reset()
+	
+	void* FrameBuffer := Graphics->Mode->FrameBufferBase
+	
+	Print("FrameBuffer @ %x\n", FrameBuffer)
+	
+	EFIBlockDeviceInstance* BootDisk := NewBlockDevice(null, &EFIBlockDevicePrototype) 
+	SystemTable->BootServices->HandleProtocol(OSPartition, EFI_BLOCK_IO_PROTOCOL_GUID, BootDisk~>BlockIO As void**)
+	
+	Ext2* FS := Alloc(#Ext2)
+	FS->Device := BootDisk->AsBlockDevice()
+	
+	void* Temp := SystemTable->BootServices->AllocatePages(2)
+	FS->Initialize(Temp, Temp + 0x800, Temp + 0xC00, Temp + 0x1000, Temp + 0x1400)
+	
+	INode* RootINode := CloneMemory(FS->ReadINode(2), #INode)
+	
+	DirectoryEntry* KernelEntry := FS->FindDirectoryEntryByName(RootINode, "kernel.elf")
+	
+	if (KernelEntry = null || !KernelEntry->IsFile()) {
+		SystemTable->ConsoleError->OutputString("Could not find `kernel.elf`"w)
+		return -1
+	}
+	
+	INode* KernelNode := FS->ReadINode(KernelEntry->INode)
+	
+	i32 KernelSize := KernelNode->FileSizeLow
+	i32 KernelPageCount := KernelSize / 0x1000
+	
+	if (KernelSize % 0x1000) {
+		KernelPageCount += 1
+	}
+	
+	void* KernelFile := SystemTable->BootServices->AllocatePages(KernelPageCount)
+	
+	i32 KernelBlockCount := KernelSize / 0x400
+	
+	if (KernelSize % 0x400) {
+		KernelBlockCount += 1
+	}
+	
+	for (i32 KernelBlockIndex := 0, KernelBlockIndex < KernelBlockCount, KernelBlockIndex += 1) {
+		FS->ReadINodeData(KernelFile + (KernelBlockIndex * 0x400), KernelNode, KernelBlockIndex)
+	}
+	
+	ELFHeader* KernelELF := KernelFile
+	
+	i64 MaxKernelAddress := 0
+	
+	ELFProgramHeader* ProgramHeaders := KernelELF->GetProgramHeaders()
+
+	for (i32 Index := 0, Index < KernelELF->ProgramHeaderEntryCount, Index++) {
+		ELFProgramHeader* NextProgramHeader := ProgramHeaders[Index]
+		
+		if (NextProgramHeader->Type = ELF_SEGMENT_TYPE_LOAD) {
+			i64 NextEnd := NextProgramHeader->VirtualAddress + NextProgramHeader->MemorySize
+			
+			if (NextEnd > MaxKernelAddress) {
+				MaxKernelAddress := NextEnd
+			}
+		}
+	}
+	
+	Print("Max kernel address: %x\n", MaxKernelAddress)
+	
+	void* KernelEntryPoint := EFILoadELF(SystemTable, KernelELF)
+	
+	Print("Kernel entry: %x\n", KernelEntryPoint)
+	
+	SystemTable->BootServices->FreePages(KernelFile, KernelPageCount)
+	Free(FS)
+	Free(BootDisk)
+	SystemTable->BootServices->FreePages(Temp, 2)
+	
+	
+	i64 MemoryMapSize := SystemTable->BootServices->GetMemoryMapSize()
+	EFI_MEMORY_DESCRIPTOR* MemoryMap := Alloc(MemoryMapSize As i32)
+	i64 MemoryMapKey := 0
+	
+	SystemTable->BootServices->GetMemoryMap(MemoryMapSize, MemoryMap, &MemoryMapKey)
+	
+	Print("Memory map key: %x\n", MemoryMapKey)
+	
+	Print("Goodbye EFI!\n")
+	
+	SystemTable->BootServices->ExitBootServices(ImageHandle, MemoryMapKey)
+	
+	
+	StartKernel(null, FrameBuffer, MaxKernelAddress, KernelEntryPoint)
 	
 	;i32 SizeNeeded := 0
 	;SystemTable->BootServices->LocateHandle(EFI_LOCATE_SEARCH_TYPE_BY_PROTOCOL, EFI_BLOCK_IO_PROTOCOL_GUID, null, &SizeNeeded, null)
