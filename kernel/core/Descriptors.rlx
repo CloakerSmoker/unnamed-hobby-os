@@ -95,7 +95,7 @@ struct GlobalDescriptor {
 		this->Pack(TSS As i64, #TaskStateSegment, DESCRIPTOR_ACCESS_TSS, DESCRIPTOR_ACCESS_TSS)
 	}
 	define void MakeNonSystem(i8 Access, i8 Flags) {
-		this->Pack(0, 0, Access, Flags)
+		this->Pack(0, -1, Access, Flags)
 	}
 }
 
@@ -118,6 +118,14 @@ TaskStateSegment* TSS
 struct DescriptorTableHeader unaligned {
 	i16 Limit
 	void* Base
+}
+
+define void SetCSHelper() asm {
+	xchg, {rsp} As i64*, rcx ; write new CS
+	push, rcx ; push return address
+	
+	emit, 0x48 ; far ret
+	emit, 0xCB
 }
 
 define void SetupGDT() {
@@ -145,13 +153,30 @@ define void SetupGDT() {
 	
 	DescriptorTableHeader GDTHeader {Base: GDT, Limit: Limit}
 	
-	asm (rax := &GDTHeader, rbx := USER_TSS | 3) {
+	asm (rax := &GDTHeader, rbx := USER_TSS | 3, rcx := KERNEL_CS, rdx := KERNEL_DS) {
 		xchg, bx, bx
 		
 		cli
 		
 		lgdt, {rax} As i64*
 		ltr, bx
+		
+		call, @SetCSHelper
+		
+		emit, 0x8E ; mov ds, rx
+		emit, 0xDA
+		
+		emit, 0x8E ; mov es, rx
+		emit, 0xC2
+		
+		emit, 0x8E ; mov fs, rx
+		emit, 0xE2
+		
+		emit, 0x8E ; mov gs, rx
+		emit, 0xEA
+		
+		emit, 0x8E ; mov ss, rx
+		emit, 0xD2
 		
 		sti
 	}

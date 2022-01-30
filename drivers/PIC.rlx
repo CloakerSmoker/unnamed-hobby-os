@@ -21,8 +21,8 @@ define void RemapPIC(i8 MasterOffset, i8 SlaveOffset) {
 	OutB(MASTER_PIC_DATA, 0x01)
 	OutB(SLAVE_PIC_DATA, 0x01)
 	
-	OutB(MASTER_PIC_DATA, OldMaster)
-	OutB(SLAVE_PIC_DATA, OldSlave)
+	OutB(MASTER_PIC_DATA, 0xFF As i8)
+	OutB(SLAVE_PIC_DATA, 0xFF As i8)
 }
 
 define void SendEOI(i8 IRQLine) {

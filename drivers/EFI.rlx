@@ -557,6 +557,29 @@ i32 EFI_MEMORY_TYPE_UNUSABLE := 8
 i32 EFI_MEMORY_TYPE_ACPI_RECLAIM := 9
 i32 EFI_MEMORY_TYPE_ACPI_NVS := 10
 
+define i8* EFIMemoryTypeToString(i32 Type) {
+	i8*[16] Names {
+		"null",
+		"loader code",
+		"loader data",
+		"boot service code",
+		"boot service data",
+		"runtime service code",
+		"runtime service data",
+		"conventional",
+		"unusable",
+		"ACPI reclaim",
+		"ACPI NVS",
+		"memory mapped IO",
+		"memory mapped IO port space",
+		"PAL code",
+		"persistent memory",
+		"unaccepted type"
+	}
+	
+	return Names[Type]
+}
+
 i32 EFI_LOCATE_SEARCH_TYPE_ALL := 0
 i32 EFI_LOCATE_SEARCH_TYPE_REGISTER_NOTIFY := 1
 i32 EFI_LOCATE_SEARCH_TYPE_BY_PROTOCOL := 2
@@ -636,15 +659,11 @@ struct EFI_BOOT_SERVICES {
 		return EFICall(Memory, PageCount As void*, this->_FreePages)
 	}
 	
-	define i64 GetMemoryMapSize() {
-		i64 Size := 0
+	define i64 GetMemoryMapInfo(i64* Size, i64* DescriptorSize) {
 		i64 MapKey := 0
-		i64 DescriptorSize := 0
 		i64 DescriptorVersion := EFI_MEMORY_DESCRIPTOR_VERSION
 		
-		EFICall(&Size, null, &MapKey, &DescriptorSize, &DescriptorVersion, this->_GetMemoryMap)
-		
-		return Size
+		return EFICall(Size, null, &MapKey, DescriptorSize, &DescriptorVersion, this->_GetMemoryMap)
 	}
 	define i64 GetMemoryMap(i64 Size, EFI_MEMORY_DESCRIPTOR* Out, i64* MapKey) {
 		i64 DescriptorSize := 0

@@ -7,7 +7,7 @@ set Options "--elf" "--crlf"
 nrlx -i ./src/kernel/Main.rlx      -o ./build/kernel.elf      $Options --debug --dwarf; or exit
 nrlx -i ./src/user/TestProgram.rlx -o ./build/TestProgram.elf $Options; or exit
 nrlx -i ./src/user/Write.rlx       -o ./build/Write.elf       $Options --debug --dwarf; or exit
--i ./src/kernel/Main.rlx -o ./build/kernel.elf --crlf --elf --debug --dwarf
+
 echo "
 format 120 m
 create

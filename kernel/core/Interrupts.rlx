@@ -198,6 +198,8 @@ i8 IST_6 := 1
 i8 IST_7 := 1
 
 define void InsertIDTEntry(i32 Index, void* Function, i8 Present, i8 IST) {
+	asm {cli}
+	
 	IDTEntry* E := IDT[Index]
 	
 	SetMemory(E As i64*, 0, 2)
@@ -208,6 +210,8 @@ define void InsertIDTEntry(i32 Index, void* Function, i8 Present, i8 IST) {
 	
 	E->Selector := 0x08
 	E->Flags := 0x0E | (Present << 7) As i8
+	
+	asm {sti}
 }
 
 define void InsertIDTEntry(i32 Index, void* Function, i8 Present) {
@@ -246,8 +250,36 @@ define void SetupInterrupts() {
 	}
 }
 
+define i8* InterruptToName(i32 Index) {
+	i8*[17] Names {
+		"divide-by-zero",
+		"debug",
+		"non-maskable-interrupt",
+		"breakpoint",
+		"overflow",
+		"bound-range",
+		"invalid-opcode",
+		"device-not-available",
+		"double-fault",
+		"reserved",
+		"invalid-TSS",
+		"segment-not-present",
+		"stack",
+		"general-protection",
+		"page-fault",
+		"reserved",
+		"x87 FPU"
+	}
+	
+	if (Index < 17) {
+		return Names[Index]
+	}
+	
+	return "unknown"
+}
+
 define void GenericInterrupt(InterruptContext* Context, i32 InterruptNumber) {
-	Info("UNHANDLED INTERRUPT %i (%x)\n", InterruptNumber, InterruptNumber)
+	Info("UNHANDLED INTERRUPT %s (%i %x)\n", InterruptToName(InterruptNumber), InterruptNumber, InterruptNumber)
 	
 	Context->PrintContext()
 	Context->PrintRegisters()

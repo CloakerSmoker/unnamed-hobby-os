@@ -71,8 +71,8 @@ AMD64Context KernelContext
 
 #Require "./src/kernel/graphics/Terminal.rlx"
 
-i8 USE_INTERRUPT_STUBS := true
-i8 USE_PAGE_FAULT_HANDLER := true
+i8 USE_INTERRUPT_STUBS := false
+i8 USE_PAGE_FAULT_HANDLER := false
 i8 RECOVER_FROM_USER_PAGE_FAULT := false
 
 #Require "./src/kernel/core/Interrupts.rlx"
@@ -93,7 +93,7 @@ declare void MainContinuation()
 
 define void RawMainContinuation(void* Stack) asm {
 	mov, rsp, rdi
-	mov, rbp, rsp
+	mov, rbp, 0
 	
 	call, @MainContinuation
 
