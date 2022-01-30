@@ -1,0 +1,36 @@
+#Require "./src/drivers/block-device/BlockDevice.rlx"
+#Require "./src/drivers/EFI.rlx"
+
+; Can only be manually initialized
+
+struct EFIBlockDeviceInstance {
+	#Include "./src/drivers/block-device/BlockDeviceInstance.rlx"
+	
+	EFI_BLOCK_IO_PROTOCOL* BlockIO
+	
+	define void Read(i64 FirstBlock, i64 BlockCount, void* Buffer) {
+		this->BlockIO->ReadBlocks(FirstBlock, BlockCount, Buffer)
+	}
+	define void Write(i64 FirstBlock, i64 BlockCount, void* Buffer) {
+		this->BlockIO->WriteBlocks(FirstBlock, BlockCount, Buffer)
+	}
+	define i64 GetBytesPerBlock() {
+		return this->BlockIO->Media->BlockSize
+	}
+	define void Initialize(i8** Options, i64 OptionCount) {
+		
+	}
+}
+
+BlockDevicePrototype EFIBlockDevicePrototype {
+	DataSize: #EFIBlockDeviceInstance,
+	
+	Read: &EFIBlockDeviceInstance.Read,
+	Write: &EFIBlockDeviceInstance.Write,
+	GetBytesPerBlock: &EFIBlockDeviceInstance.GetBytesPerBlock,
+	Initialize: &EFIBlockDeviceInstance.Initialize,
+	
+	Name: "EFI"
+} 
+
+i32 EFI_BLOCK_DEVICE_PROTOTYPE_ID := RegisterBlockDevicePrototype(&EFIBlockDevicePrototype)
