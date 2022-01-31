@@ -1,4 +1,5 @@
 #Require "$/MemoryBase.rlx"
+#Require "$/StringBase.rlx"
 
 define i32 IntegerToString(i64 Number, i64 Base, i8* Buffer) {
 	i8 Sign := 0

@@ -1,0 +1,66 @@
+;#Require "$/File.rlx"
+;
+;i64 STDOUT := 1
+;
+;define void PrintCharacter(i8 Character) {
+;	FileWrite(STDOUT, &Character, 1)
+;}
+
+#Require "./src/utility/Print.rlx"
+
+i32 PROGRESS_BAR_LENGTH := 20
+
+define void ProgressUpdate(i32 End, i8* Caption, i32 New) {
+	i32 Step := End / PROGRESS_BAR_LENGTH
+	
+	End := Step * PROGRESS_BAR_LENGTH
+	
+	i32 QuadStep := Step / 4
+	
+	i32 Whole := New / Step
+	i32 Fraction := New % Step
+	
+	Print("%c", 0x0D)
+	Print("[")
+	
+	if (Whole > PROGRESS_BAR_LENGTH) {
+		Whole := PROGRESS_BAR_LENGTH
+	}
+	
+	for (i32 Index := 0, Index < Whole, Index++) {
+		Print("::")
+	}
+	
+	if (Fraction && Whole != PROGRESS_BAR_LENGTH) {
+		Index += 1
+		
+		if (Fraction < QuadStep) {
+			Print(". ")
+		}
+		else if (Fraction < (2 * QuadStep)) {
+			Print(": ")
+		}
+		else if (Fraction < (3 * QuadStep)) {
+			Print(":.")
+		}
+		else {
+			Print("::")
+		}
+	}
+	
+	for (i32 Empty := Index, Empty < PROGRESS_BAR_LENGTH, Empty++) {
+		Print("  ")
+	}
+	
+	Print("] %s", Caption)
+}
+
+;define void Main() {
+;	Print("^E?25l")
+;	for (i32 Index := 0, Index < 0xFB, Index++) {
+;		ProgressUpdate(128669, "Test 123", Index * 512)
+;		
+;		for (i32 Sleep := 0, Sleep < 0x200000, Sleep++) {}
+;	}
+;	Print("^E?25h\n")
+;}
