@@ -189,6 +189,10 @@ define BlockDevice* InstantiateBlockDeviceChainFromPath(i8* Path) {
 		}
 		
 		if !(FoundPrototype) {
+			Print("Block device prototype '%s' is not registered\n", Name)
+			
+			loop {}
+			
 			return null
 		}
 		

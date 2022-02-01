@@ -1,8 +1,8 @@
 #ImageBase 0x10_0000
 
 #Require "$/MemoryBase.rlx"
+#Require "$/StringBase.rlx"
 #Require "./src/utility/x64.rlx"
-#Require "./src/utility/String.rlx"
 
 i8 USE_SERIAL_OUTPUT := true
 i16 SERIAL_OUTPUT_PORT := 1
@@ -80,6 +80,10 @@ i8 RECOVER_FROM_USER_PAGE_FAULT := false
 
 Ext2* FS := null
 INode* RootINode := null
+
+#Require "./src/drivers/block-device/BlockDevice.rlx"
+#Require "./src/drivers/block-device/ATABlockDevice.rlx"
+#Require "./src/drivers/block-device/GPTBlockDevice.rlx"
 
 #Require "./src/drivers/Ext2Interface.rlx"
 
@@ -218,19 +222,22 @@ define void MainContinuation() {
 	
 	KernelTerminal->PrintLine("BOOT: Mounting disk")
 	
-	;void* SB := KernelHeapAllocate('SB', 2048)
-	;void* TI := KernelHeapAllocate('TI', 1024)
-	;void* TB1 := KernelHeapAllocate('TB1', 1024)
-	;void* TB2 := KernelHeapAllocate('TB2', 1024)
-	;void* BMP := KernelHeapAllocate('BMP', 1024)
+	BlockDevice* FSDevice := InstantiateBlockDeviceChainFromPath("ATAPIO(0)>GPT(1)")
 	
-	;FS := KernelHeapAllocate('Root', #Ext2)
-	;RootDevice := Ext2ATADevice:New()
-	;FS->Traits := RootDevice
-	;
-	;FS->Initialize(SB, TI, TB1, TB2, BMP)
-	;
-	;RootINode := CloneMemory(FS->ReadINode(2), #INode)
+	Print("Device = %x\n", FSDevice)
+	
+	void* SB := KernelHeapAllocate('SB', 2048)
+	void* TI := KernelHeapAllocate('TI', 1024)
+	void* TB1 := KernelHeapAllocate('TB1', 1024)
+	void* TB2 := KernelHeapAllocate('TB2', 1024)
+	void* BMP := KernelHeapAllocate('BMP', 1024)
+	
+	FS := KernelHeapAllocate('Root', #Ext2)
+	FS->Device := FSDevice
+	
+	FS->Initialize(SB, TI, TB1, TB2, BMP)
+	
+	RootINode := CloneMemory(FS->ReadINode(2), #INode)
 	
 	SetupShell()
 	

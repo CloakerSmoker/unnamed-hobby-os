@@ -1,4 +1,4 @@
-#Require "./src/utility/String.rlx"
+#Require "$/StringBase.rlx"
 #Require "./src/utility/x64.rlx"
 #Require "./src/utility/Exception.rlx"
 

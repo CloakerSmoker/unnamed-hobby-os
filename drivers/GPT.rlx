@@ -203,10 +203,16 @@ struct GPTDevice {
 		return -1
 	}
 	
-	define i8 WideStringEquals(i16* Left, i16* Right) {
-		i32 Length := StringLength(Left)
+	define i32 WideStringLength(i16* String) {
+		for (i32 Index := 0, String[Index] != 0, Index++) {}
 		
-		if (StringLength(Right) != Length) {
+		return Index
+	}
+	
+	define i8 WideStringEquals(i16* Left, i16* Right) {
+		i32 Length := this->WideStringLength(Left)
+		
+		if (this->WideStringLength(Right) != Length) {
 			return false
 		}
 		

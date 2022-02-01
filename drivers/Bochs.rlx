@@ -1,4 +1,4 @@
-#Require "./src/utility/String.rlx"
+#Require "$/StringBase.rlx"
 
 define void BochsPrintCharacter(i8 Character) {
 	asm (rdx := 0xE9, rax := Character) {
