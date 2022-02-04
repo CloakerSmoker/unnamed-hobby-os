@@ -49,10 +49,8 @@ struct Task {
 	define void End() {
 		Task* Waiter := this->AwaitedBy
 		
-		while (Waiter) {
+		if (Waiter) {
 			Waiter->State := TASK_CAN_RUN
-			
-			Waiter := Waiter->AwaitedBy
 		}
 		
 		Task* Next := this->Next
