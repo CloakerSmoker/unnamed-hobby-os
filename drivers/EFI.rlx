@@ -1,23 +1,15 @@
+#Require "$/MemoryBase.rlx"
 #Require "$/StringBase.rlx"
-
-define i8 EFICompareMemory(void* RawLeft, void* RawRight, i32 Size) {
-	i8* Left := RawLeft
-	i8* Right := RawRight
-	
-	for (i32 Index := 0, Index < Size, Index++) {
-		if (Left[Index] != Right[Index]) {
-			return false
-		}
-	}
-	
-	return true
-}
 
 struct EFI_GUID {
 	i32 Data1
 	i16 Data2
 	i16 Data3
 	i8[8] Data4
+	
+	define i8 Equals(EFI_GUID* Other) {
+		return CompareMemory(this, Other, #EFI_GUID)
+	}
 }
 
 struct EFI_HANDLE {
@@ -299,7 +291,7 @@ struct EFI_DEVICE_PATH_PROTOCOL {
 				return false
 			}
 			
-			i8 ContentsEqual := EFICompareMemory(Left, Right, Left->GetLength())
+			i8 ContentsEqual := CompareMemory(Left, Right, Left->GetLength())
 			
 			if !(ContentsEqual) {
 				return false
