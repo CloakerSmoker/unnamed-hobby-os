@@ -201,7 +201,7 @@ define void OnCommand(i8* CommandLine) {
 	else if (StringEquals(Command, "colors")) {
 		for (i8 Fore := 0, Fore < 16, Fore++) {
 			for (i8 Back := 0, Back < 16, Back++) {
-				SetColor(Fore, Back)
+				Print("^E%im^E%im", TranslateColorToANSI(Fore), TranslateColorToANSI(Back) + 10)
 				Print("Test")
 			}
 			

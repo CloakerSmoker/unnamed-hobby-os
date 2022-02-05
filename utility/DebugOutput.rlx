@@ -1,8 +1,19 @@
 #Require "./src/drivers/Serial.rlx"
 #Require "./src/drivers/Bochs.rlx"
+#Require "./src/utility/Print.rlx"
 
 SerialPort RawOutputPort
 SerialPort* OutputPort := &RawOutputPort
+
+define void DebugSerialPrintCharacter(i8 Character) {
+	OutputPort->PrintCharacter(Character)
+}
+
+PrintOutputAdapterPrototype RawSerialPrinter {
+	PrintCharacter: &DebugSerialPrintCharacter
+}
+
+PrintOutputAdapterPrototype* SerialPrinter := &RawSerialPrinter
 
 define void InitializeOutputPort() {
 	if (USE_SERIAL_OUTPUT && !OutputPort->PortBase) {
@@ -24,6 +35,6 @@ define void Info(i8* Format, ... Args) {
 			InitializeOutputPort()
 		}
 		
-		OutputPort->RawPrint(Format, Args)
+		SerialPrinter->RawPrint(Format, Args)
 	}
 }

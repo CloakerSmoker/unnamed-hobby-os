@@ -84,6 +84,7 @@ define i32 AddPrintFormat(PrintFormatPrototype* Prototype) {
 
 struct PrintOutputAdapterPrototype {
 	void* PrintCharacter
+	void* PrintCharacters
 	
 	i32 Index  ; Scratch space for PrintCharacter implementations
 	i32 Length ; TODO: Come up with something smarter than this
@@ -270,6 +271,9 @@ PrintOutputAdapterPrototype* Printer := &DefaultPrinter
 
 define void Print(i8* Format, ... Parameters) {
 	Printer->RawPrint(Format, Parameters)
+}
+define void PrintCharacters(i8* Characters, i32 Length) {
+	Printer->PrintCharacters(Characters, Length)
 }
 
 

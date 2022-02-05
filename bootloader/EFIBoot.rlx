@@ -52,8 +52,8 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 
 	Print("Hello new EFI world!\n")
 	
-	SystemTable->ConsoleInput->Reset()
-	SystemTable->BootServices->WaitForEvent(SystemTable->ConsoleInput->WaitForKey)
+	;SystemTable->ConsoleInput->Reset()
+	;SystemTable->BootServices->WaitForEvent(SystemTable->ConsoleInput->WaitForKey)
 	
 	EFI_DEVICE_PATH_TO_TEXT_PROTOCOL* ToText := null
 	SystemTable->BootServices->LocateProtocol(EFI_DEVICE_PATH_TO_TEXT_PROTOCOL_GUID, &ToText As void**)
@@ -219,11 +219,11 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 		KernelBlockCount += 1
 	}
 	
-	ProgressUpdate(KernelSize, "Reading kernel...", 0)
+	;ProgressUpdate(KernelSize, "Reading kernel...", 0)
 	
 	for (i32 KernelBlockIndex := 0, KernelBlockIndex < KernelBlockCount, KernelBlockIndex += 1) {
 		FS->ReadINodeData(KernelFile + (KernelBlockIndex * 0x400), KernelNode, KernelBlockIndex)
-		ProgressUpdate(KernelSize, "Reading kernel...", KernelBlockIndex * 0x400)
+		;ProgressUpdate(KernelSize, "Reading kernel...", KernelBlockIndex * 0x400)
 	}
 	
 	Print("\nDone\n")

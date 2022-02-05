@@ -47,8 +47,6 @@ define void FastSetPixel(void* Dummy, i32 X, i32 Y, i32 Color) asm {
 	ret
 }
 
-declare void Print(i8*, ...)
-
 struct Screen {
 	union {
 		void* RawFrameBuffer
@@ -91,22 +89,22 @@ struct Screen {
 		FastGetPixelAddress(X, Y, this->Stride, this->Depth, this->PixelBuffer)->SetColor(Color)
 	}
 	define void DrawRectangle(i32 X, i32 Y, i32 Width, i32 Height, i32 Color) {
-		i32 Red := Color >> 16 & 0xFF
-		i32 Green := Color >> 8 & 0xFF
-		i32 Blue := Color & 0xFF
+		i32 RedChannel := Color >> 16 & 0xFF
+		i32 GreenChannel := Color >> 8 & 0xFF
+		i32 BlueChannel := Color & 0xFF
 		
-		if (Red = Green && Green = Blue) {
-			; If we're drawing a rectangle which is monochrome, we can just set entire rows to be the exact same
-			;  byte with `rep stosb`
-			
-			i32 RectangleRowSize := Width * this->Depth
-			
-			for (i32 FastRowIndex := 0, FastRowIndex < Height, FastRowIndex += 1) {
-				FastSetMemory8(this->GetPixelAddress(X, Y + FastRowIndex), Blue, RectangleRowSize)
-			}
-			
-			return
-		}
+		;if (RedChannel = GreenChannel && GreenChannel = BlueChannel) {
+		;	; If we're drawing a rectangle which is monochrome, we can just set entire rows to be the exact same
+		;	;  byte with `rep stosb`
+		;	
+		;	i32 RectangleRowSize := Width * this->Depth
+		;	
+		;	for (i32 FastRowIndex := 0, FastRowIndex < Height, FastRowIndex += 1) {
+		;		FastSetMemory8(this->GetPixelAddress(X, Y + FastRowIndex), Blue, RectangleRowSize)
+		;	}
+		;	
+		;	return
+		;}
 		
 		for (i32 RowIndex := 0, RowIndex < Height, RowIndex += 1) {
 			for (i32 ColumnIndex := 0, ColumnIndex <= Width, ColumnIndex += 1) {

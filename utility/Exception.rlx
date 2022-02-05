@@ -1,4 +1,3 @@
-declare void Print(i8*, ...)
 declare void PrintStackDump(i32)
 
 define void TerminateAfterUnhandledException(i64 Code) {

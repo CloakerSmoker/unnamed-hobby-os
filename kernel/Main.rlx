@@ -4,6 +4,10 @@
 #Require "$/StringBase.rlx"
 #Require "./src/utility/x64.rlx"
 
+declare void PrintCharacter(i8)
+
+#Require "./src/utility/Print.rlx"
+
 i8 USE_SERIAL_OUTPUT := true
 i16 SERIAL_OUTPUT_PORT := 1
 i8 USE_BOCHS_PORT_HACK := true
@@ -70,6 +74,10 @@ AMD64Context KernelContext
 #Require "./src/kernel/core/Timer.rlx"
 
 #Require "./src/kernel/graphics/Terminal.rlx"
+
+define void PrintCharacter(i8 Character) {
+	KernelTerminal->Print(&Character, 1)
+}
 
 i8 USE_INTERRUPT_STUBS := false
 i8 USE_PAGE_FAULT_HANDLER := false
