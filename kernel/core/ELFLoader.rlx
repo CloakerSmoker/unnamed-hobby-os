@@ -31,22 +31,15 @@ define MemoryMappingGroup* MapELF(AddressSpaceManager* AddressSpace, ELFHeader* 
 			
 			i64 SectionPhysicalPages := PhysicalMemory->Reserve('ELF', SectionPageCount * PAGE_SIZE, PAGE_SIZE)
 			
-			;Print("Allocated %i pages starting at %x for section %i of image\n", SectionPageCount, SectionPhysicalPages / PAGE_SIZE, Index)
 			
-			;Print("Pages are PRESENT | USER")
-			
-			i64 Flags := PAGE_PRESENT | PAGE_USER
+			i64 TempFlags := PAGE_PRESENT | PAGE_WRITE ; Map as PRESENT|WRITE so we can... actually load the section into memory
+			i64 FinalFlags := PAGE_PRESENT | PAGE_USER
 			
 			if (Next->Flags & ELF_SEGMENT_FLAGS_WRITE) {
-				;Print(" | WRITE ")
-				Flags |= PAGE_WRITE
+				FinalFlags |= PAGE_WRITE
 			}
 			
-			;Print("\n")
-			
-			;Print("Mapping virtual(%x) to physical(%x)\n", SectionMemory & 0xFFFF_FFFF_FFFF_F000, SectionPhysicalPages)
-			
-			Mappings->Add(SectionVirtualPage, SectionPhysicalPages, SectionPageCount, Flags)
+			MemoryMapping* Mapping := Mappings->Add(SectionVirtualPage, SectionPhysicalPages, SectionPageCount, TempFlags)
 			
 			if (Next->MemorySize > Next->FileSize) {
 				void* ZeroArea := SectionMemory + Next->FileSize
@@ -56,6 +49,8 @@ define MemoryMappingGroup* MapELF(AddressSpaceManager* AddressSpace, ELFHeader* 
 			}
 			
 			FastMoveMemory(SectionMemory, SectionData, Next->FileSize)
+			
+			Mappings->UpdateFlags(Mapping, FinalFlags)
 			
 			;Print("Wrote %x bytes to section memory\n\n", Next->MemorySize)
 		}

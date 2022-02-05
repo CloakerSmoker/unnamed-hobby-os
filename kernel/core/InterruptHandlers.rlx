@@ -30,6 +30,23 @@ define void PageFault(InterruptContext* Context) {
 	
 	if (Context->ErrorCode & PAGE_FAULT_PAGE_PRESENT) {
 		Info("Yes\n")
+		
+		i64* pPTE := KernelAddressSpace->FindOrAddPTEntry(CR2Page As void*)
+		i64 PTE := *pPTE
+		
+		if (PTE & PAGE_WRITE) {
+			Info("\tWritable\n")
+		}
+		else {
+			Info("\tRead-only\n")
+		}
+		
+		if (PTE & PAGE_USER) {
+			Info("\tUser\n")
+		}
+		else {
+			Info("\tKernel\n")
+		}
 	}
 	else {
 		Info("No\n")
@@ -84,7 +101,26 @@ define void PageFault(InterruptContext* Context) {
 	Print("\tPage %x is present? ", CR2Page)
 	
 	if (Context->ErrorCode & PAGE_FAULT_PAGE_PRESENT) {
-		Print("Yes\n")
+		Print("Yes ")
+		
+		i64* pPTE := KernelAddressSpace->FindOrAddPTEntry(CR2Page As void*)
+		i64 PTE := *pPTE
+		
+		if (PTE & PAGE_WRITE) {
+			Print("[Writable] ")
+		}
+		else {
+			Print("[Read-only] ")
+		}
+		
+		if (PTE & PAGE_USER) {
+			Print("[User] ")
+		}
+		else {
+			Print("[Kernel] ")
+		}
+		
+		Print("\n")
 	}
 	else {
 		Print("No\n")
@@ -123,7 +159,11 @@ define void PageFault(InterruptContext* Context) {
 		Print("Kernel mode\n")
 	}
 	
-	Print("}\n\n^R")
+	Print("}\n\n")
+	
+	PrintStackDump(0)
+	
+	Print("\n^R")
 	
 	PAGE_FAULT_CHANCE--
 	

@@ -19,7 +19,7 @@ struct MemoryMappingGroup {
 		return this
 	}
 	
-	define void Add(void* Virtual, i64 Physical, i32 Count, i64 Flags) {
+	define MemoryMapping* Add(void* Virtual, i64 Physical, i32 Count, i64 Flags) {
 		Physical /= PAGE_SIZE
 		
 		MemoryMapping* New := Alloc(#MemoryMapping)
@@ -37,6 +37,12 @@ struct MemoryMappingGroup {
 		}
 		
 		this->AddressSpace->MapRange(Virtual, Physical, Count, Flags)
+		
+		return New
+	}
+	
+	define void UpdateFlags(MemoryMapping* Mapping, i64 Flags) {
+		this->AddressSpace->MapRange(Mapping->Virtual, Mapping->Physical, Mapping->PageCount, Flags)
 	}
 	
 	define void UnMap() {

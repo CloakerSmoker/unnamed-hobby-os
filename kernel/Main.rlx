@@ -79,9 +79,9 @@ define void PrintCharacter(i8 Character) {
 	KernelTerminal->Print(&Character, 1)
 }
 
-i8 USE_INTERRUPT_STUBS := false
-i8 USE_PAGE_FAULT_HANDLER := false
-i8 RECOVER_FROM_USER_PAGE_FAULT := false
+i8 USE_INTERRUPT_STUBS := true
+i8 USE_PAGE_FAULT_HANDLER := true
+i8 RECOVER_FROM_USER_PAGE_FAULT := true
 
 #Require "./src/kernel/core/Interrupts.rlx"
 #Require "./src/kernel/core/Devices.rlx"
