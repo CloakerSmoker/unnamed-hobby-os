@@ -1,0 +1,144 @@
+#Require "./src/drivers/PCI/ClassCodes.rlx"
+
+i16 PCI_CONFIG_ADDRESS := 0xCF8
+i16 PCI_CONFIG_DATA := 0xCFC
+
+i32 PCI_HEADER_VENDOR_ID_OFFSET   := 0
+i32 PCI_HEADER_VENDOR_ID_SIZE     := 2
+i32 PCI_HEADER_VENDOR_ID          := 0 | (2 << 8)
+
+i32 PCI_HEADER_DEVICE_ID_OFFSET   := 2
+i32 PCI_HEADER_DEVICE_ID_SIZE     := 2
+i32 PCI_HEADER_DEVICE_ID          := 2 | (2 << 8)
+
+i32 PCI_HEADER_COMMAND_OFFSET     := 4
+i32 PCI_HEADER_COMMAND_SIZE       := 2
+i32 PCI_HEADER_COMMAND            := 4 | (2 << 8)
+
+i32 PCI_HEADER_STATUS_OFFSET      := 6
+i32 PCI_HEADER_STATUS_SIZE        := 2
+i32 PCI_HEADER_STATUS             := 6 | (2 << 8)
+
+i32 PCI_HEADER_REVISION_OFFSET    := 8
+i32 PCI_HEADER_REVISION_SIZE      := 1
+i32 PCI_HEADER_REVISION           := 8 | (2 << 8)
+
+i32 PCI_HEADER_INTERFACE_OFFSET   := 9
+i32 PCI_HEADER_INTERFACE_SIZE     := 1
+i32 PCI_HEADER_INTERFACE          := 9 | (1 << 8)
+
+i32 PCI_HEADER_SUBCLASS_OFFSET    := 10
+i32 PCI_HEADER_SUBCLASS_SIZE      := 1
+i32 PCI_HEADER_SUBCLASS           := 10 | (1 << 8)
+
+i32 PCI_HEADER_CLASS_CODE_OFFSET  := 11
+i32 PCI_HEADER_CLASS_CODE_SIZE    := 1
+i32 PCI_HEADER_CLASS_CODE         := 11 | (1 << 8)
+
+i32 PCI_HEADER_CACHE_LINE_OFFSET  := 12
+i32 PCI_HEADER_CACHE_LINE_SIZE    := 1
+i32 PCI_HEADER_CACHE_LINE         := 12 | (1 << 8)
+
+i32 PCI_HEADER_LATENCY_OFFSET     := 13
+i32 PCI_HEADER_LATENCY_SIZE       := 1
+i32 PCI_HEADER_LATENCY            := 13 | (1 << 8)
+
+i32 PCI_HEADER_HEADER_TYPE_OFFSET := 14
+i32 PCI_HEADER_HEADER_TYPE_SIZE   := 1
+i32 PCI_HEADER_HEADER_TYPE        := 14 | (1 << 8)
+
+i32 PCI_HEADER_SELF_TEST_OFFSET   := 15
+i32 PCI_HEADER_SELF_TEST_SIZE     := 1
+i32 PCI_HEADER_SELF_TEST          := 15 | (1 << 8)
+
+i32 PCI_BRIDGE_HEADER_SECONDARY_BUS_OFFSET := 27
+i32 PCI_BRIDGE_HEADER_SECONDARY_BUS_SIZE   := 1
+i32 PCI_BRIDGE_HEADER_SECONDARY_BUS        := 27 | (1 << 8)
+
+define i32 PCIReadConfig(i32 Bus, i32 Slot, i32 Function, i32 ByteOffset, i32 Size) {
+	i32 Index  := (ByteOffset / 4) * 4
+	i32 Offset := ByteOffset % 4
+	i8  Shift  := (Offset * 8) As i8
+	i32 Mask   := (1 << ((Size * 8) As i8)) - 1
+	
+	i32 Address := (0x8000_0000 As i32) | (Bus << 16) | (Slot << 11) | (Function << 8) | Index
+	
+	OutL(PCI_CONFIG_ADDRESS, Address)
+	
+	i32 RawWord := InL(PCI_CONFIG_DATA)
+	
+	;Print("[%i] (%x >> %x) & %x = %x\n", ByteOffset, RawWord, Shift, Mask, (RawWord >> Shift) & Mask)
+	
+	return (RawWord >> Shift) & Mask
+}
+define i32 PCIReadConfig(i32 Bus, i32 Slot, i32 Function, i32 Location) {
+	i32 ByteOffset := Location & 0xFF
+	i32 Size := (Location >> 8) & 0xFF
+	
+	return PCIReadConfig(Bus, Slot, Function, ByteOffset, Size)
+}
+
+define i8 PCIFunctionIsPresent(i32 Bus, i32 Slot, i32 Function) {
+	return PCIReadConfig(Bus, Slot, Function, PCI_HEADER_VENDOR_ID) != 0xFFFF
+}
+define i8 PCIDeviceIsPresent(i32 Bus, i32 Slot) {
+	;Print("DeviceIsPresent(%i %i) = %x\n", Bus, Slot, PCIReadConfig(Bus, Slot, 0, PCI_HEADER_VENDOR_ID))
+	
+	return PCIReadConfig(Bus, Slot, 0, PCI_HEADER_VENDOR_ID) != 0xFFFF
+}
+
+define void PCIEnumerateCallVisitor(i32 Bus, i32 Slot, i32 Function, void* Visitor) asm {
+	jmp, rcx
+}
+
+declare void PCIEnumerateBus(void*, i32)
+
+define void PCIEnumerateFunction(void* Visitor, i32 Bus, i32 Slot, i32 Function) {
+	PCIEnumerateCallVisitor(Bus, Slot, Function, Visitor)
+	
+	i32 ClassCode := PCIReadConfig(Bus, Slot, Function, PCI_HEADER_CLASS_CODE)
+	i32 SubClass := PCIReadConfig(Bus, Slot, Function, PCI_HEADER_SUBCLASS)
+	
+	if (ClassCode = PCI_CLASS_CODE_BRIDGE && SubClass = PCI_SUBCLASS_PCI_BRIDGE) {
+		i32 SecondaryBus := PCIReadConfig(Bus, Slot, Function, PCI_BRIDGE_HEADER_SECONDARY_BUS)
+		
+		PCIEnumerateBus(Visitor, SecondaryBus)
+	}
+}
+
+define void PCIEnumerateDevice(void* Visitor, i32 Bus, i32 Slot) {
+	PCIEnumerateFunction(Visitor, Bus, Slot, 0)
+	
+	i32 HeaderType := PCIReadConfig(Bus, Slot, 0, PCI_HEADER_HEADER_TYPE)
+	
+	if (HeaderType & 0x80) {
+		for (i32 Function := 1, Function < 8, Function++) {
+			if (PCIFunctionIsPresent(Bus, Slot, Function)) {
+				PCIEnumerateFunction(Visitor, Bus, Slot, Function)
+			}
+		}
+	}
+}
+
+define void PCIEnumerateBus(void* Visitor, i32 Bus) {
+	for (i32 Slot := 0, Slot < 32, Slot++) {
+		if (PCIDeviceIsPresent(Bus, Slot)) {
+			PCIEnumerateDevice(Visitor, Bus, Slot)
+		}
+	}
+}
+
+define void PCIEnumerateBusses(void* Visitor) {
+	i32 HeaderType := PCIReadConfig(0, 0, 0, PCI_HEADER_HEADER_TYPE)
+	
+	if (HeaderType & 0x80) {
+		for (i32 Function := 0, Function < 8, Function++) {
+			if (PCIFunctionIsPresent(0, 0, Function)) {
+				PCIEnumerateBus(Visitor, Function)
+			}
+		}
+	}
+	else {
+		PCIEnumerateBus(Visitor, 0)
+	}
+}

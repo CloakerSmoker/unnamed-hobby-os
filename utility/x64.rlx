@@ -80,6 +80,18 @@ define void OutW(i16 Port, i16 Data) asm {
 	outw
 	ret
 }
+define i32 InL(i16 Port) asm {
+	mov, dx, dix
+	emit, 0x67 ; addr32
+	emit, 0xED ; inl
+	ret
+}
+define void OutL(i16 Port, i32 Data) asm {
+	mov, dx, dix
+	mov, ax, six
+	emit, 0xEF ; outl
+	ret
+}
 
 define void* GetRSP() asm {
 	lea, rax, {rsp - 8} As i64*

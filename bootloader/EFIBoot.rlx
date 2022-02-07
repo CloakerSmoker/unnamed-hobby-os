@@ -45,6 +45,8 @@ define void StartKernel(void* CR3, void* FrameBuffer, i64 MaxKernelAddress, void
 	jmp, rcx
 }
 
+#Require "./src/drivers/ACPI.rlx"
+
 #Require "./src/utility/ProgressBar.rlx"
 
 define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
@@ -65,6 +67,38 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 		Print("Can't find to text or device path helper protocol\n")
 		return 0
 	}
+	
+	;ACPI_RSDP* RSDP := null
+	;
+	;for (i32 Index := 0, Index < SystemTable->NumberOfTableEntries, Index++) {
+	;	EFI_CONFIGURATION_TABLE* NextTable := SystemTable->ConfigurationTable[Index]
+	;	
+	;	Print("%guid: %x ", NextTable~>VendorGUID, NextTable->VendorTable)
+	;	
+	;	if (NextTable~>VendorGUID->Equals(ACPI_RSDP_GUID)) {
+	;		Print("RSDP")
+	;		RSDP := NextTable->VendorTable
+	;	}
+	;	
+	;	Print("\n")
+	;}
+	;
+	;Print("\n\n")
+	;
+	;Print("RSDP Signature: %l\n", RSDP->Signature)
+	;
+	;ACPI_TABLE* XSDT := RSDP->XSDTPhysicalAddress As void*
+	;
+	;for (i32 Index := 0, Index < XSDT~>Header->EntryCount(), Index++) {
+	;	ACPI_TABLE* NextACPITable := XSDT->EntryPhysicalAddresses[Index] As void*
+	;	
+	;	Print("Table %i: %l\n", Index, NextACPITable~>Header->Signature)
+	;}
+	;
+	;SystemTable->ConsoleInput->Reset()
+	;SystemTable->BootServices->WaitForEvent(SystemTable->ConsoleInput->WaitForKey)
+	;
+	;return 0
 	
 	EFI_LOADED_IMAGE_PROTOCOL* LoadedImage := null
 	SystemTable->BootServices->HandleProtocol(ImageHandle, EFI_LOADED_IMAGE_PROTOCOL_GUID, &LoadedImage As void**)
@@ -159,6 +193,8 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	
 	SystemTable->BootServices->FreePool(Handles)
 	
+	Print("Switching mode\n")
+	
 	EFI_GRAPHICS_OUTPUT_PROTOCOL* Graphics := null
 	SystemTable->BootServices->LocateProtocol(EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID, &Graphics As void**)
 	
@@ -219,11 +255,11 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 		KernelBlockCount += 1
 	}
 	
-	;ProgressUpdate(KernelSize, "Reading kernel...", 0)
+	ProgressUpdate(KernelSize, "Reading kernel...", 0)
 	
 	for (i32 KernelBlockIndex := 0, KernelBlockIndex < KernelBlockCount, KernelBlockIndex += 1) {
 		FS->ReadINodeData(KernelFile + (KernelBlockIndex * 0x400), KernelNode, KernelBlockIndex)
-		;ProgressUpdate(KernelSize, "Reading kernel...", KernelBlockIndex * 0x400)
+		ProgressUpdate(KernelSize, "Reading kernel...", KernelBlockIndex * 0x400)
 	}
 	
 	Print("\nDone\n")

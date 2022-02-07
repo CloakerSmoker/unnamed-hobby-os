@@ -101,6 +101,8 @@ INode* RootINode := null
 
 #Require "./src/kernel/core/Shell.rlx"
 
+#Require "./src/drivers/PCI/PCI.rlx"
+
 declare void MainContinuation()
 
 define void RawMainContinuation(void* Stack) asm {
@@ -154,6 +156,18 @@ define void Main(void* CR3, void* RawFrameBuffer, i32 KernelSize) {
 	KernelAddressSpace->MapRange(StackMemory, KernelStackPages / PAGE_SIZE, 20)
 	
 	KernelAddressSpace->Takeover(&RawMainContinuation, StackMemory + (PAGE_SIZE * 20))
+}
+
+define void VisitPCIFunction(i32 Bus, i32 Slot, i32 Function) {
+	Print("%x/%x/%x %x: ", Bus, Slot, Function, PCIReadConfig(Bus, Slot, 0, PCI_HEADER_HEADER_TYPE))
+	
+	i32 Class := PCIReadConfig(Bus, Slot, Function, PCI_HEADER_CLASS_CODE)
+	i32 SubClass := PCIReadConfig(Bus, Slot, Function, PCI_HEADER_SUBCLASS)
+	i32 Interface := PCIReadConfig(Bus, Slot, Function, PCI_HEADER_INTERFACE)
+	
+	PCIClassCodes->Print(Class, SubClass, Interface)
+	
+	Print("\n")
 }
 
 define void MainContinuation() {
@@ -226,26 +240,28 @@ define void MainContinuation() {
 	
 	Print("Back in kernel code\n\n")
 	
+	PCIEnumerateBusses(&VisitPCIFunction)
+	
 	KernelTerminal->SetCursorTimer()
 	
-	KernelTerminal->PrintLine("BOOT: Mounting disk")
-	
-	BlockDevice* FSDevice := InstantiateBlockDeviceChainFromPath("ATAPIO(0)>GPT(1)")
-	
-	Print("Device = %x\n", FSDevice)
-	
-	void* SB := KernelHeapAllocate('SB', 2048)
-	void* TI := KernelHeapAllocate('TI', 1024)
-	void* TB1 := KernelHeapAllocate('TB1', 1024)
-	void* TB2 := KernelHeapAllocate('TB2', 1024)
-	void* BMP := KernelHeapAllocate('BMP', 1024)
-	
-	FS := KernelHeapAllocate('Root', #Ext2)
-	FS->Device := FSDevice
-	
-	FS->Initialize(SB, TI, TB1, TB2, BMP)
-	
-	RootINode := CloneMemory(FS->ReadINode(2), #INode)
+	;KernelTerminal->PrintLine("BOOT: Mounting disk")
+	;
+	;BlockDevice* FSDevice := InstantiateBlockDeviceChainFromPath("ATAPIO(0)>GPT(1)")
+	;
+	;Print("Device = %x\n", FSDevice)
+	;
+	;void* SB := KernelHeapAllocate('SB', 2048)
+	;void* TI := KernelHeapAllocate('TI', 1024)
+	;void* TB1 := KernelHeapAllocate('TB1', 1024)
+	;void* TB2 := KernelHeapAllocate('TB2', 1024)
+	;void* BMP := KernelHeapAllocate('BMP', 1024)
+	;
+	;FS := KernelHeapAllocate('Root', #Ext2)
+	;FS->Device := FSDevice
+	;
+	;FS->Initialize(SB, TI, TB1, TB2, BMP)
+	;
+	;RootINode := CloneMemory(FS->ReadINode(2), #INode)
 	
 	SetupShell()
 	
