@@ -242,6 +242,8 @@ define void MainContinuation() {
 	
 	PCIEnumerateBusses(&VisitPCIFunction)
 	
+	ChannelOne.DetectDevices()
+	
 	KernelTerminal->SetCursorTimer()
 	
 	;KernelTerminal->PrintLine("BOOT: Mounting disk")

@@ -1,33 +1,262 @@
 
 #Require "./src/utility/x64.rlx"
 
-i8 ATAPIO_STATUS_ERR := 0b0000_0001
-i8 ATAPIO_STATUS_DRQ := 0b0000_1000
-i8 ATAPIO_STATUS_RDY := 0b0100_0000
-i8 ATAPIO_STATUS_BSY := 0b1000_0000 As i8
+i32 ATA_STATUS_ERROR         := 0x01 ; Error
+i32 ATA_STATUS_INDEX         := 0x02 ; Index
+i32 ATA_STATUS_CORRRECTED    := 0x04 ; Corrected data
+i32 ATA_STATUS_DATA_REQUEST  := 0x08 ; Data request ready
+i32 ATA_STATUS_SEEK_COMPLETE := 0x10 ; Drive seek complete
+i32 ATA_STATUS_WRITE_FAULT   := 0x20 ; Drive write fault
+i32 ATA_STATUS_READY         := 0x40 ; Drive ready
+i32 ATA_STATUS_BUSY          := 0x80 ; Busy
 
-define void ATAWaitNotBusy() {
-	for (i32 Index := 0, Index < 0x100_0000, Index++) {
-		if !(InB(0x1F7) & ATAPIO_STATUS_BSY) {
-			return
+i32 ATA_ERROR_NO_ADDRESS_MARK      := 0x01 ; No address mark
+i32 ATA_ERROR_TRACK_ZERO_NOT_FOUND := 0x02 ; Track 0 not found
+i32 ATA_ERROR_COMMAND_ABORTED      := 0x04 ; Command aborted
+i32 ATA_ERROR_MEDIA_CHANGE_REQUEST := 0x08 ; Media change request
+i32 ATA_ERROR_ID_MARK_NOT_FOUND    := 0x10 ; ID mark not found
+i32 ATA_ERROR_MEDIA_CHANGED        := 0x20 ; Media changed
+i32 ATA_ERROR_UNCORRECTABLE_DATA   := 0x40 ; Uncorrectable data
+i32 ATA_ERROR_BAD_BLOCK            := 0x80 ; Bad block
+
+i32 ATA_COMMAND_READ_PIO        := 0x20
+i32 ATA_COMMAND_READ_PIO_EXT    := 0x24
+i32 ATA_COMMAND_READ_DMA        := 0xC8
+i32 ATA_COMMAND_READ_DMA_EXT    := 0x25
+i32 ATA_COMMAND_WRITE_PIO       := 0x30
+i32 ATA_COMMAND_WRITE_PIO_EXT   := 0x34
+i32 ATA_COMMAND_WRITE_DMA       := 0xCA
+i32 ATA_COMMAND_WRITE_DMA_EXT   := 0x35
+i32 ATA_COMMAND_CACHE_FLUSH     := 0xE7
+i32 ATA_COMMAND_CACHE_FLUSH_EXT := 0xEA
+i32 ATA_COMMAND_PACKET          := 0xA0
+i32 ATA_COMMAND_IDENTIFY_PACKET := 0xA1
+i32 ATA_COMMAND_IDENTIFY        := 0xEC
+
+i32 ATA_IDENTIFICATION_DEVICE_TYPE  := 0
+i32 ATA_IDENTIFICATION_CYLINDERS    := 2
+i32 ATA_IDENTIFICATION_HEADS        := 6
+i32 ATA_IDENTIFICATION_SECTORS      := 12
+i32 ATA_IDENTIFICATION_SERIAL       := 20
+i32 ATA_IDENTIFICATION_MODEL        := 54
+i32 ATA_IDENTIFICATION_CAPABILITIES := 98
+i32 ATA_IDENTIFICATION_FIELD_VALID  := 106
+i32 ATA_IDENTIFICATION_MAX_LBA      := 120
+i32 ATA_IDENTIFICATION_COMMAND_SETS := 164
+i32 ATA_IDENTIFICATION_MAX_LBA_EXT  := 200
+
+i32 ATA_MASTER := 0
+i32 ATA_SLAVE  := 1
+
+i16 ATA_IO_REGISTER_DATA                    := 0x00
+i16 ATA_IO_REGISTER_ERROR                   := 0x01
+i16 ATA_IO_REGISTER_FEATURES                := 0x01
+i16 ATA_IO_REGISTER_SECTOR_COUNT_0          := 0x02
+i16 ATA_IO_REGISTER_LBA_0                   := 0x03
+i16 ATA_IO_REGISTER_LBA_1                   := 0x04
+i16 ATA_IO_REGISTER_LBA_2                   := 0x05
+i16 ATA_IO_REGISTER_DEVICE_SELELECTION      := 0x06
+i16 ATA_IO_REGISTER_COMMAND                 := 0x07
+i16 ATA_IO_REGISTER_STATUS                  := 0x07
+i16 ATA_CONTROL_REGISTER_CONTROL            := 0x02
+i16 ATA_CONTROL_REGISTER_ALTERNATIVE_STATUS := 0x02
+i16 ATA_CONTROL_REGISTER_DEVICE_ADDRESS     := 0x03
+
+i32 ATA_DEVICE_SELECTION_MUST_SET   := 0b1010_0000
+i32 ATA_DEVICE_SELECTION_USE_CHS    := 0b0100_0000
+i32 ATA_DEVICE_SELECTION_USE_SLAVE  := 0b0001_0000
+i32 ATA_DEVICE_SELECTION_USE_MASTER := 0b0000_0000
+
+i8[512] ATAIdentificationSpaceBuffer
+
+struct ATAIdentificationSpace {
+	i16 DeviceType
+	i16 CylinderCount
+	i16 SpecificConfiguration
+	i16 HeadCount
+	i16[2] Retired1
+	i16 SectorsPerTrack
+	i16[3] VendorUnique1
+	i8[20] SerialNumber
+	i16[2] Retired2
+	i16 Obsolete1
+	i8[8] FirmwareRevision
+	i8[48] Model
+	i8 MaximumBlockTransfer
+	i8 VendorUnique2
+	i16 TrustedComputing
+	i32 Capabilities
+	i16[2] Obsolete2
+}
+
+struct ATAChannel {
+	i16 IOPortBase
+	i16 ControlPortBase
+	
+	i8 HasMaster
+	i8 HasSlave
+	
+	define i8 ReadIOPort(i16 Offset) {
+		return InB(this->IOPortBase + Offset)
+	}
+	define i16 ReadWideIOPort(i16 Offset) {
+		return InW(this->IOPortBase + Offset)
+	}
+	define void WriteIOPort(i16 Offset, i32 Value) {
+		OutB(this->IOPortBase + Offset, (Value & 0xFF) As i8)
+	}
+	define i8 ReadControlPort(i16 Offset) {
+		return InB(this->ControlPortBase + Offset)
+	}
+	define void WriteControlPort(i16 Offset, i32 Value) {
+		OutB(this->ControlPortBase + Offset, (Value & 0xFF) As i8)
+	}
+	
+	define void WaitForNotBusy() {
+		for (i32 Index := 0, Index < 0x100_0000, Index++) {
+			if !(this->ReadIOPort(ATA_IO_REGISTER_STATUS) & ATA_STATUS_BUSY) {
+				return
+			}
+		}
+		
+		i8 Status := this->ReadIOPort(ATA_IO_REGISTER_STATUS)
+		
+		Info("ATA not busy wait failed, last status %b (%x)", Status, Status)
+		Throw('fail')
+	}
+	define void WaitForDataRequest() {
+		for (i32 Index := 0, Index < 0x100_0000, Index++) {
+			if (this->ReadIOPort(ATA_IO_REGISTER_STATUS) & ATA_STATUS_DATA_REQUEST) {
+				return
+			}
+		}
+		
+		i8 Status := this->ReadIOPort(ATA_IO_REGISTER_STATUS)
+		
+		Info("ATA data request wait failed, last status %b (%x)", Status, Status)
+		Throw('fail')
+	}
+	
+	define void ReadIOPortBuffer(i16 Offset, void* RawBuffer, i32 Count) {
+		i16* Buffer := RawBuffer
+		
+		for (i32 Index := 0, Index < Count / 2, Index++) {
+			;i16 Value := this->ReadWideIOPort(Offset)
+			;
+			;i32 Low := (Value >> 8) & 0xFF
+			;i32 High := (Value & 0xFF) << 8
+			;
+			;Buffer[Index] := (Low | High) As i16
+			
+			Buffer[Index] := this->ReadWideIOPort(Offset)
 		}
 	}
 	
-	Info("ATA not busy wait failed, last status %b (%x)", InB(0x1F7), InB(0x1F7))
-	Throw('fail')
-}
-
-define void ATAWaitDataRequest() {
-	for (i32 Index := 0, Index < 0x100_0000, Index++) {
-		if (InB(0x1F7) & ATAPIO_STATUS_DRQ) {
-			return
+	define void DetectDevices() {
+		for (i32 Index := 0, Index < 2, Index++) {
+			i32 DeviceSelection := ATA_DEVICE_SELECTION_MUST_SET
+			
+			if (Index = 0) {
+				DeviceSelection |= ATA_DEVICE_SELECTION_USE_MASTER
+			}
+			else {
+				DeviceSelection |= ATA_DEVICE_SELECTION_USE_SLAVE
+			}
+			
+			this->WriteIOPort(ATA_IO_REGISTER_DEVICE_SELELECTION, DeviceSelection)
+			
+			SleepMS(1)
+			
+			this->WriteIOPort(ATA_IO_REGISTER_COMMAND, ATA_COMMAND_IDENTIFY)
+			
+			SleepMS(1)
+			
+			if (this->ReadIOPort(ATA_IO_REGISTER_STATUS) = 0) {
+				continue
+			}
+			
+			i8 Error := 0
+			
+			loop {
+				i8 Status := this->ReadIOPort(ATA_IO_REGISTER_STATUS)
+				
+				if (Status & ATA_STATUS_ERROR) {
+					Error := 1
+					
+					break
+				}
+				
+				if !(Status & ATA_STATUS_BUSY) {
+					break
+				}
+			}
+			
+			if (Error) {
+				continue
+			}
+			
+			this->WaitForDataRequest()
+			
+			this->ReadIOPortBuffer(ATA_IO_REGISTER_DATA, ATAIdentificationSpaceBuffer, 512)
+			
+			Print("%x, %x\n", *(ATAIdentificationSpaceBuffer As i32* + ATA_IDENTIFICATION_MAX_LBA), *(ATAIdentificationSpaceBuffer As i32* + ATA_IDENTIFICATION_MAX_LBA_EXT))
+			
+			Print("   |  ")
+			
+			for (i32 Column := 0, Column < 16, Column++) {
+				Print("%B ", Column)
+			}
+			
+			Print(" |\n")
+			
+			Print("   |--")
+			
+			for (i32 Column := 0, Column < 16, Column++) {
+				Print("---")
+			}
+			
+			Print("-|\n")
+		
+			for (i32 Row := 0, Row < 32, Row++) {
+				Print("%B |  ", Row)
+				
+				for (i32 Column := 0, Column < 16, Column++) {
+					i8 Data := (ATAIdentificationSpaceBuffer As i8*)[(Row * 16) + Column]
+					
+					Print("%B ", Data)
+				}
+				
+				Print(" | ")
+				
+				for (i32 Column := 0, Column < 16, Column++) {
+					i8 Data := (ATAIdentificationSpaceBuffer As i8*)[(Row * 16) + Column]
+					
+					if (Data >= '!' && Data <= '~') {
+						Print("%c", Data)
+					}
+					else {
+						Print(".")
+					}
+				}
+				
+				Print("\n")
+			}
+			
+			break
 		}
 	}
 	
-	Info("ATA data request wait failed, last status %b (%x)", InB(0x1F7), InB(0x1F7))
-	Throw('fail')
 }
 
+ATAChannel ChannelOne {
+	IOPortBase: 0x1F0,
+	ControlPortBase: 0x3F6
+}
+
+struct ATADevice {
+	i8 a
+	
+}
 
 define void ATAReadWrite(i8 Slave, i32 LBA, i32 Sectors, i8 Command) {
 	i8 Device := ((0xE + Slave) << 4) As i8
@@ -44,11 +273,11 @@ define void ATAReadWrite(i8 Slave, i32 LBA, i32 Sectors, i8 Command) {
 define void ATARead(i8 FromSlave, i32 LBA, i32 SectorsToRead, void* RawIntoBuffer) {
 	i16* IntoBuffer := RawIntoBuffer
 	
-	ATAWaitNotBusy()
+	ChannelOne.WaitForNotBusy()
 	ATAReadWrite(FromSlave, LBA, SectorsToRead, 0x20)
 	
 	for (i32 SectorIndex := 0, SectorIndex < SectorsToRead, SectorIndex += 1) {
-		ATAWaitDataRequest()
+		ChannelOne.WaitForDataRequest()
 		
 		for (i32 WordIndex := 0, WordIndex < 256, WordIndex += 1) {
 			IntoBuffer[WordIndex] := InW(0x1F0)
@@ -60,12 +289,12 @@ define void ATARead(i8 FromSlave, i32 LBA, i32 SectorsToRead, void* RawIntoBuffe
 define void ATAWrite(i8 ToSlave, i32 LBA, i32 SectorsToWrite, void* FromBuffer) {
 	i16* WordBuffer := FromBuffer As i16*
 	
-	ATAWaitNotBusy()
+	ChannelOne.WaitForNotBusy()
 	ATAReadWrite(ToSlave, LBA, SectorsToWrite, 0x30)
 	
 	for (i32 SectorIndex := 0, SectorIndex < SectorsToWrite, SectorIndex += 1) {
-		ATAWaitNotBusy()
-		ATAWaitDataRequest()
+		ChannelOne.WaitForNotBusy()
+		ChannelOne.WaitForDataRequest()
 		
 		for (i32 WordIndex := 0, WordIndex < 256, WordIndex += 1) {
 			OutW(0x1F0, WordBuffer[WordIndex])
