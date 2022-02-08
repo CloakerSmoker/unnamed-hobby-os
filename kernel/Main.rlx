@@ -97,7 +97,7 @@ INode* RootINode := null
 #Require "./src/drivers/Ext2Interface.rlx"
 
 #Require "./src/kernel/core/Tasks.rlx"
-#Require "./src/kernel/core/Process.rlx"
+#Require "./src/kernel/user-mode/Process.rlx"
 #Require "./src/kernel/core/SystemCalls.rlx"
 
 #Require "./src/kernel/core/Shell.rlx"

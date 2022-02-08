@@ -1,30 +1,13 @@
-define void PrintCharacters(i8* Characters, i32 Count) {
-	syscall:(1, 1, Characters, Count)
-}
+#Require "$/ConsoleBase.rlx"
 
-define i32 StringLength(i8* String) {
-	for (i32 Length := 0, String[Length] != 0, Length++) {}
+define i32 Main(i64 ArgC, i8** ArgV) {
+	Print("Hello from sys_write\n")
 	
-	return Length
-}
-
-define void PrintString(i8* String) {
-	PrintCharacters(String, StringLength(String))
-}
-
-define void Read(i8* Destination, i32 Size) {
-	syscall:(0, 0, Destination, Size)
-}
-
-define void Main() {
-	PrintString("Hello from sys_write\n")
+	Print("%i arguments\n", ArgC)
 	
-	i8[20] Buf
+	for (i32 Index := 0, Index < ArgC, Index++) {
+		Print("%i: %s\n", Index, ArgV[Index])
+	}
 	
-	PrintString("Write 10 characters: ")
-	Read(Buf, 10)
-	
-	PrintString("\nYou said: ")
-	PrintCharacters(Buf, 10)
-	PrintString("\n")
+	return 1
 }

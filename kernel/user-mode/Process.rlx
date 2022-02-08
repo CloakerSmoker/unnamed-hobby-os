@@ -1,0 +1,18 @@
+
+struct Process {
+	i64[10] FileDescriptorsToHandles
+	i32 FileDescriptorCount
+	
+	MemoryMappingGroup* Mappings
+	
+	Task Task
+	
+	i32 ExitCode
+	
+	define void Run() {
+		this~>Task->NeedsUserMode := true
+		this~>Task->Resume()
+	}
+}
+
+Process* CurrentProcess := null

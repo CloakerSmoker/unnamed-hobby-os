@@ -1,7 +1,7 @@
 
 #Require "./src/utility/ScanCodes.rlx"
 #Require "./src/utility/MemoryFIFO.rlx"
-#Require "./src/kernel/core/ELFLoader.rlx"
+#Require "./src/kernel/user-mode/Execute.rlx"
 
 define void Prompt() {
 	Print("(>")
@@ -297,36 +297,9 @@ define void OnCommand(i8* CommandLine) {
 			
 			Print("Loaded %x byte image @ %x\n", FoundFileNode.FileSizeLow, FileData)
 			
-			ELFHeader* ELFData := FileData As ELFHeader*
+			i32 Result := Execute(FileData, 0, NULL_ARGUMENTS, 0, NULL_ENVIRONMENT)
 			
-			MemoryMappingGroup* Mappings := MapELF(KernelAddressSpace, ELFData)
-			
-			void* OriginalStack := KernelHeap->Allocate(0x2000)
-			
-			void* Stack := OriginalStack + 0x1F00
-			
-			if (Stack & 0xF) {
-				Stack += 0x10 - ((Stack As i64) & 0xF)
-			}
-			
-			AMD64Context Context
-			
-			Context.Zero()
-			Context.RSP := Stack
-			Context.RawRIP := ELFData->EntryPoint
-			
-			EnterUserMode(&Context)
-			
-			Print("Returned from program\n")
-			
-			KernelHeap->Free(FileData)
-			KernelHeap->Free(OriginalStack)
-			
-			Print("Free file/stack\n")
-			
-			Mappings->Delete()
-			
-			Print("Unmap\n")
+			Print("Program exited with code %i\n", Result)
 			
 			RunningProgram := false
 		}

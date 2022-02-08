@@ -208,7 +208,7 @@ struct PrintOutputAdapterPrototype {
 					this->PrintLiteral(NextParameter As i64)
 				}
 				else if (Next = 'b') {
-					this->PrintPrefixedBinary(NextParameter As i64)
+					this->PrintBinary(NextParameter As i64)
 				}
 				else if (Next = 'B') {
 					this->PrintByte(NextParameter As i64)

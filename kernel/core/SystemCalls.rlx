@@ -22,6 +22,10 @@ define void HandleSystemCall(AMD64Context* Context) {
 	i64 Number := Context->RAX
 	
 	if (Number = SYSCALL_EXIT) {
+		if (CurrentProcess && CurrentTask = CurrentProcess~>Task) {
+			CurrentProcess->ExitCode := Context->RDI As i32
+		}
+		
 		RestoreContext(&KernelContext)
 	}
 	
@@ -202,9 +206,9 @@ define void EnterUserMode(AMD64Context* Context) {
 		return
 	}
 	
-	Context->RSP -= 8
+	;Context->RSP -= 8
 	
-	Context->RSP[0] := &UserModeReturnStub As i64
+	;Context->RSP[0] := &UserModeReturnStub As i64
 	
 	ResumeUserMode(Context)
 }
@@ -221,18 +225,22 @@ define void UserModeTest() {
 		mov, rdi, 2
 		syscall
 		
-		xchg, bx, bx
+		mov, rax, 60
+		mov, rdi, 0
+		syscall
 	}
 	
 	;Print("\t^SCHello from userland!^R\n")
 }
 
-Task Dummy
+;Task Dummy
 
 define void Test() {
 	i64 UserStackPages := PhysicalMemory->Reserve('STK', PAGE_SIZE * 10, PAGE_SIZE)
 	void* UserStack    := UserStackPages As void*
 	KernelAddressSpace->MapRange(UserStack, UserStackPages / PAGE_SIZE, 10)
+	
+	Task Dummy
 	
 	CurrentTask := &Dummy
 	

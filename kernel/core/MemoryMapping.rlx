@@ -36,7 +36,7 @@ struct MemoryMappingGroup {
 			this->First := New
 		}
 		
-		this->AddressSpace->MapRange(Virtual, Physical, Count, Flags)
+		this->AddressSpace->MapRange(Virtual, Physical, Count, Flags | PAGE_PRESENT)
 		
 		return New
 	}

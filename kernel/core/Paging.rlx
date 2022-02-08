@@ -291,7 +291,7 @@ struct AddressSpaceManager {
 				PTMax := PTSpace
 			}
 			
-			;BochsPrint("Map PT @ %x [%x-%x] to %x-%x\n", PT, PTIndex, PTMax, StartPage, StartPage + PTMax)
+			;Info("Map PT @ %x [%x-%x] to %x-%x\n", PT, PTIndex, PTMax, StartPage, StartPage + PTMax)
 			
 			for (i32 Index := 0, Index < PTMax, Index++) {
 				PT[PTIndex + Index] := PackPageFlags(StartPage + Index, Flags)
