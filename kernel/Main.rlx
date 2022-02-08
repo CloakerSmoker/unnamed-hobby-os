@@ -7,6 +7,7 @@
 declare void PrintCharacter(i8)
 
 #Require "./src/utility/Print.rlx"
+#Require "./src/utility/PrintHelpers.rlx"
 
 i8 USE_SERIAL_OUTPUT := true
 i16 SERIAL_OUTPUT_PORT := 1
@@ -158,6 +159,8 @@ define void Main(void* CR3, void* RawFrameBuffer, i32 KernelSize) {
 	KernelAddressSpace->Takeover(&RawMainContinuation, StackMemory + (PAGE_SIZE * 20))
 }
 
+ATADevice* FirstDisk := null
+
 define void VisitPCIFunction(i32 Bus, i32 Slot, i32 Function) {
 	Print("%x/%x/%x %x: ", Bus, Slot, Function, PCIReadConfig(Bus, Slot, 0, PCI_HEADER_HEADER_TYPE))
 	
@@ -168,6 +171,14 @@ define void VisitPCIFunction(i32 Bus, i32 Slot, i32 Function) {
 	PCIClassCodes->Print(Class, SubClass, Interface)
 	
 	Print("\n")
+	
+	if (Class = PCI_CLASS_CODE_MASS_STORAGE_CONTROLLER 
+	 && SubClass = PCI_SUBCLASS_IDE_INTERFACE)
+	 && Interface = PCI_INTERFACE_ISA_ONLY) {
+		
+		
+		
+	}
 }
 
 define void MainContinuation() {

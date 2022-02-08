@@ -270,3 +270,7 @@ define i64 GetCR2() asm {
 	
 	ret
 }
+
+define i32 Byte(i64 Value, i8 ByteNumber) {
+	return ((Value >> ((ByteNumber << 3) As i8)) & 0xFF) As i32
+}

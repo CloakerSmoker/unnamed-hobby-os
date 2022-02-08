@@ -67,6 +67,9 @@ i32 ATA_DEVICE_SELECTION_USE_CHS    := 0b0100_0000
 i32 ATA_DEVICE_SELECTION_USE_SLAVE  := 0b0001_0000
 i32 ATA_DEVICE_SELECTION_USE_MASTER := 0b0000_0000
 
+i32 ATA_IDENTIFICATION_COMMAND_SETS_LBA_48 := 1 << 26
+i32 ATA_IDENTIFICATION_COMMAND_SETS_LBA := 1 << 9
+
 i8[512] ATAIdentificationSpaceBuffer
 
 struct ATAIdentificationSpace {
@@ -89,12 +92,17 @@ struct ATAIdentificationSpace {
 	i16[2] Obsolete2
 }
 
+i8 ATA_DEVICE_IS_MASTER := 0
+i8 ATA_DEVICE_IS_SLAVE := 1
+
+declare ATADevice* CreateATADevice(ATAChannel*, i8, void*)
+
 struct ATAChannel {
 	i16 IOPortBase
 	i16 ControlPortBase
 	
-	i8 HasMaster
-	i8 HasSlave
+	ATADevice* Master
+	ATADevice* Slave
 	
 	define i8 ReadIOPort(i16 Offset) {
 		return InB(this->IOPortBase + Offset)
@@ -105,6 +113,10 @@ struct ATAChannel {
 	define void WriteIOPort(i16 Offset, i32 Value) {
 		OutB(this->IOPortBase + Offset, (Value & 0xFF) As i8)
 	}
+	define void WriteWideIOPort(i16 Offset, i32 Value) {
+		OutW(this->IOPortBase + Offset, (Value & 0xFFFF) As i16)
+	}
+	
 	define i8 ReadControlPort(i16 Offset) {
 		return InB(this->ControlPortBase + Offset)
 	}
@@ -153,7 +165,7 @@ struct ATAChannel {
 	}
 	
 	define void DetectDevices() {
-		for (i32 Index := 0, Index < 2, Index++) {
+		for (i8 Index := 0, Index < 2, Index++) {
 			i32 DeviceSelection := ATA_DEVICE_SELECTION_MUST_SET
 			
 			if (Index = 0) {
@@ -199,63 +211,143 @@ struct ATAChannel {
 			
 			this->ReadIOPortBuffer(ATA_IO_REGISTER_DATA, ATAIdentificationSpaceBuffer, 512)
 			
-			Print("%x, %x\n", *(ATAIdentificationSpaceBuffer As i32* + ATA_IDENTIFICATION_MAX_LBA), *(ATAIdentificationSpaceBuffer As i32* + ATA_IDENTIFICATION_MAX_LBA_EXT))
+			ATADevice* Device := CreateATADevice(this, Index, ATAIdentificationSpaceBuffer)
 			
-			Print("   |  ")
-			
-			for (i32 Column := 0, Column < 16, Column++) {
-				Print("%B ", Column)
+			if (Index = 0) {
+				this->Master := Device
 			}
-			
-			Print(" |\n")
-			
-			Print("   |--")
-			
-			for (i32 Column := 0, Column < 16, Column++) {
-				Print("---")
+			else {
+				this->Slave := Device
 			}
-			
-			Print("-|\n")
+		}
+	}
+}
+
+struct ATADevice {
+	ATAChannel* Channel
+	i64 MaxLBA
+	i32 CommandSets
+	i16 DeviceType
+	i16 Capabilities
+	i8 IsMasterOrSlave
+	
+	i8[21] Serial
+	i8[41] Model
+	
+	define void DoReadWrite(i32 Command, i32 LBA, i32 SectorCount) {
+		this->Channel->WaitForNotBusy()
 		
-			for (i32 Row := 0, Row < 32, Row++) {
-				Print("%B |  ", Row)
-				
-				for (i32 Column := 0, Column < 16, Column++) {
-					i8 Data := (ATAIdentificationSpaceBuffer As i8*)[(Row * 16) + Column]
-					
-					Print("%B ", Data)
-				}
-				
-				Print(" | ")
-				
-				for (i32 Column := 0, Column < 16, Column++) {
-					i8 Data := (ATAIdentificationSpaceBuffer As i8*)[(Row * 16) + Column]
-					
-					if (Data >= '!' && Data <= '~') {
-						Print("%c", Data)
-					}
-					else {
-						Print(".")
-					}
-				}
-				
-				Print("\n")
+		i32 DeviceSelection := ATA_DEVICE_SELECTION_MUST_SET | ATA_DEVICE_SELECTION_USE_CHS
+		
+		if (this->IsMasterOrSlave = ATA_DEVICE_IS_MASTER) {
+			DeviceSelection |= ATA_DEVICE_SELECTION_USE_MASTER
+		}
+		else {
+			DeviceSelection |= ATA_DEVICE_SELECTION_USE_SLAVE
+		}
+		
+		DeviceSelection |= Byte(LBA, 3) & 0xF
+		
+		this->Channel->WriteIOPort(ATA_IO_REGISTER_DEVICE_SELELECTION, DeviceSelection)
+		
+		this->Channel->WriteIOPort(ATA_IO_REGISTER_SECTOR_COUNT_0, SectorCount)
+		this->Channel->WriteIOPort(ATA_IO_REGISTER_LBA_0, Byte(LBA, 0))
+		this->Channel->WriteIOPort(ATA_IO_REGISTER_LBA_1, Byte(LBA, 1))
+		this->Channel->WriteIOPort(ATA_IO_REGISTER_LBA_2, Byte(LBA, 2))
+		
+		this->Channel->WriteIOPort(ATA_IO_REGISTER_COMMAND, Command)
+	}
+	
+	define void Read(i64 FirstBlock, i64 BlockCount, void* RawBuffer) {
+		this->DoReadWrite(ATA_COMMAND_READ_PIO, FirstBlock As i32, BlockCount As i32)
+		
+		i16* Buffer := RawBuffer
+		
+		for (i32 Index := 0, Index < BlockCount, Index += 1) {
+			this->Channel->WaitForDataRequest()
+			
+			for (i32 WordIndex := 0, WordIndex < 256, WordIndex += 1) {
+				Buffer[WordIndex] := this->Channel->ReadWideIOPort(ATA_IO_REGISTER_DATA)
 			}
 			
+			Buffer += 512
+		}
+	}
+	define void Write(i64 FirstBlock, i64 BlockCount, void* RawBuffer) {
+		this->DoReadWrite(ATA_COMMAND_WRITE_PIO, FirstBlock As i32, BlockCount As i32)
+		
+		i16* Buffer := RawBuffer
+		
+		for (i32 Index := 0, Index < BlockCount, Index += 1) {
+			this->Channel->WaitForNotBusy()
+			this->Channel->WaitForDataRequest()
+			
+			for (i32 WordIndex := 0, WordIndex < 256, WordIndex += 1) {
+				this->Channel->WriteWideIOPort(ATA_IO_REGISTER_DATA, Buffer[WordIndex])
+			}
+			
+			Buffer += 512
+			
+			this->Channel->WriteIOPort(ATA_IO_REGISTER_COMMAND, ATA_COMMAND_CACHE_FLUSH)
+		}
+	}
+}
+
+define void UnBreakATAString(i8* In, i8* Out, i32 Size) {
+	for (i32 CopyIndex := 0, CopyIndex < Size, CopyIndex += 2) {
+		Out[CopyIndex] := In[CopyIndex + 1]
+		Out[CopyIndex + 1] := In[CopyIndex]
+	}
+	
+	Out[Size] := 0
+	
+	for (i32 Index := Size - 1, Index >= 0, Index--) {
+		if (Out[Index] = ' ') {
+			Out[Index] := 0
+		}
+		else {
 			break
 		}
 	}
+}
+
+define ATADevice* CreateATADevice(ATAChannel* Channel, i8 IsMasterOrSlave, void* IdentificationSpace) {
+	ATADevice* Device := KernelHeap->Allocate('ATA_DEV', #ATADevice)
+
+	; Copy big endian (? why god ?) device model
+
+	i8* Model := IdentificationSpace As i8* + ATA_IDENTIFICATION_MODEL
+
+	UnBreakATAString(Model, Device->Model, 40)
+
+	i8* Serial := IdentificationSpace As i8* + ATA_IDENTIFICATION_SERIAL
+
+	UnBreakATAString(Serial, Device->Serial, 20)
+
+	Device->DeviceType := *(IdentificationSpace As i16* + ATA_IDENTIFICATION_DEVICE_TYPE)
+	Device->Capabilities := *(IdentificationSpace As i16* + ATA_IDENTIFICATION_CAPABILITIES)
+	Device->CommandSets := *(IdentificationSpace As i32* + ATA_IDENTIFICATION_COMMAND_SETS)
+
+	if (Device->CommandSets & ATA_IDENTIFICATION_COMMAND_SETS_LBA_48) {
+		Device->MaxLBA := *(IdentificationSpace As i32* + ATA_IDENTIFICATION_MAX_LBA)
+	}
+	else if (Device->CommandSets & ATA_IDENTIFICATION_COMMAND_SETS_LBA) {
+		Device->MaxLBA := *(IdentificationSpace As i32* + ATA_IDENTIFICATION_MAX_LBA_EXT)
+	}
+	else {
+		KernelHeap->Free(Device)
+		
+		return null
+	}
+
+	Device->IsMasterOrSlave := IsMasterOrSlave
 	
+	return Device
 }
 
 ATAChannel ChannelOne {
 	IOPortBase: 0x1F0,
 	ControlPortBase: 0x3F6
-}
-
-struct ATADevice {
-	i8 a
-	
 }
 
 define void ATAReadWrite(i8 Slave, i32 LBA, i32 Sectors, i8 Command) {
