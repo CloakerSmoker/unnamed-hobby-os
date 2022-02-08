@@ -200,7 +200,7 @@ define void ResumeUserMode(AMD64Context* Context) {
 }
 
 define void EnterUserMode(AMD64Context* Context) {
-	Print("EnterUserMode(%x, %x)\n", Context->RIP, Context->RSP)
+	;Print("EnterUserMode(%x, %x)\n", Context->RIP, Context->RSP)
 	
 	if (SaveContext(&KernelContext)) {
 		return
@@ -211,44 +211,4 @@ define void EnterUserMode(AMD64Context* Context) {
 	;Context->RSP[0] := &UserModeReturnStub As i64
 	
 	ResumeUserMode(Context)
-}
-
-define void UserModeTest() {
-	;FastSetMemory8(0x80_0000 As void*, 0, 1024 * 768 * 3)
-	
-	asm {
-		mov, rax, 4
-		mov, rdi, 1
-		syscall
-		
-		mov, rax, 4
-		mov, rdi, 2
-		syscall
-		
-		mov, rax, 60
-		mov, rdi, 0
-		syscall
-	}
-	
-	;Print("\t^SCHello from userland!^R\n")
-}
-
-;Task Dummy
-
-define void Test() {
-	i64 UserStackPages := PhysicalMemory->Reserve('STK', PAGE_SIZE * 10, PAGE_SIZE)
-	void* UserStack    := UserStackPages As void*
-	KernelAddressSpace->MapRange(UserStack, UserStackPages / PAGE_SIZE, 10)
-	
-	Task Dummy
-	
-	CurrentTask := &Dummy
-	
-	AMD64Context Context
-	
-	Context.Zero()
-	Context.RSP := UserStack + (PAGE_SIZE * 10)
-	Context.RIP := &UserModeTest
-	
-	EnterUserMode(&Context)
 }

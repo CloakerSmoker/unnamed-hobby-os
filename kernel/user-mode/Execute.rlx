@@ -26,13 +26,13 @@ define i64* SetupExecuteStack(void* Stack, i32 ArgumentCount, i8** Arguments, i3
 	
 	i64* RSP := Stack - StringsLength - 8 - 16 - EnvironmentLength - ArgumentLength
 	
-	Print("RSP (Unaligned) %x\n", RSP)
+	;Print("RSP (Unaligned) %x\n", RSP)
 	
 	if (RSP & 16) {
 		RSP -= 8
 	}
 	
-	Print("RSP %x\n", RSP)
+	;Print("RSP %x\n", RSP)
 	
 	i32 TopOffset := 0
 	i32 BottomOffset := 0
@@ -43,7 +43,7 @@ define i64* SetupExecuteStack(void* Stack, i32 ArgumentCount, i8** Arguments, i3
 		i8* NextArgument := Arguments[Index]
 		i32 NextArgumentLength := StringLength(NextArgument)
 		
-		TopOffset -= NextArgumentLength + 1
+		TopOffset += NextArgumentLength + 1
 		
 		i8* NextArgumentBuffer := Stack - TopOffset
 		
@@ -58,7 +58,7 @@ define i64* SetupExecuteStack(void* Stack, i32 ArgumentCount, i8** Arguments, i3
 		i8* NextEnvironment := Arguments[Index]
 		i32 NextEnvironmentLength := StringLength(NextEnvironment)
 		
-		TopOffset -= NextEnvironmentLength + 1
+		TopOffset += NextEnvironmentLength + 1
 		
 		i8* NextEnvironmentBuffer := Stack - TopOffset
 		
@@ -81,14 +81,14 @@ define i32 Execute(void* Buffer, i32 ArgumentCount, i8** Arguments, i32 Environm
 	
 	MemoryMappingGroup* Mappings := MapELF(KernelAddressSpace, ELFData)
 	
-	i64 UserStackPages := PhysicalMemory->Reserve('STK', PAGE_SIZE * 2, PAGE_SIZE)
+	i64 UserStackPages := PhysicalMemory->Allocate(2)
 	void* StackBottom := UserStackPages As i64*
 	
 	Mappings->Add(StackBottom, UserStackPages, 2, PAGE_USER | PAGE_WRITE)
 	
 	void* StackTop := StackBottom + 0x2000
 	
-	Print("Stack Top %x\nStack Bottom %x\n", StackTop, StackBottom)
+	;Print("Stack Top %x\nStack Bottom %x\n", StackTop, StackBottom)
 	
 	i64* RSP := SetupExecuteStack(StackTop, ArgumentCount, Arguments, EnvironmentCount, Environment)
 	

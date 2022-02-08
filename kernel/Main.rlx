@@ -1,4 +1,4 @@
-#ImageBase 0x10_0000
+#ImageBase 0x20_0000
 
 #Require "$/MemoryBase.rlx"
 #Require "$/StringBase.rlx"
@@ -29,7 +29,7 @@ i32 BYTES_PER_PIXEL := 4
 #Require "./src/kernel/graphics/Screen.rlx"
 
 #Require "./src/kernel/core/Paging.rlx"
-#Require "./src/kernel/core/PhysicalMemory.rlx"
+#Require "./src/kernel/core/PageHeap.rlx"
 #Require "./src/kernel/core/Heap.rlx"
 
 Heap RawKernelHeap
@@ -121,20 +121,22 @@ define void Main(void* CR3, void* RawFrameBuffer, i32 KernelSize) {
 	
 	Kernel->FrameBuffer := RawFrameBuffer
 	
-	PhysicalMemory->AddReserved(0, 0x10_0000) ; < 1mb, bootloader reserved
-	PhysicalMemory->Add(0x10_0000, 0x350_0000) ; free memory
+	;PhysicalMemory->AddReserved(0, 0x10_0000) ; < 1mb, bootloader reserved
+	;PhysicalMemory->Add(0x10_0000, 0x350_0000) ; free memory
+	
+	PhysicalMemory := PageHeap:Adopt(0x10_0000, 0x500)
 	
 	;i32 KernelSize := (MaxKernelAddress - 0x10_0000) As i32 ; Highest address of kernel data - image base
 	
 	Kernel->Size := KernelSize
 	Kernel->PageCount := SizeToPageCount(KernelSize)
 	
-	i64 KernelPages      := PhysicalMemory->Reserve('KNL', KernelSize) ; Reserve the memory the kernel lives in
-	i64 PageFramesPages  := PhysicalMemory->Reserve('PFP', BYTES_IN_1MB, PAGE_SIZE)
-	i64 HeapMemoryPages  := PhysicalMemory->Reserve('HMP', BYTES_IN_2MB, 8)
-	i64 KernelStackPages := PhysicalMemory->Reserve('KSP', PAGE_SIZE * 20, PAGE_SIZE)
+	i64 KernelPages      := PhysicalMemory->Reserve(0x20_0000, Kernel->PageCount) ; Reserve the memory the kernel lives in
+	i64 PageFramesPages  := PhysicalMemory->Allocate(PAGE_COUNT_FOR_1MB)
+	i64 HeapMemoryPages  := PhysicalMemory->Allocate(PAGE_COUNT_FOR_2MB)
+	i64 KernelStackPages := PhysicalMemory->Allocate(20)
 	
-	void* KernelBase  := 0x10_0000 As void*
+	void* KernelBase  := 0x20_0000 As void*
 	void* PageFrames  := PageFramesPages As void*
 	void* HeapMemory  := HeapMemoryPages As void*
 	void* StackMemory := KernelStackPages As void*
@@ -142,6 +144,8 @@ define void Main(void* CR3, void* RawFrameBuffer, i32 KernelSize) {
 	Kernel->HeapMemory := HeapMemory
 	
 	KernelAddressSpace->Initialize(PageFrames, BYTES_IN_1MB / PAGE_SIZE)
+	
+	KernelAddressSpace->MapRange(0x10_0000 As void*, 0x100, 0x10)
 	
 	; Identity map the memory where the page frames are being written, so after setting CR3 PageFrames resolves to the same
 	;  address as before setting CR3
@@ -233,7 +237,7 @@ define void MainContinuation() {
 	KernelHeap->Print()
 	
 	
-	i64 ReEntryStackPages := PhysicalMemory->Reserve('REP', PAGE_SIZE * 10, PAGE_SIZE)
+	i64 ReEntryStackPages := PhysicalMemory->Allocate(10)
 	void* ReEntryStack    := ReEntryStackPages As void*
 	KernelAddressSpace->MapRange(ReEntryStack, ReEntryStackPages / PAGE_SIZE, 10)
 	
@@ -261,12 +265,12 @@ define void MainContinuation() {
 	
 	Print("Set up PIT/timers\n")
 	
-	Print("\nTesting user-mode\n")
+	;Print("\nTesting user-mode\n")
 	
 	SetupSystemCalls()
-	Test()
+	;Test()
 	
-	Print("Back in kernel code\n\n")
+	;Print("Back in kernel code\n\n")
 	
 	DiskController := KernelHeap->Allocate('IDE', #IDEDiskController)
 	

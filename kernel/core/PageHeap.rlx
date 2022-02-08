@@ -1,0 +1,160 @@
+
+struct PageHeap {
+	i64 PhysicalBase
+	i32 HighWaterMark
+	i32 PageCount
+	
+	i8[0] AllocationMap
+	
+	
+	static PageHeap* Adopt(i64 PhysicalBase, i32 PageCount) {
+		i32 AllocationMapSize := PageCount / 8
+		
+		if (PageCount % 8) {
+			AllocationMapSize += 1
+		}
+		
+		AllocationMapSize += #PageHeap
+		
+		i32 AllocationMapPages := AllocationMapSize / PAGE_SIZE
+		
+		if (AllocationMapSize % PAGE_SIZE) {
+			AllocationMapPages += 1
+		}
+		
+		i64 FirstDataPage := PhysicalBase + (AllocationMapPages * PAGE_SIZE)
+		
+		PageHeap* this := PhysicalBase As PageHeap*
+		
+		this->PhysicalBase := FirstDataPage
+		this->PageCount := PageCount - AllocationMapPages
+		
+		return this
+	}
+	
+	define void Initialize(i64 PhysicalBase, void* AllocationMap, i32 PageCount) {
+		this->PhysicalBase := PhysicalBase
+		this->AllocationMap := AllocationMap
+		this->PageCount := PageCount
+	}
+	
+	define i8 IsAllocated(i32 Index) {
+		i32 Byte := Index / 8
+		i8 Bit := (Index % 8) As i8
+		i32 Mask := 1 << Bit
+		
+		i32 Value := this->AllocationMap[Byte]
+		
+		return (Value & Mask) != 0
+	}
+	define void WriteAllocationMap(i32 Index, i32 NewValue) {
+		i32 Byte := Index / 8
+		i8 Bit := (Index % 8) As i8
+		i32 Mask := 1 << Bit
+		
+		i32 Value := this->AllocationMap[Byte]
+		
+		if (Value & Mask) {
+			Value := Value & ~Mask
+		}
+		
+		Value |= Mask * NewValue
+		
+		this->AllocationMap[Byte] := (Value & 0xFF) As i8
+	}
+	
+	define i32 FindFreePages(i32 Count) {
+		for (i32 Index := this->HighWaterMark, Index < this->PageCount, Index++) {
+			if !(this->IsAllocated(Index)) {
+				i8 CountFits := true
+				
+				for (i32 CountIndex := 1, CountIndex < Count, CountIndex++) {
+					if (this->IsAllocated(Index + CountIndex)) {
+						CountFits := false
+						break
+					}
+				}
+				
+				if (CountFits) {
+					return Index
+				}
+			}
+		}
+		
+		Throw('UH-OH')
+		
+		return -1
+	}
+	
+	define void AllocatePage(i64 Index) {
+		this->WriteAllocationMap(Index As i32, true)
+	}
+	
+	define i64 Allocate(i32 Count) {
+		i32 FirstPage := this->FindFreePages(Count)
+		
+		for (i32 Index := 0, Index < Count, Index++) {
+			this->AllocatePage(FirstPage + Index)
+		}
+		
+		return this->PhysicalBase + (FirstPage * PAGE_SIZE)
+	}
+	define i64 Reserve(i64 FirstPage, i32 Count) {
+		FirstPage -= this->PhysicalBase
+		FirstPage /= PAGE_SIZE
+		
+		for (i32 Index := 0, Index < Count, Index++) {
+			this->AllocatePage(FirstPage + Index)
+		}
+		
+		return this->PhysicalBase + (FirstPage * PAGE_SIZE)
+	}
+	
+	define void Free(i64 FirstPage) {
+		FirstPage -= this->PhysicalBase
+		FirstPage /= PAGE_SIZE
+		
+		this->WriteAllocationMap(FirstPage As i32, false)
+		
+		if (FirstPage < this->HighWaterMark) {
+			this->HighWaterMark := FirstPage As i32
+		}
+	}
+	define void Free(i64 FirstPage, i32 Count) {
+		FirstPage -= this->PhysicalBase
+		FirstPage /= PAGE_SIZE
+		
+		for (i32 Index := 0, Index < Count, Index++) {
+			this->WriteAllocationMap((FirstPage + Index) As i32, false)
+		}
+		
+		if (FirstPage < this->HighWaterMark) {
+			this->HighWaterMark := FirstPage As i32
+		}
+	}
+	
+	define void Print() {
+		for (i32 Index := 0, Index < this->PageCount, Index++) {
+			if (this->IsAllocated(Index)) {
+				Print("%x\n", this->PhysicalBase + (Index * PAGE_SIZE))
+				
+				for (i32 RunIndex := Index, RunIndex < this->PageCount, RunIndex++) {
+					if !(this->IsAllocated(Index)) {
+						break
+					}
+				}
+				
+				i32 RunLength := RunIndex - Index
+				
+				if (RunLength) {
+					Print("...\n")
+					Print("%x\n", this->PhysicalBase + ((Index + RunLength) * PAGE_SIZE))
+					
+					Index += RunLength
+				}
+			}
+		}
+	}
+}
+
+PageHeap* PhysicalMemory := null

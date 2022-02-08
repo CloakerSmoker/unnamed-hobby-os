@@ -20,8 +20,6 @@ struct MemoryMappingGroup {
 	}
 	
 	define MemoryMapping* Add(void* Virtual, i64 Physical, i32 Count, i64 Flags) {
-		Physical /= PAGE_SIZE
-		
 		MemoryMapping* New := Alloc(#MemoryMapping)
 		
 		New->Virtual := Virtual
@@ -36,13 +34,13 @@ struct MemoryMappingGroup {
 			this->First := New
 		}
 		
-		this->AddressSpace->MapRange(Virtual, Physical, Count, Flags | PAGE_PRESENT)
+		this->AddressSpace->MapRange(Virtual, Physical / PAGE_SIZE, Count, Flags | PAGE_PRESENT)
 		
 		return New
 	}
 	
 	define void UpdateFlags(MemoryMapping* Mapping, i64 Flags) {
-		this->AddressSpace->MapRange(Mapping->Virtual, Mapping->Physical, Mapping->PageCount, Flags)
+		this->AddressSpace->MapRange(Mapping->Virtual, Mapping->Physical / PAGE_SIZE, Mapping->PageCount, Flags)
 	}
 	
 	define void UnMap() {
@@ -50,6 +48,7 @@ struct MemoryMappingGroup {
 		
 		while (Current) {
 			this->AddressSpace->UnmapRange(Current->Virtual, Current->PageCount)
+			PhysicalMemory->Free(Current->Physical)
 			
 			MemoryMapping* Last := Current
 			Current := Last->Next

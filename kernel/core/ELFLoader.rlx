@@ -29,7 +29,7 @@ define MemoryMappingGroup* MapELF(AddressSpaceManager* AddressSpace, ELFHeader* 
 				continue
 			}
 			
-			i64 SectionPhysicalPages := PhysicalMemory->Reserve('ELF', SectionPageCount * PAGE_SIZE, PAGE_SIZE)
+			i64 SectionPhysicalPages := PhysicalMemory->Allocate(SectionPageCount)
 			
 			
 			i64 TempFlags := PAGE_PRESENT | PAGE_WRITE ; Map as PRESENT|WRITE so we can... actually load the section into memory

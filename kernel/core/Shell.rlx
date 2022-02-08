@@ -295,9 +295,9 @@ define void OnCommand(i8* CommandLine) {
 				MoveMemory(FileData + (FileBlockIndex * 1024), FS->ReadBlock(FileDataBlock), 1024)
 			}
 			
-			Print("Loaded %x byte image @ %x\n", FoundFileNode.FileSizeLow, FileData)
+			;Print("Loaded %x byte image @ %x\n", FoundFileNode.FileSizeLow, FileData)
 			
-			i32 Result := Execute(FileData, 0, NULL_ARGUMENTS, 0, NULL_ENVIRONMENT)
+			i32 Result := Execute(FileData, ParameterCount, Parameters, 0, NULL_ENVIRONMENT)
 			
 			Print("Program exited with code %i\n", Result)
 			
