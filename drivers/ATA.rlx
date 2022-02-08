@@ -104,6 +104,11 @@ struct ATAChannel {
 	ATADevice* Master
 	ATADevice* Slave
 	
+	define void Initialize(i32 IOPortBase, i32 ControlPortBase) {
+		this->IOPortBase := IOPortBase As i16
+		this->ControlPortBase := ControlPortBase As i16
+	}
+	
 	define i8 ReadIOPort(i16 Offset) {
 		return InB(this->IOPortBase + Offset)
 	}
@@ -313,7 +318,9 @@ define void UnBreakATAString(i8* In, i8* Out, i32 Size) {
 
 define ATADevice* CreateATADevice(ATAChannel* Channel, i8 IsMasterOrSlave, void* IdentificationSpace) {
 	ATADevice* Device := KernelHeap->Allocate('ATA_DEV', #ATADevice)
-
+	
+	Device->Channel := Channel
+	
 	; Copy big endian (? why god ?) device model
 
 	i8* Model := IdentificationSpace As i8* + ATA_IDENTIFICATION_MODEL
@@ -343,57 +350,4 @@ define ATADevice* CreateATADevice(ATAChannel* Channel, i8 IsMasterOrSlave, void*
 	Device->IsMasterOrSlave := IsMasterOrSlave
 	
 	return Device
-}
-
-ATAChannel ChannelOne {
-	IOPortBase: 0x1F0,
-	ControlPortBase: 0x3F6
-}
-
-define void ATAReadWrite(i8 Slave, i32 LBA, i32 Sectors, i8 Command) {
-	i8 Device := ((0xE + Slave) << 4) As i8
-	i8 HighLBA := ((LBA >> 24) & 0xF) As i8
-	
-	OutB(0x1F6, (0xE0 As i8) | Device | HighLBA)
-	OutB(0x1F2, Sectors As i8)
-	OutB(0x1F3, (LBA & 0xFF) As i8)
-	OutB(0x1F4, ((LBA >> 8) & 0xFF) As i8)
-	OutB(0x1F5, ((LBA >> 16) & 0xFF) As i8)
-	OutB(0x1F7, Command)
-}
-
-define void ATARead(i8 FromSlave, i32 LBA, i32 SectorsToRead, void* RawIntoBuffer) {
-	i16* IntoBuffer := RawIntoBuffer
-	
-	ChannelOne.WaitForNotBusy()
-	ATAReadWrite(FromSlave, LBA, SectorsToRead, 0x20)
-	
-	for (i32 SectorIndex := 0, SectorIndex < SectorsToRead, SectorIndex += 1) {
-		ChannelOne.WaitForDataRequest()
-		
-		for (i32 WordIndex := 0, WordIndex < 256, WordIndex += 1) {
-			IntoBuffer[WordIndex] := InW(0x1F0)
-		}
-		
-		IntoBuffer += 512
-	}
-}
-define void ATAWrite(i8 ToSlave, i32 LBA, i32 SectorsToWrite, void* FromBuffer) {
-	i16* WordBuffer := FromBuffer As i16*
-	
-	ChannelOne.WaitForNotBusy()
-	ATAReadWrite(ToSlave, LBA, SectorsToWrite, 0x30)
-	
-	for (i32 SectorIndex := 0, SectorIndex < SectorsToWrite, SectorIndex += 1) {
-		ChannelOne.WaitForNotBusy()
-		ChannelOne.WaitForDataRequest()
-		
-		for (i32 WordIndex := 0, WordIndex < 256, WordIndex += 1) {
-			OutW(0x1F0, WordBuffer[WordIndex])
-		}
-		
-		OutB(0x1F7, 0xE7 As i8)
-		
-		WordBuffer += 512
-	}
 }

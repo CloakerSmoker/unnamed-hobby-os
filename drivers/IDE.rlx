@@ -1,0 +1,54 @@
+#Require "./src/drivers/ATA.rlx"
+
+struct IDEDiskController {
+	ATAChannel ChannelOne
+	ATAChannel ChannelTwo
+	i8 IsInitialized
+	
+	define void DetectDevices() {
+		this~>ChannelOne->DetectDevices()
+		this~>ChannelTwo->DetectDevices()
+	}
+	
+	define void Initialize(i32 ChannelOneIOBase, i32 ChannelOneControlBase, i32 ChannelTwoIOBase, i32 ChannelTwoControlBase) {
+		this~>ChannelOne->Initialize(ChannelOneIOBase, ChannelOneControlBase)
+		this~>ChannelTwo->Initialize(ChannelTwoIOBase, ChannelTwoControlBase)
+		
+		this->IsInitialized := true
+	}
+	
+	define ATADevice* Disk(i32 Index) {
+		if (Index = 0) {
+			return this~>ChannelOne->Master
+		}
+		else if (Index = 1) {
+			return this~>ChannelOne->Slave
+		}
+		else if (Index = 2) {
+			return this~>ChannelTwo->Master
+		}
+		else if (Index = 3) {
+			return this~>ChannelTwo->Slave
+		}
+		
+		return null
+	}
+	
+	define i32 FindFirstDiskIndex() {
+		for (i32 Index := 0, Index < 4, Index++) {
+			if (this->Disk(Index)) {
+				return Index
+			}
+		}
+		
+		return -1
+	}
+}
+
+i32 IDE_LEGACY_PRIMARY_IO_BASE := 0x1F0
+i32 IDE_LEGACY_PRIMARY_CONTROL_BASE := 0x3F6
+
+i32 IDE_LEGACY_SECONDARY_IO_BASE := 0x170
+i32 IDE_LEGACY_SECONDARY_CONTROL_BASE := 0x376
+
+IDEDiskController* DiskController := null
