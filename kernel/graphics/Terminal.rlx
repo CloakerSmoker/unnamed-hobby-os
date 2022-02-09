@@ -29,8 +29,6 @@ struct Terminal {
 	
 	define void Clear() {
 		this->Screen->Clear(this->BackgroundColor)
-		this->X := 0
-		this->Y := 0
 	}
 	
 	define void Adopt(Screen* NewScreen, i32 Foreground, i32 Background) {
@@ -133,10 +131,10 @@ struct Terminal {
 	}
 	
 	define void DoEscape() {
-		Info("DoEscape '%s', ", this~>EscapeBuffer)
+		Info("DoEscape ")
 		
 		for (i32 DumpIndex := 0, DumpIndex < this->EscapeIndex, DumpIndex++) {
-			Info("%x ", this~>EscapeBuffer[DumpIndex] & 0xFF)
+			Info("%B ", this~>EscapeBuffer[DumpIndex] & 0xFF)
 		}
 		
 		Info("\n")
@@ -304,6 +302,27 @@ struct Terminal {
 			;else if (Command = 'C' && this->X != 0)              { this->X -= 1 } ; Cursor Down
 			;else if (Command = 'B' && this->Y < this->MaxRow)    { this->Y += 1 } ; Cursor Right
 			;else if (Command = 'D' && this->X < this->MaxColumn) { this->X += 1 } ; Cursor Left
+		}
+		else if (Command = 'H') {
+			if (ParameterCount >= 1) {
+				this->X := AToI(Parameters[0]) As i32
+				
+				if (ParameterCount >= 2) {
+					this->Y := AToI(Parameters[1]) As i32
+				}
+				else {
+					this->Y := 0
+				}
+			}
+			else {
+				this->X := 0
+				this->Y := 0
+			}
+		}
+		else if (Command = 'J') {
+			if (ParameterCount = 0) {
+				this->Clear()
+			}
 		}
 	}
 	

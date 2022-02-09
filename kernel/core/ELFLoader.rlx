@@ -31,7 +31,6 @@ define MemoryMappingGroup* MapELF(AddressSpaceManager* AddressSpace, ELFHeader* 
 			
 			i64 SectionPhysicalPages := PhysicalMemory->Allocate(SectionPageCount)
 			
-			
 			i64 TempFlags := PAGE_PRESENT | PAGE_WRITE ; Map as PRESENT|WRITE so we can... actually load the section into memory
 			i64 FinalFlags := PAGE_PRESENT | PAGE_USER
 			
@@ -52,7 +51,11 @@ define MemoryMappingGroup* MapELF(AddressSpaceManager* AddressSpace, ELFHeader* 
 			
 			Mappings->UpdateFlags(Mapping, FinalFlags)
 			
-			;Print("Wrote %x bytes to section memory\n\n", Next->MemorySize)
+			;i8* Dummy := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+			
+			;Print("a")
+			
+			;Info("Wrote %x bytes to section memory\n\n", Next->MemorySize)
 		}
 	}
 	

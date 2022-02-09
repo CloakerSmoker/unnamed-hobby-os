@@ -59,8 +59,8 @@ struct KernelInfo {
 }
 
 KernelInfo RawKernelInfo {
-	Base: 0x10_0000 As void*,
-	PhysicalBase: 0x10_0000
+	Base: 0x20_0000 As void*,
+	PhysicalBase: 0x20_0000
 }
 
 KernelInfo* Kernel := &RawKernelInfo
@@ -116,7 +116,7 @@ stop:
 	jmp, stop
 }
 
-define void Main(void* CR3, void* RawFrameBuffer, i32 KernelSize) {
+define void Main(void* CR3, void* RawFrameBuffer, i32 MaxKernelAddress) {
 	Info("Main, FrameBuffer @ %x\n", RawFrameBuffer)
 	
 	Kernel->FrameBuffer := RawFrameBuffer
@@ -126,10 +126,12 @@ define void Main(void* CR3, void* RawFrameBuffer, i32 KernelSize) {
 	
 	PhysicalMemory := PageHeap:Adopt(0x10_0000, 0x500)
 	
-	;i32 KernelSize := (MaxKernelAddress - 0x10_0000) As i32 ; Highest address of kernel data - image base
+	i32 KernelSize := (MaxKernelAddress - 0x20_0000) As i32 ; Highest address of kernel data - image base
 	
 	Kernel->Size := KernelSize
 	Kernel->PageCount := SizeToPageCount(KernelSize)
+	
+	Info("%x, %x, %x\n", MaxKernelAddress, KernelSize, Kernel->PageCount)
 	
 	i64 KernelPages      := PhysicalMemory->Reserve(0x20_0000, Kernel->PageCount) ; Reserve the memory the kernel lives in
 	i64 PageFramesPages  := PhysicalMemory->Allocate(PAGE_COUNT_FOR_1MB)
@@ -137,9 +139,9 @@ define void Main(void* CR3, void* RawFrameBuffer, i32 KernelSize) {
 	i64 KernelStackPages := PhysicalMemory->Allocate(20)
 	
 	void* KernelBase  := 0x20_0000 As void*
-	void* PageFrames  := PageFramesPages As void*
-	void* HeapMemory  := HeapMemoryPages As void*
-	void* StackMemory := KernelStackPages As void*
+	void* PageFrames  := 0x1000_0000 As void*
+	void* HeapMemory  := 0x2000_0000 As void*
+	void* StackMemory := 0x3000_0000 As void*
 	
 	Kernel->HeapMemory := HeapMemory
 	
@@ -161,6 +163,16 @@ define void Main(void* CR3, void* RawFrameBuffer, i32 KernelSize) {
 	KernelAddressSpace->MapRange(StackMemory, KernelStackPages / PAGE_SIZE, 20)
 	
 	KernelAddressSpace->Takeover(&RawMainContinuation, StackMemory + (PAGE_SIZE * 20))
+}
+
+define void BootStrap() {
+	
+	AddressSpaceManager BootStrapAddressSpace
+	
+	BootStrapAddressSpace->Initialize(0x15_0000, 0x40)
+	
+	
+	
 }
 
 ATADevice* FirstDisk := null
@@ -205,6 +217,8 @@ define void VisitPCIFunction(i32 Bus, i32 Slot, i32 Function) {
 define void MainContinuation() {
 	Info("Paging initialized, AddressSpaceManager in control\n")
 	
+	KernelAddressSpace->Relocate(0x1000_0000 As void*, BYTES_IN_1MB / PAGE_SIZE)
+	
 	; Remap the next available `FRAMEBUFFER_SIZE` bytes of virtual memory to 0xE000_0000 (or wherever int10 says)
 	i32 FrameBufferPageCount := SizeToPageCount(FRAMEBUFFER_SIZE)
 	i8* FrameBuffer := 0x80_0000 As i8*
@@ -229,6 +243,8 @@ define void MainContinuation() {
 	
 	KernelTerminal->PrintLine("BOOT: Unmapped page 0")
 	
+	SetCR4(GetCR4() | CR4_ENABLE_FS_GS_BASE)
+	
 	
 	KernelHeap->Initialize(Kernel->HeapMemory, BYTES_IN_2MB)
 	
@@ -238,7 +254,7 @@ define void MainContinuation() {
 	
 	
 	i64 ReEntryStackPages := PhysicalMemory->Allocate(10)
-	void* ReEntryStack    := ReEntryStackPages As void*
+	void* ReEntryStack    := 0x3005_0000 As void*
 	KernelAddressSpace->MapRange(ReEntryStack, ReEntryStackPages / PAGE_SIZE, 10)
 	
 	KernelAddressSpace->UnmapRange(ReEntryStack, 1)

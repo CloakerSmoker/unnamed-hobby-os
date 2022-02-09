@@ -191,7 +191,7 @@ struct AddressSpaceManager {
 		return PointerToPageNumber(PageFrame - this->Base) As i32
 	}
 	
-	define void Initialize(void* Base, i32 FrameCount) {
+	define void Relocate(void* NewBase, i32 FrameCount) {
 		i32 BitmapSize := FrameCount / 8 
 		i32 BitmapPages := BitmapSize / PAGE_SIZE
 		
@@ -201,9 +201,13 @@ struct AddressSpaceManager {
 		
 		FrameCount -= BitmapPages
 		
-		this->Bitmap := Base
-		this->Base := Base + (BitmapPages * PAGE_SIZE)
+		this->Bitmap := NewBase
+		this->Base := NewBase + (BitmapPages * PAGE_SIZE)
 		this->PageFrameCount := FrameCount
+	}
+	
+	define void Initialize(void* Base, i32 FrameCount) {
+		this->Relocate(Base, FrameCount)
 		
 		this->RawPML4 := this->AllocatePageFrame()
 	}
@@ -278,6 +282,8 @@ struct AddressSpaceManager {
 	}
 	
 	define void MapRange(void* Address, i64 StartPage, i32 Count, i64 Flags) {
+		Info("Map %x pages from %x to %x\n", Count, Address, StartPage)
+		
 		while (Count != 0) {
 			i64** PDE := this->FindOrAddPDEntry(Address)
 			i64* PT := RemovePageFlags(*PDE)

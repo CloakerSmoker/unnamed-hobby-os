@@ -271,6 +271,54 @@ define i64 GetCR2() asm {
 	ret
 }
 
+i64 CR4_ENABLE_FS_GS_BASE := 1 << 16
+
+define i64 GetCR4() asm {
+	emit, 0x0F
+	emit, 0x20
+	emit, 0xE0
+	ret
+}
+define void SetCR4(i64 Value) asm {
+	emit, 0x0F
+	emit, 0x22
+	emit, 0xE7
+	ret
+}
+
+define void SetGS(void* Value) asm {
+	emit, 0xF3
+	emit, 0x48
+	emit, 0x0F
+	emit, 0xAE
+	emit, 0xDF
+	ret
+}
+define void* GetGS() asm {
+	emit, 0xF3
+	emit, 0x48
+	emit, 0x0F
+	emit, 0xAE
+	emit, 0xC8
+	ret
+}
+define void SetFS(void* Value) asm {
+	emit, 0xF3
+	emit, 0x48
+	emit, 0x0F
+	emit, 0xAE
+	emit, 0xD7
+	ret
+}
+define void* GetFS() asm {
+	emit, 0xF3
+	emit, 0x48
+	emit, 0x0F
+	emit, 0xAE
+	emit, 0xC0
+	ret
+}
+
 define i32 Byte(i64 Value, i8 ByteNumber) {
 	return ((Value >> ((ByteNumber << 3) As i8)) & 0xFF) As i32
 }

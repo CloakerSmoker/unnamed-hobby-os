@@ -88,7 +88,7 @@ define i32 Execute(void* Buffer, i32 ArgumentCount, i8** Arguments, i32 Environm
 	
 	void* StackTop := StackBottom + 0x2000
 	
-	;Print("Stack Top %x\nStack Bottom %x\n", StackTop, StackBottom)
+	Info("Stack Top %x\nStack Bottom %x\n", StackTop, StackBottom)
 	
 	i64* RSP := SetupExecuteStack(StackTop, ArgumentCount, Arguments, EnvironmentCount, Environment)
 	
@@ -102,12 +102,12 @@ define i32 Execute(void* Buffer, i32 ArgumentCount, i8** Arguments, i32 Environm
 	Context->RSP := RSP
 	Context->RawRIP := ELFData->EntryPoint
 	
-	CurrentProcess->Run()
+	;CurrentProcess->Run()
 	
 	i32 ExitCode := CurrentProcess->ExitCode
 	
-	KernelHeap->Free(CurrentProcess)
-	Mappings->Delete()
+	;KernelHeap->Free(CurrentProcess)
+	;Mappings->Delete()
 	
 	CurrentProcess := LastProcess
 	

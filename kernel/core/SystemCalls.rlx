@@ -12,14 +12,25 @@ define i64 DoSystemCall(i64 One, i64 Two, i64 Three, i64 Four, AMD64Context* Con
 }
 
 i32 SYSCALL_EXIT := 60
+i32 SYSCALL_ARCH_PRCTL := 158
+i32 SYSCALL_SET_TID_PTR := 218
+i32 SYSCALL_EXIT_GROUP := 231
 
 declare void ResumeUserMode(AMD64Context*)
+
+declare void SystemCallArchPrctl(i64, void*)
 
 define void HandleSystemCall(AMD64Context* Context) {
 	SendEOI(0) ; HACK: PIC gets confused into thinking we've handling a very high priority interrupt
 	SendEOI(8) ;  so we need to convince it otherwise in order to get interrupts while handling syscalls
 	
 	i64 Number := Context->RAX
+	
+	Print("Syscall %x\n", Number)
+	
+	if (Number = SYSCALL_EXIT_GROUP) {
+		Number := SYSCALL_EXIT
+	}
 	
 	if (Number = SYSCALL_EXIT) {
 		if (CurrentProcess && CurrentTask = CurrentProcess~>Task) {
@@ -28,11 +39,28 @@ define void HandleSystemCall(AMD64Context* Context) {
 		
 		RestoreContext(&KernelContext)
 	}
+	else if (Number = SYSCALL_ARCH_PRCTL) {
+		DoSystemCall(Context->RDI, Context->RSI, Context->RDX, Context->R10, Context, &SystemCallArchPrctl)
+		
+		Context->RAX := 0
+		
+		ResumeUserMode(Context)
+	}
+	else if (Number = SYSCALL_SET_TID_PTR) {
+		Context->RAX := 1
+		
+		ResumeUserMode(Context)
+	}
 	
 	if (Number > SYSCALL_MAX_INDEX) {
 		Context->RAX := -1
+		Context->RDI := -1
 		
-		ResumeUserMode(Context)
+		Print("UNIMPLEMENTED SYSCALL %x\n", Number)
+		
+		RestoreContext(&KernelContext)
+		
+		;ResumeUserMode(Context)
 	}
 	
 	void* Function := SystemCalls[Number]
@@ -120,6 +148,26 @@ define i64 SystemCallDebug(i64 One) {
 	Print("Hello from debug syscall handler, rdi = %x\n", One)
 	
 	return 0
+}
+
+i32 ARCH_PRCTL_SET_GS := 0x1001
+i32 ARCH_PRCTL_SET_FS := 0x1002
+i32 ARCH_PRCTL_GET_FS := 0x1003
+i32 ARCH_PRCTL_GET_GS := 0x1004
+
+define void SystemCallArchPrctl(i64 SubFunction, void* Parameter) {
+	if (SubFunction = ARCH_PRCTL_SET_GS) {
+		SetGS(Parameter)
+	}
+	else if (SubFunction = ARCH_PRCTL_GET_GS) {
+		*(Parameter As i64*) := GetGS() As i64
+	}
+	else if (SubFunction = ARCH_PRCTL_SET_FS) {
+		SetFS(Parameter)
+	}
+	else if (SubFunction = ARCH_PRCTL_GET_FS) {
+		*(Parameter As i64*) := GetFS() As i64
+	}
 }
 
 define void* GetKernelSystemCallStack() {
