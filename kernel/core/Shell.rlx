@@ -167,28 +167,27 @@ define void OnCommand(i8* CommandLine) {
 	else if (StringEquals(Command, "cat")) {
 		i8* Path := CommandParameters[1]
 		
-		DirectoryEntry* FoundFileEntry := FS->FindDirectoryEntryByPath(RootINode, Path)
+		i64 Handle := Ext2Open(FS, Path)
 		
-		if (FoundFileEntry = null || !FoundFileEntry->IsFile()) {
+		if (Handle = null) {
 			Print(" Could not find file '^%s'\n", Path)
 		}
 		else {
-			INode FoundFileNode
+			i8[16] ReadBuffer
 			
-			MoveMemory(&FoundFileNode, FS->ReadINode(FoundFileEntry->INode), #INode)
-			
-			i32 FileBlockCount := FoundFileNode.FileSizeLow / 1024
-			
-			if (FoundFileNode.FileSizeLow % 1024) {
-				FileBlockCount += 1
+			loop {
+				i32 BytesRead := 0
+				
+				Handle := Ext2Read(FS, Handle, ReadBuffer, 16, &BytesRead)
+				
+				if (BytesRead = 0) {
+					Ext2Close(FS, Handle)
+					
+					break
+				}
+				
+				PrintCharacters(ReadBuffer, BytesRead)
 			}
-			
-			for (i32 FileBlockIndex := 0, FileBlockIndex < FileBlockCount, FileBlockIndex += 1) {
-				i32 FileDataBlock := FS->FindINodeDataBlock(&FoundFileNode, FileBlockIndex, false)
-				Print("%s", FS->ReadBlock(FileDataBlock))
-			}
-			
-			Print("\n Done, %i blocks printed\n", FileBlockCount)
 		}
 	}
 	else if (StringEquals(Command, "reset_time")) {

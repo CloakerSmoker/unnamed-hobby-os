@@ -278,7 +278,16 @@ define i8* InterruptToName(i32 Index) {
 	return "unknown"
 }
 
+i8 INTERRUPT_IS_FIRST_CHANCE := true
+
 define void GenericInterrupt(InterruptContext* Context, i32 InterruptNumber) {
+	if !(INTERRUPT_IS_FIRST_CHANCE) {
+		asm {cli}
+		loop {}
+	}
+	
+	INTERRUPT_IS_FIRST_CHANCE := false
+	
 	Info("UNHANDLED INTERRUPT %s (%i %x)\n", InterruptToName(InterruptNumber), InterruptNumber, InterruptNumber)
 	
 	Context->PrintContext()

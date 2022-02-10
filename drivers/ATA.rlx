@@ -138,7 +138,7 @@ struct ATAChannel {
 		
 		i8 Status := this->ReadIOPort(ATA_IO_REGISTER_STATUS)
 		
-		Info("ATA not busy wait failed, last status %b (%x)", Status, Status)
+		Info("ATA not busy wait failed, last status %b (%x)\n", Status, Status)
 		Throw('fail')
 	}
 	define void WaitForDataRequest() {
@@ -150,7 +150,7 @@ struct ATAChannel {
 		
 		i8 Status := this->ReadIOPort(ATA_IO_REGISTER_STATUS)
 		
-		Info("ATA data request wait failed, last status %b (%x)", Status, Status)
+		Info("ATA data request wait failed, last status %b (%x)\n", Status, Status)
 		Throw('fail')
 	}
 	
@@ -251,14 +251,14 @@ struct ATADevice {
 			DeviceSelection |= ATA_DEVICE_SELECTION_USE_SLAVE
 		}
 		
-		DeviceSelection |= Byte(LBA, 3) & 0xF
+		DeviceSelection |= ExtractByte(LBA, 3) & 0xF
 		
 		this->Channel->WriteIOPort(ATA_IO_REGISTER_DEVICE_SELELECTION, DeviceSelection)
 		
 		this->Channel->WriteIOPort(ATA_IO_REGISTER_SECTOR_COUNT_0, SectorCount)
-		this->Channel->WriteIOPort(ATA_IO_REGISTER_LBA_0, Byte(LBA, 0))
-		this->Channel->WriteIOPort(ATA_IO_REGISTER_LBA_1, Byte(LBA, 1))
-		this->Channel->WriteIOPort(ATA_IO_REGISTER_LBA_2, Byte(LBA, 2))
+		this->Channel->WriteIOPort(ATA_IO_REGISTER_LBA_0, ExtractByte(LBA, 0))
+		this->Channel->WriteIOPort(ATA_IO_REGISTER_LBA_1, ExtractByte(LBA, 1))
+		this->Channel->WriteIOPort(ATA_IO_REGISTER_LBA_2, ExtractByte(LBA, 2))
 		
 		this->Channel->WriteIOPort(ATA_IO_REGISTER_COMMAND, Command)
 	}

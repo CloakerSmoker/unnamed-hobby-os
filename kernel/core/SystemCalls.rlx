@@ -97,6 +97,8 @@ define i64 SystemCallRead(i64 FileDescriptor, i8* Buffer, i32 Size) {
 		return Size
 	}
 	
+	FileDescriptor -= 3
+	
 	i32 BytesRead := 0
 	i64 NewHandle := Ext2Read(FS, CurrentProcess->FileDescriptorsToHandles[FileDescriptor], Buffer, Size, &BytesRead)
 	CurrentProcess->FileDescriptorsToHandles[FileDescriptor] := NewHandle
@@ -111,6 +113,8 @@ define i64 SystemCallWrite(i64 FileDescriptor, i8* Buffer, i32 Size) {
 		return Size
 	}
 	
+	FileDescriptor -= 3
+	
 	i64 NewHandle := Ext2Write(FS, CurrentProcess->FileDescriptorsToHandles[FileDescriptor], Buffer, Size)
 	CurrentProcess->FileDescriptorsToHandles[FileDescriptor] := NewHandle
 	
@@ -118,16 +122,22 @@ define i64 SystemCallWrite(i64 FileDescriptor, i8* Buffer, i32 Size) {
 }
 
 define void SystemCallSendFile(i64 Out, i64 In, i64* Offset, i64 Count) {
+	;Print("SendFile(%x, %x, %x, %x)\n", Out, In, Offset, Count)
+	
 	for (i32 Index := 0, Index < Count, Index++) {
 		i8 Byte := 0
 		
 		i64 Result := SystemCallRead(In, &Byte, 1)
 		
+		;Print("Read %i bytes\n", Result)
+		
 		if (Result != 1) {
 			break
 		}
 		
-		SystemCallWrite(Out, &Byte, 1)
+		i64 Written := SystemCallWrite(Out, &Byte, 1)
+		
+		;Print("Wrote %i bytes\n", Written)
 	}
 }
 
@@ -147,7 +157,7 @@ define i64 SystemCallOpen(i8* Path, i32 Flags, i32 Mode) {
 	
 	CurrentProcess->FileDescriptorsToHandles[FileDescriptor] := Ext2Open(FS, Path, Ext2Flags)
 	
-	return FileDescriptor
+	return FileDescriptor + 3
 }
 
 define i64 SystemCallClose(i64 FileDescriptor) {

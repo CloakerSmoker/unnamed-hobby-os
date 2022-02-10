@@ -332,6 +332,6 @@ define void InvalidatePage(void* Page) asm {
 	ret
 }
 
-define i32 Byte(i64 Value, i8 ByteNumber) {
+define i32 ExtractByte(i64 Value, i8 ByteNumber) {
 	return ((Value >> ((ByteNumber << 3) As i8)) & 0xFF) As i32
 }
