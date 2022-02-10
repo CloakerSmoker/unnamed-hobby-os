@@ -82,7 +82,7 @@ define i32 Execute(void* Buffer, i32 ArgumentCount, i8** Arguments, i32 Environm
 	MemoryMappingGroup* Mappings := MapELF(KernelAddressSpace, ELFData)
 	
 	i64 UserStackPages := PhysicalMemory->Allocate(2)
-	void* StackBottom := UserStackPages As i64*
+	void* StackBottom := ADDRESS_OF_USER_STACK
 	
 	Mappings->Add(StackBottom, UserStackPages, 2, PAGE_USER | PAGE_WRITE)
 	
@@ -102,12 +102,12 @@ define i32 Execute(void* Buffer, i32 ArgumentCount, i8** Arguments, i32 Environm
 	Context->RSP := RSP
 	Context->RawRIP := ELFData->EntryPoint
 	
-	;CurrentProcess->Run()
+	CurrentProcess->Run()
 	
 	i32 ExitCode := CurrentProcess->ExitCode
 	
-	;KernelHeap->Free(CurrentProcess)
-	;Mappings->Delete()
+	KernelHeap->Free(CurrentProcess)
+	Mappings->Delete()
 	
 	CurrentProcess := LastProcess
 	

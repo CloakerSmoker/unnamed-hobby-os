@@ -26,7 +26,7 @@ define void HandleSystemCall(AMD64Context* Context) {
 	
 	i64 Number := Context->RAX
 	
-	Print("Syscall %x\n", Number)
+	;Print("Syscall %x\n", Number)
 	
 	if (Number = SYSCALL_EXIT_GROUP) {
 		Number := SYSCALL_EXIT

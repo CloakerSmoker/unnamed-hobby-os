@@ -45,12 +45,6 @@ struct Page {
 	i8[0x1000] Data
 }
 
-define void SetCR3(i64**** PML4T, void* Continuation, void* Parameter) asm {
-	movcr3, rdi
-	mov, rdi, rdx
-	jmp, rsi
-}
-
 define i32 GetPML4Index(void* Address) {
 	return ((Address & 0b_111111111_000000000_000000000_000000000_000000000000) >> 39) As i32
 }
@@ -138,14 +132,15 @@ struct PagePath {
 
 struct AddressSpaceManager {
 	i8* Bitmap
-	void* Base
 	
-	union {
-		i64**** PML4
-		void* RawPML4
-	}
+	i64 PhysicalPML4
+	i64* VirtualPML4
 	
 	i32 PageFrameCount
+	
+	define i64* PhysicalToVirtual(i64 Physical) {
+		return this->VirtualPML4 + (Physical - this->PhysicalPML4)
+	}
 	
 	define i32 AllocatePageFrameIndex() {
 		for (i32 Index := 0, Index < this->PageFrameCount, Index++) {
@@ -180,18 +175,24 @@ struct AddressSpaceManager {
 		return (this->Bitmap[Byte] & Mask) >> (Bit As i8)
 	}
 	
-	define void* GetPageFrame(i32 Index) {
-		return this->Base + (Index * PAGE_SIZE)
+	define i64 GetPageFrame(i32 Index) {
+		return this->PhysicalPML4 + (Index * PAGE_SIZE)
 	}
-	define void* AllocatePageFrame() {
-		return this->GetPageFrame(this->AllocatePageFrameIndex())
+	define i64 AllocatePageFrame() {
+		i32 Index := this->AllocatePageFrameIndex()
+		i32 Offset := Index * PAGE_SIZE
+		i64* Virtual := this->VirtualPML4 + Offset
+		
+		SetMemory(Virtual, PAGE_SIZE, 0)
+		
+		return this->PhysicalPML4 + Offset
 	}
 	
 	define i32 PageFramePointerToIndex(void* PageFrame) {
-		return PointerToPageNumber(PageFrame - this->Base) As i32
+		return PointerToPageNumber(PageFrame - this->VirtualPML4) As i32
 	}
 	
-	define void Relocate(void* NewBase, i32 FrameCount) {
+	define void Initialize(void* VirtualBase, i64 PhysicalBase, i32 FrameCount) {
 		i32 BitmapSize := FrameCount / 8 
 		i32 BitmapPages := BitmapSize / PAGE_SIZE
 		
@@ -201,20 +202,40 @@ struct AddressSpaceManager {
 		
 		FrameCount -= BitmapPages
 		
-		this->Bitmap := NewBase
-		this->Base := NewBase + (BitmapPages * PAGE_SIZE)
+		this->Bitmap := VirtualBase
 		this->PageFrameCount := FrameCount
-	}
-	
-	define void Initialize(void* Base, i32 FrameCount) {
-		this->Relocate(Base, FrameCount)
 		
-		this->RawPML4 := this->AllocatePageFrame()
+		this->PhysicalPML4 := PhysicalBase + (BitmapPages * PAGE_SIZE)
+		this->VirtualPML4 := VirtualBase + (BitmapPages * PAGE_SIZE)
+		
+		this->AllocatePageFrame()
+		
+		SetMemory(this->VirtualPML4, PAGE_SIZE, 0)
 	}
 	
-	define i64**** FindOrAddPML4Entry(void* Address) {
-		i64**** PML4E := GetPML4Entry(this->PML4, Address)
-		i64*** PDP := *PML4E
+	define i64* GetPML4Entry(void* Address) {
+		i32 Index      := ((Address & 0b_111111111_000000000_000000000_000000000_000000000000) >> 39) As i32
+		return &this->VirtualPML4[Index]
+	}
+	define i64* GetPDPEntry(i64* PDT, void* Address) {
+		PDT            &=             0b_111111111_111111111_111111111_111111111_000000000000
+		i32 Index      := ((Address &           0b_111111111_000000000_000000000_000000000000) >> 30) As i32
+		return &PDT[Index]
+	}
+	define i64* GetPDEntry(i64* PD, void* Address) {
+		PD             &=             0b_111111111_111111111_111111111_111111111_000000000000
+		i32 Index      := ((Address &                     0b_111111111_000000000_000000000000) >> 21) As i32
+		return &PD[Index]
+	}
+	define i64* GetPTEntry(i64* PT, void* Address) {
+		PT             &=             0b_111111111_111111111_111111111_111111111_000000000000
+		i32 Index      := ((Address &                               0b_111111111_000000000000) >> 12) As i32
+		return &PT[Index]
+	}
+	
+	define i64* FindOrAddPML4Entry(void* Address) {
+		i64* PML4E := this->GetPML4Entry(Address)
+		i64 PDP := *PML4E
 		
 		if !(PDP & PAGE_PRESENT) {
 			PDP := this->AllocatePageFrame()
@@ -223,9 +244,9 @@ struct AddressSpaceManager {
 		
 		return PML4E
 	}
-	define i64*** FindOrAddPDPEntry(i64**** PML4E, void* Address) {
-		i64*** PDPE := GetPDPEntry(*PML4E, Address)
-		i64** PD := *PDPE
+	define i64* FindOrAddPDPEntry(i64* PML4E, void* Address) {
+		i64* PDPE := this->GetPDPEntry(this->PhysicalToVirtual(*PML4E), Address)
+		i64 PD := *PDPE
 		
 		if !(PD & PAGE_PRESENT) {
 			PD := this->AllocatePageFrame()
@@ -234,9 +255,9 @@ struct AddressSpaceManager {
 		
 		return PDPE
 	}
-	define i64** FindOrAddPDEntry(i64*** PDPE, void* Address) {
-		i64** PDE := GetPDEntry(*PDPE, Address)
-		i64* PT := *PDE
+	define i64* FindOrAddPDEntry(i64* PDPE, void* Address) {
+		i64* PDE := this->GetPDEntry(this->PhysicalToVirtual(*PDPE), Address)
+		i64 PT := *PDE
 		
 		if !(PT & PAGE_PRESENT) {
 			PT := this->AllocatePageFrame()
@@ -245,26 +266,26 @@ struct AddressSpaceManager {
 		
 		return PDE
 	}
-	define i64* FindOrAddPTEntry(i64** PDE, void* Address) {
-		i64* PTE := GetPTEntry(*PDE, Address)
+	define i64* FindOrAddPTEntry(i64* PDE, void* Address) {
+		i64* PTE := this->GetPTEntry(this->PhysicalToVirtual(*PDE), Address)
 		
 		return PTE
 	}
 	
-	define i64*** FindOrAddPDPEntry(void* Address) {
-		i64**** PML4E := this->FindOrAddPML4Entry(Address)
-		i64*** PDPE := this->FindOrAddPDPEntry(PML4E, Address)
+	define i64* FindOrAddPDPEntry(void* Address) {
+		i64* PML4E := this->FindOrAddPML4Entry(Address)
+		i64* PDPE := this->FindOrAddPDPEntry(PML4E, Address)
 		
 		return PDPE
 	}
-	define i64** FindOrAddPDEntry(void* Address) {
-		i64*** PDPE := this->FindOrAddPDPEntry(Address)
-		i64** PDE := this->FindOrAddPDEntry(PDPE, Address)
+	define i64* FindOrAddPDEntry(void* Address) {
+		i64* PDPE := this->FindOrAddPDPEntry(Address)
+		i64* PDE := this->FindOrAddPDEntry(PDPE, Address)
 		
 		return PDE
 	}
 	define i64* FindOrAddPTEntry(void* Address) {
-		i64** PDE := this->FindOrAddPDEntry(Address)
+		i64* PDE := this->FindOrAddPDEntry(Address)
 		i64* PTE := this->FindOrAddPTEntry(PDE, Address)
 		
 		return PTE
@@ -285,8 +306,8 @@ struct AddressSpaceManager {
 		Info("Map %x pages from %x to %x\n", Count, Address, StartPage)
 		
 		while (Count != 0) {
-			i64** PDE := this->FindOrAddPDEntry(Address)
-			i64* PT := RemovePageFlags(*PDE)
+			i64* PDE := this->FindOrAddPDEntry(Address)
+			i64* PT := RemovePageFlags(this->PhysicalToVirtual(*PDE))
 			i32 PTIndex := GetPTIndex(Address)
 			
 			i32 PTSpace := PAGES_PER_PT - PTIndex
@@ -330,25 +351,25 @@ struct AddressSpaceManager {
 		void* End := Address + (Count * PAGE_SIZE)
 
 		while (Count != 0) {
-			i64**** PML4E := GetPML4Entry(this->PML4, Address)
+			i64* PML4E := this->GetPML4Entry(Address)
 			
 			if !(*PML4E & PAGE_PRESENT) {
 				break
 			}
 			
-			i64*** PDPE := GetPDPEntry(*PML4E, Address)
+			i64* PDPE := this->GetPDPEntry(this->PhysicalToVirtual(*PML4E), Address)
 			
 			if !(*PDPE & PAGE_PRESENT) {
 				break
 			}
 			
-			i64** PDE := GetPDEntry(*PDPE, Address)
+			i64* PDE := this->GetPDEntry(this->PhysicalToVirtual(*PDPE), Address)
 			
 			if !(*PDE & PAGE_PRESENT) {
 				break
 			}
 			
-			i64* PT := RemovePageFlags(*PDE)
+			i64* PT := RemovePageFlags(this->PhysicalToVirtual(*PDE))
 			
 			i32 PTIndex := GetPTIndex(Address)
 			
@@ -360,7 +381,7 @@ struct AddressSpaceManager {
 				PTMax := PTSpace
 			}
 			
-			;BochsPrint("Map PT @ %x [%x-%x] to %x-%x\n", PT, PTIndex, PTMax, StartPage, StartPage + PTMax)
+			;BochsInfo("Map PT @ %x [%x-%x] to %x-%x\n", PT, PTIndex, PTMax, StartPage, StartPage + PTMax)
 			
 			for (i32 Index := 0, Index < PTMax, Index++) {
 				PT[PTIndex + Index] := 0
@@ -369,14 +390,14 @@ struct AddressSpaceManager {
 			Count -= PTMax
 			Address += PTMax * PAGE_SIZE
 			
-			this->GarbageCollect(PDE   As i64**, RemovePageFlags(*PDE  ))
-			this->GarbageCollect(PDPE  As i64**, RemovePageFlags(*PDPE ))
-			this->GarbageCollect(PML4E As i64**, RemovePageFlags(*PML4E))
+			this->GarbageCollect(PDE   As i64**, RemovePageFlags(this->PhysicalToVirtual(*PDE  )))
+			this->GarbageCollect(PDPE  As i64**, RemovePageFlags(this->PhysicalToVirtual(*PDPE )))
+			this->GarbageCollect(PML4E As i64**, RemovePageFlags(this->PhysicalToVirtual(*PML4E)))
 		}
 	}
 	
 	define void Takeover(void* Continuation, void* Parameter){
-		SetCR3(this->PML4, Continuation, Parameter)
+		SetCR3(this->PhysicalPML4, Continuation, Parameter)
 	}
 	
 	
@@ -447,8 +468,6 @@ struct AddressSpaceManager {
 	}
 	
 	define void PrintMappings() {
-		i64**** PML4 := this->PML4
-		
 		i64 RunStartAddress := 0
 		i64 RunStart := 0
 		i64 RunLastAddress := 0
@@ -456,19 +475,19 @@ struct AddressSpaceManager {
 		i64 RunLength := 0
 		
 		for (i64 PML4Index := 0, PML4Index < 512, PML4Index++) {
-			i64**** PML4E := GetPML4Entry(PML4, (PML4Index << 39) As void*)
+			i64* PML4E := this->GetPML4Entry((PML4Index << 39) As void*)
 			
 			if (*PML4E & PAGE_PRESENT) {
 				for (i64 PDPIndex := 0, PDPIndex < 512, PDPIndex++) {
-					i64*** PDPE := GetPDPEntry(*PML4E, (PDPIndex << 30) As void*)
+					i64* PDPE := this->GetPDPEntry(this->PhysicalToVirtual(*PML4E), (PDPIndex << 30) As void*)
 					
 					if (*PDPE & PAGE_PRESENT) {
 						for (i64 PDIndex := 0, PDIndex < 512, PDIndex++) {
-							i64** PDE := GetPDEntry(*PDPE, (PDIndex << 21) As void*)
+							i64* PDE := this->GetPDEntry(this->PhysicalToVirtual(*PDPE), (PDIndex << 21) As void*)
 							
 							if (*PDE & PAGE_PRESENT) {
 								for (i64 PTIndex := 0, PTIndex < 512, PTIndex++) {
-									i64* PTE := GetPTEntry(*PDE, (PTIndex << 12) As void*)
+									i64* PTE := this->GetPTEntry(this->PhysicalToVirtual(*PDE), (PTIndex << 12) As void*)
 									
 									if (*PTE & PAGE_PRESENT) {
 										i64 Address := (PML4Index << 39) | (PDPIndex << 30) | (PDIndex << 21) | (PTIndex << 12) 

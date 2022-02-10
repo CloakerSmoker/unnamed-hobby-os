@@ -271,6 +271,12 @@ define i64 GetCR2() asm {
 	ret
 }
 
+define void SetCR3(i64 PML4T, void* Continuation, void* Parameter) asm {
+	movcr3, rdi
+	mov, rdi, rdx
+	jmp, rsi
+}
+
 i64 CR4_ENABLE_FS_GS_BASE := 1 << 16
 
 define i64 GetCR4() asm {

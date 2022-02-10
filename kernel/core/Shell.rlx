@@ -196,7 +196,7 @@ define void OnCommand(i8* CommandLine) {
 		asm {sti}
 	}
 	else if (StringEquals(Command, "clear")) {
-		Print("%sc", ESC)
+		Print("^EH^EJ")
 	}
 	else if (StringEquals(Command, "colors")) {
 		for (i8 Fore := 0, Fore < 16, Fore++) {
