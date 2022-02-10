@@ -42,6 +42,7 @@ import ./build/TestProgram.elf test.elf
 import ./build/Write.elf write
 import TestFile.txt test.txt
 import busybox_CLEAR linux_clear
+import busybox_CAT linux_cat
 quit
 " | ./Ext2Tool.elf 'File(EFIBoot.img,512)>GPT(1)'
 
