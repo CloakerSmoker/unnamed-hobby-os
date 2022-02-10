@@ -12,6 +12,8 @@ i8*[0x20] CommandParameters
 i8 RunningProgram := false
 MemoryFIFO* RunningProgramInput := null
 
+i32 LastStatus := 0
+
 define void OnCommand(i8* CommandLine) {
 	i32 ParameterStart := 0
 	i32 ParameterCount := 0
@@ -38,7 +40,10 @@ define void OnCommand(i8* CommandLine) {
 	i8* Command := CommandParameters[0]
 	i8** Parameters := CommandParameters + 8
 	
-	if (StringEquals(Command, "uptime")) {
+	if (StringEquals(Command, "status")) {
+		Print("$ = %i\n", LastStatus)
+	}
+	else if (StringEquals(Command, "uptime")) {
 		i64 MS := GetUptimeMS()
 		i64 Seconds := MS / 1000
 		i64 Minutes := Seconds / 60
@@ -297,9 +302,7 @@ define void OnCommand(i8* CommandLine) {
 			
 			;Print("Loaded %x byte image @ %x\n", FoundFileNode.FileSizeLow, FileData)
 			
-			i32 Result := Execute(FileData, ParameterCount, Parameters, 0, NULL_ENVIRONMENT)
-			
-			Print("Program exited with code %i\n", Result)
+			LastStatus := Execute(FileData, ParameterCount, Parameters, 0, NULL_ENVIRONMENT)
 			
 			RunningProgram := false
 		}
