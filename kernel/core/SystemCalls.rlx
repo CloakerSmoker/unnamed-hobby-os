@@ -97,6 +97,8 @@ define i64 SystemCallRead(i64 FileDescriptor, i8* Buffer, i32 Size) {
 
 define i64 SystemCallWrite(i64 FileDescriptor, i8* Buffer, i32 Size) {
 	if (FileDescriptor = 1) {
+		;Print("%hexdump", Buffer, Size)
+		
 		PrintCharacters(Buffer, Size)
 		
 		return Size

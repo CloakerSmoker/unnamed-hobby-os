@@ -81,12 +81,14 @@ define i32 Execute(void* Buffer, i32 ArgumentCount, i8** Arguments, i32 Environm
 	
 	MemoryMappingGroup* Mappings := MapELF(KernelAddressSpace, ELFData)
 	
-	i64 UserStackPages := PhysicalMemory->Allocate(2)
+	i64 UserStackPages := PhysicalMemory->Allocate(20)
 	void* StackBottom := ADDRESS_OF_USER_STACK
 	
-	Mappings->Add(StackBottom, UserStackPages, 2, PAGE_USER | PAGE_WRITE)
+	Mappings->Add(StackBottom, UserStackPages, 20, PAGE_USER | PAGE_WRITE)
 	
-	void* StackTop := StackBottom + 0x2000
+	SetMemory(StackBottom, 20 * PAGE_SIZE, 0)
+	
+	void* StackTop := StackBottom + (20 * PAGE_SIZE)
 	
 	Info("Stack Top %x\nStack Bottom %x\n", StackTop, StackBottom)
 	

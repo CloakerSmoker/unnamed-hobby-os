@@ -325,6 +325,13 @@ define void* GetFS() asm {
 	ret
 }
 
+define void InvalidatePage(void* Page) asm {
+	emit, 0x0F
+	emit, 0x01
+	emit, 0x3F
+	ret
+}
+
 define i32 Byte(i64 Value, i8 ByteNumber) {
 	return ((Value >> ((ByteNumber << 3) As i8)) & 0xFF) As i32
 }

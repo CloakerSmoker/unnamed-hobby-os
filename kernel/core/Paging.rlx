@@ -322,6 +322,7 @@ struct AddressSpaceManager {
 			
 			for (i32 Index := 0, Index < PTMax, Index++) {
 				PT[PTIndex + Index] := PackPageFlags(StartPage + Index, Flags)
+				InvalidatePage(Address + (Index * PAGE_SIZE))
 			}
 			
 			Count -= PTMax
@@ -385,6 +386,7 @@ struct AddressSpaceManager {
 			
 			for (i32 Index := 0, Index < PTMax, Index++) {
 				PT[PTIndex + Index] := 0
+				InvalidatePage(Address + (Index * PAGE_SIZE))
 			}
 			
 			Count -= PTMax
