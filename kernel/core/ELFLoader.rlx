@@ -1,8 +1,7 @@
 #Require "./src/utility/ELF.rlx"
 #Require "./src/kernel/core/MemoryMapping.rlx"
 
-define MemoryMappingGroup* MapELF(AddressSpaceManager* AddressSpace, ELFHeader* Image) {
-	MemoryMappingGroup* Mappings := MemoryMappingGroup:New(AddressSpace)
+define MemoryMappingGroup* MapELF(MemoryMappingGroup* Mappings, ELFHeader* Image) {
 	ELFProgramHeader* ProgramHeaders := Image->GetProgramHeaders()
 	
 	for (i32 Index := 0, Index < Image->ProgramHeaderEntryCount, Index++) {
@@ -29,8 +28,6 @@ define MemoryMappingGroup* MapELF(AddressSpaceManager* AddressSpace, ELFHeader* 
 				continue
 			}
 			
-			i64 SectionPhysicalPages := PhysicalMemory->Allocate(SectionPageCount)
-			
 			i64 TempFlags := PAGE_PRESENT | PAGE_WRITE ; Map as PRESENT|WRITE so we can... actually load the section into memory
 			i64 FinalFlags := PAGE_PRESENT | PAGE_USER
 			
@@ -38,7 +35,7 @@ define MemoryMappingGroup* MapELF(AddressSpaceManager* AddressSpace, ELFHeader* 
 				FinalFlags |= PAGE_WRITE
 			}
 			
-			MemoryMapping* Mapping := Mappings->Add(SectionVirtualPage, SectionPhysicalPages, SectionPageCount, TempFlags)
+			MemoryMapping* Mapping := Mappings->AllocateAddress(SectionVirtualPage, SectionPageCount, TempFlags)
 			
 			if (Next->MemorySize > Next->FileSize) {
 				void* ZeroArea := SectionMemory + Next->FileSize

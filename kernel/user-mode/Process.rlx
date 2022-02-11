@@ -1,17 +1,63 @@
+#Require "./src/utility/ELF.rlx"
+#Require "./src/kernel/core/MemoryMapping.rlx"
 
 struct Process {
 	i64[10] FileDescriptorsToHandles
 	i32 FileDescriptorCount
 	
+	ELFHeader* ELF
 	MemoryMappingGroup* Mappings
+	PageHeap* PageAllocator
+	
+	void* BreakStart
+	i64 BreakPages
 	
 	Task Task
 	
 	i32 ExitCode
 	
+	define void Initialize(ELFHeader* Header, MemoryMappingGroup* Mappings) {
+		this->ELF := Header
+		this->Mappings := Mappings
+		
+		i64 MaxAddress := 0
+	
+		ELFProgramHeader* ProgramHeaders := Header->GetProgramHeaders()
+
+		for (i32 Index := 0, Index < Header->ProgramHeaderEntryCount, Index++) {
+			ELFProgramHeader* NextProgramHeader := ProgramHeaders[Index]
+			
+			if (NextProgramHeader->Type = ELF_SEGMENT_TYPE_LOAD) {
+				i64 NextEnd := NextProgramHeader->VirtualAddress + NextProgramHeader->MemorySize
+				
+				if (NextEnd > MaxAddress) {
+					MaxAddress := NextEnd
+				}
+			}
+		}
+		
+		this->BreakStart := ((MaxAddress + PAGE_SIZE) & 0x7FFF_FFFF_FFF0_0000) As void*
+		this->BreakPages := 0
+	}
+	
 	define void Run() {
 		this~>Task->NeedsUserMode := true
 		this~>Task->Resume()
+	}
+	
+	define void* GetBreak() {
+		return this->BreakStart + (this->BreakPages * PAGE_SIZE)
+	}
+	define void* SetBreak(void* NewBreakEnd) {
+		i32 AdditionalBreakPages := ((NewBreakEnd - this->GetBreak()) As i32) / PAGE_SIZE
+		
+		void* FirstNewBreakPage := this->GetBreak()
+		
+		this->Mappings->AllocateAddress(FirstNewBreakPage, AdditionalBreakPages, PAGE_USER | PAGE_WRITE)
+		
+		this->BreakPages += AdditionalBreakPages
+		
+		return this->GetBreak()
 	}
 }
 

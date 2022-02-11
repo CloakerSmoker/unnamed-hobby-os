@@ -76,15 +76,20 @@ define i64* SetupExecuteStack(void* Stack, i32 ArgumentCount, i8** Arguments, i3
 i8** NULL_ARGUMENTS := null As i8**
 i8** NULL_ENVIRONMENT := null As i8**
 
+PageHeap* UserVirtualAddresses := PageHeap:Adopt(ADDRESS_OF_USER_PAGES As i64, 0x100)
+
 define i32 Execute(void* Buffer, i32 ArgumentCount, i8** Arguments, i32 EnvironmentCount, i8** Environment) {
 	ELFHeader* ELFData := Buffer As ELFHeader*
 	
-	MemoryMappingGroup* Mappings := MapELF(KernelAddressSpace, ELFData)
+	UserVirtualAddresses->FreeAll()
 	
-	i64 UserStackPages := PhysicalMemory->Allocate(20)
+	MemoryMappingGroup* Mappings := MemoryMappingGroup:New(KernelAddressSpace, PhysicalMemory, UserVirtualAddresses)
+	
+	MapELF(Mappings, ELFData)
+	
 	void* StackBottom := ADDRESS_OF_USER_STACK
 	
-	Mappings->Add(StackBottom, UserStackPages, 20, PAGE_USER | PAGE_WRITE)
+	Mappings->AllocateAddress(StackBottom, 20, PAGE_USER | PAGE_WRITE)
 	
 	SetMemory(StackBottom, 20 * PAGE_SIZE, 0)
 	
@@ -97,7 +102,7 @@ define i32 Execute(void* Buffer, i32 ArgumentCount, i8** Arguments, i32 Environm
 	Process* LastProcess := CurrentProcess
 	
 	CurrentProcess := KernelHeap->Allocate('PROC', #Process)
-	CurrentProcess->Mappings := Mappings
+	CurrentProcess->Initialize(ELFData, Mappings)
 	
 	AMD64Context* Context := CurrentProcess~>Task~>Context
 	Context->Zero()

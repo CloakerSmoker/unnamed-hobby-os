@@ -1,30 +1,40 @@
 #Require "./src/kernel/core/Paging.rlx"
 
+i32 VIRTUAL_TO_PHYSICAL_MAPPING := 0
+i32 PHYSICAL_MEMORY_ALLOCATION := 1
+i32 VIRTUAL_MEMORY_ALLOCATION := 2
+
 struct MemoryMapping {
 	void* Virtual
 	i64 Physical
 	i32 PageCount
+	i32 AllocatorIndex
 	MemoryMapping* Next
 }
 
 struct MemoryMappingGroup {
 	AddressSpaceManager* AddressSpace
+	PageHeap* PhysicalAllocator
+	PageHeap* VirtualAllocator
 	MemoryMapping* First
 	
-	static MemoryMappingGroup* New(AddressSpaceManager* AddressSpace) {
+	static MemoryMappingGroup* New(AddressSpaceManager* AddressSpace, PageHeap* PhysicalAllocator, PageHeap* VirtualAllocator) {
 		MemoryMappingGroup* this := Alloc(#MemoryMappingGroup)
 		
 		this->AddressSpace := AddressSpace
+		this->PhysicalAllocator := PhysicalAllocator
+		this->VirtualAllocator := VirtualAllocator
 		
 		return this
 	}
 	
-	define MemoryMapping* Add(void* Virtual, i64 Physical, i32 Count, i64 Flags) {
+	define MemoryMapping* RecordMapping(void* Virtual, i64 Physical, i32 Count, i32 Allocator) {
 		MemoryMapping* New := Alloc(#MemoryMapping)
 		
 		New->Virtual := Virtual
 		New->PageCount := Count
 		New->Physical := Physical
+		New->AllocatorIndex := Allocator
 		
 		if (this->First) {
 			New->Next := this->First
@@ -34,21 +44,117 @@ struct MemoryMappingGroup {
 			this->First := New
 		}
 		
+		return New
+	}
+	
+	define MemoryMapping* Map(void* Virtual, i64 Physical, i32 Count, i64 Flags) {
 		this->AddressSpace->MapRange(Virtual, Physical / PAGE_SIZE, Count, Flags | PAGE_PRESENT)
 		
-		return New
+		return this->RecordMapping(Virtual, Physical, Count, 0)
+	}
+	
+	define i64 AllocatePhysical(i32 Count) {
+		i64 Physical := this->PhysicalAllocator->Allocate(Count)
+		
+		this->RecordMapping(null, Physical, Count, 1)
+		
+		return Physical
+	}
+	
+	define void* AllocateVirtual(i32 Count) {
+		void* Virtual := this->VirtualAllocator->Allocate(Count) As void*
+		
+		this->RecordMapping(Virtual, 0, Count, 2)
+		
+		return Virtual
+	}
+	
+	define MemoryMapping* AllocateAddress(void* Virtual, i32 Count, i64 Flags) {
+		i64 Physical := this->AllocatePhysical(Count)
+		
+		return this->Map(Virtual, Physical, Count, Flags)
+	}
+	
+	define MemoryMapping* AllocateMapping(i32 Count, i64 Flags) {
+		void* Virtual := this->AllocateVirtual(Count)
+		
+		return this->AllocateAddress(Virtual, Count, Flags)
+	}
+	
+	define void* Allocate(i32 Count, i64 Flags) {
+		return this->AllocateMapping(Count, Flags)->Virtual
+	}
+	
+	define MemoryMapping* Split(MemoryMapping* Old, i32 SplitPage) {
+		i64 SplitPage := SplitPage * PAGE_SIZE
+		
+		i64 PhysicalSplit := Old->Physical + SplitPage
+		void* VirtualSpit := Old->Virtual + SplitPage
+		
+		i64 NewPages := Old->PageCount - SplitPage
+		i64 OldPages := Old->PageCount - NewPages
+		
+		Old->PageCount := OldPages
+		
+		return this->RecordMapping(VirtualSpit, PhysicalSplit, NewPages, VIRTUAL_TO_PHYSICAL_MAPPING)
+	}
+	define void Split(MemoryMapping* Old, i32 SplitPage, i32 PageCount, MemoryMapping** OutMiddle, MemoryMapping** OutEnd) {
+		*OutMiddle := this->Split(Old, SplitPage)
+		
+		if (SplitPage + PageCount = Old->PageCount) {
+			return
+		}
+		
+		*OutEnd := this->Split(*OutMiddle, PageCount)
 	}
 	
 	define void UpdateFlags(MemoryMapping* Mapping, i64 Flags) {
 		this->AddressSpace->MapRange(Mapping->Virtual, Mapping->Physical / PAGE_SIZE, Mapping->PageCount, Flags)
 	}
 	
+	define MemoryMapping* Find(void* Virtual, i64 Physical, i32 Kind) {
+		MemoryMapping* Current := this->First
+		
+		while (Current) {
+			if (Current->AllocatorIndex = Kind) {
+				if (Current->Physical = Physical && Current->Virtual = Virtual) {
+					return Current
+				}
+			}
+		}
+		
+		return null
+	}
+	
+	define MemoryMapping* FindVirtualContaining(void* Virtual) {
+		MemoryMapping* Current := this->First
+		
+		while (Current) {
+			if (Current->AllocatorIndex = VIRTUAL_TO_PHYSICAL_MAPPING) {
+				void* Top := Current->Virtual + (Current->PageCount * PAGE_SIZE)
+				
+				if (Current->Virtual <= Virtual && Virtual <= Top) {
+					return Current
+				}
+			}
+		}
+		
+		return null
+	}
+	
 	define void UnMap() {
 		MemoryMapping* Current := this->First
 		
 		while (Current) {
-			this->AddressSpace->UnmapRange(Current->Virtual, Current->PageCount)
-			PhysicalMemory->Free(Current->Physical)
+			if (Current->AllocatorIndex = 0) {
+				this->AddressSpace->UnmapRange(Current->Virtual, Current->PageCount)
+			}
+			else if (Current->AllocatorIndex = 1) {
+				this->PhysicalAllocator->Free(Current->Physical, Current->PageCount)
+			}
+			else if (Current->AllocatorIndex = 2) {
+				this->VirtualAllocator->Free(Current->Virtual As i64, Current->PageCount)
+			}
 			
 			MemoryMapping* Last := Current
 			Current := Last->Next

@@ -3,9 +3,9 @@ struct PageHeap {
 	i64 PhysicalBase
 	i32 HighWaterMark
 	i32 PageCount
+	i32 AllocationMapSize
 	
 	i8[0] AllocationMap
-	
 	
 	static PageHeap* Adopt(i64 PhysicalBase, i32 PageCount) {
 		i32 AllocationMapSize := PageCount / 8
@@ -13,6 +13,8 @@ struct PageHeap {
 		if (PageCount % 8) {
 			AllocationMapSize += 1
 		}
+		
+		this->AllocationMapSize := AllocationMapSize
 		
 		AllocationMapSize += #PageHeap
 		
@@ -61,6 +63,11 @@ struct PageHeap {
 		Value |= Mask * NewValue
 		
 		this->AllocationMap[Byte] := (Value & 0xFF) As i8
+	}
+	
+	define void FreeAll() {
+		SetMemory(this->AllocationMap, this->AllocationMapSize, 0)
+		this->HighWaterMark := 0
 	}
 	
 	define i32 FindFreePages(i32 Count) {
