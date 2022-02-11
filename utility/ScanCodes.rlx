@@ -6,6 +6,9 @@ define i8 ScanCodeGetMapIndex(i8* Map, i32 Max, i16 Code) {
 	return Map[Code]
 }
 
+i32 SCANCODE_CONTROL_DOWN := 0x1D
+i32 SCANCODE_CONTROL_UP := 0x9D
+
 i32 SCANCODE_MASK_DOWN := 0x80
 i32 SCANCODE_SHIFT_UP := 0xAA
 i32 SCANCODE_SHIFT_DOWN := 0x2A

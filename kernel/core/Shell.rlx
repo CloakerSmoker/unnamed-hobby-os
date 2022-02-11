@@ -325,24 +325,58 @@ MemoryFIFO _KeyboardBuffer {
 }
 MemoryFIFO* KeyboardBuffer := &_KeyboardBuffer
 
+i8 ControlHeld := false
+
 define void ShellOnKey(i16 ScanCode, i8 ASCIICode) {
-	if (ScanCode = SCANCODE_ENTER_DOWN) {
+	if (ScanCode = SCANCODE_CONTROL_DOWN) {
+		ControlHeld := true
+	}
+	else if (ScanCode = SCANCODE_CONTROL_UP) {
+		ControlHeld := false
+	}
+	else if (ScanCode = SCANCODE_ENTER_DOWN) {
 		KeyboardBuffer->Write("\n", 2)
 	}
 	else if (ScanCode = SCANCODE_BACKSPACE_DOWN) {
 		KeyboardBuffer->Write(&ASCII_BACK, 1)
 	}
 	else {
+		if (ControlHeld) {
+			if (ASCIICode = 'c') {
+				; Somehow, this works in kernel mode even when I check CurrentProcess
+				;  Just don't press in kernel mode.
+				
+				SystemCallExit(-1)
+			}
+			else if (ASCIICode = 'd') {
+				ASCIICode := 0xFF As i8
+			}
+			else {
+				i8 Escape := 0x1B
+				
+				KeyboardBuffer->Write(&Escape, 1)
+				KeyboardBuffer->Write("[4", 2)
+			}
+		}
+		
 		KeyboardBuffer->Write(&ASCIICode, 1)
 	}
 }
 
-define void ShellGatherInput(i8* Destination, i32 Size) {
+define i32 ShellGatherInput(i8* Destination, i32 Size) {
 	;Print("GatherInput(%x, %i)", Destination, Size)
 	
-	while (KeyboardBuffer->Available() < Size) {}
+	while (KeyboardBuffer->Available() < 1) {}
+	
+	i32 Available := KeyboardBuffer->Available()
+	
+	if (Available < Size) {
+		Size := Available
+	}
 	
 	KeyboardBuffer->Read(Destination, Size)
+	
+	return Size
 }
 
 define void SetupShell() {

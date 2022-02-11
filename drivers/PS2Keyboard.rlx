@@ -31,7 +31,9 @@ define void OnPS2Event() {
 	i16 ScanCode := InB(PS2_PORT_DATA) As i16
 	i8 ASCIICode := ScanCodeToASCII(PS2_SHIFT_STATE, ScanCode)
 	
-	if (ScanCode & SCANCODE_MASK_DOWN) {
+	SendEOI(1)
+	
+	if (ScanCode & SCANCODE_MASK_DOWN && ScanCode != SCANCODE_CONTROL_UP) {
 		if (ScanCode = SCANCODE_SHIFT_UP) {
 			PS2_SHIFT_STATE := false
 		}
@@ -44,8 +46,6 @@ define void OnPS2Event() {
 			PS2OnKey(ScanCode, ASCIICode, PS2OnKeyCallback)
 		}
 	}
-	
-	SendEOI(1)
 }
 
 define void OnPS2Interrupt() asm {
