@@ -1,0 +1,60 @@
+define void PrintStackDump(i64* Start, i64 IgnoreFrames) {
+	StackFrame* Last := Start As StackFrame*
+	i32 Index := 1
+	
+	while (Last) {
+		if (Last->LastFrame & 1) {
+			StackFrame* Temp := Last->LastFrame - 1
+			
+			if (IgnoreFrames) {
+				IgnoreFrames -= 1
+			}
+			else {
+				Print("	Stack[%i] Try catch address = %x\n", Index, Last->ReturnAddress, Temp)
+				Index += 1
+			}
+			
+			Last := Temp
+		}
+		else {
+			if (IgnoreFrames) {
+				IgnoreFrames -= 1
+			}
+			else {
+				i64* MaybeMagic := (Last - 0x8) As i64*
+				i8** MaybeName := (Last - 0x10) As i8**
+				
+				if (Debug && *MaybeMagic = 0x12345678) {
+					Print("	Stack[%i] Fn = %s\n", Index, *MaybeName)
+				}
+				else {
+					Print("	Stack[%i] Fn callsite = %x\n", Index, Last->ReturnAddress, Last->LastFrame)
+				}
+				
+				Index += 1
+			}
+			
+			Last := Last->LastFrame
+		}
+	}
+}
+
+define void UnhandledExceptionHandler(i64 Code) {
+	Print("\n\n----------------------\n")
+	Print("Unhandled exception %x with call stack:\n", Code)
+	PrintStackDump(GetRBP(), 4)
+	Print("Aborting...\n")
+	Print("----------------------\n\n\n")
+}
+
+define void* DebugInsertUnhandledExceptionHandler() {
+	UnhandledExceptionHandler := &UnhandledExceptionHandler
+	
+	if !(Debug) {
+		Print("^60Warning: Debug library included without '--debug' compiler flag, stack traces will only contain raw addresses.^F0\n")
+	}
+	
+	return null
+}
+
+void* DummyDebugHandler := DebugInsertUnhandledExceptionHandler()
