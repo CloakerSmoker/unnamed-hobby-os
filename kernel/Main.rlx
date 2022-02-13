@@ -4,6 +4,11 @@
 
 #Require "$/MemoryBase.rlx"
 #Require "$/StringBase.rlx"
+
+declare void TerminateAfterUnhandledException(i64)
+
+#Require "$/ExceptionBase.rlx"
+
 #Require "./src/utility/x64.rlx"
 
 declare void PrintCharacter(i8)
@@ -172,7 +177,7 @@ define void BootStrap() {
 	KernelAddressSpace->MapRange(ADDRESS_OF_KERNEL_STACK, Kernel->StackPages / PAGE_SIZE, 40)
 	KernelAddressSpace->MapRange(ADDRESS_OF_KERNEL_HEAP, Kernel->HeapPages / PAGE_SIZE, BYTES_IN_2MB / PAGE_SIZE)
 	
-	KernelAddressSpace->MapRange(ADDRESS_OF_USER_PAGES, Kernel->UserPages / PAGE_SIZE, NUMBER_OF_USER_PAGES)
+	KernelAddressSpace->MapRange(ADDRESS_OF_USER_PAGES, Kernel->UserPages / PAGE_SIZE, 1)
 	
 	KernelAddressSpace->Takeover(&RawMainContinuation, ADDRESS_OF_KERNEL_STACK + (PAGE_SIZE * 40))
 }
@@ -286,6 +291,8 @@ define void MainContinuation() {
 	
 	SetupSystemCalls()
 	;Test()
+	
+	SetupExecute()
 	
 	;Print("Back in kernel code\n\n")
 	

@@ -41,64 +41,71 @@ define void HandleSystemCall(AMD64Context* Context) {
 		Number := SYSCALL_EXIT
 	}
 	
-	if (Number = SYSCALL_EXIT) {
-		SystemCallExit(Context->RDI)
+	try {
+		if (Number = SYSCALL_EXIT) {
+			SystemCallExit(Context->RDI)
+		}
+		else if (Number = SYSCALL_MAP_MEMORY) {
+			Context->RAX := SystemCallMapMemory(Context->RDI As void*, Context->ESI, Context->EDX, Context->R10D, Context->R8D, Context->R9D) As i64
+			
+			ResumeUserMode(Context)
+		}
+		else if (Number = SYSCALL_UNMAP_MEMORY) {
+			Context->RAX := SystemCallUnMapMemory(Context->RDI As void*, Context->ESI)
+			
+			ResumeUserMode(Context)
+		}
+		else if (Number = SYSCALL_ARCH_PRCTL) {
+			DoSystemCall(Context->RDI, Context->RSI, Context->RDX, Context->R10, Context, &SystemCallArchPrctl)
+			
+			Context->RAX := 0
+			
+			ResumeUserMode(Context)
+		}
+		else if (Number = SYSCALL_SET_TID_PTR) {
+			Context->RAX := 1
+			
+			ResumeUserMode(Context)
+		}
+		else if (Number = SYSCALL_SENDFILE) {
+			DoSystemCall(Context->RDI, Context->RSI, Context->RDX, Context->R10, Context, &SystemCallSendFile)
+			
+			Context->RAX := 0
+			
+			ResumeUserMode(Context)
+		}
+		else if (Number = SYSCALL_BREAK) {
+			Context->RAX := SystemCallProgramBreak(Context->RDI As void*) As i64
+			
+			ResumeUserMode(Context)
+		}
+		
+		if (Number > SYSCALL_MAX_INDEX) {
+			Context->RAX := -1
+			Context->RDI := -1
+			
+			Print("UNIMPLEMENTED SYSCALL %x\n", Number)
+			
+			RestoreContext(&KernelContext)
+			
+			;ResumeUserMode(Context)
+		}
+		
+		void* Function := SystemCalls[Number]
+		
+		if (Function = null) {
+			Print("UNIMPLEMENTED SYSCALL %x\n", Number)
+			
+			RestoreContext(&KernelContext)
+		}
+		else {
+			Context->RAX := DoSystemCall(Context->RDI, Context->RSI, Context->RDX, Context->R10, Context, Function)
+		}
 	}
-	else if (Number = SYSCALL_MAP_MEMORY) {
-		Context->RAX := SystemCallMapMemory(Context->RDI As void*, Context->ESI, Context->EDX, Context->R10D, Context->R8D, Context->R9D) As i64
-		
-		ResumeUserMode(Context)
-	}
-	else if (Number = SYSCALL_UNMAP_MEMORY) {
-		Context->RAX := SystemCallUnMapMemory(Context->RDI As void*, Context->ESI)
-		
-		ResumeUserMode(Context)
-	}
-	else if (Number = SYSCALL_ARCH_PRCTL) {
-		DoSystemCall(Context->RDI, Context->RSI, Context->RDX, Context->R10, Context, &SystemCallArchPrctl)
-		
-		Context->RAX := 0
-		
-		ResumeUserMode(Context)
-	}
-	else if (Number = SYSCALL_SET_TID_PTR) {
-		Context->RAX := 1
-		
-		ResumeUserMode(Context)
-	}
-	else if (Number = SYSCALL_SENDFILE) {
-		DoSystemCall(Context->RDI, Context->RSI, Context->RDX, Context->R10, Context, &SystemCallSendFile)
-		
-		Context->RAX := 0
-		
-		ResumeUserMode(Context)
-	}
-	else if (Number = SYSCALL_BREAK) {
-		Context->RAX := SystemCallProgramBreak(Context->RDI As void*) As i64
-		
-		ResumeUserMode(Context)
-	}
-	
-	if (Number > SYSCALL_MAX_INDEX) {
-		Context->RAX := -1
-		Context->RDI := -1
-		
-		Print("UNIMPLEMENTED SYSCALL %x\n", Number)
-		
-		RestoreContext(&KernelContext)
-		
-		;ResumeUserMode(Context)
-	}
-	
-	void* Function := SystemCalls[Number]
-	
-	if (Function = null) {
-		Print("UNIMPLEMENTED SYSCALL %x\n", Number)
-		
-		RestoreContext(&KernelContext)
-	}
-	else {
-		Context->RAX := DoSystemCall(Context->RDI, Context->RSI, Context->RDX, Context->R10, Context, Function)
+	catch (i64 Code) {
+		Print("Exception %l during syscall\n", Code)
+		Print("%x(%x, %x, %x, %x, %x, %x)\n", Number, Context->RDI, Context->RSI, Context->RDX, Context->R10, Context->R8, Context->R9)
+		SystemCallExit(-100123)
 	}
 	
 	ResumeUserMode(Context)
@@ -202,9 +209,9 @@ define i64 ConvertLinuxMemoryProtection(i32 Protection) {
 define MemoryMapping* LocateMemoryMapping(void* Address, i32 Size) {
 	i32 PageCount := SizeToPageCount(Size)
 	
-	Address &= 0x7FFF_FFFF_FFF0_0000
+	Address &= 0x7FFF_FFFF_FFFF_F000
 	
-	MemoryMapping* Mapping := CurrentProcess->Mappings->Find(Address, 0, VIRTUAL_TO_PHYSICAL_MAPPING)
+	MemoryMapping* Mapping := CurrentProcess->Mappings->FindVirtual(Address)
 	
 	if (Mapping) {
 		if (Mapping->PageCount != PageCount) { 
@@ -264,6 +271,11 @@ define void* SystemCallMapMemory(void* Address, i32 Size, i32 Protection, i32 Fl
 	
 	if (Address = null) {
 		Mapping := CurrentProcess->Mappings->AllocateMapping(PageCount, MemoryFlags)
+		Address := Mapping->Virtual
+		
+		if (Flags & LINUX_MAP_ANONYMOUS) {
+			SetMemory(Mapping, Size, 0)
+		}
 	}
 	else {
 		Mapping := LocateMemoryMapping(Address, Size)
@@ -273,11 +285,11 @@ define void* SystemCallMapMemory(void* Address, i32 Size, i32 Protection, i32 Fl
 		}
 		else {
 			Mapping := CurrentProcess->Mappings->AllocateAddress(Address, PageCount, MemoryFlags)
+			
+			if (Flags & LINUX_MAP_ANONYMOUS) {
+				SetMemory(Address, Size, 0)
+			}
 		}
-	}
-	
-	if (Flags & LINUX_MAP_ANONYMOUS) {
-		SetMemory(Address, Size, 0)
 	}
 	
 	return Address

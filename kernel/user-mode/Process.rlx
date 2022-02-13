@@ -36,7 +36,7 @@ struct Process {
 			}
 		}
 		
-		this->BreakStart := ((MaxAddress + PAGE_SIZE) & 0x7FFF_FFFF_FFF0_0000) As void*
+		this->BreakStart := ((MaxAddress + PAGE_SIZE) & 0x7FFF_FFFF_FFFF_F000) As void*
 		this->BreakPages := 0
 	}
 	
@@ -54,6 +54,8 @@ struct Process {
 		void* FirstNewBreakPage := this->GetBreak()
 		
 		this->Mappings->AllocateAddress(FirstNewBreakPage, AdditionalBreakPages, PAGE_USER | PAGE_WRITE)
+		
+		SetMemory(FirstNewBreakPage, AdditionalBreakPages * PAGE_SIZE, 0)
 		
 		this->BreakPages += AdditionalBreakPages
 		

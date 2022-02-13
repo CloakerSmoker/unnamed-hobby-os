@@ -5,30 +5,30 @@ define void DoHexDumpPrint(PrintOutputAdapterPrototype* this, i8* Format, i32* F
 	i32 FullRows := Size / 16
 	i32 RemainderRow := Size % 16
 	
-	Print("%x %x\n", FullRows, RemainderRow)
+	this->Print("%x %x\n", FullRows, RemainderRow)
 	
 	if (RemainderRow) {
 		FullRows += 1
 	}
 	
-	Print("   |  ")
+	this->Print("   |  ")
 	
 	for (i32 Column := 0, Column < 16, Column++) {
-		Print("%B ", Column)
+		this->Print("%B ", Column)
 	}
 	
-	Print(" |\n")
+	this->Print(" |\n")
 	
-	Print("   |--")
+	this->Print("   |--")
 	
 	for (i32 Column := 0, Column < 16, Column++) {
-		Print("---")
+		this->Print("---")
 	}
 	
-	Print("-|\n")
+	this->Print("-|\n")
 
 	for (i32 Row := 0, Row < FullRows, Row++) {
-		Print("%B |  ", Row)
+		this->Print("%B |  ", Row)
 		
 		i32 Columns := 16
 		
@@ -39,27 +39,27 @@ define void DoHexDumpPrint(PrintOutputAdapterPrototype* this, i8* Format, i32* F
 		for (i32 Column := 0, Column < Columns, Column++) {
 			i8 Byte := Data[(Row * 16) + Column]
 			
-			Print("%B ", Byte)
+			this->Print("%B ", Byte)
 		}
 		
 		for (i32 Padding := Column, Padding < 16, Padding++) {
-			Print("   ")
+			this->Print("   ")
 		}
 		
-		Print(" | ")
+		this->Print(" | ")
 		
 		for (i32 Column := 0, Column < Columns, Column++) {
 			i8 Byte := Data[(Row * 16) + Column]
 			
 			if (Byte >= '!' && Byte <= '~') {
-				Print("%c", Byte)
+				this->Print("%c", Byte)
 			}
 			else {
-				Print(".")
+				this->Print(".")
 			}
 		}
 		
-		Print("\n")
+		this->Print("\n")
 	}
 	
 	*ParameterIndex += 2
@@ -71,3 +71,55 @@ PrintFormatPrototype HexDumpFormatPrototype {
 }
 
 i32 HEX_DUMP_FORMAT_PROTOTYPE_ID := AddPrintFormat(&HexDumpFormatPrototype)
+
+#Require "./src/utility/x64.rlx"
+
+define void DoStackDumpPrint(PrintOutputAdapterPrototype* this, i8* Format, i32* FormatIndex, void* Parameters, i32 ParameterCount, i32* ParameterIndex) {
+	i32 IgnoreFrames := 2
+	
+	StackFrame* Last := GetRBP() As StackFrame*
+	i32 Index := 1
+	
+	while (Last) {
+		if (Last->LastFrame & 1) {
+			StackFrame* Temp := Last->LastFrame - 1
+			
+			if (IgnoreFrames) {
+				IgnoreFrames -= 1
+			}
+			else {
+				this->Print("	Stack[%i] Try catch address = %x\n", Index, Last->ReturnAddress, Temp)
+				Index += 1
+			}
+			
+			Last := Temp
+		}
+		else {
+			if (IgnoreFrames) {
+				IgnoreFrames -= 1
+			}
+			else {
+				i64* MaybeMagic := (Last - 0x8) As i64*
+				i8** MaybeName := (Last - 0x10) As i8**
+				
+				if (Debug && *MaybeMagic = 0x12345678) {
+					this->Print("	Stack[%i] Fn = %s\n", Index, *MaybeName)
+				}
+				else {
+					this->Print("	Stack[%i] Fn callsite = %x\n", Index, Last->ReturnAddress, Last->LastFrame)
+				}
+				
+				Index += 1
+			}
+			
+			Last := Last->LastFrame
+		}
+	}
+}
+
+PrintFormatPrototype StackDumpFormatPrototype {
+	Name: "stackdump",
+	DoFormat: &DoStackDumpPrint
+}
+
+i32 STACK_DUMP_FORMAT_PROTOTYPE_ID := AddPrintFormat(&StackDumpFormatPrototype)

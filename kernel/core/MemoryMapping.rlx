@@ -86,15 +86,17 @@ struct MemoryMappingGroup {
 	}
 	
 	define MemoryMapping* Split(MemoryMapping* Old, i32 SplitPage) {
-		i64 PhysicalSplit := Old->Physical + SplitPage
-		void* VirtualSpit := Old->Virtual + SplitPage
+		i32 SplitOffset := SplitPage * PAGE_SIZE
+		
+		i64  PhysicalSplit := Old->Physical + SplitOffset
+		void* VirtualSplit := Old->Virtual + SplitOffset
 		
 		i32 NewPages := Old->PageCount - SplitPage
 		i32 OldPages := Old->PageCount - NewPages
 		
 		Old->PageCount := OldPages
 		
-		return this->RecordMapping(VirtualSpit, PhysicalSplit, NewPages, VIRTUAL_TO_PHYSICAL_MAPPING)
+		return this->RecordMapping(VirtualSplit, PhysicalSplit, NewPages, VIRTUAL_TO_PHYSICAL_MAPPING)
 	}
 	define void Split(MemoryMapping* Old, i32 SplitPage, i32 PageCount, MemoryMapping** OutMiddle, MemoryMapping** OutEnd) {
 		*OutMiddle := this->Split(Old, SplitPage)
@@ -107,15 +109,15 @@ struct MemoryMappingGroup {
 	}
 	
 	define void UpdateFlags(MemoryMapping* Mapping, i64 Flags) {
-		this->AddressSpace->MapRange(Mapping->Virtual, Mapping->Physical / PAGE_SIZE, Mapping->PageCount, Flags)
+		this->AddressSpace->MapRange(Mapping->Virtual, Mapping->Physical / PAGE_SIZE, Mapping->PageCount, Flags | PAGE_PRESENT)
 	}
 	
-	define MemoryMapping* Find(void* Virtual, i64 Physical, i32 Kind) {
+	define MemoryMapping* FindVirtual(void* Virtual) {
 		MemoryMapping* Current := this->First
 		
 		while (Current) {
-			if (Current->AllocatorIndex = Kind) {
-				if (Current->Physical = Physical && Current->Virtual = Virtual) {
+			if (Current->AllocatorIndex = VIRTUAL_TO_PHYSICAL_MAPPING) {
+				if (Current->Virtual = Virtual) {
 					return Current
 				}
 			}

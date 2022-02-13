@@ -85,7 +85,7 @@ define void PageFault(InterruptContext* Context) {
 		Info("Kernel mode\n")
 	}
 	
-	BochsPrintStackDump(Context->RBP)
+	Info("%stackdump")
 	Info("}\n")
 	
 	if !(Context->ErrorCode & PAGE_FAULT_USER_SUPERVISOR) {
