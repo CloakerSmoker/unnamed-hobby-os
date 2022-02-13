@@ -11,6 +11,8 @@ define i64 DoSystemCall(i64 One, i64 Two, i64 Three, i64 Four, AMD64Context* Con
 	jmp, r9
 }
 
+i32 SYSCALL_MAP_MEMORY := 9
+i32 SYSCALL_UNMAP_MEMORY := 11
 i32 SYSCALL_BREAK := 12
 i32 SYSCALL_SENDFILE := 40
 i32 SYSCALL_EXIT := 60
@@ -24,6 +26,8 @@ declare void SystemCallSendFile(i64, i64, i64*, i64)
 declare void SystemCallArchPrctl(i64, void*)
 declare void SystemCallExit(i64)
 declare void* SystemCallProgramBreak(void*)
+declare void* SystemCallMapMemory(void*, i32, i32, i32, i32, i32)
+declare i64 SystemCallUnMapMemory(void*, i32)
 
 define void HandleSystemCall(AMD64Context* Context) {
 	SendEOI(0) ; HACK: PIC gets confused into thinking we've handling a very high priority interrupt
@@ -31,7 +35,7 @@ define void HandleSystemCall(AMD64Context* Context) {
 	
 	i64 Number := Context->RAX
 	
-	;Print("Syscall %x\n", Number)
+	Print("Syscall %x\n", Number)
 	
 	if (Number = SYSCALL_EXIT_GROUP) {
 		Number := SYSCALL_EXIT
@@ -39,6 +43,16 @@ define void HandleSystemCall(AMD64Context* Context) {
 	
 	if (Number = SYSCALL_EXIT) {
 		SystemCallExit(Context->RDI)
+	}
+	else if (Number = SYSCALL_MAP_MEMORY) {
+		Context->RAX := SystemCallMapMemory(Context->RDI As void*, Context->ESI, Context->EDX, Context->R10D, Context->R8D, Context->R9D) As i64
+		
+		ResumeUserMode(Context)
+	}
+	else if (Number = SYSCALL_UNMAP_MEMORY) {
+		Context->RAX := SystemCallUnMapMemory(Context->RDI As void*, Context->ESI)
+		
+		ResumeUserMode(Context)
 	}
 	else if (Number = SYSCALL_ARCH_PRCTL) {
 		DoSystemCall(Context->RDI, Context->RSI, Context->RDX, Context->R10, Context, &SystemCallArchPrctl)
@@ -185,72 +199,101 @@ define i64 ConvertLinuxMemoryProtection(i32 Protection) {
 	return Result
 }
 
-define void* SystemCallMemoryMap(void* Address, i32 Length, i32 Protection, i32 Flags, i32 File, i32 Offset) {
-	void* AddressPage := Address & 0x7FFF_FFFF_FFF0_0000
+define MemoryMapping* LocateMemoryMapping(void* Address, i32 Size) {
+	i32 PageCount := SizeToPageCount(Size)
 	
+	Address &= 0x7FFF_FFFF_FFF0_0000
+	
+	MemoryMapping* Mapping := CurrentProcess->Mappings->Find(Address, 0, VIRTUAL_TO_PHYSICAL_MAPPING)
+	
+	if (Mapping) {
+		if (Mapping->PageCount != PageCount) { 
+			; Address is the exact start of a mapping, but with less pages than the
+			;  mapping actually has. So we split the mapping into a PageCount sized 
+			;   chunk and whatever's left over
+			
+			CurrentProcess->Mappings->Split(Mapping, PageCount)
+		}
+		
+		return Mapping
+	}
+	else {
+		Mapping := CurrentProcess->Mappings->FindVirtualContaining(Address)
+		
+		if (Mapping) {
+			if (Mapping->PageCount != PageCount) {
+				; Existing mapping, but not the start of said mapping
+				; Which means we need to split it, potentially twice
+				; Like         Turns into    by doing two splits
+				;  |XXXXXXXX|   |XX|XXX|X|
+				;     ^---^
+				; Of course, a middle->end segment will only split once
+				
+				i32 OffsetInMapping := (Address - Mapping->Virtual) As i32
+				i32 PageIndexInMapping := OffsetInMapping / PAGE_SIZE
+				
+				MemoryMapping* Middle := null
+				MemoryMapping* End := null
+				
+				CurrentProcess->Mappings->Split(Mapping, PageIndexInMapping, PageCount, &Middle, &End)
+				
+				if (Mapping->Virtual = Address) {
+					return Mapping
+				}
+				else if (Middle->Virtual = Address) {
+					return Middle
+				}
+				else if (End->Virtual = Address) {
+					return End
+				}
+				else {
+					Throw('OH-NO')
+				}
+			}
+		}
+	}
+	
+	return null
+}
+
+define void* SystemCallMapMemory(void* Address, i32 Size, i32 Protection, i32 Flags, i32 File, i32 Offset) {
 	i64 MemoryFlags := ConvertLinuxMemoryProtection(Protection)
 	
-	i32 PageCount := SizeToPageCount(Length)
+	i32 PageCount := SizeToPageCount(Size)
 	MemoryMapping* Mapping := null
 	
 	if (Address = null) {
 		Mapping := CurrentProcess->Mappings->AllocateMapping(PageCount, MemoryFlags)
 	}
 	else {
-		Mapping := CurrentProcess->Mappings->Find(Address, 0, VIRTUAL_TO_PHYSICAL_MAPPING)
+		Mapping := LocateMemoryMapping(Address, Size)
 		
 		if (Mapping) {
-			if (Mapping->PageCount != PageCount) { 
-				; Address is the exact start of a mapping, but with less pages than the
-				;  mapping actually has. So we split the mapping into a PageCount sized 
-				;   chunk and whatever's left over
-				
-				CurrentProcess->Mappings->Split(Mapping, PageCount)
-			}
-			
-			CurrentProcess->Mapping->UpdateFlags(Mapping, MemoryFlags)
+			CurrentProcess->Mappings->UpdateFlags(Mapping, MemoryFlags)
 		}
 		else {
-			Mapping := CurrentProcess->Mapping->FindVirtualContaining(Address)
-			
-			if (Mapping) {
-				if (Mapping->PageCount != PageCount) {
-					; Existing mapping, but not the start of said mapping
-					; Which means we need to split it, potentially twice
-					; Like         Turns into    by doing two splits
-					;  |XXXXXXXX|   |XX|XXX|X|
-					;     ^---^
-					; Of course, a middle->end segment will only split once
-					
-					i64 OffsetInMapping := (Address - Mapping->Virtual) As i64
-					i64 PageIndexInMapping := OffsetInMapping / PAGE_SIZE
-					
-					MemoryMapping* Middle := null
-					MemoryMapping* End := null
-					
-					CurrentProcess->Mappings->Split(Mapping, PageIndexInMapping, PageCount, &Middle, &End)
-					
-					if (Mapping->Virtual = AddressPage) {
-						; Dummy branch
-					}
-					else if (Middle->Virtual = AddressPage) {
-						Mapping := Middle
-					}
-					else if (End->Virtual = AddressPage) {
-						Mapping := End
-					}
-					else {
-						Throw('OH-NO')
-					}
-				}
-			}
-			else {
-				Mapping := CurrentProcess->Mappings->AllocateAddress(Address, PageCount, MemoryFlags)
-			}
+			Mapping := CurrentProcess->Mappings->AllocateAddress(Address, PageCount, MemoryFlags)
 		}
 	}
 	
+	if (Flags & LINUX_MAP_ANONYMOUS) {
+		SetMemory(Address, Size, 0)
+	}
 	
+	return Address
+}
+
+define i64 SystemCallUnMapMemory(void* Address, i32 Size) {
+	MemoryMapping* Mapping := LocateMemoryMapping(Address, Size)
+	
+	if (Mapping) {
+		CurrentProcess->Mappings->UnMap(Mapping)
+	}
+	else {
+		return -1
+	}
+	
+	return 0
 }
 
 i8 LINUX_FILE_READ := 0

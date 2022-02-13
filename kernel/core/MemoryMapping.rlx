@@ -86,13 +86,11 @@ struct MemoryMappingGroup {
 	}
 	
 	define MemoryMapping* Split(MemoryMapping* Old, i32 SplitPage) {
-		i64 SplitPage := SplitPage * PAGE_SIZE
-		
 		i64 PhysicalSplit := Old->Physical + SplitPage
 		void* VirtualSpit := Old->Virtual + SplitPage
 		
-		i64 NewPages := Old->PageCount - SplitPage
-		i64 OldPages := Old->PageCount - NewPages
+		i32 NewPages := Old->PageCount - SplitPage
+		i32 OldPages := Old->PageCount - NewPages
 		
 		Old->PageCount := OldPages
 		
@@ -121,6 +119,8 @@ struct MemoryMappingGroup {
 					return Current
 				}
 			}
+			
+			Current := Current->Next
 		}
 		
 		return null
@@ -137,24 +137,32 @@ struct MemoryMappingGroup {
 					return Current
 				}
 			}
+			
+			Current := Current->Next
 		}
 		
 		return null
+	}
+	
+	define void UnMap(MemoryMapping* Target) {
+		if (Target->AllocatorIndex = 0) {
+			this->AddressSpace->UnmapRange(Target->Virtual, Target->PageCount)
+		}
+		else if (Target->AllocatorIndex = 1) {
+			this->PhysicalAllocator->Free(Target->Physical, Target->PageCount)
+		}
+		else if (Target->AllocatorIndex = 2) {
+			this->VirtualAllocator->Free(Target->Virtual As i64, Target->PageCount)
+		}
+		
+		Target->AllocatorIndex := 3
 	}
 	
 	define void UnMap() {
 		MemoryMapping* Current := this->First
 		
 		while (Current) {
-			if (Current->AllocatorIndex = 0) {
-				this->AddressSpace->UnmapRange(Current->Virtual, Current->PageCount)
-			}
-			else if (Current->AllocatorIndex = 1) {
-				this->PhysicalAllocator->Free(Current->Physical, Current->PageCount)
-			}
-			else if (Current->AllocatorIndex = 2) {
-				this->VirtualAllocator->Free(Current->Virtual As i64, Current->PageCount)
-			}
+			this->UnMap(Current)
 			
 			MemoryMapping* Last := Current
 			Current := Last->Next

@@ -132,9 +132,22 @@ struct AMD64Context {
 		i64 RawRIP
 	}
 	
-	i64 RBX
-	i64 RCX
-	i64 RDX
+	union {
+		i64 RBX
+		i32 EBX
+		i16 BX
+	}
+	union {
+		i64 RCX
+		i32 ECX
+		i16 CX
+	}
+	
+	union {
+		i64 RDX
+		i32 EDX
+		i16 DX
+	}
 	
 	union {
 		void* RSP
@@ -142,12 +155,37 @@ struct AMD64Context {
 	}
 	
 	i64 RBP
-	i64 RSI
-	i64 RDI
 	
-	i64 R8
-	i64 R9
-	i64 R10
+	union {
+		i64 RSI
+		i32 ESI
+		i16 SI
+	}
+	
+	union {
+		i64 RDI
+		i32 EDI
+		i16 DI
+	}
+	
+	union {
+		i64 R8
+		i32 R8D
+		i16 R8W
+	}
+	
+	union {
+		i64 R9
+		i32 R9D
+		i16 R9W
+	}
+	
+	union {
+		i64 R10
+		i32 R10D
+		i16 R10W
+	}
+	
 	i64 R11
 	i64 R12
 	i64 R13

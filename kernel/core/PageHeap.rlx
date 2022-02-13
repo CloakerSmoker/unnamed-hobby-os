@@ -14,8 +14,6 @@ struct PageHeap {
 			AllocationMapSize += 1
 		}
 		
-		this->AllocationMapSize := AllocationMapSize
-		
 		AllocationMapSize += #PageHeap
 		
 		i32 AllocationMapPages := AllocationMapSize / PAGE_SIZE
@@ -30,6 +28,7 @@ struct PageHeap {
 		
 		this->PhysicalBase := FirstDataPage
 		this->PageCount := PageCount - AllocationMapPages
+		this->AllocationMapSize := AllocationMapSize
 		
 		return this
 	}
