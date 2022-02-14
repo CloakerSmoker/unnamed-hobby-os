@@ -1,37 +1,35 @@
 struct HeapBlock {
 	i64 Tag
-	HeapBlock* Next
 	i32 Size
 	i8 IsFree
-	i8 Padding
+	i8 IsEnd
 	
-	define void SetSize(i32 NewSize) {
-		this->Size := NewSize
-		this->Next := this + this->Size
-	}
 	define void* Body() {
 		return (this + #HeapBlock) As void*
 	}
-	define i8 IsValid() {
-		if (this->Next = 0) {
-			return true
-		}
-		
-		return (this + this->Size) = this->Next
+	define HeapBlock* Next() {
+		return this + this->Size
 	}
 	define void MergeContigousFreeBlocks() {
-		HeapBlock* Next := this->Next
+		if (this->IsEnd) {
+			return
+		}
 		
-		while (Next != null && Next->IsFree) {
-			this->Size += Next->Size
-			this->Next := Next->Next
+		HeapBlock* Current := this->Next()
+		
+		while (Current->IsFree) {
+			this->Size += Current->Size
 			
-			Next := Next->Next
+			if (Current->IsEnd) {
+				break
+			}
+			
+			Current := Current->Next()
 		}
 	}
 }
 
-i32 TAIL_SPACE_FOR_NEW_BLOCK := 0x40 + #HeapBlock
+i32 TAIL_SPACE_FOR_NEW_BLOCK := 0x20 + #HeapBlock
 
 struct Heap {
 	union {
@@ -40,6 +38,7 @@ struct Heap {
 	}
 	
 	HeapBlock* FirstFreeBlock
+	i32 Size
 	
 	define void Initialize(void* Memory, i32 Size) {
 		FastSetMemory64(Memory, 0, Size / 8)
@@ -50,15 +49,19 @@ struct Heap {
 		
 		FirstBlock->Size := Size
 		FirstBlock->IsFree := true
+		FirstBlock->IsEnd := true
 		
 		this->FirstFreeBlock := FirstBlock
+		this->Size := Size
 	}
 	
 	define HeapBlock* AllocateBlock(i64 Tag, i32 Size) {
-		;Print("AllocateBlock(%x) {\n", Size)
+		;Info("AllocateBlock(%x) {\n", Size)
 		
-		for (HeapBlock* Block := this->FirstFreeBlock, Block != null, Block := Block->Next) {
-			;Print("\tBlock { Size %x, Free? %i }\n", Block->Size, Block->IsFree)
+		HeapBlock* Block := this->FirstFreeBlock
+		
+		loop {
+			;Info("\tBlock %x { Size %x, Free? %i }\n", Block, Block->Size, Block->IsFree)
 			
 			if (Block->IsFree) {
 				Block->MergeContigousFreeBlocks()
@@ -68,32 +71,42 @@ struct Heap {
 				if (BlockSize >= Size) {
 					i32 TailSpace := BlockSize - Size
 					
-					;Print("\t\t{ TailSpace = %x }\n", TailSpace)
+					;Info("\t\t{ TailSpace = %x }\n", TailSpace)
+					
+					Block->Size := Size
 					
 					if (TailSpace >= TAIL_SPACE_FOR_NEW_BLOCK) {
-						HeapBlock* TailNext := Block->Next
-						
-						Block->SetSize(Size)
-						
-						HeapBlock* Tail := Block->Next
+						HeapBlock* Tail := Block->Next()
 						
 						Tail->IsFree := true
 						Tail->Size := TailSpace
-						Tail->Next := TailNext
 						Tail->Tag := '__'
+						
+						if (Block->IsEnd) {
+							Block->IsEnd := false
+							Tail->IsEnd := true
+						}
 					}
 					
 					Block->IsFree := false
 					Block->Tag := Tag
 					
-					;Print("}\n")
+					;Info("}\n")
 					
 					return Block
 				}
 			}
+			
+			if (Block->IsEnd) {
+				break
+			}
+			
+			Block := Block->Next()
 		}
 		
-		;Print("}\n")
+		;Info("}\n")
+		
+		Throw('UH-OOF')
 		
 		return null
 	}
@@ -111,8 +124,6 @@ struct Heap {
 	}
 	
 	define void FreeBlock(HeapBlock* Block) {
-		HeapBlock* Next := Block->Next
-		
 		Block->IsFree := true
 		
 		if (Block < this->FirstFreeBlock) {
@@ -151,16 +162,18 @@ struct Heap {
 	define void Print() {
 		Print("Heap [%x owns %x] {\n", this, this->RawBackingMemory)
 		
-		for (HeapBlock* Block := this->FirstBlock, Block != null, Block := Block->Next) {
-			i8 BlockIsValid := Block->IsValid()
+		i32 TotalSize := 0
+		
+		for (HeapBlock* Block := this->FirstBlock, Block != null, Block := Block->Next()) {
+			TotalSize += Block->Size
 			
-			Print("    Block [%l] { Size %x, Free? %i, Valid? %i }\n", Block->Tag, Block->Size, Block->IsFree, BlockIsValid)
+			Print("    Block [%l] { Size %x, Free? %i, IsEnd? %i }\n", Block->Tag, Block->Size, Block->IsFree, Block->IsEnd)
 			
-			if !(BlockIsValid) {
+			if (Block->IsEnd) {
 				break
 			}
 		}
 		
-		Print("}\n")
+		Print("} %x bytes\n", TotalSize)
 	}
 }
