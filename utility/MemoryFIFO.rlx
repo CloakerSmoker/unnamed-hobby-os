@@ -24,6 +24,10 @@ struct MemoryFIFO {
 		return this->WriteOffset - this->ReadOffset
 	}
 	
+	define void Clear() {
+		this->ReadOffset := this->WriteOffset
+	}
+	
 	define i8* BytePosition(i32 Offset) {
 		return &this->Buffer[Offset % this->Size]
 	}

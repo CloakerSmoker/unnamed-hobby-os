@@ -105,6 +105,10 @@ struct PageHeap {
 		
 		return this->PhysicalBase + (FirstPage * PAGE_SIZE)
 	}
+	define void* AllocateVirtual(i32 Count) {
+		return this->Allocate(Count) As void*
+	}
+	
 	define i64 Reserve(i64 FirstPage, i32 Count) {
 		FirstPage -= this->PhysicalBase
 		FirstPage /= PAGE_SIZE
@@ -137,6 +141,9 @@ struct PageHeap {
 		if (FirstPage < this->HighWaterMark) {
 			this->HighWaterMark := FirstPage As i32
 		}
+	}
+	define void FreeVirtual(void* Start, i32 Count) {
+		this->Free(Start As i64, Count)
 	}
 	
 	define void Print() {

@@ -14,6 +14,8 @@ define i64 DoSystemCall(i64 One, i64 Two, i64 Three, i64 Four, AMD64Context* Con
 i32 SYSCALL_MAP_MEMORY := 9
 i32 SYSCALL_UNMAP_MEMORY := 11
 i32 SYSCALL_BREAK := 12
+i32 SYSCALL_DEVICE_CONTROL := 16
+i32 SYSCALL_WRITE_MULTIPLE := 20
 i32 SYSCALL_SENDFILE := 40
 i32 SYSCALL_EXIT := 60
 i32 SYSCALL_ARCH_PRCTL := 158
@@ -24,6 +26,8 @@ declare void ResumeUserMode(AMD64Context*)
 
 declare void SystemCallSendFile(i64, i64, i64*, i64)
 declare void SystemCallArchPrctl(i64, void*)
+declare i64 SystemCallDeviceControl(i64, i32, void*)
+declare i64 SystemCallWriteMultiple(i64, void*, i32)
 declare void SystemCallExit(i64)
 declare void* SystemCallProgramBreak(void*)
 declare void* SystemCallMapMemory(void*, i32, i32, i32, i32, i32)
@@ -35,7 +39,9 @@ define void HandleSystemCall(AMD64Context* Context) {
 	
 	i64 Number := Context->RAX
 	
-	Print("Syscall %x\n", Number)
+	;Print("Syscall %x\n", Number)
+	
+	Info("%x(%x, %x, %x, %x, %x, %x)\n", Number, Context->RDI, Context->RSI, Context->RDX, Context->R10, Context->R8, Context->R9)
 	
 	if (Number = SYSCALL_EXIT_GROUP) {
 		Number := SYSCALL_EXIT
@@ -64,6 +70,16 @@ define void HandleSystemCall(AMD64Context* Context) {
 		}
 		else if (Number = SYSCALL_SET_TID_PTR) {
 			Context->RAX := 1
+			
+			ResumeUserMode(Context)
+		}
+		else if (Number = SYSCALL_DEVICE_CONTROL) {
+			Context->RAX := SystemCallDeviceControl(Context->RDI, Context->ESI, Context->RDX As void*)
+			
+			ResumeUserMode(Context)
+		}
+		else if (Number = SYSCALL_WRITE_MULTIPLE) {
+			Context->RAX := SystemCallWriteMultiple(Context->RDI, Context->RSI As void*, Context->EDX)
 			
 			ResumeUserMode(Context)
 		}
@@ -180,6 +196,39 @@ define void* SystemCallProgramBreak(void* NewBreak) {
 	}
 }
 
+#Require "./src/linux/Termios.rlx"
+
+define i64 SystemCallDeviceControl(i64 FileDescriptor, i32 Command, void* Argument) {
+	if (FileDescriptor = 1) {
+		if (Command = TERMIOS_GET_WINDOW_SIZE) {
+			TermiosWindowSize* Window := Argument
+			
+			Window->Rows := KernelTerminal->Height As i16
+			Window->Columns := KernelTerminal->Width As i16
+			
+			return 0
+		}
+	}
+	
+	return -1
+}
+
+#Require "./src/linux/MultipleIO.rlx"
+
+define i64 SystemCallWriteMultiple(i64 FileDescriptor, void* Data, i32 Count) {
+	i64 TotalWritten := 0
+	
+	LinuxIOVector* Vectors := Data
+	
+	for (i32 Index := 0, Index < Count, Index++) {
+		LinuxIOVector* Next := Vectors[Index]
+		
+		TotalWritten += SystemCallWrite(FileDescriptor, Next->Base, Next->Size As i32)
+	}
+	
+	return TotalWritten
+}
+
 i32 LINUX_PROTECTION_READ  := 0x1
 i32 LINUX_PROTECTION_WRITE := 0x2
 i32 LINUX_PROTECTION_EXECUTE  := 0x4
@@ -274,7 +323,7 @@ define void* SystemCallMapMemory(void* Address, i32 Size, i32 Protection, i32 Fl
 		Address := Mapping->Virtual
 		
 		if (Flags & LINUX_MAP_ANONYMOUS) {
-			SetMemory(Mapping, Size, 0)
+			SetMemory(Address, Size, 0)
 		}
 	}
 	else {

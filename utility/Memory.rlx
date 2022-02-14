@@ -1,6 +1,6 @@
 
 define void* Alloc(i32 Size) {
-	return KernelHeap->Allocate('Dummy', Size)
+	return KernelHeap->Allocate('Alloc', Size)
 }
 define void* ReAlloc(void* Memory, i32 Size) {
 	return KernelHeap->Extend(Memory, Size)

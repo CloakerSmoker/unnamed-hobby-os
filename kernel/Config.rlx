@@ -17,7 +17,12 @@ void* ADDRESS_OF_KERNEL       := 0x0020_0000 As void*
 void* ADDRESS_OF_PAGE_FRAMES  := 0xA000_0000 As void*
 void* ADDRESS_OF_KERNEL_STACK := 0xB000_0000 As void*
 void* ADDRESS_OF_KERNEL_HEAP  := 0xC000_0000 As void*
-void* ADDRESS_OF_FRAME_BUFFER := 0xD000_0000 As void*
+
+void* ADDRESS_OF_KERNEL_PAGES := 0xD000_0000 As void*
+i32   NUMBER_OF_KERNEL_PAGES  := 0x100
+
+void* ADDRESS_OF_FRAME_BUFFER := 0xE000_0000 As void*
+
 void* ADDRESS_OF_USER_STACK   := 0x9000_0000 As void*
 
 ; These are only for *virtual* allocations, the first page holds meta-data, the rest are backed if the user decides to

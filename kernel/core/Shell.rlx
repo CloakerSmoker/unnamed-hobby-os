@@ -291,7 +291,9 @@ define void OnCommand(i8* CommandLine) {
 				FileBlockCount += 1
 			}
 			
-			void* FileData := KernelHeap->Allocate('EXEC', FileBlockCount * 1024)
+			i32 FilePages := SizeToPageCount(FileBlockCount * 1024)
+			
+			void* FileData := KernelPageAllocator->AllocateVirtual(FilePages)
 			
 			for (i32 FileBlockIndex := 0, FileBlockIndex < FileBlockCount, FileBlockIndex += 1) {
 				i32 FileDataBlock := FS->FindINodeDataBlock(&FoundFileNode, FileBlockIndex, false)
@@ -302,6 +304,8 @@ define void OnCommand(i8* CommandLine) {
 			;Print("Loaded %x byte image @ %x\n", FoundFileNode.FileSizeLow, FileData)
 			
 			LastStatus := Execute(FileData, ParameterCount, Parameters, 0, NULL_ENVIRONMENT)
+			
+			KernelPageAllocator->FreeVirtual(FileData, FilePages)
 			
 			RunningProgram := false
 		}
@@ -318,12 +322,27 @@ define void OnCommand(i8* CommandLine) {
 	Prompt()
 }
 
+i32 SHELL_NON_BLOCKING   := 0
+i32 SHELL_BLOCK_FOR_ONE  := 1
+i32 SHELL_BLOCK_FOR_LINE := 2
+
+i32 ShellInputMode := SHELL_BLOCK_FOR_LINE
+
+i8 ShellShouldEcho := true
+
 i8[0x100] RawKeyboardBuffer
 MemoryFIFO _KeyboardBuffer {
 	Buffer: RawKeyboardBuffer,
 	Size: 0x100
 }
 MemoryFIFO* KeyboardBuffer := &_KeyboardBuffer
+
+i8[0x100] RawInputBuffer
+MemoryFIFO _InputBuffer {
+	Buffer: RawInputBuffer,
+	Size: 0x100
+}
+MemoryFIFO* InputBuffer := &_InputBuffer
 
 i8 ControlHeld := false
 
@@ -363,18 +382,77 @@ define void ShellOnKey(i16 ScanCode, i8 ASCIICode) {
 	}
 }
 
+i8[100] ShellInputLine
+i32 ShellInputIndex := 0
+
+define void ShellPumpInput() {
+	i32 Size := KeyboardBuffer->Available()
+	
+	if (Size) {
+		KeyboardBuffer->Read(&ShellInputLine[ShellInputIndex], Size)
+		
+		i16 Tail := *(&ShellInputLine[ShellInputIndex + Size - 2] As i16*)
+		i16 LineEnding := 0x0A0D
+		
+		ShellInputLine[ShellInputIndex + Size] := 0
+		
+		if (ShellInputLine[ShellInputIndex] = ASCII_BACK) {
+			if (ShellInputIndex != 0) {
+				if (ShellShouldEcho) {
+					Print("%s", &ShellInputLine[ShellInputIndex])
+				}
+				
+				if (RunningProgram && ShellInputMode != SHELL_BLOCK_FOR_LINE) {
+					InputBuffer->Write(&ShellInputLine[ShellInputIndex], Size)
+				}
+				
+				ShellInputIndex -= 1
+			}
+		}
+		else {
+			if (ShellShouldEcho) {
+				Print("%s", &ShellInputLine[ShellInputIndex])
+			}
+			
+			if (RunningProgram && ShellInputMode != SHELL_BLOCK_FOR_LINE) {
+				InputBuffer->Write(&ShellInputLine[ShellInputIndex], Size)
+			}
+			
+			ShellInputIndex += Size
+		}
+		
+		;Print("(%x %x)", Tail, LineEnding)
+		
+		if (Tail = LineEnding) {
+			ShellInputLine[ShellInputIndex - 2] := 0
+			
+			if (RunningProgram && ShellInputMode = SHELL_BLOCK_FOR_LINE) {
+				InputBuffer->Write(ShellInputLine, ShellInputIndex - 2)
+			}
+			else {
+				InputBuffer->Clear()
+				OnCommand(ShellInputLine)
+			}
+			
+			ShellInputIndex := 0
+		}
+	}
+}
+
 define i32 ShellGatherInput(i8* Destination, i32 Size) {
 	;Print("GatherInput(%x, %i)", Destination, Size)
 	
-	while (KeyboardBuffer->Available() < 1) {}
+	if (ShellInputMode != SHELL_NON_BLOCKING) {
+		while (InputBuffer->Available() < 1) {ShellPumpInput()}
+	}
 	
-	i32 Available := KeyboardBuffer->Available()
+	i32 Available := InputBuffer->Available()
 	
 	if (Available < Size) {
 		Size := Available
 	}
 	
-	KeyboardBuffer->Read(Destination, Size)
+	InputBuffer->Read(Destination, Size)
 	
 	return Size
 }
@@ -383,48 +461,9 @@ define void SetupShell() {
 	SetOnKeyCallback(&ShellOnKey)
 }
 
-i8[100] CommandLine
-
 define void Shell() {
-	i32 Index := 0
 	
 	loop {
-		i32 Size := KeyboardBuffer->Available()
-		
-		if (Size) {
-			if (RunningProgram) {
-				Index := 0
-			}
-			else {
-				KeyboardBuffer->Read(&CommandLine[Index], Size)
-				
-				i16 Tail := *(&CommandLine[Index + Size - 2] As i16*)
-				i16 LineEnding := 0x0A0D
-				
-				CommandLine[Index + Size] := 0
-				
-				if (CommandLine[Index] = ASCII_BACK) {
-					if (Index != 0) {
-						Print("%s", &CommandLine[Index])
-						Index -= 1
-					}
-				}
-				else {
-					Print("%s", &CommandLine[Index])
-					Index += Size
-				}
-				
-				;Print("(%x %x)", Tail, LineEnding)
-				
-				if (Tail = LineEnding) {
-					CommandLine[Index - 2] := 0
-					
-					OnCommand(CommandLine)
-					
-					Index := 0
-				}
-			}
-		}
+		ShellPumpInput()
 	}
-	
 }
