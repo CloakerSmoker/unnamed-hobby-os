@@ -427,14 +427,17 @@ define void ShellPumpInput() {
 			ShellInputLine[ShellInputIndex - 2] := 0
 			
 			if (RunningProgram && ShellInputMode = SHELL_BLOCK_FOR_LINE) {
-				InputBuffer->Write(ShellInputLine, ShellInputIndex - 2)
+				ShellInputLine[ShellInputIndex - 2] := 0x0A
+				ShellInputLine[ShellInputIndex - 1] := 0
+				
+				InputBuffer->Write(ShellInputLine, ShellInputIndex - 1)
+				ShellInputIndex := 0
 			}
 			else {
 				InputBuffer->Clear()
+				ShellInputIndex := 0
 				OnCommand(ShellInputLine)
 			}
-			
-			ShellInputIndex := 0
 		}
 	}
 }
@@ -462,7 +465,6 @@ define void SetupShell() {
 }
 
 define void Shell() {
-	
 	loop {
 		ShellPumpInput()
 	}
