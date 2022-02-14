@@ -1,0 +1,18 @@
+struct TermiosWindowSize {
+	i16 Rows
+	i16 Columns
+	i16 CharacterWidth
+	i16 CharacterHeight
+}
+
+struct TermiosConfig {
+	i8 InputFlags
+	i8 OutputFlags
+	i8 ControlFlags
+	i8 LocalFlags
+	i8 LineDiscipline
+	i8[8] ControlCharacters
+}
+
+i32 TERMIOS_GET_WINDOW_SIZE := 0x5413
+i32 TERMIOS_SET_WINDOW_SIZE := 0x5414
