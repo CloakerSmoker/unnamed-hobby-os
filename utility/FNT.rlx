@@ -1,0 +1,144 @@
+struct FNTCharacterTableEntry unaligned {
+	i16 CharacterWidth
+	i32 BitmapOffset
+}
+
+i16 FNT_TYPE_USE_BITMAP_OFFSET := 0b0000_0100
+i32 FNT_FLAG_IS_FIXED := 1
+
+struct FNTHeader unaligned {
+	i16 Version
+	i32 TotalSize
+	i8[62] Copyright
+	i16 Type
+	
+	i16 NominalPointSize
+	i16 NominalVerticalResolution
+	i16 NominalHorizontalResolution
+	
+	i16 Ascent
+	
+	i8 InternalLeading
+	i8 ExternalLeading
+	
+	i8 IsItalic
+	i8 IsUnderlined
+	i8 IsStrikethrough
+	
+	i16 Weight
+	
+	i8 CharacterSet
+	
+	i16 PixelWidth
+	i16 PixelHeight
+	
+	i8 PitchAndFamily
+	
+	i16 AverageWidth
+	i16 MaxWidth
+	
+	i8 FirstCharacter
+	i8 LastCharacter
+	i8 DefaultCharacter
+	i8 BreakCharacter
+	
+	i16 WidthBytes
+	i32 DeviceNameOffset
+	i32 FaceNameOffset
+	i32 Reserved1
+	i32 BitmapOffset
+	
+	i8 Reserved2
+	
+	i32 Flags
+	
+	i16 GlobalASpace
+	i16 GlobalBSpace
+	i16 GlobalCSpace
+	
+	i32 ColorTableOffset
+	
+	i8[16] Reserved3
+	
+	FNTCharacterTableEntry[0] CharacterTable
+	
+	define i32 CharacterCount() {
+		i32 Start := *(this~>FirstCharacter As i32*) & 0xFF
+		i32 End := *(this~>LastCharacter As i32*) & 0xFF
+		
+		return End - Start
+	}
+	
+	define i32 Start() {
+		return *(this~>FirstCharacter As i32*) & 0xFF
+	}
+	define i32 End() {
+		return *(this~>LastCharacter As i32*) & 0xFF
+	}
+	
+	define FNTCharacterTableEntry* CharacterTableEntry(i32 Index) {
+		return this->CharacterTable + (Index * #FNTCharacterTableEntry)
+	}
+}
+
+#Require "$/File.rlx"
+#Require "$/Console.rlx"
+
+define void Main() {
+
+	i64 F := FileOpen("fixed.fnt", FILE_READ)
+	
+	FNTHeader* Header := FileReadAll(F)
+	
+	FileClose(F)
+	
+	Print("type %x\n", Header->Type)
+	Print("weight %i\n", Header->Weight)
+	Print("%i characters\n", Header->CharacterCount())
+	
+	Print("%ix%i\n", Header->PixelWidth, Header->PixelHeight)
+	
+	Print("%i\n%i\n%i\n", Header->GlobalASpace, Header->GlobalBSpace, Header->GlobalCSpace)
+	
+	Print("First character:\n")
+	
+	for (i32 Index := 'B', Index < Header->CharacterCount(), Index++) {
+		FNTCharacterTableEntry* Entry := Header->CharacterTableEntry(Index)
+		
+		Print("%i: %i wide, offset %x\n", Index, Entry->CharacterWidth, Entry->BitmapOffset)
+		
+		i8* Data := (Header As void*) + Entry->BitmapOffset
+		
+		i32 ColumnSize := Header->PixelHeight
+		i32 ColumnBits := (Header->PixelWidth / 8) * 8
+		
+		if (Header->PixelWidth % 8) {
+			ColumnBits += 8
+		}
+		
+		i32 ColumnBitsEnd := ColumnBits - Header->PixelWidth
+		
+		for (i32 Row := 0, Row < Header->PixelHeight, Row++) {
+			Print("|")
+			
+			for (i32 Column := ColumnBits, Column > ColumnBitsEnd, Column--) {
+				i32 ColumnBase := (Column / 8) * ColumnSize
+				i32 ColumnBit := Column % 8
+				
+				i32 Value := (Data[ColumnBase + Row] & (1 << (ColumnBit As i8))) != 0
+				
+				if (Value) {
+					Print("#")
+				}
+				else {
+					Print(" ")
+				}
+			}
+			
+			Print("|")
+			Print("\n")
+		}
+		
+		break
+	}
+}

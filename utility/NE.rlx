@@ -1,0 +1,182 @@
+
+struct MZHeaderNE {
+	i8 MagicM,
+	i8 MagicZ,
+	i16 BytesInLastPage,
+	i16 PageCount,
+	i16 RelocationCount,
+	
+	i16 HeaderParagraphCount,
+	i16 MinimumExtraParagraphCount,
+	i16 MaximumExtraParagraphCount,
+	i16 StartingSS,
+	
+	i16 StartingSP,
+	i16 Checksum,
+	i16 StartingIP,
+	i16 StartingCS,
+	
+	i16 RelocationTableOffset,
+	i16 OverlayNumber,
+	i16 Padding1,
+	i16 Padding2,
+	
+	i16 OEMID,
+	i16 OEMInfo,
+	i16 Padding3,
+	i16 Padding4,
+	
+	i64 Padding5,
+	
+	i64 Padding6,
+	
+	i32 Padding7,
+	i32 NEHeaderOffset
+}
+
+struct NEHeader unaligned {
+	i8[2] Signature
+	
+	i8 MajorLinkerVersion
+	i8 MinorLinkerVersion
+	
+	i16 EntryTableOffset
+	i16 EntryTableLength
+	i32 FileCRC
+	i8 PorgramFlags
+	i8 ApplicationFlags
+	
+	i16 DataSegmentIndex
+	
+	i16 InitialHeapSize
+	i16 InitialStackSize
+	
+	i32 EntryPoint
+	i32 InitialStack
+	
+	i16 SegmentCount
+	i16 ModuleReferences
+	
+	i16 ExternalNamesTableSize
+	
+	i16 SegmentTablesOffset
+	i16 ResourcesTablesOffset
+	i16 LocalNamesTableOffset
+	i16 ModuleReferenceTableOffset
+	i16 ImportNamesTableOffset
+	i16 ExternalNamesTableOffset
+	
+	i16 MoveableEntryPointCount
+	i16 FileAlignment
+	i16 ResourceTableEntryCount
+	
+	i8 TargetOS
+	i8 OS2Flags
+	
+	i16 ReturnThunksOffset
+	i16 SegmentReferenceThunksOffset
+	
+	i16 MinimumCodeSwapSize
+	i8[2] ExpectedWindowsVersion
+}
+
+i16 NE_RESOURCE_TYPE_ID_FONT_DIRECTORY := 0x8007 As i16
+
+struct NEResource {
+	i16 FileOffset
+	i16 Size
+	i16 Flags
+	i16 ID
+	i32 Reserved
+}
+
+struct NEResourceTableEntry unaligned {
+	i16 TypeID
+	i16 ResourceCount
+	i32 Reserved
+	NEResource[0] Resources
+	
+	define i32 TypeID() {
+		return (this->TypeID As i32) & 0xFFFF
+	}
+	
+	define NEResource* GetEntry(i32 TargetIndex) {
+		return this->Resources[TargetIndex]
+	}
+	
+	define NEResourceTableEntry* Next() {
+		return this + #NEResourceTableEntry + this->ResourceCount * #NEResource
+	}
+}
+
+struct NEResourceTableHeader {
+	i16 AlignmentShiftCount
+	NEResourceTableEntry[0] Entries
+	
+	define NEResourceTableEntry* GetEntry(i32 TargetIndex) {
+		NEResourceTableEntry* Current := this->Entries[0]
+		
+		for (i32 Index := 0, Index < TargetIndex, Index++) {
+			Current := Current->Next()
+		}
+		
+		return Current
+	}
+	
+	define void* End() {
+		NEResourceTableEntry* Current := this->Entries[0]
+		
+		while (Current->TypeID() != 0) {
+			Current := Current->Next()
+		}
+		
+		return Current As void*
+	}
+}
+
+#Require "$/File.rlx"
+#Require "$/Console.rlx"
+
+define void Main() {
+
+	i64 F := FileOpen("fixed.fon", FILE_READ)
+	
+	MZHeaderNE* DOS := FileReadAll(F)
+	
+	NEHeader* Header := (DOS As void*) + (DOS->NEHeaderOffset)
+	
+	FileClose(F)
+	
+	Print("resource table offset %x\n", Header->ResourcesTablesOffset)
+	Print("%i resource table entries\n", Header->ResourceTableEntryCount)
+	
+	NEResourceTableHeader* Resources := (Header As void*) + ((Header->ResourcesTablesOffset As i32) & 0xFF)
+	i8* Names := Resources->End()
+	
+	for (i32 Index := 0, Index < Header->ResourceTableEntryCount, Index++) {
+		NEResourceTableEntry* Entry := Resources->GetEntry(Index)
+		
+		if (Entry->TypeID = 0) {
+			break
+		}
+		
+		Print("Entry %i at %x\n", Index, (Entry As i64) - (DOS As i64))
+		
+		i32 TypeID := Entry->TypeID()
+		
+		if (TypeID & 0x8000) {
+			Print("%x, ", TypeID)
+		}
+		else {
+			Print("%s, ", &Names[TypeID & 0x7FFF])
+		}
+		
+		Print("%i resources\n", Entry->ResourceCount)
+		
+		for (i32 ResourceIndex := 0, ResourceIndex < Entry->ResourceCount, ResourceIndex++) {
+			NEResource* Resource := Entry->GetEntry(ResourceIndex)
+			
+			Print("%i: %x, offset %x, size %x\n", ResourceIndex, Resource->ID, Resource->FileOffset, Resource->Size)
+		}
+	}
+}
