@@ -1,0 +1,78 @@
+#Require "$/File.rlx"
+#Require "$/Console.rlx"
+#Require "./src/utility/NE.rlx"
+
+define void Main(i64 ArgC, i8** ArgV) {
+	GetArgs(&ArgC, &ArgV)
+	
+	i8* Input := ArgV[1]
+	i8* Output := ArgV[2]
+	
+	i64 F := FileOpen(Input, FILE_READ)
+	void* Data := FileReadAll(F)
+	FileClose(F)
+	
+	NEFile* File := Alloc(#NEFile)
+	
+	File->Initialize(Data, 0)
+	
+	NEResource* Font := File->FindResource(NE_RESOURCE_TYPE_ID_FONT, 0)
+	
+	F := FileOpen(Output, FILE_WRITE | FILE_CREATE_NEW)
+	FileWrite(F, File->GetResourceData(Font), File->GetResourceSize(Font))
+	FileClose(F)
+	
+	
+	;NEHeader* Header := (DOS As void*) + (DOS->NEHeaderOffset)
+	;
+	;FileClose(F)
+	;
+	;Print("resource table offset %x\n", Header->ResourcesTablesOffset)
+	;Print("%i resource table entries\n", Header->ResourceTableEntryCount)
+	;
+	;NEResourceTableHeader* Resources := (Header As void*) + ((Header->ResourcesTablesOffset As i32) & 0xFF)
+	;i8* Names := Resources As void*
+	;
+	;Print("Names offset: %x\n", (Names As i64) - (DOS As i64))
+	;
+	;for (i32 Index := 0, Index < Header->ResourceTableEntryCount, Index++) {
+	;	NEResourceTableEntry* Entry := Resources->GetEntry(Index)
+	;	
+	;	if (Entry->TypeID = 0) {
+	;		break
+	;	}
+	;	
+	;	Print("Entry %i at %x\n", Index, (Entry As i64) - (DOS As i64))
+	;	
+	;	i32 TypeID := Entry->TypeID()
+	;	
+	;	if (TypeID & 0x8000) {
+	;		Print("%x, ", TypeID)
+	;	}
+	;	else {
+	;		Print("%s, ", &Names[TypeID & 0x7FFF])
+	;	}
+	;	
+	;	Print("%i resources\n", Entry->ResourceCount)
+	;	
+	;	for (i32 ResourceIndex := 0, ResourceIndex < Entry->ResourceCount, ResourceIndex++) {
+	;		NEResource* Resource := Entry->GetEntry(ResourceIndex)
+	;		
+	;		i32 Offset := Resource->FileOffset() << (Resources->AlignmentShiftCount As i8)
+	;		i32 Size := Resource->Size() << (Resources->AlignmentShiftCount As i8)
+	;		
+	;		i32 ID := Resource->ID()
+	;		
+	;		Print("%i: ", ResourceIndex)
+	;		
+	;		if (ID & 0x8000) {
+	;			Print("%x", ID)
+	;		}
+	;		else {
+	;			Print("%s", &Names[ID])
+	;		}
+	;		
+	;		Print(" offset %x, size %x\n", Offset, Size)
+	;	}
+	;}
+}

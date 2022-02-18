@@ -80,7 +80,8 @@ struct NEHeader unaligned {
 	i8[2] ExpectedWindowsVersion
 }
 
-i16 NE_RESOURCE_TYPE_ID_FONT_DIRECTORY := 0x8007 As i16
+i32 NE_RESOURCE_TYPE_ID_FONT_DIRECTORY := 0x8007
+i32 NE_RESOURCE_TYPE_ID_FONT           := 0x8008
 
 struct NEResource {
 	i16 FileOffset
@@ -88,6 +89,16 @@ struct NEResource {
 	i16 Flags
 	i16 ID
 	i32 Reserved
+	
+	define i32 FileOffset() {
+		return (this->FileOffset As i32) & 0xFFFF
+	}
+	define i32 Size() {
+		return (this->Size As i32) & 0xFFFF
+	}
+	define i32 ID() {
+		return (this->ID As i32) & 0xFFFF
+	}
 }
 
 struct NEResourceTableEntry unaligned {
@@ -134,49 +145,54 @@ struct NEResourceTableHeader {
 	}
 }
 
-#Require "$/File.rlx"
-#Require "$/Console.rlx"
-
-define void Main() {
-
-	i64 F := FileOpen("fixed.fon", FILE_READ)
-	
-	MZHeaderNE* DOS := FileReadAll(F)
-	
-	NEHeader* Header := (DOS As void*) + (DOS->NEHeaderOffset)
-	
-	FileClose(F)
-	
-	Print("resource table offset %x\n", Header->ResourcesTablesOffset)
-	Print("%i resource table entries\n", Header->ResourceTableEntryCount)
-	
-	NEResourceTableHeader* Resources := (Header As void*) + ((Header->ResourcesTablesOffset As i32) & 0xFF)
-	i8* Names := Resources->End()
-	
-	for (i32 Index := 0, Index < Header->ResourceTableEntryCount, Index++) {
-		NEResourceTableEntry* Entry := Resources->GetEntry(Index)
-		
-		if (Entry->TypeID = 0) {
-			break
-		}
-		
-		Print("Entry %i at %x\n", Index, (Entry As i64) - (DOS As i64))
-		
-		i32 TypeID := Entry->TypeID()
-		
-		if (TypeID & 0x8000) {
-			Print("%x, ", TypeID)
-		}
-		else {
-			Print("%s, ", &Names[TypeID & 0x7FFF])
-		}
-		
-		Print("%i resources\n", Entry->ResourceCount)
-		
-		for (i32 ResourceIndex := 0, ResourceIndex < Entry->ResourceCount, ResourceIndex++) {
-			NEResource* Resource := Entry->GetEntry(ResourceIndex)
-			
-			Print("%i: %x, offset %x, size %x\n", ResourceIndex, Resource->ID, Resource->FileOffset, Resource->Size)
-		}
+struct NEFile {
+	union {
+		void* MZData
+		MZHeaderNE* MZHeader
 	}
+	
+	union {
+		void* Data
+		NEHeader* Header
+	}
+	
+	NEResourceTableHeader* Resources
+	
+	i32 Size
+	
+	define void Initialize(void* Data, i32 Size) {
+		this->MZData := Data
+		this->Size := Size
+		
+		this->Header := Data + this->MZHeader->NEHeaderOffset
+		this->Resources := this->Data + ((this->Header->ResourcesTablesOffset As i32) & 0xFF)
+	}
+	
+	define NEResource* FindResource(i32 Type, i32 ResourceIndex) {
+		for (i32 Index := 0, Index < this->Header->ResourceTableEntryCount, Index++) {
+			NEResourceTableEntry* Entry := this->Resources->GetEntry(Index)
+			
+			i32 TypeID := Entry->TypeID()
+			
+			if (TypeID = 0) {
+				break
+			}
+			
+			if (TypeID != Type) {
+				continue
+			}
+			
+			return Entry->GetEntry(ResourceIndex)
+		}
+		
+		return null
+	}
+	
+	define void* GetResourceData(NEResource* Resource) {
+		return this->MZData + (Resource->FileOffset() << (this->Resources->AlignmentShiftCount As i8))
+	}
+	define i32 GetResourceSize(NEResource* Resource) {
+		return Resource->Size() << (this->Resources->AlignmentShiftCount As i8)
+	}
+	
 }
