@@ -40,6 +40,7 @@ format 32 m
 import ./build/kernel.elf kernel.elf
 import ./build/TestProgram.elf test.elf
 import ./build/Write.elf write
+import fanta.fon fanta.fon
 import TestFile.txt test.txt
 import busybox_CLEAR linux_clear
 import busybox_CAT linux_cat

@@ -101,6 +101,8 @@ INode* RootINode := null
 
 #Require "./src/drivers/PCI/PCI.rlx"
 
+#Require "./src/kernel/graphics/LoadFON.rlx"
+
 declare void BootStrap()
 
 define void RawBootStrap(void* Stack) asm {
@@ -362,6 +364,29 @@ define void MainContinuation() {
 	FS->Initialize(Ext2Scratch, Ext2Scratch + 0x800, Ext2Scratch + 0xC00, Ext2Scratch + 0x1000, Ext2Scratch + 0x1400)
 	
 	RootINode := CloneMemory(FS->ReadINode(2), #INode)
+	
+	
+	
+	
+	i64 FontHandle := Ext2Open(FS, "fanta.fon")
+	
+	FontHandle := Ext2Seek(FS, FontHandle, 0, SEEK_RELATIVE_END)
+	i32 FontSize := Ext2Tell(FS, FontHandle) As i32
+	FontHandle := Ext2Seek(FS, FontHandle, 0, SEEK_SET)
+	
+	void* FontBuffer := Alloc(FontSize)
+	
+	i32 BytesRead := 0
+	FontHandle := Ext2Read(FS, FontHandle, FontBuffer, FontSize, &BytesRead)
+	
+	Ext2Close(FS, FontHandle)
+	
+	_Font* Loaded := LoadFON(FontBuffer, FontSize)
+	
+	Loaded->Draw(NativeScreen->Canvas, 0x00_00_00, 0xFF_FF_FF, 0, 0, 'A')
+	
+	
+	
 	
 	KernelTerminal->SetCursorTimer()
 	

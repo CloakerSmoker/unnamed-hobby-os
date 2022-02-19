@@ -113,6 +113,13 @@ struct PixelBuffer {
 		return null
 	}
 	
+	define void* GetPixelAddress(i32 X, i32 Y) asm {
+		mov, rax, {rdi} As i64* ; GetPixelAddress
+		call, rax
+		
+		ret
+	}
+	
 	define void SetPixelColor(i32 X, i32 Y, i32 Color) asm {
 		push, rcx ; Save color
 		push, rdi ; Save this
@@ -140,8 +147,21 @@ struct PixelBuffer {
 		ret		
 	}
 	
-	define void BlockTransfer(i32 MyX, i32 MyY, i32 OtherX, OtherY, i32 Width, i32 Height, PixelBuffer* Other) {
-		
+	define void BlockTransfer(i32 MyX, i32 MyY, i32 Width, i32 Height, PixelBuffer* Other, i32 OtherX, i32 OtherY) {
+		if (Other->Format = this->Format) {
+			for (i32 Row := 0, Row < Height, Row++) {
+				MoveMemory(this->GetPixelAddress(MyX, MyY + Row), Other->GetPixelAddress(OtherX, OtherY + Row), Width * this->Format->Size)
+			}
+		}
+		else {
+			for (i32 Row := 0, Row < Height, Row++) {
+				for (i32 Column := 0, Column < Width, Column++) {
+					i32 OtherColor := Other->GetPixelColor(OtherX + Column, OtherY + Row)
+					
+					this->SetPixelColor(MyX + Column, MyY + Row, OtherColor)
+				}
+			}
+		}
 	}
 	
 	define void Initialize(void* Buffer, PixelFormat* Format, i32 Width, i32 Height) {
