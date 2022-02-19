@@ -238,7 +238,7 @@ define void MainContinuation() {
 	Info("Mapped the framebuffer\n")
 	
 	;NativeScreen->Adopt(FrameBuffer, SCREEN_WIDTH, SCREEN_HEIGHT, BYTES_PER_PIXEL, 0, 0x00_00_00)
-	NativeScreen->Adopt(ADDRESS_OF_FRAME_BUFFER, SCREEN_WIDTH, SCREEN_HEIGHT, BYTES_PER_PIXEL, 0, 0xFF_FF_FF)
+	NativeScreen->Adopt(ADDRESS_OF_FRAME_BUFFER, RGB32, SCREEN_WIDTH, SCREEN_HEIGHT, 0xFF_FF_FF)
 	NativeScreen->Clear()
 	
 	Info("Adopted screen\n")

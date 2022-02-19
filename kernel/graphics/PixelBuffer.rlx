@@ -1,0 +1,170 @@
+struct PixelFormat {
+	void* SetColor
+	
+	i32 Size
+	
+	i32 RedMask
+	i32 BlueMask
+	i32 GreenMask
+	
+	i8 RedShift
+	i8 BlueShift
+	i8 GreenShift
+	
+	define void SetColor_24_R8_G8_B8(void* Pixel, i32 Color) asm {
+		mov, r8b, {rsi + 3} As i8*
+		mov, {rsi} As i32*, edx
+		mov, {rsi + 3} As i8*, r8b
+		ret
+	}
+	define void SetColor_32_R8_G8_B8(void* Pixel, i32 Color) asm {
+		mov, {rsi} As i32*, edx
+		ret
+	}
+	define void SetColor_Generic(void* Pixel, i32 Color) {
+		return
+	}
+	
+	define void SetColor(void* Pixel, i32 Color) asm {
+		mov, rax, {rdi} As i64* ; SetColor
+		jmp, rax
+	}
+}
+
+PixelFormat _RGB24 {
+	RedMask: 0xFF_00_00,
+	RedShift: 16,
+	
+	BlueMask: 0x00_FF_00,
+	BlueShift: 8,
+	
+	GreenMask: 0x00_00_FF,
+	GreenShift: 0,
+	
+	Size: 3,
+	
+	SetColor: &PixelFormat.SetColor_24_R8_G8_B8
+}
+
+PixelFormat* RGB24 := &_RGB24
+
+PixelFormat _RGB32 {
+	RedMask: 0xFF_00_00,
+	RedShift: 16,
+	
+	BlueMask: 0x00_FF_00,
+	BlueShift: 8,
+	
+	GreenMask: 0x00_00_FF,
+	GreenShift: 0,
+	
+	Size: 4,
+	
+	SetColor: &PixelFormat.SetColor_32_R8_G8_B8
+}
+
+PixelFormat* RGB32 := &_RGB32
+
+struct PixelBuffer {
+	void* GetPixelAddress
+	void* SetColor
+	
+	PixelFormat* Format
+	void* Buffer
+	
+	i32 Width
+	i32 Height
+	
+	i32 Count
+	i32 Size
+	
+	define void* GetPixelAddress_24_R8_G8_B8(i32 X, i32 Y) asm {
+		mov, rax, {rdi + 0x18} As i64*   ; RAX = Base
+		mov, ebx, {rdi + 0x20} As i32*   ; RBX = Width
+		
+		imul, rdx, rbx                   ; Y *= Stride
+		add, rdx, rsi                    ; Index = Y += X
+		lea, rdx, {rdx[rdx * 2]} As i64* ; Offset = Index * 3
+		
+		add, rax, rsi                    ; RAX = Base + Offset
+		
+		ret
+	}
+	
+	define void* GetPixelAddress_32_R8_G8_B8(i32 X, i32 Y) asm {
+		mov, rax, {rdi + 0x18} As i64*   ; RAX = Base
+		mov, ebx, {rdi + 0x20} As i32*   ; RBX = Width
+		
+		imul, rdx, rbx                   ; Row = Y * Width
+		add, rdx, rsi                    ; Index = Row + X
+		
+		; shl, rdx, 2                    ; Offset = Index * 4
+		emit, 0x48
+		emit, 0xC1
+		emit, 0xE2
+		emit, 0x02
+		
+		add, rax, rdx                    ; RAX = Base + Offset
+		
+		ret
+	}
+	
+	define void* GetPixelAddress_Generic(void* Buffer, i32 X, i32 Y) {
+		return null
+	}
+	
+	define void SetPixelColor(i32 X, i32 Y, i32 Color) asm {
+		push, rcx ; Save color
+		push, rdi ; Save this
+		
+		mov, rax, {rdi} As i64* ; GetPixelAddress
+		call, rax
+		
+		pop, rbx ; Restore this
+		
+		mov, rdi, {rbx + 0x10} As i64* ; this->Format
+		mov, rsi, rax                  ; GetPixelAddress(X, Y)
+		pop, rdx                       ; Color
+		mov, rbx, {rdi} As i64*        ; Format->SetColor
+		call, rbx
+		
+		ret
+	}
+	
+	define i32 GetPixelColor(i32 X, i32 Y) asm {
+		mov, rax, {rdi} As i64* ; GetPixelAddress
+		call, rax
+		
+		mov, eax, {rax} As i32*
+		
+		ret		
+	}
+	
+	define void BlockTransfer(i32 MyX, i32 MyY, i32 OtherX, OtherY, i32 Width, i32 Height, PixelBuffer* Other) {
+		
+	}
+	
+	define void Initialize(void* Buffer, PixelFormat* Format, i32 Width, i32 Height) {
+		this->Buffer := Buffer
+		
+		this->Format := Format
+		
+		this->Width := Width
+		this->Height := Height
+		
+		this->Count := this->Width * this->Height
+		this->Size := this->Count * this->Format->Size
+		
+		if (Format = RGB24) {
+			this->GetPixelAddress := &PixelBuffer.GetPixelAddress_24_R8_G8_B8
+		}
+		else if (Format = RGB32) {
+			this->GetPixelAddress := &PixelBuffer.GetPixelAddress_32_R8_G8_B8
+		}
+		else {
+			this->GetPixelAddress := &PixelBuffer.GetPixelAddress_Generic
+		}
+		
+		this->SetColor := Format->SetColor
+	}
+}

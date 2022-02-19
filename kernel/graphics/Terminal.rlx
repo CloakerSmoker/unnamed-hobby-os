@@ -42,8 +42,8 @@ struct Terminal {
 		
 		this->X := 0
 		this->Y := 0
-		this->Width  := NewScreen->Width  / FONT_WIDTH
-		this->Height := NewScreen->Height / FONT_HEIGHT
+		this->Width  := NewScreen->Canvas->Width  / FONT_WIDTH
+		this->Height := NewScreen->Canvas->Height / FONT_HEIGHT
 		this->MaxColumn := this->Width  - 1
 		this->MaxRow    := this->Height - 1
 		

@@ -21,7 +21,7 @@ define void Main(i64 ArgC, i8** ArgV) {
 	;Print("First character:\n")
 	
 	;for (i32 Index := 'B', Index < Header->CharacterCount(), Index++) {
-		FNTCharacterTableEntry* Entry := Header->CharacterTableEntry(Character)
+		FNTCharacterTableEntry* Entry := Header->CharacterTableEntry(Character - Header->Start())
 		
 		;Print("%i: %i wide, offset %x\n", Index, Entry->CharacterWidth, Entry->BitmapOffset)
 		
