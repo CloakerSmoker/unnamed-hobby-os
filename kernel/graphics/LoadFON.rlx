@@ -101,8 +101,6 @@ define _Font* LoadFON(_Font* Result, void* Data, i32 Size) {
 	void* Renders := KernelPageAllocator->AllocateVirtual(PagesForRenders)
 	
 	for (i32 Index := 0, Index < 256, Index++) {
-		FNTCharacterTableEntry* Entry := FNT->CharacterTableEntry(Index)
-		
 		_Glyph* Next := Glyphs[Index]
 		
 		Next->RenderBackgroundColor := 0x00_00_00
@@ -113,25 +111,35 @@ define _Font* LoadFON(_Font* Result, void* Data, i32 Size) {
 		Next->Render := Render
 		Result->GlyphBuffer->Buffer := Render
 		
-		i8* GlyphData := (FNT As void*) + Entry->BitmapOffset
+		i8* GlyphData := FNT->GetCharacterData(Index)
 		
 		i32 ColumnSize := FNT->PixelHeight
-		i32 ColumnBits := BytesPerColumn * 8
+		i32 ColumnBytes := FNT->PixelWidth / 8
 		
-		i32 ColumnBitsEnd := ColumnBits - FNT->PixelWidth
+		if (FNT->PixelWidth % 8) {
+			ColumnBytes += 1
+		}
 		
 		for (i32 Row := 0, Row < FNT->PixelHeight, Row++) {
 			i32 ActualColumn := 0
 			
-			for (i32 Column := ColumnBits - 1, Column >= ColumnBitsEnd, Column--) {
-				i32 ColumnBase := (Column / 8) * ColumnSize
-				i32 ColumnBit := Column % 8
+			for (i32 ColumnByte := 0, ColumnByte < ColumnBytes, ColumnByte++) {
+				i32 ColumnBase := (ColumnByte * ColumnSize) + Row
+				i8 ColumnData := GlyphData[ColumnBase]
 				
-				i32 Value := (GlyphData[ColumnBase + Row] & (1 << (ColumnBit As i8))) != 0
+				i32 ColumnEnd := 0
 				
-				Result->GlyphBuffer->SetPixelColor(ActualColumn, Row, Value * 0xFF_FF_FF)
+				if (ColumnByte + 1 = ColumnBytes && FNT->PixelWidth % 8) {
+					ColumnEnd := 8 - (FNT->PixelWidth % 8)
+				}
 				
-				ActualColumn++
+				for (i32 Column := 7, Column >= ColumnEnd, Column--) {
+					i32 Value := (ColumnData & (1 << (Column As i8))) != 0
+					
+					Result->GlyphBuffer->SetPixelColor(ActualColumn, Row, Value * 0xFF_FF_FF)
+					
+					ActualColumn++
+				}
 			}
 		}
 	}

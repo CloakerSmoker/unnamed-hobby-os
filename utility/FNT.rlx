@@ -1,7 +1,19 @@
-struct FNTCharacterTableEntry unaligned {
+struct FNTCharacterTableEntry2 unaligned {
+	i16 CharacterWidth
+	i16 BitmapOffset
+	
+	define i32 BitmapOffset() {
+		return (this->BitmapOffset As i32) & 0xFFFF
+	}
+}
+
+struct FNTCharacterTableEntry3 unaligned {
 	i16 CharacterWidth
 	i32 BitmapOffset
 }
+
+i16 FNT_VERSION_2 := 0x200
+i16 FNT_VERSION_3 := 0x300
 
 i16 FNT_TYPE_USE_BITMAP_OFFSET := 0b0000_0100
 i32 FNT_FLAG_IS_FIXED := 1
@@ -50,7 +62,10 @@ struct FNTHeader unaligned {
 	
 	i8 Reserved2
 	
-	i32 Flags
+	union {
+		void[0] CharacterTable2
+		i32 Flags
+	}
 	
 	i16 GlobalASpace
 	i16 GlobalBSpace
@@ -60,7 +75,18 @@ struct FNTHeader unaligned {
 	
 	i8[16] Reserved3
 	
-	FNTCharacterTableEntry[0] CharacterTable
+	void[0] CharacterTable3
+	
+	define void* CharacterTable() {
+		if (this->Version = FNT_VERSION_2) {
+			return this->CharacterTable2
+		}
+		else if (this->Version = FNT_VERSION_3) {
+			return this->CharacterTable3
+		}
+		
+		return null
+	}
 	
 	define i32 CharacterCount() {
 		i32 Start := *(this~>FirstCharacter As i32*) & 0xFF
@@ -76,8 +102,19 @@ struct FNTHeader unaligned {
 		return *(this~>LastCharacter As i32*) & 0xFF
 	}
 	
-	define FNTCharacterTableEntry* CharacterTableEntry(i32 Index) {
-		return this->CharacterTable + (Index * #FNTCharacterTableEntry)
+	define i8* GetCharacterData(i32 Index) {
+		if (this->Version = FNT_VERSION_2) {
+			FNTCharacterTableEntry2* Entry2 := this->CharacterTable() + (Index * #FNTCharacterTableEntry2)
+			
+			return (this As void*) + Entry2->BitmapOffset()
+		}
+		else if (this->Version = FNT_VERSION_3) {
+			FNTCharacterTableEntry3* Entry3 := this->CharacterTable() + (Index * #FNTCharacterTableEntry3)
+			
+			return (this As void*) + Entry3->BitmapOffset
+		}
+		
+		return null
 	}
 }
 
