@@ -44,6 +44,10 @@ struct _Font {
 	}
 	
 	define void Draw(PixelBuffer* Buffer, i32 Foreground, i32 Background, i32 X, i32 Y, i8 Character) {
+		if (Foreground = Background) {
+			Character := 0
+		}
+		
 		_Glyph* CharacterGlyph := this->Glyphs[Character]
 		
 		this->GlyphBuffer->Buffer := CharacterGlyph->Render

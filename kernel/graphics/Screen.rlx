@@ -98,7 +98,7 @@ struct Screen {
 			Y := this->Canvas->Height - Offset
 		}
 		
-		FastMoveMemory(NewTopRow, TopRow, (Buffer As i64) - GapSize)
+		FastMoveMemory(NewTopRow, TopRow, this->Canvas->Size - GapSize)
 		this->DrawRectangle(0, Y, this->Canvas->Width, Offset, this->FillColor)
 	}
 }
