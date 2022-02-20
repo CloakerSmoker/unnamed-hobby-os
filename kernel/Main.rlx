@@ -75,6 +75,7 @@ AMD64Context KernelContext
 
 #Require "./src/kernel/core/Timer.rlx"
 
+#Require "./src/kernel/graphics/LoadFON.rlx"
 #Require "./src/kernel/graphics/Terminal.rlx"
 
 define void PrintCharacter(i8 Character) {
@@ -100,8 +101,6 @@ INode* RootINode := null
 #Require "./src/kernel/core/Shell.rlx"
 
 #Require "./src/drivers/PCI/PCI.rlx"
-
-#Require "./src/kernel/graphics/LoadFON.rlx"
 
 declare void BootStrap()
 
@@ -233,6 +232,14 @@ define void VisitPCIFunction(i32 Bus, i32 Slot, i32 Function) {
 define void MainContinuation() {
 	Info("Paging initialized, AddressSpaceManager in control\n")
 	
+	KernelPageAllocator := PageHeap:Adopt(ADDRESS_OF_KERNEL_PAGES As i64, NUMBER_OF_KERNEL_PAGES)
+	
+	Info("Built kernel virtual allocator\n")
+	
+	LoadBootFont()
+	
+	Info("Loaded font\n")
+	
 	; Remap the next available `FRAMEBUFFER_SIZE` bytes of virtual memory to 0xE000_0000 (or wherever int10 says)
 	i32 FrameBufferPageCount := SizeToPageCount(FRAMEBUFFER_SIZE)
 	KernelAddressSpace->MapRange(ADDRESS_OF_FRAME_BUFFER, Kernel->FrameBufferPages / PAGE_SIZE, FrameBufferPageCount)
@@ -243,10 +250,12 @@ define void MainContinuation() {
 	NativeScreen->Adopt(ADDRESS_OF_FRAME_BUFFER, RGB32, SCREEN_WIDTH, SCREEN_HEIGHT, 0xFF_FF_FF)
 	NativeScreen->Clear()
 	
+	BootFont->Draw(NativeScreen->Canvas, 0x00_00_00, 0xFF_FF_FF, 0, 0, 'A')
+	
 	Info("Adopted screen\n")
 	
 	;KernelTerminal->Adopt(NativeScreen, 0xFF_FF_FF, 0x00_00_00)
-	KernelTerminal->Adopt(NativeScreen, 0x00_00_00, 0xFF_FF_FF)
+	KernelTerminal->Adopt(NativeScreen, BootFont, 0x00_00_00, 0xFF_FF_FF)
 	;KernelTerminal->SetColors(0xFF_FF_FF, 0x00_00_00)
 	KernelTerminal->Clear()
 	
@@ -261,8 +270,6 @@ define void MainContinuation() {
 	KernelHeap->Initialize(ADDRESS_OF_KERNEL_HEAP, BYTES_IN_2MB)
 	
 	KernelTerminal->PrintLine("BOOT: Kernel Heap Initialized")
-	
-	KernelPageAllocator := PageHeap:Adopt(ADDRESS_OF_KERNEL_PAGES As i64, NUMBER_OF_KERNEL_PAGES)
 	
 	void* InterruptStackTop    := ADDRESS_OF_KERNEL_STACK + (10 * PAGE_SIZE)
 	void* InterruptStackBottom := ADDRESS_OF_KERNEL_STACK
@@ -368,22 +375,26 @@ define void MainContinuation() {
 	
 	
 	
-	i64 FontHandle := Ext2Open(FS, "fanta.fon")
+	;i64 FontHandle := Ext2Open(FS, "fanta.fon")
+	;
+	;FontHandle := Ext2Seek(FS, FontHandle, 0, SEEK_RELATIVE_END)
+	;i32 FontSize := Ext2Tell(FS, FontHandle) As i32
+	;FontHandle := Ext2Seek(FS, FontHandle, 0, SEEK_SET)
+	;
+	;void* FontBuffer := Alloc(FontSize)
+	;
+	;i32 BytesRead := 0
+	;FontHandle := Ext2Read(FS, FontHandle, FontBuffer, FontSize, &BytesRead)
+	;
+	;Ext2Close(FS, FontHandle)
+	;
+	;_Font* Loaded := LoadFON(FontBuffer, FontSize)
 	
-	FontHandle := Ext2Seek(FS, FontHandle, 0, SEEK_RELATIVE_END)
-	i32 FontSize := Ext2Tell(FS, FontHandle) As i32
-	FontHandle := Ext2Seek(FS, FontHandle, 0, SEEK_SET)
+	;BootFont->Width := 12
 	
-	void* FontBuffer := Alloc(FontSize)
-	
-	i32 BytesRead := 0
-	FontHandle := Ext2Read(FS, FontHandle, FontBuffer, FontSize, &BytesRead)
-	
-	Ext2Close(FS, FontHandle)
-	
-	_Font* Loaded := LoadFON(FontBuffer, FontSize)
-	
-	Loaded->Draw(NativeScreen->Canvas, 0x00_00_00, 0xFF_FF_FF, 0, 0, 'A')
+	;Info("A @ %x\n", BootFont->Glyphs['A']->Render)
+	;
+	;BootFont->Draw(NativeScreen->Canvas, 0x00_00_00, 0xFF_FF_FF, 0, 0, 'A')
 	
 	
 	

@@ -20,8 +20,18 @@ struct _Font {
 	i32 PixelsPerGlyph
 	i32 BytesPerGlyph
 	
+	PixelBuffer RawGlyphBuffer
 	PixelBuffer* GlyphBuffer
 	_Glyph* Glyphs
+	
+	define void Initialize(PixelFormat* Format, i32 Width, i32 Height) {
+		this->Width := Width
+		this->Height := Height
+		
+		this->GlyphBuffer := this~>RawGlyphBuffer
+		
+		this->GlyphBuffer->Initialize(null, Format, Width, Height)
+	}
 	
 	define void ReplaceRenderColor(i32 Old, i32 New) {
 		for (i32 Row := 0, Row < this->Height, Row++) {
@@ -38,8 +48,8 @@ struct _Font {
 		
 		this->GlyphBuffer->Buffer := CharacterGlyph->Render
 		
-		i8 ForegroundMatches := Foreground != CharacterGlyph->RenderForegroundColor
-		i8 BackgroundMatches := Background != CharacterGlyph->RenderBackgroundColor
+		i8 ForegroundMatches := Foreground = CharacterGlyph->RenderForegroundColor
+		i8 BackgroundMatches := Background = CharacterGlyph->RenderBackgroundColor
 		
 		if !(ForegroundMatches && BackgroundMatches) {
 			for (i32 Row := 0, Row < this->Height, Row++) {
@@ -54,27 +64,27 @@ struct _Font {
 					}
 				}
 			}
+			
+			CharacterGlyph->RenderForegroundColor := Foreground
+			CharacterGlyph->RenderBackgroundColor := Background
 		}
 		
 		Buffer->BlockTransfer(X, Y, this->Width, this->Height, this->GlyphBuffer, 0, 0)
 	}
 }
 
-define _Font* LoadFON(void* Data, i32 Size) {
-	NEFile* NE := Alloc(#NEFile)
+define _Font* LoadFON(_Font* Result, void* Data, i32 Size) {
+	NEFile RawNE
+	SetMemory(&RawNE, #NEFile, 0)
+	NEFile* NE := &RawNE
+	
 	NE->Initialize(Data, Size)
 	
 	NEResource* FontResource := NE->FindResource(NE_RESOURCE_TYPE_ID_FONT, 0)
 	
 	FNTHeader* FNT := NE->GetResourceData(FontResource)
 	
-	_Font* Result := Alloc(#_Font)
-	Result->Width := FNT->PixelWidth
-	Result->Height := FNT->PixelHeight
-	
-	PixelBuffer* GlyphBuffer := Alloc(#PixelBuffer)
-	Result->GlyphBuffer := GlyphBuffer
-	GlyphBuffer->Initialize(null, RGB32, Result->Width, Result->Height)
+	Result->Initialize(RGB32, FNT->PixelWidth, FNT->PixelHeight)
 	
 	i32 BytesPerColumn := FNT->PixelWidth / 8
 	
@@ -90,7 +100,7 @@ define _Font* LoadFON(void* Data, i32 Size) {
 	_Glyph* Glyphs := KernelPageAllocator->AllocateVirtual(1)
 	void* Renders := KernelPageAllocator->AllocateVirtual(PagesForRenders)
 	
-	for (i32 Index := 'A', Index < 256, Index++) {
+	for (i32 Index := 0, Index < 256, Index++) {
 		FNTCharacterTableEntry* Entry := FNT->CharacterTableEntry(Index)
 		
 		_Glyph* Next := Glyphs[Index]
@@ -101,7 +111,7 @@ define _Font* LoadFON(void* Data, i32 Size) {
 		void* Render := Renders + (Index * BytesPerRender)
 		
 		Next->Render := Render
-		GlyphBuffer->Buffer := Render
+		Result->GlyphBuffer->Buffer := Render
 		
 		i8* GlyphData := (FNT As void*) + Entry->BitmapOffset
 		
@@ -119,7 +129,7 @@ define _Font* LoadFON(void* Data, i32 Size) {
 				
 				i32 Value := (GlyphData[ColumnBase + Row] & (1 << (ColumnBit As i8))) != 0
 				
-				GlyphBuffer->SetPixelColor(ActualColumn, Row, Value * 0xFF_FF_FF)
+				Result->GlyphBuffer->SetPixelColor(ActualColumn, Row, Value * 0xFF_FF_FF)
 				
 				ActualColumn++
 			}
@@ -129,4 +139,17 @@ define _Font* LoadFON(void* Data, i32 Size) {
 	Result->Glyphs := Glyphs
 	
 	return Result
+}
+
+define _Font* LoadFON(void* Data, i32 Size) {
+	return LoadFON(Alloc(#_Font), Data, Size)
+}
+
+void* BootFontFON := i8[#File "./src/misc/fonts/Fanta.fon"]
+
+_Font RawBootFont
+_Font* BootFont := &RawBootFont
+
+define void LoadBootFont() {
+	LoadFON(BootFont, BootFontFON, 0)
 }

@@ -21,6 +21,8 @@ struct Terminal {
 	i8[20] EscapeBuffer
 	i32 EscapeIndex
 	
+	_Font* Font
+	
 	i32 Width
 	i32 Height
 	
@@ -31,8 +33,21 @@ struct Terminal {
 		this->Screen->Clear(this->BackgroundColor)
 	}
 	
-	define void Adopt(Screen* NewScreen, i32 Foreground, i32 Background) {
+	define void CalculateBounds() {
+		this->X := 0
+		this->Y := 0
+		
+		this->Width  := this->Screen->Canvas->Width  / this->Font->Width
+		this->Height := this->Screen->Canvas->Height / this->Font->Height
+		this->MaxColumn := this->Width  - 1
+		this->MaxRow    := this->Height - 1
+		
+		this->Clear()
+	}
+	
+	define void Adopt(Screen* NewScreen, _Font* NewFont, i32 Foreground, i32 Background) {
 		this->Screen := NewScreen
+		this->Font := NewFont
 		
 		this->DefaultForegroundColor := Foreground
 		this->DefaultBackgroundColor := Background
@@ -40,14 +55,9 @@ struct Terminal {
 		this->ForegroundColor := Foreground
 		this->BackgroundColor := Background
 		
-		this->X := 0
-		this->Y := 0
-		this->Width  := NewScreen->Canvas->Width  / FONT_WIDTH
-		this->Height := NewScreen->Canvas->Height / FONT_HEIGHT
-		this->MaxColumn := this->Width  - 1
-		this->MaxRow    := this->Height - 1
-		
 		this->EscapeIndex := 0
+		
+		this->CalculateBounds()
 	}
 	
 	define void SetColors(i32 ForegroundColor, i32 BackgroundColor) {
@@ -56,12 +66,12 @@ struct Terminal {
 	}
 	
 	define void ConvertToScreenCoords(i32 XIn, i32 YIn, i32* XOut, i32* YOut) {
-		*XOut := XIn * FONT_WIDTH
-		*YOut := YIn * FONT_HEIGHT
+		*XOut := XIn * this->Font->Width
+		*YOut := YIn * this->Font->Height
 	}
 	
 	define void ScrollUp(i32 LineCount) {
-		i32 ScrollSize := FONT_HEIGHT * LineCount
+		i32 ScrollSize := this->Font->Height * LineCount
 		
 		this->Y -= LineCount
 		
@@ -338,7 +348,8 @@ struct Terminal {
 	}
 	
 	define void RawPrintCharacter(i32* ScreenX, i32* ScreenY, i8 Character) {		
-		this->Screen->DrawCharacter(*ScreenX, *ScreenY, Character, this->ForegroundColor, this->BackgroundColor)
+		;this->Screen->DrawCharacter(*ScreenX, *ScreenY, Character, this->ForegroundColor, this->BackgroundColor)
+		this->Font->Draw(this->Screen->Canvas, this->ForegroundColor, this->BackgroundColor, *ScreenX, *ScreenY, Character)
 		
 		this->X += 1
 		
