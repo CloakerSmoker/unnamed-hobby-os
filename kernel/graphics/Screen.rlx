@@ -24,50 +24,6 @@ struct Screen {
 			}
 		}
 	}
-	define void DrawCharacter(i32 X, i32 Y, i8 Character, i32 ForegroundColor, i32 BackgroundColor) {
-		;BochsPrint("Print %x\n", Character)
-		
-		if (Character = ' ') {
-			this->DrawRectangle(X, Y, 8, 12, BackgroundColor)
-			return
-		}
-		
-		Glyph* CharacterGlyph := Font + (Character - FIRST_CHARACTER) * #Glyph
-		
-		for (i32 RowIndex := 0, RowIndex < 12, RowIndex += 1) {
-			i8 RowData := CharacterGlyph~>Rows[RowIndex]
-			
-			i8 ColumnIndex := 0
-			
-			for (i8 BitIndex := 7, BitIndex >= 0, BitIndex -= 1) {
-				i8 Mask := (1 << BitIndex) As i8
-				
-				if (RowData & Mask) {
-					this->Canvas->SetPixelColor(X + ColumnIndex, Y + RowIndex, ForegroundColor)
-				}
-				else {
-					this->Canvas->SetPixelColor(X + ColumnIndex, Y + RowIndex, BackgroundColor)
-				}
-				
-				ColumnIndex += 1
-			}
-		}
-	}
-	define void DrawText(i32 X, i32 Y, i8* Text, i32 TextLength, i32 ForegroundColor, i32 BackgroundColor) {
-		for (i32 Index := 0, Index < TextLength, Index += 1) {
-			if (X + 8 >= this->Canvas->Width) {
-				X := 0
-				Y += 12
-			}
-			
-			this->DrawCharacter(X, Y, Text[Index], ForegroundColor, BackgroundColor)
-			
-			X += 8
-		}
-	}
-	define void DrawText(i32 X, i32 Y, i8* Text, i32 ForegroundColor, i32 BackgroundColor) {
-		this->DrawText(X, Y, Text, StringLength(Text), ForegroundColor, BackgroundColor)
-	}
 	
 	define void Clear(i32 Color) {
 		this->DrawRectangle(0, 0, this->Canvas->Width, this->Canvas->Height, Color)

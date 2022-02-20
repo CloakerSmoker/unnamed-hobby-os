@@ -1,5 +1,6 @@
 
 #Require "./src/kernel/graphics/Screen.rlx"
+#Require "./src/kernel/graphics/Font.rlx"
 
 i32 ASCII_TAB  := 0x9
 i32 ASCII_ESC  := 0x1B
@@ -21,7 +22,7 @@ struct Terminal {
 	i8[20] EscapeBuffer
 	i32 EscapeIndex
 	
-	_Font* Font
+	Font* Font
 	
 	i32 Width
 	i32 Height
@@ -45,7 +46,7 @@ struct Terminal {
 		this->Clear()
 	}
 	
-	define void Adopt(Screen* NewScreen, _Font* NewFont, i32 Foreground, i32 Background) {
+	define void Adopt(Screen* NewScreen, Font* NewFont, i32 Foreground, i32 Background) {
 		this->Screen := NewScreen
 		this->Font := NewFont
 		
@@ -103,7 +104,14 @@ struct Terminal {
 			Color := this->ForegroundColor
 		}
 		
-		this->Screen->DrawRectangle(ScreenX, ScreenY + 10, 8, 2, Color)
+		;this->Font->Draw(this->Screen->Canvas, Color, this->BackgroundColor, ScreenX, ScreenY, '_')
+		
+		i32 Height := 1
+		i32 Right  := 0
+		i32 Width  := this->Font->Width - 0
+		i32 Down   := this->Font->Height - 1
+		
+		this->Screen->DrawRectangle(ScreenX + Right, ScreenY + Down, Width, Height, Color)
 		
 		this->CursorShown := Enable
 	}
@@ -382,7 +390,7 @@ struct Terminal {
 					this->X -= 1
 					
 					this->ConvertToScreenCoords(this->X, this->Y, &ScreenX, &ScreenY)
-					this->Screen->DrawCharacter(ScreenX, ScreenY, ' ', this->ForegroundColor, this->BackgroundColor)
+					this->Font->Draw(this->Screen->Canvas, this->ForegroundColor, this->BackgroundColor, ScreenX, ScreenY, ' ')
 				}
 			}
 			else if (Next = ASCII_ESC) {
@@ -411,7 +419,7 @@ struct Terminal {
 	}
 	
 	define void Print(i8* Text, i32 TextLength) {
-		if !(this->IgnoreCursorTicks) {
+		if (this->CursorShown) {
 			this->HideCursor()
 		}
 		
@@ -446,6 +454,8 @@ struct Terminal {
 		}
 		
 		this->IgnoreCursorTicks := 1
+		
+		this->ShowCursor()
 	}
 	
 	define void Print(i8* Text) {

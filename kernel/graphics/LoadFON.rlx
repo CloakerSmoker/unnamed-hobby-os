@@ -1,83 +1,7 @@
 #Require "./src/utility/NE.rlx"
 #Require "./src/utility/FNT.rlx"
-#Require "./src/utility/EFICRC.rlx"
 
-struct _Glyph {
-	i32 RenderForegroundColor
-	i32 RenderBackgroundColor
-	i8* Render
-}
-
-struct _Font {
-	i8* FaceName
-	
-	i32 Width
-	i32 Height
-	
-	i32 FirstCharacter
-	i32 LastCharacter
-	
-	i32 PixelsPerGlyph
-	i32 BytesPerGlyph
-	
-	PixelBuffer RawGlyphBuffer
-	PixelBuffer* GlyphBuffer
-	_Glyph* Glyphs
-	
-	define void Initialize(PixelFormat* Format, i32 Width, i32 Height) {
-		this->Width := Width
-		this->Height := Height
-		
-		this->GlyphBuffer := this~>RawGlyphBuffer
-		
-		this->GlyphBuffer->Initialize(null, Format, Width, Height)
-	}
-	
-	define void ReplaceRenderColor(i32 Old, i32 New) {
-		for (i32 Row := 0, Row < this->Height, Row++) {
-			for (i32 Column := 0, Column < this->Width, Column++) {
-				if (this->GlyphBuffer->GetPixelColor(Column, Row) = Old) {
-					this->GlyphBuffer->SetPixelColor(Column, Row, New)
-				}
-			}
-		}
-	}
-	
-	define void Draw(PixelBuffer* Buffer, i32 Foreground, i32 Background, i32 X, i32 Y, i8 Character) {
-		if (Foreground = Background) {
-			Character := 0
-		}
-		
-		_Glyph* CharacterGlyph := this->Glyphs[Character]
-		
-		this->GlyphBuffer->Buffer := CharacterGlyph->Render
-		
-		i8 ForegroundMatches := Foreground = CharacterGlyph->RenderForegroundColor
-		i8 BackgroundMatches := Background = CharacterGlyph->RenderBackgroundColor
-		
-		if !(ForegroundMatches && BackgroundMatches) {
-			for (i32 Row := 0, Row < this->Height, Row++) {
-				for (i32 Column := 0, Column < this->Width, Column++) {
-					i32 Old := this->GlyphBuffer->GetPixelColor(Column, Row)
-					
-					if (Old = CharacterGlyph->RenderForegroundColor) {
-						this->GlyphBuffer->SetPixelColor(Column, Row, Foreground)
-					}
-					else if (Old = CharacterGlyph->RenderBackgroundColor) {
-						this->GlyphBuffer->SetPixelColor(Column, Row, Background)
-					}
-				}
-			}
-			
-			CharacterGlyph->RenderForegroundColor := Foreground
-			CharacterGlyph->RenderBackgroundColor := Background
-		}
-		
-		Buffer->BlockTransfer(X, Y, this->Width, this->Height, this->GlyphBuffer, 0, 0)
-	}
-}
-
-define _Font* LoadFON(_Font* Result, void* Data, i32 Size) {
+define Font* LoadFON(Font* Result, void* Data, i32 Size) {
 	NEFile RawNE
 	SetMemory(&RawNE, #NEFile, 0)
 	NEFile* NE := &RawNE
@@ -101,11 +25,11 @@ define _Font* LoadFON(_Font* Result, void* Data, i32 Size) {
 	i32 BytesForRenders := BytesPerRender * 256
 	i32 PagesForRenders := SizeToPageCount(BytesForRenders)
 	
-	_Glyph* Glyphs := KernelPageAllocator->AllocateVirtual(1)
+	Glyph* Glyphs := KernelPageAllocator->AllocateVirtual(1)
 	void* Renders := KernelPageAllocator->AllocateVirtual(PagesForRenders)
 	
 	for (i32 Index := 0, Index < 256, Index++) {
-		_Glyph* Next := Glyphs[Index]
+		Glyph* Next := Glyphs[Index]
 		
 		Next->RenderBackgroundColor := 0x00_00_00
 		Next->RenderForegroundColor := 0xFF_FF_FF
@@ -153,15 +77,13 @@ define _Font* LoadFON(_Font* Result, void* Data, i32 Size) {
 	return Result
 }
 
-define _Font* LoadFON(void* Data, i32 Size) {
-	return LoadFON(Alloc(#_Font), Data, Size)
+define Font* LoadFON(void* Data, i32 Size) {
+	return LoadFON(Alloc(#Font), Data, Size)
 }
 
-void* BootFontFON := i8[#File "./src/misc/fonts/Fanta.fon"]
-
-_Font RawBootFont
-_Font* BootFont := &RawBootFont
+Font RawBootFont
+Font* BootFont := &RawBootFont
 
 define void LoadBootFont() {
-	LoadFON(BootFont, BootFontFON, 0)
+	LoadFON(BootFont, BOOT_FONT_FON, 0)
 }
