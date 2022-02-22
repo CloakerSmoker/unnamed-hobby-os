@@ -1,0 +1,156 @@
+
+i32 LINUX_SIGNAL_COUNT := 32
+
+i32 LINUX_SIGNAL_NUMBER_HUP    := 1
+i32 LINUX_SIGNAL_NUMBER_INT    := 2
+i32 LINUX_SIGNAL_NUMBER_QUIT   := 3
+i32 LINUX_SIGNAL_NUMBER_ILL    := 4
+i32 LINUX_SIGNAL_NUMBER_TRAP   := 5
+i32 LINUX_SIGNAL_NUMBER_ABRT   := 6
+i32 LINUX_SIGNAL_NUMBER_IOT    := 6
+i32 LINUX_SIGNAL_NUMBER_BUS    := 7
+i32 LINUX_SIGNAL_NUMBER_FPE    := 8
+i32 LINUX_SIGNAL_NUMBER_KILL   := 9
+i32 LINUX_SIGNAL_NUMBER_USR1   := 10
+i32 LINUX_SIGNAL_NUMBER_SEGV   := 11
+i32 LINUX_SIGNAL_NUMBER_USR2   := 12
+i32 LINUX_SIGNAL_NUMBER_PIPE   := 13
+i32 LINUX_SIGNAL_NUMBER_ALRM   := 14
+i32 LINUX_SIGNAL_NUMBER_TERM   := 15
+i32 LINUX_SIGNAL_NUMBER_STKFLT := 16
+i32 LINUX_SIGNAL_NUMBER_CHLD   := 17
+i32 LINUX_SIGNAL_NUMBER_CONT   := 18
+i32 LINUX_SIGNAL_NUMBER_STOP   := 19
+i32 LINUX_SIGNAL_NUMBER_TSTP   := 20
+i32 LINUX_SIGNAL_NUMBER_TTIN   := 21
+i32 LINUX_SIGNAL_NUMBER_TTOU   := 22
+i32 LINUX_SIGNAL_NUMBER_URG    := 23
+i32 LINUX_SIGNAL_NUMBER_XCPU   := 24
+i32 LINUX_SIGNAL_NUMBER_XFSZ   := 25
+i32 LINUX_SIGNAL_NUMBER_VTALRM := 26
+i32 LINUX_SIGNAL_NUMBER_PROF   := 27
+i32 LINUX_SIGNAL_NUMBER_WINCH  := 28
+i32 LINUX_SIGNAL_NUMBER_IO     := 29
+i32 LINUX_SIGNAL_NUMBER_POLL   := LINUX_SIGNAL_NUMBER_IO
+i32 LINUX_SIGNAL_NUMBER_PWR    := 30
+i32 LINUX_SIGNAL_NUMBER_SYS    := 31
+i32 LINUX_SIGNAL_NUMBER_UNUSED := 31
+
+i64 LINUX_SIGNAL_HANDLER_DEFAULT := 0
+i64 LINUX_SIGNAL_HANDLER_IGNORE  := 1
+
+i32 LINUX_SIGNAL_ATTRIBUTE_NOCLDSTOP := 0x00000001
+i32 LINUX_SIGNAL_ATTRIBUTE_NOCLDWAIT := 0x00000002
+i32 LINUX_SIGNAL_ATTRIBUTE_SIGINFO   := 0x00000004
+i32 LINUX_SIGNAL_ATTRIBUTE_ONSTACK   := 0x08000000
+i32 LINUX_SIGNAL_ATTRIBUTE_RESTART   := 0x10000000
+i32 LINUX_SIGNAL_ATTRIBUTE_NODEFER   := 0x40000000
+i32 LINUX_SIGNAL_ATTRIBUTE_RESETHAND := 0x80000000 As i32
+
+i32 LINUX_SIGNAL_ATTRIBUTE_NOMASK  := LINUX_SIGNAL_ATTRIBUTE_NODEFER
+i32 LINUX_SIGNAL_ATTRIBUTE_ONESHOT := LINUX_SIGNAL_ATTRIBUTE_RESETHAND
+
+struct LinuxSignalAction {
+	void* Handler
+	i64 Flags
+	void* Restorer
+	i64 Mask
+}
+
+struct LinuxSignalList {
+	LinuxSignalAction[31] Actions
+	
+	i32[31] PendingErrorNumbers
+	i32[31] PendingSignalCodes
+}
+
+struct LinuxSignalInfo {
+	i32 SignalNumber
+	i32 ErrorNumber
+	i32 SignalCode
+	
+	void* Address
+	i32 TrapNumber
+}
+
+struct LinuxSignalRegisters {
+	i64 R8
+	i64 R9
+	i64 R10
+	i64 R11
+	i64 R12
+	i64 R13
+	i64 R14
+	i64 R15
+	
+	i64 RDI
+	i64 RSI
+	i64 RBP
+	i64 RBX
+	i64 RDX
+	i64 RAX
+	i64 RCX
+	i64* RSP
+	
+	i64* RIP
+	i64 RFlags
+	
+	define void PopulateFromContext(AMD64Context* Context) {
+		this->RAX    := Context->RAX
+		this->RBX    := Context->RBX
+		this->RCX    := Context->RCX
+		this->RDX    := Context->RDX
+		this->RDI    := Context->RDI
+		this->RSI    := Context->RSI
+		this->RSP    := Context->RSP
+		this->RBP    := Context->RBP
+		
+		this->R8     := Context->R8
+		this->R9     := Context->R9
+		this->R10    := Context->R10
+		this->R11    := Context->R11
+		this->R12    := Context->R12
+		this->R13    := Context->R13
+		this->R14    := Context->R14
+		this->R15    := Context->R15
+		
+		this->RIP    := Context->RIP
+		this->RFlags := Context->Flags
+	}
+	define void PopulateContext(AMD64Context* Context) {
+		Context->RAX    := this->RAX
+		Context->RBX    := this->RBX
+		Context->RCX    := this->RCX
+		Context->RDX    := this->RDX
+		Context->RDI    := this->RDI
+		Context->RSI    := this->RSI
+		Context->RSP    := this->RSP
+		Context->RBP    := this->RBP
+		
+		Context->R8     := this->R8
+		Context->R9     := this->R9
+		Context->R10    := this->R10
+		Context->R11    := this->R11
+		Context->R12    := this->R12
+		Context->R13    := this->R13
+		Context->R14    := this->R14
+		Context->R15    := this->R15
+		
+		Context->RIP    := this->RIP
+		Context->Flags  := this->RFlags
+	}
+}
+
+struct LinuxSignalStack {
+	void* Pointer
+	i32 Flags
+	i64 Size
+}
+
+struct LinuxSignalUserContext {
+	i64 Flags
+	LinuxSignalUserContext* Link
+	LinuxSignalStack Stack
+	LinuxSignalRegisters Registers
+	i64 Mask
+}

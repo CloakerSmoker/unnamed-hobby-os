@@ -9,7 +9,7 @@ i32 SCREEN_HEIGHT := 768
 i32 COLOR_DEPTH := 32
 i32 BYTES_PER_PIXEL := 4
 
-void* BOOT_FONT_FON := i8[#File "./src/misc/fonts/Fanta.fon"]
+void* BOOT_FONT_FON := i8[#File "./src/misc/fonts/OlivettiThin_8x14.fon"]
 
 i8 USE_INTERRUPT_STUBS := true
 i8 USE_PAGE_FAULT_HANDLER := true

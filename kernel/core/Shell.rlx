@@ -365,7 +365,7 @@ define void ShellOnKey(i16 ScanCode, i8 ASCIICode) {
 				; Somehow, this works in kernel mode even when I check CurrentProcess
 				;  Just don't press in kernel mode.
 				
-				SystemCallExit(-1)
+				CurrentProcess->FireSignal(LINUX_SIGNAL_NUMBER_INT, 0, 0)
 			}
 			else if (ASCIICode = 'd') {
 				ASCIICode := 0xFF As i8

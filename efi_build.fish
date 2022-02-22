@@ -38,12 +38,15 @@ quit
 echo "
 format 32 m
 import ./build/kernel.elf kernel.elf
-import ./build/TestProgram.elf test.elf
-import ./build/Write.elf write
 import fanta.fon fanta.fon
 import TestFile.txt test.txt
+mkdir bin
+cd bin
+import ./build/TestProgram.elf test.elf
+import ./build/Write.elf write
 import busybox_CLEAR linux_clear
 import busybox_CAT linux_cat
+import busybox_ED linux_ed
 quit
 " | ./Ext2Tool.elf 'File(EFIBoot.img,512)>GPT(1)'
 

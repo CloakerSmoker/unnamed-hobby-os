@@ -1,5 +1,6 @@
 #Require "./src/utility/ELF.rlx"
 #Require "./src/kernel/core/MemoryMapping.rlx"
+#Require "./src/linux/Signals.rlx"
 
 struct Process {
 	i64[10] FileDescriptorsToHandles
@@ -12,7 +13,10 @@ struct Process {
 	void* BreakStart
 	i64 BreakPages
 	
-	Task Task
+	union {
+		AMD64Context Context
+		Task Task
+	}
 	
 	i32 ExitCode
 	
@@ -41,8 +45,17 @@ struct Process {
 	}
 	
 	define void Run() {
-		this~>Task->NeedsUserMode := true
 		this~>Task->Resume()
+	}
+	
+	define void Start() {
+		this~>Task->NeedsUserMode := true
+		
+		if (SaveContext(&KernelContext)) {
+			return
+		}
+		
+		this->Run()
 	}
 	
 	define void* GetBreak() {
@@ -60,6 +73,131 @@ struct Process {
 		this->BreakPages += AdditionalBreakPages
 		
 		return this->GetBreak()
+	}
+	
+	define void Exit(i32 Code) {
+		this->ExitCode := Code
+		RestoreContext(&KernelContext)
+	}
+	
+	LinuxSignalAction[31] Actions
+	
+	i32[31] PendingErrorNumbers
+	i32[31] PendingSignalCodes
+	
+	i64 SignalMask
+	i64 PendingSignals
+	
+	i32 CurrentSignal
+	LinuxSignalAction* CurrentSignalAction
+	LinuxSignalInfo* CurrentSignalInfo
+	LinuxSignalUserContext* CurrentSignalContext
+	
+	define i64 SignalMask(i32 Number) {
+		return (1 As i64) << ((Number & 0xFF) As i8)
+	}
+	
+	define void DoDefaultSignalAction(i32 Number, i32 ErrorNumber, i32 SignalCode) {
+		this->Exit(Number)
+	}
+	
+	define void FireSignal(i32 Number, i32 ErrorNumber, i32 SignalCode) {
+		i64 Mask := this->SignalMask(Number)
+		
+		if (this->SignalMask & Mask) {
+			return
+		}
+		else if (this->PendingSignals & Mask) {
+			return
+		}
+		
+		i64 OldMask := this->SignalMask
+		
+		LinuxSignalAction* Action := this->Actions[Number]
+		
+		if (Action->Handler = LINUX_SIGNAL_HANDLER_DEFAULT) {
+			this->DoDefaultSignalAction(Number, ErrorNumber, SignalCode)
+			
+			return
+		}
+		else if (Action->Handler = LINUX_SIGNAL_HANDLER_IGNORE) {
+			return
+		}
+		
+		this->SignalMask |= Mask
+		this->SignalMask |= Action->Mask
+		
+		AMD64Context* Context := this~>Context
+		
+		void* OriginalRSP := Context->RSP
+		
+		LinuxSignalInfo* Info := Context->StackAllocate(#LinuxSignalInfo)
+		
+		Info->SignalNumber := Number
+		Info->ErrorNumber := ErrorNumber
+		Info->SignalCode := SignalCode
+		
+		LinuxSignalUserContext* UserContext := Context->StackAllocate(#LinuxSignalUserContext)
+		
+		LinuxSignalRegisters* Registers := UserContext~>Registers
+		LinuxSignalStack* Stack := UserContext~>Stack
+		
+		Registers->PopulateFromContext(Context)
+		Registers->RSP := OriginalRSP
+		
+		UserContext->Mask := OldMask
+		
+		this->CurrentSignal := Number
+		this->CurrentSignalAction := Action
+		this->CurrentSignalInfo := Info
+		this->CurrentSignalContext := UserContext
+		
+		Context->RDI := Number
+		Context->RSI := Info As i64
+		Context->RDX := UserContext As i64
+		Context->RIP := Action->Handler
+		
+		this->Run()
+	}
+	
+	define void FireSignals() {
+		; Doesn't return if a signal is fired
+		
+		for (i32 Index := 0, Index < 31, Index++) {
+			i64 Mask := this->SignalMask(Index)
+			
+			if (this->PendingSignals & Mask) {
+				i32 ErrorNumber := this->PendingErrorNumbers[Index]
+				i32 SignalCode := this->PendingSignalCodes[Index]
+				
+				this->FireSignal(Index, ErrorNumber, SignalCode)
+			}
+		}
+	}
+	
+	define void Resume() {
+		this->FireSignals() ; Doesn't return if a signal is fired
+		
+		this->Run() ; Doesn't return at all
+	}
+	
+	define void QueueSignal(i32 Number, i32 Error, i32 Code) {
+		; TODO: If urgent, this->FireSignal now
+		
+		this->PendingSignals |= this->SignalMask(Number)
+		
+		this->PendingErrorNumbers[Number] := Error
+		this->PendingSignalCodes[Number] := Code
+	}
+	
+	define void SignalReturn() {
+		; Called from syscall handler, shouldn't return
+		
+		this->CurrentSignalContext~>Registers->PopulateContext(this~>Context)
+		this->SignalMask := this->CurrentSignalContext->Mask
+		this->CurrentSignal := 0
+		
+		this->Resume()
 	}
 }
 

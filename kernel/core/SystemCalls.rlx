@@ -1,6 +1,8 @@
 
 #Require "./src/utility/x64.rlx"
 #Require "./src/kernel/core/Descriptors.rlx"
+#Require "./src/kernel/core/UserMode.rlx"
+#Require "./src/linux/SystemCalls.rlx"
 
 void*[20] SystemCalls
 
@@ -22,8 +24,6 @@ i32 SYSCALL_ARCH_PRCTL := 158
 i32 SYSCALL_SET_TID_PTR := 218
 i32 SYSCALL_EXIT_GROUP := 231
 
-declare void ResumeUserMode(AMD64Context*)
-
 declare void SystemCallSendFile(i64, i64, i64*, i64)
 declare void SystemCallArchPrctl(i64, void*)
 declare i64 SystemCallDeviceControl(i64, i32, void*)
@@ -41,7 +41,9 @@ define void HandleSystemCall(AMD64Context* Context) {
 	
 	;Print("Syscall %x\n", Number)
 	
-	Info("%x(%x, %x, %x, %x, %x, %x)\n", Number, Context->RDI, Context->RSI, Context->RDX, Context->R10, Context->R8, Context->R9)
+	i8* Name := GetLinuxSysCallName(Number)
+	
+	Info("%s(%x, %x, %x, %x, %x, %x)\n", Name, Context->RDI, Context->RSI, Context->RDX, Context->R10, Context->R8, Context->R9)
 	
 	if (Number = SYSCALL_EXIT_GROUP) {
 		Number := SYSCALL_EXIT
@@ -132,8 +134,7 @@ define void RegisterSystemCall(i32 Index, void* Function) {
 }
 
 define void SystemCallExit(i64 Code) {
-	CurrentProcess->ExitCode := Code As i32	
-	RestoreContext(&KernelContext)
+	CurrentProcess->Exit(Code As i32)
 }
 
 declare void ShellGatherInput(i8*, i32)
@@ -423,13 +424,6 @@ define void* GetKernelSystemCallStack() {
 	return Kernel->SystemCallStack
 }
 
-define void RestoreUserModeContext(AMD64Context* Context) {
-	;Print("Context @ %x\n", Context)
-	;Print("New RIP: %x\n", Context->RIP)
-	
-	RestoreFullContext(Context)
-}
-
 define void OnSystemCall() asm {
 	push, rax          ; Clobbered by GetCurrentTaskContext
 	push, rdi          ; Clobbered by SaveContext(GetCurrentTaskContext())
@@ -483,29 +477,3 @@ define void UserModeReturnStub() asm {
 	syscall
 }
 
-define void ResumeUserMode(AMD64Context* Context) {
-	;Print("[ResumeUserMode %x]", Context->RIP)
-	
-	void* TerribleHack := &RestoreUserModeContext
-	
-	asm (rax := Context->RSP, rdi := Context, rcx := TerribleHack) {
-		mov, r11, 0x200
-		mov, rsp, rax
-		xchg, bx, bx
-		sysret
-	}
-}
-
-define void EnterUserMode(AMD64Context* Context) {
-	;Print("EnterUserMode(%x, %x)\n", Context->RIP, Context->RSP)
-	
-	if (SaveContext(&KernelContext)) {
-		return
-	}
-	
-	;Context->RSP -= 8
-	
-	;Context->RSP[0] := &UserModeReturnStub As i64
-	
-	ResumeUserMode(Context)
-}

@@ -113,7 +113,7 @@ define i32 Execute(void* Buffer, i32 ArgumentCount, i8** Arguments, i32 Environm
 	Context->RSP := RSP
 	Context->RawRIP := ELFData->EntryPoint
 	
-	CurrentProcess->Run()
+	CurrentProcess->Start()
 	
 	i32 ExitCode := CurrentProcess->ExitCode
 	

@@ -1,12 +1,10 @@
-i8 InUserMode := false
+#Require "./src/kernel/core/UserMode.rlx"
 
 Task* CurrentTask := null
 
 define Task* GetCurrentTaskContext() {
 	return CurrentTask ; For inline assembly to call
 }
-
-declare void EnterUserMode(AMD64Context*)
 
 i8 TASK_CAN_RUN := 0
 i8 TASK_BLOCKED := 1
@@ -32,10 +30,12 @@ struct Task {
 	}
 	
 	define void Resume() {
+		; Doesn't return
+		
 		CurrentTask := this
 
 		if (this->NeedsUserMode) {
-			EnterUserMode(this~>Context)
+			ResumeUserMode(this~>Context)
 		}
 		else {
 			RestoreContext(this~>Context)

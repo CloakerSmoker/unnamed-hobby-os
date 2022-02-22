@@ -151,6 +151,7 @@ struct AMD64Context {
 	
 	union {
 		void* RSP
+		i64* Stack
 		i64 RawRSP
 	}
 	
@@ -200,6 +201,26 @@ struct AMD64Context {
 		FastSetMemory8(this, 0, #AMD64Context)
 		
 		return this
+	}
+	
+	define void Push(i64 Value) {
+		this->RSP -= 8
+		*this->Stack := Value
+	}
+	define void Pop(i64* Destination) {
+		*Destination := *this->Stack
+		this->RSP += 8
+	}
+	
+	define void* StackAllocate(i32 Size) {
+		void* Result := this->RSP
+		
+		this->RSP -= Size
+		
+		return Result
+	}
+	define void StackFree(i32 Size) {
+		this->RSP += Size
 	}
 }
 
