@@ -322,6 +322,21 @@ define void OnCommand(i8* CommandLine) {
 	Prompt()
 }
 
+#Require "./src/linux/Termios.rlx"
+
+TermiosConfig DefaultTermios {
+	InputFlags: LINUX_TERMIOS_INPUT_FLAG_IGNBRK | LINUX_TERMIOS_INPUT_FLAG_IGNPAR,
+	OutputFlags: LINUX_TERMIOS_OUTPUT_FLAG_OPOST | LINUX_TERMIOS_OUTPUT_FLAG_ONLCR,
+	ControlFlags: LINUX_TERMIOS_CONTROL_FLAG_CS8 | LINUX_TERMIOS_CONTROL_FLAG_B9600 | LINUX_TERMIOS_CONTROL_FLAG_CLOCAL,
+	LocalFlags: LINUX_TERMIOS_LOCAL_FLAG_ISIG | LINUX_TERMIOS_LOCAL_FLAG_ICANON | LINUX_TERMIOS_LOCAL_FLAG_ECHO,
+	InterruptCharacter: 0xFE As i8,
+	EOFCharacter: 0xFF As i8,
+	Timeout: 0,
+	MinimumReadSize: 1
+}
+
+TermiosConfig* ShellConfig := &DefaultTermios
+
 i32 SHELL_NON_BLOCKING   := 0
 i32 SHELL_BLOCK_FOR_ONE  := 1
 i32 SHELL_BLOCK_FOR_LINE := 2
@@ -329,6 +344,13 @@ i32 SHELL_BLOCK_FOR_LINE := 2
 i32 ShellInputMode := SHELL_BLOCK_FOR_LINE
 
 i8 ShellShouldEcho := true
+
+define void ShellSetMode(TermiosConfig* Config) {
+	MoveMemory(ShellConfig, Config, #TermiosConfig)
+}
+define void ShellGetMode(TermiosConfig* Out) {
+	MoveMemory(Out, ShellConfig, #TermiosConfig)
+}
 
 i8[0x100] RawKeyboardBuffer
 MemoryFIFO _KeyboardBuffer {
@@ -344,6 +366,9 @@ MemoryFIFO _InputBuffer {
 }
 MemoryFIFO* InputBuffer := &_InputBuffer
 
+i8[100] ShellInputLine
+i32 ShellInputIndex := 0
+
 i8 ControlHeld := false
 
 define void ShellOnKey(i16 ScanCode, i8 ASCIICode) {
@@ -354,7 +379,15 @@ define void ShellOnKey(i16 ScanCode, i8 ASCIICode) {
 		ControlHeld := false
 	}
 	else if (ScanCode = SCANCODE_ENTER_DOWN) {
-		KeyboardBuffer->Write("\n", 2)
+		i8 EOL := ShellConfig->ControlCharacters[LINUX_TERMIOS_CHARACTER_VEOL]
+		
+		KeyboardBuffer->Write(&EOL, 1)
+		
+		i8 EOL2 := ShellConfig->ControlCharacters[LINUX_TERMIOS_CHARACTER_VEOL2]
+		
+		if (EOL2) {
+			KeyboardBuffer->Write(&EOL2, 1)
+		}
 	}
 	else if (ScanCode = SCANCODE_BACKSPACE_DOWN) {
 		KeyboardBuffer->Write(&ASCII_BACK, 1)
@@ -365,10 +398,25 @@ define void ShellOnKey(i16 ScanCode, i8 ASCIICode) {
 				; Somehow, this works in kernel mode even when I check CurrentProcess
 				;  Just don't press in kernel mode.
 				
-				CurrentProcess->FireSignal(LINUX_SIGNAL_NUMBER_INT, 0, 0)
+				if (ShellConfig->LocalFlags & LINUX_TERMIOS_LOCAL_FLAG_ISIG) {
+					CurrentProcess->FireSignal(LINUX_SIGNAL_NUMBER_INT, 0, 0)
+				}
+				else {
+					KeyboardBuffer->Write(ShellConfig~>InterruptCharacter, 1)
+				}
+				
+				return
+			}
+			else if (ASCIICode = 'q') {
+				ShellInputIndex := 0
+				InputBuffer->Clear()
+				
+				return
 			}
 			else if (ASCIICode = 'd') {
-				ASCIICode := 0xFF As i8
+				KeyboardBuffer->Write(ShellConfig~>EOFCharacter, 1)
+				
+				return
 			}
 			else {
 				i8 Escape := 0x1B
@@ -382,14 +430,29 @@ define void ShellOnKey(i16 ScanCode, i8 ASCIICode) {
 	}
 }
 
-i8[100] ShellInputLine
-i32 ShellInputIndex := 0
+define void ShellPleaseSendForMe(i8* Data, i32 Size) {
+	Info("%s", Data)
+	InputBuffer->Write(Data, Size)
+}
 
 define void ShellPumpInput() {
 	i32 Size := KeyboardBuffer->Available()
 	
+	i8 BlockForLine := (ShellConfig->LocalFlags & LINUX_TERMIOS_LOCAL_FLAG_ICANON) != 0
+	i8 ShouldEcho := (ShellConfig->LocalFlags & LINUX_TERMIOS_LOCAL_FLAG_ECHO) != 0
+	
 	if (Size) {
 		KeyboardBuffer->Read(&ShellInputLine[ShellInputIndex], Size)
+		
+		if (RunningProgram && !BlockForLine) {
+			if (ShouldEcho) {
+				Print("%s", &ShellInputLine[ShellInputIndex])
+			}
+			
+			InputBuffer->Write(&ShellInputLine[ShellInputIndex], Size)
+			
+			return
+		}
 		
 		i16 Tail := *(&ShellInputLine[ShellInputIndex + Size - 2] As i16*)
 		i16 LineEnding := 0x0A0D
@@ -398,11 +461,11 @@ define void ShellPumpInput() {
 		
 		if (ShellInputLine[ShellInputIndex] = ASCII_BACK) {
 			if (ShellInputIndex != 0) {
-				if (ShellShouldEcho) {
+				if (ShouldEcho) {
 					Print("%s", &ShellInputLine[ShellInputIndex])
 				}
 				
-				if (RunningProgram && ShellInputMode != SHELL_BLOCK_FOR_LINE) {
+				if (RunningProgram && !BlockForLine) {
 					InputBuffer->Write(&ShellInputLine[ShellInputIndex], Size)
 				}
 				
@@ -410,11 +473,11 @@ define void ShellPumpInput() {
 			}
 		}
 		else {
-			if (ShellShouldEcho) {
+			if (ShouldEcho) {
 				Print("%s", &ShellInputLine[ShellInputIndex])
 			}
 			
-			if (RunningProgram && ShellInputMode != SHELL_BLOCK_FOR_LINE) {
+			if (RunningProgram && !BlockForLine) {
 				InputBuffer->Write(&ShellInputLine[ShellInputIndex], Size)
 			}
 			
@@ -426,7 +489,7 @@ define void ShellPumpInput() {
 		if (Tail = LineEnding) {
 			ShellInputLine[ShellInputIndex - 2] := 0
 			
-			if (RunningProgram && ShellInputMode = SHELL_BLOCK_FOR_LINE) {
+			if (RunningProgram && BlockForLine) {
 				ShellInputLine[ShellInputIndex - 2] := 0x0A
 				ShellInputLine[ShellInputIndex - 1] := 0
 				
@@ -446,6 +509,8 @@ define i32 ShellPollForInput(i32 Timeout) {
 	i64 End := GetUptimeMS() + Timeout
 	
 	while (GetUptimeMS() <= End) {
+		ShellPumpInput()
+		
 		if (InputBuffer->Available()) {
 			return InputBuffer->Available()
 		}
@@ -457,8 +522,10 @@ define i32 ShellPollForInput(i32 Timeout) {
 define i32 ShellGatherInput(i8* Destination, i32 Size) {
 	;Print("GatherInput(%x, %i)", Destination, Size)
 	
-	if (ShellInputMode != SHELL_NON_BLOCKING) {
-		while (InputBuffer->Available() < 1) {ShellPumpInput()}
+	i8 BlockForLine := (ShellConfig->LocalFlags & LINUX_TERMIOS_LOCAL_FLAG_ICANON) != 0
+	
+	if (BlockForLine) {
+		while (InputBuffer->Available() < ShellConfig->MinimumReadSize) {ShellPumpInput()}
 	}
 	
 	i32 Available := InputBuffer->Available()
@@ -474,6 +541,9 @@ define i32 ShellGatherInput(i8* Destination, i32 Size) {
 
 define void SetupShell() {
 	SetOnKeyCallback(&ShellOnKey)
+	
+	ShellConfig->ControlCharacters[LINUX_TERMIOS_CHARACTER_VEOL ] := 0xD
+	ShellConfig->ControlCharacters[LINUX_TERMIOS_CHARACTER_VEOL2] := 0xA
 }
 
 define void Shell() {

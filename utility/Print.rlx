@@ -92,7 +92,6 @@ struct PrintOutputAdapterPrototype {
 	
 	define void PrintCharacter(i8 Character) asm {
 		mov, rax, {rdi} As i64*
-		mov, rdi, rsi
 		jmp, rax
 	}
 	define void PrintCharacters(i8* Characters, i32 Length) {
@@ -267,7 +266,7 @@ define void DefaultPrintCharacter(PrintOutputAdapterPrototype* this, i8 Characte
 }
 
 PrintOutputAdapterPrototype DefaultPrinter {
-	PrintCharacter: &PrintCharacter
+	PrintCharacter: &DefaultPrintCharacter
 }
 
 PrintOutputAdapterPrototype* Printer := &DefaultPrinter
@@ -303,13 +302,15 @@ define void FormatStringPrintCharacter(PrintOutputAdapterPrototype* this, i8 Cha
 	this->Buffer[this->Index++] := Character
 }
 
-PrintOutputAdapterPrototype FormatStringPrinter {
+PrintOutputAdapterPrototype RawFormatStringPrinter {
 	PrintCharacter: &FormatStringPrintCharacter
 }
+PrintOutputAdapterPrototype* FormatStringPrinter := &RawFormatStringPrinter
 
 define i32 FormatString(i8* String, i32 Length, i8* Format, ... Parameters) {
-	FormatStringPrinter.Index := 0
-	FormatStringPrinter.Length := Length
-	FormatStringPrinter.RawPrint(Format, Parameters)
-	return FormatStringPrinter.Index
+	FormatStringPrinter->Index := 0
+	FormatStringPrinter->Buffer := String
+	FormatStringPrinter->Length := Length
+	FormatStringPrinter->RawPrint(Format, Parameters)
+	return FormatStringPrinter->Index
 }

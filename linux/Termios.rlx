@@ -11,7 +11,20 @@ struct TermiosConfig {
 	i32 ControlFlags
 	i32 LocalFlags
 	i8 LineDiscipline
-	i8[19] ControlCharacters
+	
+	union {
+		i8 InterruptCharacter
+		i8[0] ControlCharacters
+	}
+	
+	i8 QuitCharacter
+	i8 EraseCharacter
+	i8 KillCharacter
+	i8 EOFCharacter
+	i8 Timeout
+	i8 MinimumReadSize
+	
+	i8[12] Other
 }
 
 i32 TERMIOS_GET_CONFIG := 0x5401

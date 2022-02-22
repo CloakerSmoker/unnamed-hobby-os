@@ -34,6 +34,9 @@ declare void* SystemCallProgramBreak(void*)
 declare void* SystemCallMapMemory(void*, i32, i32, i32, i32, i32)
 declare i64 SystemCallUnMapMemory(void*, i32)
 
+declare void SystemCallSetSignalAction(i32, LinuxSignalAction*, LinuxSignalAction*)
+declare void SystemCallSetSignalMask(i32, i64*, i64*)
+
 define void HandleSystemCall(AMD64Context* Context) {
 	SendEOI(0) ; HACK: PIC gets confused into thinking we've handling a very high priority interrupt
 	SendEOI(8) ;  so we need to convince it otherwise in order to get interrupts while handling syscalls
@@ -53,6 +56,16 @@ define void HandleSystemCall(AMD64Context* Context) {
 	try {
 		if (Number = SYSCALL_EXIT) {
 			SystemCallExit(Context->RDI)
+		}
+		else if (Number = LINUX_SYSCALL_RT_SIGACTION) {
+			SystemCallSetSignalAction(Context->EDI, Context->RSI As void*, Context->RDX As void*)
+			
+			ResumeUserMode(Context)
+		}
+		else if (Number = LINUX_SYSCALL_RT_SIGPROCMASK) {
+			SystemCallSetSignalMask(Context->EDI, Context->RSI As i64*, Context->RDX As i64*)
+			
+			ResumeUserMode(Context)
 		}
 		else if (Number = LINUX_SYSCALL_POLL) {
 			Context->RAX := SystemCallPoll(Context->RDI As void*, Context->ESI, Context->EDX) As i64
@@ -149,6 +162,10 @@ declare void ShellPollForInput(i32)
 #Require "./src/linux/Poll.rlx"
 
 define i32 SystemCallPoll(LinuxPollTarget* Targets, i32 TargetCount, i32 Timeout) {
+	if (Timeout < 0) {
+		Timeout := 0x7FFF_FFFF
+	}
+	
 	i32 CountWithReturnEvents := 0
 	
 	for (i32 Index := 0, Index < TargetCount, Index++) {
@@ -164,6 +181,37 @@ define i32 SystemCallPoll(LinuxPollTarget* Targets, i32 TargetCount, i32 Timeout
 	}
 	
 	return CountWithReturnEvents
+}
+
+
+define void SystemCallSetSignalAction(i32 Number, LinuxSignalAction* New, LinuxSignalAction* Old) {
+	if (Old) {
+		MoveMemory(Old, CurrentProcess->Actions[Number], #LinuxSignalAction)
+	}
+	
+	MoveMemory(CurrentProcess->Actions[Number], New, #LinuxSignalAction)
+}
+
+define void SystemCallSetSignalMask(i32 Operation, i64* New, i64* Old) {
+	i64 Mask := CurrentProcess->SignalMask
+	
+	if (Old != null) {
+		*Old := Mask
+	}
+	
+	if (New != null) {
+		if (Operation = LINUX_SIGNAL_MASK_BLOCK) {
+			Mask |= *New
+		}
+		else if (Operation = LINUX_SIGNAL_MASK_UNBLOCK) {
+			Mask &= ~(*New)
+		}
+		else if (Operation = LINUX_SIGNAL_MASK_SET) {
+			Mask := *New
+		}
+	}
+	
+	CurrentProcess->SignalMask := Mask
 }
 
 define i64 SystemCallRead(i64 FileDescriptor, i8* Buffer, i32 Size) {
@@ -226,8 +274,11 @@ define void* SystemCallProgramBreak(void* NewBreak) {
 
 #Require "./src/linux/Termios.rlx"
 
+declare void ShellSetMode(TermiosConfig*)
+declare void ShellGetMode(TermiosConfig*)
+
 define i64 SystemCallDeviceControl(i64 FileDescriptor, i32 Command, void* Argument) {
-	if (FileDescriptor = 1) {
+	if (FileDescriptor = 0 || FileDescriptor = 1) {
 		if (Command = TERMIOS_GET_WINDOW_SIZE) {
 			TermiosWindowSize* Window := Argument
 			
@@ -235,6 +286,16 @@ define i64 SystemCallDeviceControl(i64 FileDescriptor, i32 Command, void* Argume
 			Window->Columns := KernelTerminal->Width As i16
 			
 			return 0
+		}
+		else if (Command = TERMIOS_GET_CONFIG) {
+			TermiosConfig* Config := Argument
+			
+			ShellGetMode(Config)
+		}
+		else if (Command = TERMIOS_SET_CONFIG) {
+			TermiosConfig* Config := Argument
+			
+			ShellSetMode(Config)
 		}
 	}
 	

@@ -147,6 +147,10 @@ struct Process {
 		
 		UserContext->Mask := OldMask
 		
+		if (Action->Flags & LINUX_SIGNAL_ATTRIBUTE_RESTORER) {
+			Context->Push(Action->Restorer As i64)
+		}
+		
 		this->CurrentSignal := Number
 		this->CurrentSignalAction := Action
 		this->CurrentSignalInfo := Info

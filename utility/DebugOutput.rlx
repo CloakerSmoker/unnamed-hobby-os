@@ -5,7 +5,7 @@
 SerialPort RawOutputPort
 SerialPort* OutputPort := &RawOutputPort
 
-define void DebugSerialPrintCharacter(i8 Character) {
+define void DebugSerialPrintCharacter(void* this, i8 Character) {
 	OutputPort->PrintCharacter(Character)
 }
 
