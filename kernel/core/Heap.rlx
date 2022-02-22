@@ -21,6 +21,8 @@ struct HeapBlock {
 			this->Size += Current->Size
 			
 			if (Current->IsEnd) {
+				this->IsEnd := true
+				
 				break
 			}
 			

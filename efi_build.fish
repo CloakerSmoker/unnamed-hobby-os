@@ -38,7 +38,6 @@ quit
 echo "
 format 32 m
 import ./build/kernel.elf kernel.elf
-import fanta.fon fanta.fon
 import TestFile.txt test.txt
 mkdir bin
 cd bin

@@ -24,6 +24,7 @@ i32 SYSCALL_ARCH_PRCTL := 158
 i32 SYSCALL_SET_TID_PTR := 218
 i32 SYSCALL_EXIT_GROUP := 231
 
+declare i32 SystemCallPoll(LinuxPollTarget*, i32, i32)
 declare void SystemCallSendFile(i64, i64, i64*, i64)
 declare void SystemCallArchPrctl(i64, void*)
 declare i64 SystemCallDeviceControl(i64, i32, void*)
@@ -52,6 +53,11 @@ define void HandleSystemCall(AMD64Context* Context) {
 	try {
 		if (Number = SYSCALL_EXIT) {
 			SystemCallExit(Context->RDI)
+		}
+		else if (Number = LINUX_SYSCALL_POLL) {
+			Context->RAX := SystemCallPoll(Context->RDI As void*, Context->ESI, Context->EDX) As i64
+			
+			ResumeUserMode(Context)
 		}
 		else if (Number = SYSCALL_MAP_MEMORY) {
 			Context->RAX := SystemCallMapMemory(Context->RDI As void*, Context->ESI, Context->EDX, Context->R10D, Context->R8D, Context->R9D) As i64
@@ -138,6 +144,27 @@ define void SystemCallExit(i64 Code) {
 }
 
 declare void ShellGatherInput(i8*, i32)
+declare void ShellPollForInput(i32)
+
+#Require "./src/linux/Poll.rlx"
+
+define i32 SystemCallPoll(LinuxPollTarget* Targets, i32 TargetCount, i32 Timeout) {
+	i32 CountWithReturnEvents := 0
+	
+	for (i32 Index := 0, Index < TargetCount, Index++) {
+		LinuxPollTarget* Target := Targets[Index]
+		
+		if (Target->FileDescriptor = 0 && Target->RequestedEvents & LINUX_POLL_EVENT_INPUT_READY) {
+			if (ShellPollForInput(Timeout)) {
+				Target->ReturnedEvents |= LINUX_POLL_EVENT_INPUT_READY
+				
+				CountWithReturnEvents++
+			}
+		}
+	}
+	
+	return CountWithReturnEvents
+}
 
 define i64 SystemCallRead(i64 FileDescriptor, i8* Buffer, i32 Size) {
 	if (FileDescriptor = 0) {
@@ -211,7 +238,7 @@ define i64 SystemCallDeviceControl(i64 FileDescriptor, i32 Command, void* Argume
 		}
 	}
 	
-	return -1
+	return 0
 }
 
 #Require "./src/linux/MultipleIO.rlx"

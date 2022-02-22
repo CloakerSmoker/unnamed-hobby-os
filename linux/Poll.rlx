@@ -1,0 +1,10 @@
+struct LinuxPollTarget {
+	i32 FileDescriptor
+	i16 RequestedEvents
+	i16 ReturnedEvents
+}
+
+i16 LINUX_POLL_EVENT_INPUT_READY := 1
+i16 LINUX_POLL_EVENT_PRIORITY_DATA := 2
+i16 LINUX_POLL_EVENT_OUTPUT_READY := 4
+i16 LINUX_POLL_EVENT_ERROR := 8

@@ -442,6 +442,18 @@ define void ShellPumpInput() {
 	}
 }
 
+define i32 ShellPollForInput(i32 Timeout) {
+	i64 End := GetUptimeMS() + Timeout
+	
+	while (GetUptimeMS() <= End) {
+		if (InputBuffer->Available()) {
+			return InputBuffer->Available()
+		}
+	}
+	
+	return 0
+}
+
 define i32 ShellGatherInput(i8* Destination, i32 Size) {
 	;Print("GatherInput(%x, %i)", Destination, Size)
 	
