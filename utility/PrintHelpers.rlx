@@ -5,7 +5,7 @@ define void DoHexDumpPrint(PrintOutputAdapterPrototype* this, i8* Format, i32* F
 	i32 FullRows := Size / 16
 	i32 RemainderRow := Size % 16
 	
-	this->Print("%x %x\n", FullRows, RemainderRow)
+	;this->Print("%x %x\n", FullRows, RemainderRow)
 	
 	if (RemainderRow) {
 		FullRows += 1

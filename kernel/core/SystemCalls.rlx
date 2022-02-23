@@ -47,7 +47,7 @@ define void HandleSystemCall(AMD64Context* Context) {
 	
 	i8* Name := GetLinuxSysCallName(Number)
 	
-	Info("%s(%x, %x, %x, %x, %x, %x)\n", Name, Context->RDI, Context->RSI, Context->RDX, Context->R10, Context->R8, Context->R9)
+	;Info("%s(%x, %x, %x, %x, %x, %x)\n", Name, Context->RDI, Context->RSI, Context->RDX, Context->R10, Context->R8, Context->R9)
 	
 	if (Number = SYSCALL_EXIT_GROUP) {
 		Number := SYSCALL_EXIT
@@ -231,6 +231,8 @@ define i64 SystemCallRead(i64 FileDescriptor, i8* Buffer, i32 Size) {
 define i64 SystemCallWrite(i64 FileDescriptor, i8* Buffer, i32 Size) {
 	if (FileDescriptor = 1 || FileDescriptor = 2) {
 		PrintCharacters(Buffer, Size)
+		
+		Info("Output:\n%hexdump", Buffer, Size)
 		
 		return Size
 	}

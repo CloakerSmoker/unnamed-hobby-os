@@ -379,9 +379,14 @@ define void ShellOnKey(i16 ScanCode, i8 ASCIICode) {
 		ControlHeld := false
 	}
 	else if (ScanCode = SCANCODE_ENTER_DOWN) {
-		i8 EOL := ShellConfig->ControlCharacters[LINUX_TERMIOS_CHARACTER_VEOL]
-		
-		KeyboardBuffer->Write(&EOL, 1)
+		if !(RunningProgram) {
+			; TODO: figure out how to let a program tell us to do this or not
+			;  over termios
+			
+			i8 EOL := ShellConfig->ControlCharacters[LINUX_TERMIOS_CHARACTER_VEOL]
+			
+			KeyboardBuffer->Write(&EOL, 1)
+		}
 		
 		i8 EOL2 := ShellConfig->ControlCharacters[LINUX_TERMIOS_CHARACTER_VEOL2]
 		
@@ -536,14 +541,17 @@ define i32 ShellGatherInput(i8* Destination, i32 Size) {
 	
 	InputBuffer->Read(Destination, Size)
 	
+	Info("Input:\n%hexdump", Destination, Size)
+	
 	return Size
 }
 
 define void SetupShell() {
 	SetOnKeyCallback(&ShellOnKey)
 	
-	ShellConfig->ControlCharacters[LINUX_TERMIOS_CHARACTER_VEOL ] := 0xD
-	ShellConfig->ControlCharacters[LINUX_TERMIOS_CHARACTER_VEOL2] := 0xA
+	ShellConfig->ControlCharacters[LINUX_TERMIOS_CHARACTER_VERASE] := ASCII_BACK As i8
+	ShellConfig->ControlCharacters[LINUX_TERMIOS_CHARACTER_VEOL  ] := 0xD
+	ShellConfig->ControlCharacters[LINUX_TERMIOS_CHARACTER_VEOL2 ] := 0xA
 }
 
 define void Shell() {

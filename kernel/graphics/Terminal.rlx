@@ -2,9 +2,9 @@
 #Require "./src/kernel/graphics/Screen.rlx"
 #Require "./src/kernel/graphics/Font.rlx"
 
+i32 ASCII_BACK := 0x8
 i32 ASCII_TAB  := 0x9
 i32 ASCII_ESC  := 0x1B
-i32 ASCII_BACK := 0x7F
 i32 TAB_SIZE := 4
 
 declare void ShellPleaseSendForMe(i8*, i32)
@@ -71,6 +71,29 @@ struct Terminal {
 	define void ConvertToScreenCoords(i32 XIn, i32 YIn, i32* XOut, i32* YOut) {
 		*XOut := XIn * this->Font->Width
 		*YOut := YIn * this->Font->Height
+	}
+	
+	define void ClearToLineEnd(i32 X, i32 Y) {
+		i32 ScreenX := 0
+		i32 ScreenY := 0
+		
+		this->ConvertToScreenCoords(X, Y, &ScreenX, &ScreenY)
+		
+		i32 Width := (this->MaxColumn - X) * this->Font->Width
+		
+		;Info("(%i, %i) -> (%i, %i)\n", ScreenX, ScreenY, ScreenX + Width, ScreenY + this->Font->Height)
+		
+		this->Screen->DrawRectangle(ScreenX, ScreenY, Width, this->Font->Height, this->BackgroundColor)
+	}
+	define void ClearLine(i32 Y) {
+		this->ClearToLineEnd(0, Y)
+	}
+	define void ClearToScreenEnd(i32 X, i32 Y) {
+		this->ClearToLineEnd(X, Y)
+		
+		for (i32 Index := Y + 1, Index < this->MaxRow, Index++) {
+			this->ClearLine(Index)
+		}
 	}
 	
 	define void ScrollUp(i32 LineCount) {
@@ -151,13 +174,13 @@ struct Terminal {
 	}
 	
 	define void DoEscape() {
-		Info("DoEscape ")
+		;Info("DoEscape ")
 		
 		for (i32 DumpIndex := 0, DumpIndex < this->EscapeIndex, DumpIndex++) {
-			Info("%B ", this~>EscapeBuffer[DumpIndex] & 0xFF)
+			;Info("%B ", this~>EscapeBuffer[DumpIndex] & 0xFF)
 		}
 		
-		Info("\n")
+		;Info("\n")
 		
 		i8* Escape := this~>EscapeBuffer
 		i32 Length := this->EscapeIndex
@@ -349,7 +372,10 @@ struct Terminal {
 			}
 		}
 		else if (Command = 'J') {
-			if (ParameterCount = 0) {
+			if (ParameterCount = 0 || Parameters[0] = '0') {
+				this->ClearToScreenEnd(this->X, this->Y)
+			}
+			else if (ParameterCount = 1) {
 				this->Clear()
 			}
 		}
