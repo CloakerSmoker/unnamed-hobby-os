@@ -18,20 +18,33 @@ declare void PS2Wait(i8, i8)
 
 void* PS2OnKeyCallback := null
 
-define void PS2OnKey(i16 ScanCode, i8 ASCIICode, void* Callback) asm {
+define void PS2OnKey(i32 ScanCode, i8 ASCIICode, void* Callback) asm {
 	jmp, rdx
 }
 
 i8 PS2_SHIFT_STATE := false
 
+i32 PS2Prefix := 0
+
 define void OnPS2Event() {
 	; IRQ1 handler
 	
 	PS2Wait(0, 1)
-	i16 ScanCode := InB(PS2_PORT_DATA) As i16
-	i8 ASCIICode := ScanCodeToASCII(PS2_SHIFT_STATE, ScanCode)
-	
+	i32 ScanCode := InB(PS2_PORT_DATA) As i32
 	SendEOI(1)
+	
+	if (ScanCode = SCANCODE_PREFIX_EXTENDED) {
+		PS2Prefix := SCANCODE_PREFIX_EXTENDED
+		
+		return
+	}
+	
+	if (PS2Prefix) {
+		ScanCode |= PS2Prefix << 8
+		PS2Prefix := 0
+	}
+	
+	i8 ASCIICode := ScanCodeToASCII(PS2_SHIFT_STATE, ScanCode)
 	
 	if (ScanCode & SCANCODE_MASK_DOWN && ScanCode != SCANCODE_CONTROL_UP) {
 		if (ScanCode = SCANCODE_SHIFT_UP) {

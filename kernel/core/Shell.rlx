@@ -371,7 +371,9 @@ i32 ShellInputIndex := 0
 
 i8 ControlHeld := false
 
-define void ShellOnKey(i16 ScanCode, i8 ASCIICode) {
+define void ShellOnKey(i32 ScanCode, i8 ASCIICode) {
+	Info("%x %x\n", ScanCode, ASCIICode)
+	
 	if (ScanCode = SCANCODE_CONTROL_DOWN) {
 		ControlHeld := true
 	}
@@ -429,6 +431,31 @@ define void ShellOnKey(i16 ScanCode, i8 ASCIICode) {
 				KeyboardBuffer->Write(&Escape, 1)
 				KeyboardBuffer->Write("[4", 2)
 			}
+		}
+		
+		if (ScanCode = SCANCODE_UP_ARROW) {
+			KeyboardBuffer->Write(ESC, 2)
+			ASCIICode := 'A'
+		}
+		else if (ScanCode = SCANCODE_DOWN_ARROW) {
+			KeyboardBuffer->Write(ESC, 2)
+			ASCIICode := 'B'
+		}
+		else if (ScanCode = SCANCODE_RIGHT_ARROW) {
+			KeyboardBuffer->Write(ESC, 2)
+			ASCIICode := 'C'
+		}
+		else if (ScanCode = SCANCODE_LEFT_ARROW) {
+			KeyboardBuffer->Write(ESC, 2)
+			ASCIICode := 'D'
+		}
+		else if (ScanCode = SCANCODE_END) {
+			KeyboardBuffer->Write(ESC, 2)
+			ASCIICode := 'F'
+		}
+		else if (ScanCode = SCANCODE_HOME) {
+			KeyboardBuffer->Write(ESC, 2)
+			ASCIICode := 'H'
 		}
 		
 		KeyboardBuffer->Write(&ASCIICode, 1)

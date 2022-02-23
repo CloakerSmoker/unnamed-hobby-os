@@ -2,9 +2,10 @@
 #Require "./src/kernel/graphics/Screen.rlx"
 #Require "./src/kernel/graphics/Font.rlx"
 
-i32 ASCII_BACK := 0x8
-i32 ASCII_TAB  := 0x9
-i32 ASCII_ESC  := 0x1B
+i32 ASCII_BACK   := 0x8
+i32 ASCII_TAB    := 0x9
+i32 ASCII_ESCAPE := 0x1B
+i32 ASCII_DELETE := 0x7F
 i32 TAB_SIZE := 4
 
 declare void ShellPleaseSendForMe(i8*, i32)
@@ -426,11 +427,14 @@ struct Terminal {
 				if (this->X) {
 					this->X -= 1
 					
-					this->ConvertToScreenCoords(this->X, this->Y, &ScreenX, &ScreenY)
-					this->Font->Draw(this->Screen->Canvas, this->ForegroundColor, this->BackgroundColor, ScreenX, ScreenY, ' ')
+					;this->ConvertToScreenCoords(this->X, this->Y, &ScreenX, &ScreenY)
+					;this->Font->Draw(this->Screen->Canvas, this->ForegroundColor, this->BackgroundColor, ScreenX, ScreenY, ' ')
 				}
 			}
-			else if (Next = ASCII_ESC) {
+			;else if (Next = ASCII_DEL) {
+			;	
+			;}
+			else if (Next = ASCII_ESCAPE) {
 				this~>EscapeBuffer[0] := 0x1B
 				this->EscapeIndex := 1
 			}

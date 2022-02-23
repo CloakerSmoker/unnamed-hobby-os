@@ -1,0 +1,33 @@
+define void RestoreUserModeContext(AMD64Context* Context) {
+	;Print("Context @ %x\n", Context)
+	;Print("New RIP: %x\n", Context->RIP)
+	
+	RestoreFullContext(Context)
+}
+
+define void ResumeUserMode(AMD64Context* Context) {
+	;Print("[ResumeUserMode %x]", Context->RIP)
+	
+	void* TerribleHack := &RestoreUserModeContext
+	
+	asm (rax := Context->RSP, rdi := Context, rcx := TerribleHack) {
+		mov, r11, 0x200
+		mov, rsp, rax
+		xchg, bx, bx
+		sysret
+	}
+}
+
+define void EnterUserMode(AMD64Context* Context) {
+	;Print("EnterUserMode(%x, %x)\n", Context->RIP, Context->RSP)
+	
+	if (SaveContext(&KernelContext)) {
+		return
+	}
+	
+	;Context->RSP -= 8
+	
+	;Context->RSP[0] := &UserModeReturnStub As i64
+	
+	ResumeUserMode(Context)
+}

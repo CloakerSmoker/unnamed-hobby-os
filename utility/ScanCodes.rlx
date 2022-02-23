@@ -1,5 +1,5 @@
-define i8 ScanCodeGetMapIndex(i8* Map, i32 Max, i16 Code) {
-	if (Code >= Max) {
+define i8 ScanCodeGetMapIndex(i8* Map, i32 Max, i32 Code) {
+	if (Code < 0 || Code >= Max) {
 		return ' '
 	}
 	
@@ -7,20 +7,26 @@ define i8 ScanCodeGetMapIndex(i8* Map, i32 Max, i16 Code) {
 }
 
 i32 SCANCODE_CONTROL_DOWN := 0x1D
-i32 SCANCODE_CONTROL_UP := 0x9D
+i32 SCANCODE_CONTROL_UP   := 0x9D
 
-i32 SCANCODE_MASK_DOWN := 0x80
-i32 SCANCODE_SHIFT_UP := 0xAA
-i32 SCANCODE_SHIFT_DOWN := 0x2A
+i32 SCANCODE_MASK_DOWN      := 0x80
+i32 SCANCODE_SHIFT_UP       := 0xAA
+i32 SCANCODE_SHIFT_DOWN     := 0x2A
 i32 SCANCODE_BACKSPACE_DOWN := 0x0E
-i32 SCANCODE_ENTER_DOWN := 0x1C
+i32 SCANCODE_ENTER_DOWN     := 0x1C
 
-i32 SCANCODE_UP_ARROW := 0x48
-i32 SCANCODE_LEFT_ARROW := 0x4B
-i32 SCANCODE_RIGHT_ARROW := 0x4D
-i32 SCANCODE_DOWN_ARROW := 0x50
+i32 SCANCODE_PREFIX_EXTENDED := 0xE0
 
-define i8 ScanCodeToASCII(i8 Shift, i16 ScanCode) {
+i32 SCANCODE_UP_ARROW    := 0xE048
+i32 SCANCODE_LEFT_ARROW  := 0xE04B
+i32 SCANCODE_RIGHT_ARROW := 0xE04D
+i32 SCANCODE_DOWN_ARROW  := 0xE050
+
+i32 SCANCODE_HOME   := 0xE047
+i32 SCANCODE_END    := 0xE04F
+i32 SCANCODE_DELETE := 0xE053
+
+define i8 ScanCodeToASCII(i8 Shift, i32 ScanCode) {
 	; Note: This doesn't need to work for all characters, since it is only really used for displaying
 	
 	i8* LowerMap := "  1234567890-=  qwertyuiop[]  asdfghjkl;'` \\zxcvbnm,./    "
@@ -31,6 +37,9 @@ define i8 ScanCodeToASCII(i8 Shift, i16 ScanCode) {
 	
 	if (ScanCode = SCANCODE_ENTER_DOWN) {
 		return 0x0A
+	}
+	else if (ScanCode = SCANCODE_DELETE) {
+		return ASCII_DELETE As i8
 	}
 	
 	if (Shift) {
