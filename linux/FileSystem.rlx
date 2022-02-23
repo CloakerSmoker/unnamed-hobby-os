@@ -1,0 +1,36 @@
+
+
+struct LinuxFileStatus {
+	i64 Device
+	i64 INodeNumber
+	i64 LinkCount
+	
+	i32 Mode
+	
+	i32 UserID
+	i32 GroupID
+	
+	i32 Padding1
+	
+	i64 RepresentedDevice
+	
+	i64 Size
+	i64 BlockSize
+	i64 BlockCount
+	
+	i64 AccessedTime
+	i64 AccessedTimeNanoseconds
+	
+	i64 ModifiedTime
+	i64 ModifiedTimeNanoseconds
+	
+	i64 CreatedTime
+	i64 CreatedTimeNanoseconds
+	
+	i64[3] Unused
+}
+
+i8 LINUX_FILE_READ := 0
+i8 LINUX_FILE_WRITE := 1
+i8 LINUX_FILE_READ_WRITE := 3
+i8 LINUX_FILE_CREATE_NEW := 0x40

@@ -3,6 +3,7 @@
 #Require "./src/kernel/core/Descriptors.rlx"
 #Require "./src/kernel/core/UserMode.rlx"
 #Require "./src/linux/SystemCalls.rlx"
+#Require "./src/linux/ErrorNumbers.rlx"
 
 void*[20] SystemCalls
 
@@ -29,6 +30,7 @@ declare void SystemCallSendFile(i64, i64, i64*, i64)
 declare void SystemCallArchPrctl(i64, void*)
 declare i64 SystemCallDeviceControl(i64, i32, void*)
 declare i64 SystemCallWriteMultiple(i64, void*, i32)
+declare i64 SystemCallTruncate(i64, i32)
 declare void SystemCallExit(i64)
 declare void* SystemCallProgramBreak(void*)
 declare void* SystemCallMapMemory(void*, i32, i32, i32, i32, i32)
@@ -47,7 +49,7 @@ define void HandleSystemCall(AMD64Context* Context) {
 	
 	i8* Name := GetLinuxSysCallName(Number)
 	
-	;Info("%s(%x, %x, %x, %x, %x, %x)\n", Name, Context->RDI, Context->RSI, Context->RDX, Context->R10, Context->R8, Context->R9)
+	Info("%s(%x, %x, %x, %x, %x, %x)\n", Name, Context->RDI, Context->RSI, Context->RDX, Context->R10, Context->R8, Context->R9)
 	
 	if (Number = SYSCALL_EXIT_GROUP) {
 		Number := SYSCALL_EXIT
@@ -56,6 +58,11 @@ define void HandleSystemCall(AMD64Context* Context) {
 	try {
 		if (Number = SYSCALL_EXIT) {
 			SystemCallExit(Context->RDI)
+		}
+		else if (Number = LINUX_SYSCALL_FTRUNCATE) {
+			Context->RAX := SystemCallTruncate(Context->RDI, Context->ESI)
+			
+			ResumeUserMode(Context)
 		}
 		else if (Number = LINUX_SYSCALL_RT_SIGACTION) {
 			SystemCallSetSignalAction(Context->EDI, Context->RSI As void*, Context->RDX As void*)
@@ -448,12 +455,15 @@ define i64 SystemCallUnMapMemory(void* Address, i32 Size) {
 	return 0
 }
 
-i8 LINUX_FILE_READ := 0
-i8 LINUX_FILE_WRITE := 1
-i8 LINUX_FILE_READ_WRITE := 3
-i8 LINUX_FILE_CREATE_NEW := 0x40
+#Require "./src/linux/FileSystem.rlx"
 
 define i64 SystemCallOpen(i8* Path, i32 Flags, i32 Mode) {
+	if (Path = null) {
+		; wtf busybox vi?
+		
+		return -LINUX_ERROR_FAULT
+	}
+	
 	i8 Ext2Flags := OPEN_IF_EXISTS
 	
 	if (Flags & LINUX_FILE_CREATE_NEW) {
@@ -471,6 +481,34 @@ define i64 SystemCallClose(i64 FileDescriptor) {
 	i64 NewHandle := Ext2Close(FS, CurrentProcess->FileDescriptorsToHandles[FileDescriptor])
 	CurrentProcess->FileDescriptorsToHandles[FileDescriptor] := NewHandle
 	
+	return 0
+}
+
+define i64 SystemCallStat(i8* Path, LinuxFileStatus* Out) {
+	;Info("Stat(%s, %x)\n", Path, Out)
+	
+	INode* AtNode := FS->ReadINode(2)
+	
+	DirectoryEntry* Entry := FS->FindDirectoryEntryByPath(AtNode, Path)
+	
+	if !(Entry) {
+		return -LINUX_ERROR_NOENT
+	}
+	
+	Out->INodeNumber := Entry->INode
+	
+	INode* PathNode := FS->ReadINode(Entry->INode)
+	
+	Out->LinkCount := PathNode->HardLinkCount
+	
+	Out->Size := PathNode->FileSizeLow
+	Out->BlockSize := 512
+	Out->BlockCount := PathNode->DiskSectorsUsed
+	
+	return 0
+}
+
+define i64 SystemCallTruncate(i64 FileDescriptor, i32 Size) {
 	return 0
 }
 
@@ -558,7 +596,7 @@ define void SetupSystemCalls() {
 	RegisterSystemCall(1, &SystemCallWrite)
 	RegisterSystemCall(2, &SystemCallOpen)
 	RegisterSystemCall(3, &SystemCallClose)
-	RegisterSystemCall(4, &SystemCallDebug)
+	RegisterSystemCall(4, &SystemCallStat)
 	RegisterSystemCall(8, &SystemCallSeek)
 }
 

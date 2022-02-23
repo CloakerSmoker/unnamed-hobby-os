@@ -46,6 +46,7 @@ import ./build/Write.elf write
 import busybox_CLEAR linux_clear
 import busybox_CAT linux_cat
 import busybox_ED linux_ed
+import busybox_VI linux_vi
 quit
 " | ./Ext2Tool.elf 'File(EFIBoot.img,512)>GPT(1)'
 

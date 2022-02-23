@@ -119,6 +119,10 @@ struct Terminal {
 	i8 CursorShown
 	
 	define void DrawCursor(i8 Enable) {
+		if (this->X = this->MaxColumn) {
+			return
+		}
+		
 		i32 ScreenX := 0
 		i32 ScreenY := 0
 		
@@ -175,19 +179,32 @@ struct Terminal {
 	}
 	
 	define void DoEscape() {
-		;Info("DoEscape ")
+		Info("DoEscape ")
 		
 		for (i32 DumpIndex := 0, DumpIndex < this->EscapeIndex, DumpIndex++) {
-			;Info("%B ", this~>EscapeBuffer[DumpIndex] & 0xFF)
+			if (DumpIndex >= 2) {
+				Info("%c", this~>EscapeBuffer[DumpIndex] & 0xFF)
+			}
+			else {
+				Info("%B ", this~>EscapeBuffer[DumpIndex] & 0xFF)
+			}
 		}
 		
-		;Info("\n")
+		Info("\n")
 		
 		i8* Escape := this~>EscapeBuffer
 		i32 Length := this->EscapeIndex
 		
 		if (Escape[1] != '[' || Length < 3) {
 			return
+		}
+		
+		i8 Prefix := 0
+		
+		if (Escape[2] = '?') {
+			Prefix := '?'
+			Escape += 1
+			Length -= 1
 		}
 		
 		i8 Command := Escape[--Length]
@@ -358,18 +375,18 @@ struct Terminal {
 		}
 		else if (Command = 'H') {
 			if (ParameterCount >= 1) {
-				this->X := AToI(Parameters[0]) As i32
+				this->Y := (AToI(Parameters[0]) - 1) As i32
 				
 				if (ParameterCount >= 2) {
-					this->Y := AToI(Parameters[1]) As i32
+					this->X := (AToI(Parameters[1]) - 1) As i32
 				}
 				else {
-					this->Y := 0
+					this->X := 0
 				}
 			}
 			else {
-				this->X := 0
 				this->Y := 0
+				this->X := 0
 			}
 		}
 		else if (Command = 'J') {
@@ -378,6 +395,14 @@ struct Terminal {
 			}
 			else if (ParameterCount = 1) {
 				this->Clear()
+			}
+		}
+		else if (Command = 'K') {
+			if (ParameterCount = 0 || Parameters[0] = '0') {
+				this->ClearToLineEnd(this->X, this->Y)
+			}
+			else {
+				this->ClearLine(this->Y)
 			}
 		}
 	}
@@ -389,6 +414,7 @@ struct Terminal {
 		else if (Character = '[') { return true }
 		else if (Character = '-') { return true }
 		else if (Character = ';') { return true }
+		else if (Character = '?') { return true }
 		
 		return false
 	}

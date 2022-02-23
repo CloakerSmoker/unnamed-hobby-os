@@ -303,7 +303,9 @@ define void OnCommand(i8* CommandLine) {
 			
 			;Print("Loaded %x byte image @ %x\n", FoundFileNode.FileSizeLow, FileData)
 			
-			LastStatus := Execute(FileData, ParameterCount, Parameters, 0, NULL_ENVIRONMENT)
+			i8* User := "USER=root"
+			
+			LastStatus := Execute(FileData, ParameterCount, Parameters, 1, &User)
 			
 			KernelPageAllocator->FreeVirtual(FileData, FilePages)
 			
@@ -372,7 +374,7 @@ i32 ShellInputIndex := 0
 i8 ControlHeld := false
 
 define void ShellOnKey(i32 ScanCode, i8 ASCIICode) {
-	Info("%x %x\n", ScanCode, ASCIICode)
+	;Info("%x %x\n", ScanCode, ASCIICode)
 	
 	if (ScanCode = SCANCODE_CONTROL_DOWN) {
 		ControlHeld := true
@@ -398,6 +400,10 @@ define void ShellOnKey(i32 ScanCode, i8 ASCIICode) {
 	}
 	else if (ScanCode = SCANCODE_BACKSPACE_DOWN) {
 		KeyboardBuffer->Write(&ASCII_BACK, 1)
+	}
+	else if (ScanCode = SCANCODE_INSERT) {
+		KeyboardBuffer->Write(ESC, 2)
+		KeyboardBuffer->Write("2~", 2)
 	}
 	else {
 		if (ControlHeld) {
@@ -463,7 +469,7 @@ define void ShellOnKey(i32 ScanCode, i8 ASCIICode) {
 }
 
 define void ShellPleaseSendForMe(i8* Data, i32 Size) {
-	Info("%s", Data)
+	;Info("%s", Data)
 	InputBuffer->Write(Data, Size)
 }
 
@@ -568,7 +574,7 @@ define i32 ShellGatherInput(i8* Destination, i32 Size) {
 	
 	InputBuffer->Read(Destination, Size)
 	
-	Info("Input:\n%hexdump", Destination, Size)
+	;Info("Input:\n%hexdump", Destination, Size)
 	
 	return Size
 }

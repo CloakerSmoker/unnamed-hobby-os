@@ -6,6 +6,8 @@ define i8 ScanCodeGetMapIndex(i8* Map, i32 Max, i32 Code) {
 	return Map[Code]
 }
 
+i32 SCANCODE_ESCAPE := 0x01
+
 i32 SCANCODE_CONTROL_DOWN := 0x1D
 i32 SCANCODE_CONTROL_UP   := 0x9D
 
@@ -24,6 +26,7 @@ i32 SCANCODE_DOWN_ARROW  := 0xE050
 
 i32 SCANCODE_HOME   := 0xE047
 i32 SCANCODE_END    := 0xE04F
+i32 SCANCODE_INSERT := 0xE052
 i32 SCANCODE_DELETE := 0xE053
 
 define i8 ScanCodeToASCII(i8 Shift, i32 ScanCode) {
@@ -35,6 +38,9 @@ define i8 ScanCodeToASCII(i8 Shift, i32 ScanCode) {
 	i32 LowerMapMax := 58
 	i32 UpperMapMax := 54
 	
+	if (ScanCode = SCANCODE_ESCAPE) {
+		return ASCII_ESCAPE As i8
+	}
 	if (ScanCode = SCANCODE_ENTER_DOWN) {
 		return 0x0A
 	}
