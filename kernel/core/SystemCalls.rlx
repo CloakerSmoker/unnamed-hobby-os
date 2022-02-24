@@ -35,6 +35,8 @@ declare void SystemCallExit(i64)
 declare void* SystemCallProgramBreak(void*)
 declare void* SystemCallMapMemory(void*, i32, i32, i32, i32, i32)
 declare i64 SystemCallUnMapMemory(void*, i32)
+declare i64 SystemCallSetWorkingDirectory(i8*)
+declare i64 SystemCallGetWorkingDirectory(i8*, i32)
 
 declare void SystemCallSetSignalAction(i32, LinuxSignalAction*, LinuxSignalAction*)
 declare void SystemCallSetSignalMask(i32, i64*, i64*)
@@ -59,8 +61,26 @@ define void HandleSystemCall(AMD64Context* Context) {
 		if (Number = SYSCALL_EXIT) {
 			SystemCallExit(Context->RDI)
 		}
+		else if (Number = LINUX_SYSCALL_UNLINK) {
+			ResumeUserMode(Context)
+		}
+		else if (Number = LINUX_SYSCALL_ACCESS) {
+			Context->RAX := 0
+			
+			ResumeUserMode(Context)
+		}
 		else if (Number = LINUX_SYSCALL_FTRUNCATE) {
 			Context->RAX := SystemCallTruncate(Context->RDI, Context->ESI)
+			
+			ResumeUserMode(Context)
+		}
+		else if (Number = LINUX_SYSCALL_CHDIR) {
+			Context->RAX := SystemCallSetWorkingDirectory(Context->RDI As i8*)
+			
+			ResumeUserMode(Context)
+		}
+		else if (Number = LINUX_SYSCALL_GETCWD) {
+			Context->RAX := SystemCallGetWorkingDirectory(Context->RDI As i8*, Context->ESI)
 			
 			ResumeUserMode(Context)
 		}
@@ -478,13 +498,44 @@ define i64 SystemCallOpen(i8* Path, i32 Flags, i32 Mode) {
 }
 
 define i64 SystemCallClose(i64 FileDescriptor) {
+	FileDescriptor -= 3
+	
 	i64 NewHandle := Ext2Close(FS, CurrentProcess->FileDescriptorsToHandles[FileDescriptor])
 	CurrentProcess->FileDescriptorsToHandles[FileDescriptor] := NewHandle
 	
 	return 0
 }
 
-define i64 SystemCallStat(i8* Path, LinuxFileStatus* Out) {
+define i64 DoFileStatus(i32 INodeNumber, LinuxFileStatus* Out) {
+	Out->INodeNumber := INodeNumber
+	
+	INode* Node := FS->ReadINode(INodeNumber)
+	
+	Out->LinkCount := Node->HardLinkCount
+	
+	Out->Size := Node->FileSizeLow
+	Out->BlockSize := 512
+	Out->BlockCount := Node->DiskSectorsUsed
+	
+	Out->Mode := 0
+	
+	if (Node->IsFile()) {
+		Out->Mode |= LINUX_FILE_STATUS_IS_FILE
+	}
+	else if (Node->IsDirectory()) {
+		Out->Mode |= LINUX_FILE_STATUS_IS_DIRECTORY
+	}
+	
+	Info("IsFile %x\n", LINUX_FILE_STATUS_IS_FILE)
+	
+	Out->Mode |= 0o777
+	
+	Info("Mode = %x\n", Out->Mode)
+	
+	return 0
+}
+
+define i64 SystemCallPathStatus(i8* Path, LinuxFileStatus* Out) {
 	;Info("Stat(%s, %x)\n", Path, Out)
 	
 	INode* AtNode := FS->ReadINode(2)
@@ -495,17 +546,17 @@ define i64 SystemCallStat(i8* Path, LinuxFileStatus* Out) {
 		return -LINUX_ERROR_NOENT
 	}
 	
-	Out->INodeNumber := Entry->INode
+	return DoFileStatus(Entry->INode, Out)
+}
+define i64 SystemCallFileStatus(i64 FileDescriptor, LinuxFileStatus* Out) {
+	FileDescriptor -= 3
 	
-	INode* PathNode := FS->ReadINode(Entry->INode)
+	i64 FileHandle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
 	
-	Out->LinkCount := PathNode->HardLinkCount
+	i32 Offset := 0
+	i32 INodeNumber := Ext2UnpackHandle(FileHandle, &Offset)
 	
-	Out->Size := PathNode->FileSizeLow
-	Out->BlockSize := 512
-	Out->BlockCount := PathNode->DiskSectorsUsed
-	
-	return 0
+	return DoFileStatus(INodeNumber, Out)
 }
 
 define i64 SystemCallTruncate(i64 FileDescriptor, i32 Size) {
@@ -513,6 +564,8 @@ define i64 SystemCallTruncate(i64 FileDescriptor, i32 Size) {
 }
 
 define i64 SystemCallSeek(i64 FileDescriptor, i32 Offset, i8 Mode) {
+	FileDescriptor -= 3
+	
 	i64 NewHandle := Ext2Seek(FS, CurrentProcess->FileDescriptorsToHandles[FileDescriptor], Offset, Mode)
 	CurrentProcess->FileDescriptorsToHandles[FileDescriptor] := NewHandle
 	
@@ -520,6 +573,17 @@ define i64 SystemCallSeek(i64 FileDescriptor, i32 Offset, i8 Mode) {
 	Ext2UnpackHandle(NewHandle, &Offset)
 	
 	return Offset
+}
+
+define i64 SystemCallSetWorkingDirectory(i8* Path) {
+	return 0
+}
+define i64 SystemCallGetWorkingDirectory(i8* Buffer, i32 Size) {
+	if (Size >= 1) {
+		*Buffer := '.'
+	}
+	
+	return 1
 }
 
 define i64 SystemCallDebug(i64 One) {
@@ -596,7 +660,8 @@ define void SetupSystemCalls() {
 	RegisterSystemCall(1, &SystemCallWrite)
 	RegisterSystemCall(2, &SystemCallOpen)
 	RegisterSystemCall(3, &SystemCallClose)
-	RegisterSystemCall(4, &SystemCallStat)
+	RegisterSystemCall(4, &SystemCallPathStatus)
+	RegisterSystemCall(5, &SystemCallFileStatus)
 	RegisterSystemCall(8, &SystemCallSeek)
 }
 

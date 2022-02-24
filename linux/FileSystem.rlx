@@ -1,4 +1,6 @@
 
+i32 LINUX_FILE_STATUS_IS_DIRECTORY := 0o04_0000
+i32 LINUX_FILE_STATUS_IS_FILE      := 0o10_0000
 
 struct LinuxFileStatus {
 	i64 Device
@@ -10,8 +12,7 @@ struct LinuxFileStatus {
 	i32 UserID
 	i32 GroupID
 	
-	i32 Padding1
-	
+	i64 Padding1
 	i64 RepresentedDevice
 	
 	i64 Size

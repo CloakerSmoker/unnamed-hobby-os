@@ -203,6 +203,8 @@ struct Process {
 		
 		this->Resume()
 	}
+	
+	INode* WorkingDirectory
 }
 
 Process* CurrentProcess := null

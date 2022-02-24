@@ -132,7 +132,7 @@ struct INode {
 		return (this->Flags & 0x0FFF) As i16
 	}
 	define i16 GetType() {
-		return ((this->Type & 0xF000) >> 12) As i16
+		return ((this->Type >> 12) & 0xF) As i16
 	}
 	
 	define void Chmod(i8 Override, i8 User, i8 Group, i8 Other) {

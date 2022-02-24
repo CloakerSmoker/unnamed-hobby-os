@@ -254,9 +254,9 @@ define void MainContinuation() {
 	
 	Info("Adopted screen\n")
 	
-	;KernelTerminal->Adopt(NativeScreen, 0xFF_FF_FF, 0x00_00_00)
-	KernelTerminal->Adopt(NativeScreen, BootFont, 0x00_00_00, 0xFF_FF_FF)
-	;KernelTerminal->SetColors(0xFF_FF_FF, 0x00_00_00)
+	KernelTerminal->Adopt(NativeScreen, BootFont, 0xFF_FF_FF, 0x00_00_00)
+	;KernelTerminal->Adopt(NativeScreen, BootFont, 0x00_00_00, 0xFF_FF_FF)
+	
 	KernelTerminal->Clear()
 	
 	KernelTerminal->PrintLine("BOOT: Screen *probably* works")
