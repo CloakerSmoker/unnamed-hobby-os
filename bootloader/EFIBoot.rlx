@@ -93,6 +93,73 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	;	ACPI_TABLE* NextACPITable := XSDT->EntryPhysicalAddresses[Index] As void*
 	;	
 	;	Print("Table %i: %l\n", Index, NextACPITable~>Header->Signature)
+	;	
+	;	if (NextACPITable~>Header->Signature = ACPI_TABEL_SIGNATURE_MULTIPLE_APIC_DESCRIPTION) {
+	;		Print("APIC {\n")
+	;		
+	;		ACPI_APIC_TABLE* APIC := NextACPITable->Data()
+	;		
+	;		Print("\tLength: %x\n", NextACPITable~>Header->Length)
+	;		Print("\tLocalAPICPhysicalAddress: %x\n", APIC->LocalAPICPhysicalAddress)
+	;		Print("\tFlags: %x\n", APIC->Flags)
+	;		
+	;		i32 EntryIndex := 0
+	;		ACPI_APIC_TABLE_ENTRY* Current := APIC->First()
+	;		
+	;		while (Current) {
+	;			Print("\t%i: %x\n", EntryIndex++, Current->Type)
+	;			
+	;			if (Current->Type = ACPI_APIC_ENTRY_TYPE_LOCAL_APIC) {
+	;				ACPI_LOCAL_APIC* Local := Current->Data()
+	;				
+	;				Print("\t\tLocal APIC {\n")
+	;				Print("\t\t\tProcessor ID: %x\n", Local->ProcessorID)
+	;				Print("\t\t\tID: %x\n", Local->ID)
+	;				Print("\t\t\tFlags: %x\n", Local->Flags)
+	;				Print("\t\t}\n")
+	;			}
+	;			else if (Current->Type = ACPI_APIC_ENTRY_TYPE_IO_APIC) {
+	;				ACPI_IO_APIC* IO := Current->Data()
+	;				
+	;				Print("\t\tIO APIC {\n")
+	;				Print("\t\t\tID: %x\n", IO->ID)
+	;				Print("\t\t\tPhysicalAddress: %x\n", IO->PhysicalAddress)
+	;				Print("\t\t\tBase: %x\n", IO->GlobalInterruptBase)
+	;				Print("\t\t}\n")
+	;			}
+	;			else if (Current->Type = ACPI_APIC_ENTRY_TYPE_INTERRUPT_OVERRIDE_SOURCE) {
+	;				ACPI_INTERRUPT_OVERRIDE* Override := Current->Data()
+	;				
+	;				Print("\t\tInterrupt Override {\n")
+	;				Print("\t\t\tBus: %x\n", Override->Bus)
+	;				Print("\t\t\tSource: %x\n", Override->Source)
+	;				Print("\t\t\tGlobalInterruptNumber: %x\n", Override->GlobalInterruptNumber)
+	;				Print("\t\t\tFlags: %x\n", Override->Flags)
+	;				Print("\t\t}\n")
+	;			}
+	;			else if (Current->Type = ACPI_APIC_ENTRY_TYPE_INTERRUPT_OVERRIDE_SOURCE) {
+	;				ACPI_NMI_SOURCE* NMI := Current->Data()
+	;				
+	;				Print("\t\tNMI Source {\n")
+	;				Print("\t\t\tFlags: %x\n", NMI->Flags)
+	;				Print("\t\t\tGlobalInterruptNumber: %x\n", NMI->GlobalInterruptNumber)
+	;				Print("\t\t}\n")
+	;			}
+	;			else if (Current->Type = ACPI_APIC_ENTRY_TYPE_LOCAL_APIC_NMI) {
+	;				ACPI_LOCAL_APIC_NMI* LocalNMI := Current->Data()
+	;				
+	;				Print("\t\tLocal APIC NMI {\n")
+	;				Print("\t\t\tProcessor ID: %x\n", LocalNMI->ProcessorID)
+	;				Print("\t\t\tFlags: %x\n", LocalNMI->Flags)
+	;				Print("\t\t\tLocalInterruptNumber: %x\n", LocalNMI->LocalInterruptNumber)
+	;				Print("\t\t}\n")
+	;			}
+	;			
+	;			Current := APIC->Next(Current)
+	;		}
+	;		
+	;		Print("}\n")
+	;	}
 	;}
 	;
 	;SystemTable->ConsoleInput->Reset()

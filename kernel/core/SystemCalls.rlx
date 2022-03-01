@@ -526,11 +526,7 @@ define i64 DoFileStatus(i32 INodeNumber, LinuxFileStatus* Out) {
 		Out->Mode |= LINUX_FILE_STATUS_IS_DIRECTORY
 	}
 	
-	Info("IsFile %x\n", LINUX_FILE_STATUS_IS_FILE)
-	
 	Out->Mode |= 0o777
-	
-	Info("Mode = %x\n", Out->Mode)
 	
 	return 0
 }

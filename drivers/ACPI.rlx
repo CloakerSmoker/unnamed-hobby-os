@@ -1,0 +1,151 @@
+#Require "./src/drivers/EFI.rlx"
+
+EFI_GUID* ACPI_RSDP_GUID := i8[0x71, 0xe8, 0x68, 0x88, 0xf1, 0xe4, 0xd3, 0x11, 0xbc, 0x22, 0x00, 0x80, 0xc7, 0x3c, 0x88, 0x81] As EFI_GUID*
+
+struct ACPI_RSDP {
+	union {
+		i8[8] TextSignature
+		i64 Signature
+	}
+	
+	i8 Checksum
+	i8[6] OEMID
+	i8 Revision
+	i32 RSDTPhysicalAddress
+	i32 Length
+	i64 XSDTPhysicalAddress
+	i8 ExtendedChecksum
+	i8[3] Reserved
+}
+
+struct ACPI_DESCRIPTION_HEADER {
+	union {
+		i8[4] TextSignature
+		i32 Signature
+	}
+	
+	i32 Length
+	i8 Revision
+	i8 Checksum
+	i8[6] OEMID
+	i8[8] OEMTableID
+	i32 OEMRevision
+	i32 CreatorID
+	i32 CreatorRevision
+	
+	define i32 EntryCount() {
+		return (this->Length - #ACPI_DESCRIPTION_HEADER) / 8
+	}
+}
+
+struct ACPI_TABLE {
+	ACPI_DESCRIPTION_HEADER Header
+	
+	union {
+		i64[0] EntryPhysicalAddresses
+	}
+	
+	define void* Data() {
+		return this As void*
+	}
+}
+
+i8 ACPI_APIC_ENTRY_TYPE_LOCAL_APIC := 0
+i8 ACPI_APIC_ENTRY_TYPE_IO_APIC := 1
+i8 ACPI_APIC_ENTRY_TYPE_INTERRUPT_OVERRIDE_SOURCE := 2
+i8 ACPI_APIC_ENTRY_TYPE_NMI_SOURCE := 3
+i8 ACPI_APIC_ENTRY_TYPE_LOCAL_APIC_NMI := 4
+i8 ACPI_APIC_ENTRY_TYPE_LOCAL_APIC_ADDRESS_OVERRIDE := 5
+
+struct ACPI_APIC_TABLE_ENTRY unaligned {
+	i8 Type
+	i8 Size
+	i8[0] Data
+	
+	define ACPI_APIC_TABLE_ENTRY* Next() {
+		return this + ((this->Size As i32) & 0xFF)
+	}
+	define void* Data() {
+		return this As void*
+	}
+}
+
+struct ACPI_APIC_TABLE {
+	ACPI_DESCRIPTION_HEADER Header
+	i32 LocalAPICPhysicalAddress
+	i32 Flags
+	i8[0] Data
+	
+	define ACPI_APIC_TABLE_ENTRY* First() {
+		return this~>Data As ACPI_APIC_TABLE_ENTRY*
+	}
+	
+	define ACPI_APIC_TABLE_ENTRY* Next(ACPI_APIC_TABLE_ENTRY* Last) {
+		ACPI_APIC_TABLE_ENTRY* Result := Last->Next()
+		
+		if ((Result As i64) - (this As i64) >= this~>Header->Length) {
+			return null
+		}
+		
+		return Result
+	}
+}
+
+struct ACPI_LOCAL_APIC {
+	i8 Type
+	i8 Size
+	i8 ProcessorID
+	i8 ID
+	i32 Flags
+}
+
+struct ACPI_IO_APIC {
+	i8 Type
+	i8 Size
+	i8 ID
+	i8 Reserved
+	i32 PhysicalAddress
+	i32 GlobalInterruptBase
+}
+
+struct ACPI_INTERRUPT_OVERRIDE {
+	i8 Type
+	i8 Size
+	i8 Bus
+	i8 Source
+	i32 GlobalInterruptNumber
+	i16 Flags
+}
+
+i16 ACPI_INTERRUPT_FLAGS_POLARITY_MASK        := 0b11
+i16 ACPI_INTERRUPT_FLAGS_POLARITY_BUS         := 0b00
+i16 ACPI_INTERRUPT_FLAGS_POLARITY_ACTIVE_HIGH := 0b01
+i16 ACPI_INTERRUPT_FLAGS_POLARITY_RESERVED    := 0b10
+i16 ACPI_INTERRUPT_FLAGS_POLARITY_ACTIVE_LOW  := 0b11
+
+i16 ACPI_INTERRUPT_FLAGS_TRIGGER_MASK     := 0b11_00
+i16 ACPI_INTERRUPT_FLAGS_TRIGGER_BUS      := 0b00_00
+i16 ACPI_INTERRUPT_FLAGS_TRIGGER_EDGE     := 0b01_00
+i16 ACPI_INTERRUPT_FLAGS_TRIGGER_RESERVED := 0b10_00
+i16 ACPI_INTERRUPT_FLAGS_TRIGGER_LEVEL    := 0b11_00
+
+struct ACPI_NMI_SOURCE {
+	i8 Type
+	i8 Length
+	i16 Flags
+	i32 GlobalInterruptNumber
+}
+
+struct ACPI_LOCAL_APIC_NMI unaligned {
+	i8 Type
+	i8 Length
+	i8 ProcessorID
+	i16 Flags
+	i8 LocalInterruptNumber
+}
+
+i32 ACPI_LOCAL_APIC_FLAG_ENABLED := 0b1
+i32 ACPI_LOCAL_APIC_FLAG_CAN_GO_ONLINE := 0b10
+
+i32 ACPI_TABEL_SIGNATURE_MULTIPLE_APIC_DESCRIPTION := 'APIC'
+i32 ACPI_TABEL_SIGNATURE_FIXED_ACPI_DESCRIPTION := 'FACP'

@@ -1,0 +1,35 @@
+
+struct APICMemoryIORegister {
+	i32 Value
+	i8[12] Padding
+}
+
+struct LocalAPICMemoryIO {
+	APICMemoryIORegister[2] Reserved1
+	
+	APICMemoryIORegister ID
+	APICMemoryIORegister Version
+	
+	APICMemoryIORegister[3] Reserved2
+	
+	APICMemoryIORegister TaskPriority
+	APICMemoryIORegister ArbitrationPriority
+	APICMemoryIORegister ProcessorPriority
+	
+	APICMemoryIORegister EndOfInterrupt
+	APICMemoryIORegister RemoteRead
+	APICMemoryIORegister RemoteDestination
+	APICMemoryIORegister DestinationFormat
+	APICMemoryIORegister SpuriousInterruptVector
+	
+	APICMemoryIORegister[7] InService
+	APICMemoryIORegister[7] TriggerModes
+	APICMemoryIORegister[7] InterruptRequest
+	
+	APICMemoryIORegister ErrorStatus
+	
+	APICMemoryIORegister[5] Reserved3
+	
+	APICMemoryIORegister LocalMachineCheck
+	
+}
