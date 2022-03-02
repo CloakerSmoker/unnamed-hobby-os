@@ -230,7 +230,12 @@ define void VisitPCIFunction(i32 Bus, i32 Slot, i32 Function) {
 	}
 }
 
+Task _KernelSetupTask
+Task* KernelSetupTask := &_KernelSetupTask
+
 define void MainContinuation() {
+	CurrentTask := KernelSetupTask
+	
 	DisableInterrupts()
 	
 	Info("Paging initialized, AddressSpaceManager in control\n")
@@ -303,6 +308,8 @@ define void MainContinuation() {
 	SetupTimers()
 	
 	Print("Set up PIT/timers\n")
+	
+	EnableInterrupts()
 	
 	SetupSystemCalls()
 	
@@ -400,6 +407,5 @@ define void MainContinuation() {
 	
 	SetupShell()
 	
-	EnableInterrupts()
 	StartScheduler()
 }

@@ -28,20 +28,21 @@ define void InterruptCodeSetup() asm {
 	pop, rax                       ; Pop original return address
 	pop, rsi                       ; Pop error code as second parameter
 	
-	pop, rax                       ; Pop RIP
-	mov, {rdi} As i64*, rax        ; Context.RIP = rax
+	pop, rbx                       ; Pop RIP
+	mov, {rdi} As i64*, rbx        ; Context.RIP = rbx
 	
-	pop, rax                       ; Pop CS
-	pop, rax                       ; Pop RFLAGS
-	mov, {rdi + 0x80} As i64*, rax ; Context.Flags = rax
+	pop, rbx                       ; Pop CS
+	pop, rbx                       ; Pop RFLAGS
+	mov, {rdi + 0x80} As i64*, rbx ; Context.Flags = rbx
 	
-	pop, rax                       ; Pop RSP
-	mov, {rdi + 0x20} As i64*, rax ; Context.RSP = rax
+	pop, rbx                       ; Pop RSP
+	mov, {rdi + 0x20} As i64*, rbx ; Context.RSP = rbx
+	
+	pop, rbx                       ; Pop SS
 	
 	jmp, rax
 }
 define void InterruptCodeReturn() asm {
-	sti
 	call, @SchedulerRestart
 }
 
@@ -68,20 +69,19 @@ define void InterruptSetup() asm {
 	
 	pop, rax                       ; Pop original return address
 	
-	pop, rax                       ; Pop RIP
-	mov, {rdi} As i64*, rax        ; Context.RIP = rax
+	pop, rbx                       ; Pop RIP
+	mov, {rdi} As i64*, rbx        ; Context.RIP = rax
 	
-	pop, rax                       ; Pop CS
-	pop, rax                       ; Pop RFLAGS
-	mov, {rdi + 0x80} As i64*, rax ; Context.Flags = rax
+	pop, rbx                       ; Pop CS
+	pop, rbx                       ; Pop RFLAGS
+	mov, {rdi + 0x80} As i64*, rbx ; Context.Flags = rax
 	
-	pop, rax                       ; Pop RSP
-	mov, {rdi + 0x20} As i64*, rax ; Context.RSP = rax
+	pop, rbx                       ; Pop RSP
+	mov, {rdi + 0x20} As i64*, rbx ; Context.RSP = rax
 	
 	jmp, rax
 }
 define void InterruptReturn() asm {
-	sti
 	call, @SchedulerRestart
 }
 

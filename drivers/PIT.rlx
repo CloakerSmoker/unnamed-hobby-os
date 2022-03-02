@@ -15,6 +15,8 @@ struct PITCounterMode {
 }
 
 PITCounterMode PIT_100HZ_CONFIG {
+	; I really wish I'd wrote down how I got these numbers
+	
 	WholePerTick: 			10, 
 	FractionPerTick: 		6872852, 
 	FractionToWholeDivisor: 1000000000,
@@ -49,6 +51,8 @@ define void OnPITInterrupt(InterruptContext* Context) {
 	
 	PITWhole += PITFraction / CurrentPITMode->FractionToWholeDivisor
 	PITFraction %= CurrentPITMode->FractionToWholeDivisor
+	
+	;Info("T")
 	
 	OnHardwareTimerTick->Fire(PITWhole As void*)
 	

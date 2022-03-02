@@ -11,7 +11,7 @@ struct Timer {
 		if ((TimeMS - this->LastFiredAt) >= this->IntervalMS) {
 			this->Target->State := TASK_CAN_RUN
 			
-			Info("Fire %x\n", this->Target)
+			Info("\nFire %x\n", this->Target)
 			
 			this->LastFiredAt := TimeMS
 		}
@@ -21,6 +21,8 @@ struct Timer {
 Timer* RootTimer := null
 
 define i8 OnTick(void* Dummy, i64 CurrentWhole) {
+	;Info("O")
+	
 	Timer* NextTimer := RootTimer
 	
 	while (NextTimer) {

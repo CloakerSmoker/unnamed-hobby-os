@@ -21,11 +21,6 @@ struct Task {
 	void* InitialRIP
 	void* InitialRSP
 	
-	define void ResetExecution() {
-		this~>Context->RIP := this->InitialRIP
-		this~>Context->RSP := this->InitialRSP
-	}
-	
 	i32 Priority
 	i8 NeedsUserMode
 	i8 State
@@ -39,14 +34,6 @@ struct Task {
 	}
 	
 	define void Resume() {
-		if !(this->InitialRIP) {
-			this->InitialRIP := this~>Context->RIP
-		}
-		
-		if !(this->InitialRSP) {
-			this->InitialRSP := this~>Context->RSP
-		}
-		
 		; Doesn't return
 		
 		CurrentTask := this
@@ -55,7 +42,7 @@ struct Task {
 			ResumeUserMode(this~>Context)
 		}
 		else {
-			RestoreContext(this~>Context)
+			RestoreFullContext(this~>Context)
 		}
 	}
 	
@@ -92,11 +79,27 @@ struct TaskScheduler {
 	}
 	
 	define void PickNext() {
+		DisableInterrupts()
+		
 		Task* Current := RootTask
+		
+		;Info("Task %x can run? %i\n", Current, Current->CouldRun())
+		
+		Info("@%i.%i [%x, %x] ", PITWhole, PITFraction, RootTask, CurrentTask)
+		
+		while (Current) {
+			Info("(%x %i), ", Current, Current->State)
+			
+			Current := Current->Next
+		}
+		
+		Current := RootTask
 		
 		while (Current && !Current->CouldRun()) {
 			Current := Current->Next
 		}
+		
+		Info(" = %x\n", Current)
 		
 		if !(Current) {
 			CurrentTask := DelayTask
@@ -104,6 +107,8 @@ struct TaskScheduler {
 		else {
 			CurrentTask := Current
 		}
+		
+		;Info("Picked %x to run next\n", CurrentTask)
 	}
 	define void RunNext() {
 		this->PickNext()
@@ -153,12 +158,15 @@ struct TaskScheduler {
 	}
 	
 	define Task* MakeLightTask(void* Function) {
-		Task* NewTask := KernelPageAllocator->AllocateVirtual(1)
+		Task* NewTask := KernelPageAllocator->AllocateVirtual(3)
 		
 		AMD64Context* NewContext := NewTask~>Context
 		
-		NewContext->RIP := Function
-		NewContext->RSP := (NewTask + PAGE_SIZE) As void*
+		NewContext->RIP   := Function
+		NewContext->RSP   := (NewTask + (PAGE_SIZE * 3)) As void*
+		NewContext->Flags := X64_RFLAGS_IF
+		
+		KernelAddressSpace->UnmapRange(NewTask + (PAGE_SIZE * 1), 1)
 		
 		return NewTask
 	}
@@ -171,6 +179,8 @@ struct TaskScheduler {
 	}
 	
 	define i8 Quantum(i64 CurrentTickCount) {
+		;Info("%x,", CurrentTask~>Context->RIP)
+		
 		this->PickNext()
 		
 		return EVENT_CALL_NEXT_LISTENER
@@ -180,21 +190,32 @@ struct TaskScheduler {
 TaskScheduler _Scheduler
 TaskScheduler* Scheduler := &_Scheduler
 
-define void SchedulerYield() {
-	if (SaveContext(CurrentTask~>Context)) {
-		return
-	}
-	else {
-		Scheduler->YieldCurrent()
-	}
+define void _SchedulerYield() {
+	Scheduler->YieldCurrent()
 }
-define void SchedulerBlock() {
-	if (SaveContext(CurrentTask~>Context)) {
-		return
-	}
-	else {
-		Scheduler->BlockCurrent()
-	}
+define void SchedulerYield() asm {
+	call, @GetCurrentTaskContext
+	mov, rdi, rax      ; Parameter = CurrentTaskContext
+	call, @SaveContext ; Capure interrupted context, with anything extra cleaned up below
+	
+	pop, rbx ; grab return address, store into context
+	mov, {rdi} As i64*, rbx        ; Context.RIP = rax
+	
+	jmp, @_SchedulerYield
+}
+
+define void _SchedulerBlock() {
+	Scheduler->BlockCurrent()
+}
+define void SchedulerBlock() asm {
+	call, @GetCurrentTaskContext
+	mov, rdi, rax      ; Parameter = CurrentTaskContext
+	call, @SaveContext ; Capure interrupted context, with anything extra cleaned up below
+	
+	pop, rbx ; grab return address, store into context
+	mov, {rdi} As i64*, rbx        ; Context.RIP = rax
+	
+	jmp, @_SchedulerBlock
 }
 define void SchedulerEnd() {
 	Scheduler->EndCurrent()
@@ -209,16 +230,24 @@ define void DoSchedulerDelay() {
 	loop {
 		; Nothing better to do
 		
-		Info("Delay\n")
+		;Info("D")
 		
-		for (i32 Index := 0, Index < 0x1000_00, Index++) {}
+		asm {emit, 0xF4}
 	}
 }
 
 define void StartScheduler() {
-	DelayTask := Scheduler->AddLightTask(&DoSchedulerDelay)
+	DisableInterrupts()
+	
+	DelayTask := Scheduler->MakeLightTask(&DoSchedulerDelay)
+	
+	;Info("1")
 	
 	OnHardwareTimerTick->ListenLast(&TaskScheduler.Quantum, Scheduler)
 	
+	;Info("2")
+	
 	Scheduler->RunNext() ; Will resume the delay loop above unless other tasks can be run
+	
+	;Info("3")
 }
