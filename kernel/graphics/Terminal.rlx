@@ -1,11 +1,6 @@
-
 #Require "./src/kernel/graphics/Screen.rlx"
 #Require "./src/kernel/graphics/Font.rlx"
 
-i32 ASCII_BACK   := 0x8
-i32 ASCII_TAB    := 0x9
-i32 ASCII_ESCAPE := 0x1B
-i32 ASCII_DELETE := 0x7F
 i32 TAB_SIZE := 4
 
 declare void ShellPleaseSendForMe(i8*, i32)
@@ -170,8 +165,20 @@ struct Terminal {
 	
 	Timer* CursorTimer
 	
+	define void DoCursorTimerTick() {
+		loop {
+			this->ToggleCursor()
+			
+			SchedulerBlock()
+		}
+	}
+	
 	define void SetCursorTimer() {
-		this->CursorTimer := SetTimer(500, &Terminal.ToggleCursor, this)
+		Task* CursorTimerTask := Scheduler->AddLightTask(&Terminal.DoCursorTimerTick)
+		
+		CursorTimerTask~>Context->RDI := this As i64
+		
+		this->CursorTimer := SetTimer(500, CursorTimerTask)
 	}
 
 	define i32 GetTabLength(i32 AtIndex) {

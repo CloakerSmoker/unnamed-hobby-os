@@ -1,179 +1,88 @@
 #Require "./src/utility/x64.rlx"
 #Require "./src/drivers/PIC.rlx"
 
-struct InterruptContext {
-	i64 R15, i64 R14, i64 R13, i64 R12, i64 R11, i64 R10, i64 R9, i64 R8,
-	i64 RBP, i64 RDX, i64 RCX, i64 RBX, i64 RDI, i64 RSI, i64 RAX
-
-	i64 ErrorCode
-	i64 RIP
-	i64 CS
-	i64 Flags
-	i64 RSP
-	i64 SS
-	
-	define void PrintContext() {
-		Info("Interrupt Context: {\n")
-		Info("\tErrorCode: %x (%b)\n", this->ErrorCode, this->ErrorCode)
-		Info("\tRIP: %x\n", this->RIP)
-		Info("\tCS: %i (%x)\n", this->CS, this->CS)
-		Info("\tFlags: %i (%x, %b)\n", this->Flags, this->Flags, this->Flags)
-		Info("\tRSP: %x\n", this->RSP)
-		Info("\tSS: %x\n", this->SS)
-		Info("}\n")
-	}
-	
-	define void PrintRegisters() {
-		Info("Registers: {\n")
-		Info("\tRAX: %x\n", this->RAX)
-		Info("\tRBX: %x\n", this->RBX)
-		Info("\tRCX: %x\n", this->RCX)
-		Info("\tRDX: %x\n", this->RDX)
-		Info("\tRSP: %x (copy from context)\n", this->RSP)
-		Info("\tRBP: %x\n", this->RBP)
-		Info("\tRSI: %x\n", this->RSI)
-		Info("\tRDI: %x\n", this->RDI)
-		Info("\tR8 : %x\n", this->R8)
-		Info("\tR9 : %x\n", this->R9)
-		Info("\tR10: %x\n", this->R10)
-		Info("\tR11: %x\n", this->R11)
-		Info("\tR12: %x\n", this->R12)
-		Info("\tR13: %x\n", this->R13)
-		Info("\tR14: %x\n", this->R14)
-		Info("\tR15: %x\n", this->R15)
-		Info("}\n")
-	}
-	
-	define void PrintStackDump() {
-		Info("\nStack dump:\n")
-		
-		StackFrame* Last := this->RBP As StackFrame*
-		i32 Index := 1
-		
-		while (Last) {
-			if (Last->LastFrame & 1) {
-				StackFrame* Temp := Last->LastFrame - 1
-				
-				Info("\tStack[%i] Try catch address = %x\n", Index, Last->ReturnAddress, Temp)
-				Index += 1
-				
-				Last := Temp
-			}
-			else {
-				i64* MaybeMagic := (Last - 0x8) As i64*
-				i8** MaybeName := (Last - 0x10) As i8**
-				
-				if (Debug && *MaybeMagic = 0x12345678) {
-					Info("\tStack[%i] Fn = %s\n", Index, *MaybeName)
-				}
-				else {
-					Info("\tStack[%i] Fn callsite = %x\n", Index, Last->ReturnAddress, Last->LastFrame)
-				}
-				
-				Index += 1
-				
-				Last := Last->LastFrame
-			}
-		}
-	}
-}
+declare AMD64Context* GetCurrentTaskContext()
+declare void SchedulerRestart()
 
 define void InterruptCodeSetup() asm {
-	xchg, rax, {rsp} As i64* ; Swap the user RAX value with our return address
+	cli
 	
-	push, rsi
-	push, rdi
-	push, rbx
-	push, rcx
-	push, rdx
-	push, rbp
-	push, r8
-	push, r9
-	push, r10
-	push, r11
-	push, r12
-	push, r13
-	push, r14
-	push, r15
+	push, rax          ; Clobbered by GetCurrentTaskContext
+	push, rdi          ; Clobbered by SaveContext(GetCurrentTaskContext())
 	
-	mov, rdi, rsp
+	call, @GetCurrentTaskContext
+	mov, rdi, rax      ; Parameter = CurrentTaskContext
+	call, @SaveContext ; Capure interrupted context, with anything extra cleaned up below
+	
+	; Right now [ SS, RSP, RFLAGS, CS, RIP, ErrorCode, RAX, RDI ] where we need to save:
+	;                 ^^^  ^^^^^^      ^^^             ^^^  ^^^
+	;  into the current task's context before we can potentially jump to a different task
+	;   while handling this interrupt
+	
+	pop, rax
+	mov, {rdi + 0x38} As i64*, rax ; Context.RDI = OldRDI
+	
+	pop, rax
+	mov, {rdi + 0x88} As i64*, rax ; Context.RAX = OldRAX
+	
+	pop, rax                       ; Pop original return address
+	pop, rsi                       ; Pop error code as second parameter
+	
+	pop, rax                       ; Pop RIP
+	mov, {rdi} As i64*, rax        ; Context.RIP = rax
+	
+	pop, rax                       ; Pop CS
+	pop, rax                       ; Pop RFLAGS
+	mov, {rdi + 0x80} As i64*, rax ; Context.Flags = rax
+	
+	pop, rax                       ; Pop RSP
+	mov, {rdi + 0x20} As i64*, rax ; Context.RSP = rax
+	
 	jmp, rax
 }
 define void InterruptCodeReturn() asm {
-	pop, r15
-	pop, r14
-	pop, r13
-	pop, r12
-	pop, r11
-	pop, r10
-	pop, r9
-	pop, r8
-	pop, rbp
-	pop, rdx
-	pop, rcx
-	pop, rbx
-	pop, rdi
-	pop, rsi
-	pop, rax
-	
-	iret
+	sti
+	call, @SchedulerRestart
 }
 
 define void InterruptSetup() asm {
-	mov, {rsp - 0x8} As i64*, rax ; Write rax to where it *should* go in the InterruptContext
+	cli
 	
-	xor, rax, rax
-	xchg, rax, {rsp} As i64* ; Swap a dummy error code in for our return address
+	push, rax          ; Clobbered by GetCurrentTaskContext
+	push, rdi          ; Clobbered by SaveContext(GetCurrentTaskContext())
 	
-	; sub, rsp, 0x8 (HOW IS THIS NOT IMPLEMENTED?)
-	emit, 0x48
-	emit, 0x83
-	emit, 0xEC
-	emit, 0x08
+	call, @GetCurrentTaskContext
+	mov, rdi, rax      ; Parameter = CurrentTaskContext
+	call, @SaveContext ; Capure interrupted context, with anything extra cleaned up below
 	
-	push, rsi
-	push, rdi
-	push, rbx
-	push, rcx
-	push, rdx
-	push, rbp
-	push, r8
-	push, r9
-	push, r10
-	push, r11
-	push, r12
-	push, r13
-	push, r14
-	push, r15
+	; Right now [ SS, RSP, RFLAGS, CS, RIP, RAX, RDI ] where we need to save:
+	;                 ^^^  ^^^^^^      ^^^  ^^^  ^^^
+	;  into the current task's context before we can potentially jump to a different task
+	;   while handling this interrupt
 	
-	mov, rdi, rsp
+	pop, rax
+	mov, {rdi + 0x38} As i64*, rax ; Context.RDI = OldRDI
+	
+	pop, rax
+	mov, {rdi + 0x88} As i64*, rax ; Context.RAX = OldRAX
+	
+	pop, rax                       ; Pop original return address
+	
+	pop, rax                       ; Pop RIP
+	mov, {rdi} As i64*, rax        ; Context.RIP = rax
+	
+	pop, rax                       ; Pop CS
+	pop, rax                       ; Pop RFLAGS
+	mov, {rdi + 0x80} As i64*, rax ; Context.Flags = rax
+	
+	pop, rax                       ; Pop RSP
+	mov, {rdi + 0x20} As i64*, rax ; Context.RSP = rax
+	
 	jmp, rax
 }
 define void InterruptReturn() asm {
-	pop, r15
-	pop, r14
-	pop, r13
-	pop, r12
-	pop, r11
-	pop, r10
-	pop, r9
-	pop, r8
-	pop, rbp
-	pop, rdx
-	pop, rcx
-	pop, rbx
-	pop, rdi
-	pop, rsi
-	pop, rax
-	
-	; Free the dummy error code pushed in setup
-	; add, rsp, 0x8 (HOW IS THIS NOT IMPLEMENTED?)
-	emit, 0x48
-	emit, 0x83
-	emit, 0xC4
-	emit, 0x08
-	
-	iret
+	sti
+	call, @SchedulerRestart
 }
 
 struct IDTEntry unaligned {
@@ -198,8 +107,6 @@ i8 IST_6 := 1
 i8 IST_7 := 1
 
 define void InsertIDTEntry(i32 Index, void* Function, i8 Present, i8 IST) {
-	asm {cli}
-	
 	IDTEntry* E := IDT[Index]
 	
 	SetMemory(E As i64*, 0, 2)
@@ -210,8 +117,6 @@ define void InsertIDTEntry(i32 Index, void* Function, i8 Present, i8 IST) {
 	
 	E->Selector := 0x08
 	E->Flags := 0x0E | (Present << 7) As i8
-	
-	asm {sti}
 }
 
 define void InsertIDTEntry(i32 Index, void* Function, i8 Present) {
@@ -226,8 +131,6 @@ declare void AddKernelHandlers()
 declare void SetupDeviceInterrupts()
 
 define void SetupInterrupts() {
-	asm {cli}
-	
 	DescriptorTableHeader IDTHeader
 	
 	IDT := KernelHeap->Allocate('IDT', IDT_SIZE)
@@ -246,8 +149,16 @@ define void SetupInterrupts() {
 	
 	asm (rax := &IDTHeader) {
 		lidt, {rax} As i64*
-		sti
 	}
+}
+
+define void DisableInterrupts() asm {
+	cli
+	ret
+}
+define void EnableInterrupts() asm {
+	sti
+	ret
 }
 
 define i8* InterruptToName(i32 Index) {
@@ -280,7 +191,7 @@ define i8* InterruptToName(i32 Index) {
 
 i8 INTERRUPT_IS_FIRST_CHANCE := true
 
-define void GenericInterrupt(InterruptContext* Context, i32 InterruptNumber) {
+define void GenericInterrupt(AMD64Context* Context, i32 InterruptNumber) {
 	if !(INTERRUPT_IS_FIRST_CHANCE) {
 		asm {cli}
 		loop {}
@@ -290,9 +201,9 @@ define void GenericInterrupt(InterruptContext* Context, i32 InterruptNumber) {
 	
 	Info("UNHANDLED INTERRUPT %s (%i %x)\n", InterruptToName(InterruptNumber), InterruptNumber, InterruptNumber)
 	
-	Context->PrintContext()
-	Context->PrintRegisters()
-	Context->PrintStackDump()
+	;Context->PrintContext()
+	;Context->PrintRegisters()
+	;Context->PrintStackDump()
 	
 	asm {cli}
 	

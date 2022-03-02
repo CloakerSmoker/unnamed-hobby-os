@@ -156,8 +156,6 @@ define void SetupGDT() {
 	asm (rax := &GDTHeader, rbx := USER_TSS | 3, rcx := KERNEL_CS, rdx := KERNEL_DS) {
 		xchg, bx, bx
 		
-		cli
-		
 		lgdt, {rax} As i64*
 		ltr, bx
 		
@@ -177,8 +175,6 @@ define void SetupGDT() {
 		
 		emit, 0x8E ; mov ss, rx
 		emit, 0xD2
-		
-		sti
 	}
 	
 	TSS->RSP0 := Kernel->InterruptStack

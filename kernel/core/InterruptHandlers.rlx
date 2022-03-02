@@ -12,7 +12,7 @@ i64 PAGE_FAULT_INSTRUCTION_FETCH := 0b10000
 
 i8 PAGE_FAULT_CHANCE := 0
 
-define void PageFault(InterruptContext* Context) {
+define void PageFault(AMD64Context* Context, i64 ErrorCode) {
 	PAGE_FAULT_CHANCE++
 	
 	if (PAGE_FAULT_CHANCE > 2) {
@@ -28,7 +28,7 @@ define void PageFault(InterruptContext* Context) {
 	
 	Info("\tPage %x is present? ", CR2Page)
 	
-	if (Context->ErrorCode & PAGE_FAULT_PAGE_PRESENT) {
+	if (ErrorCode & PAGE_FAULT_PAGE_PRESENT) {
 		Info("Yes\n")
 		
 		i64* pPTE := KernelAddressSpace->FindOrAddPTEntry(CR2Page As void*)
@@ -55,7 +55,7 @@ define void PageFault(InterruptContext* Context) {
 	
 	Info("\tPage %x is reserved? ", CR2Page)
 	
-	if (Context->ErrorCode & PAGE_FAULT_PAGE_RESERVED) {
+	if (ErrorCode & PAGE_FAULT_PAGE_RESERVED) {
 		Info("Yes\n")
 	}
 	else {
@@ -65,10 +65,10 @@ define void PageFault(InterruptContext* Context) {
 	
 	Info("\tAddress %x was being? ", CR2)
 	
-	if (Context->ErrorCode & PAGE_FAULT_READ_WRITE) {
+	if (ErrorCode & PAGE_FAULT_READ_WRITE) {
 		Info("Written to\n")
 	}
-	else if (Context->ErrorCode & PAGE_FAULT_INSTRUCTION_FETCH) {
+	else if (ErrorCode & PAGE_FAULT_INSTRUCTION_FETCH) {
 		Info("Executed\n")
 	}
 	else {
@@ -78,7 +78,7 @@ define void PageFault(InterruptContext* Context) {
 	
 	Info("\tFrom code running in? ")
 	
-	if (Context->ErrorCode & PAGE_FAULT_USER_SUPERVISOR) {
+	if (ErrorCode & PAGE_FAULT_USER_SUPERVISOR) {
 		Info("User mode\n")
 	}
 	else {
@@ -88,7 +88,7 @@ define void PageFault(InterruptContext* Context) {
 	Info("%stackdump")
 	Info("}\n")
 	
-	if !(Context->ErrorCode & PAGE_FAULT_USER_SUPERVISOR) {
+	if !(ErrorCode & PAGE_FAULT_USER_SUPERVISOR) {
 		; For a user-mode exception, don't switch print the spooky panic message
 		
 		Print("^E1000A^E1000D")
@@ -100,7 +100,7 @@ define void PageFault(InterruptContext* Context) {
 	
 	Print("\tPage %x is present? ", CR2Page)
 	
-	if (Context->ErrorCode & PAGE_FAULT_PAGE_PRESENT) {
+	if (ErrorCode & PAGE_FAULT_PAGE_PRESENT) {
 		Print("Yes ")
 		
 		i64* pPTE := KernelAddressSpace->FindOrAddPTEntry(CR2Page As void*)
@@ -129,7 +129,7 @@ define void PageFault(InterruptContext* Context) {
 	
 	Print("\tPage %x is reserved? ", CR2Page)
 	
-	if (Context->ErrorCode & PAGE_FAULT_PAGE_RESERVED) {
+	if (ErrorCode & PAGE_FAULT_PAGE_RESERVED) {
 		Print("Yes\n")
 	}
 	else {
@@ -139,10 +139,10 @@ define void PageFault(InterruptContext* Context) {
 	
 	Print("\tAddress %x was being? ", CR2)
 	
-	if (Context->ErrorCode & PAGE_FAULT_READ_WRITE) {
+	if (ErrorCode & PAGE_FAULT_READ_WRITE) {
 		Print("Written to\n")
 	}
-	else if (Context->ErrorCode & PAGE_FAULT_INSTRUCTION_FETCH) {
+	else if (ErrorCode & PAGE_FAULT_INSTRUCTION_FETCH) {
 		Print("Executed\n")
 	}
 	else {
@@ -152,7 +152,7 @@ define void PageFault(InterruptContext* Context) {
 	
 	Print("\tFrom code running in? ")
 	
-	if (Context->ErrorCode & PAGE_FAULT_USER_SUPERVISOR) {
+	if (ErrorCode & PAGE_FAULT_USER_SUPERVISOR) {
 		Print("User mode\n")
 	}
 	else {
@@ -167,7 +167,7 @@ define void PageFault(InterruptContext* Context) {
 	
 	PAGE_FAULT_CHANCE--
 	
-	if (RECOVER_FROM_USER_PAGE_FAULT && (Context->ErrorCode & PAGE_FAULT_USER_SUPERVISOR)) {
+	if (RECOVER_FROM_USER_PAGE_FAULT && (ErrorCode & PAGE_FAULT_USER_SUPERVISOR)) {
 		RestoreContext(&KernelContext)
 	}
 	

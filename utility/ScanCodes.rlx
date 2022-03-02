@@ -6,6 +6,11 @@ define i8 ScanCodeGetMapIndex(i8* Map, i32 Max, i32 Code) {
 	return Map[Code]
 }
 
+i32 ASCII_BACK   := 0x8
+i32 ASCII_TAB    := 0x9
+i32 ASCII_ESCAPE := 0x1B
+i32 ASCII_DELETE := 0x7F
+
 i32 SCANCODE_ESCAPE := 0x01
 
 i32 SCANCODE_CONTROL_DOWN := 0x1D

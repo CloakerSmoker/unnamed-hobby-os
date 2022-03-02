@@ -7,17 +7,26 @@ define Task* GetCurrentTaskContext() {
 }
 
 i8 TASK_CAN_RUN := 0
-i8 TASK_BLOCKED := 1
-i8 TASK_STOPPED := 2
+i8 TASK_RUNNING := 1
+i8 TASK_BLOCKED := 2
+i8 TASK_PAUSED  := 3
+i8 TASK_KILLED  := 4
 
 struct Task {
 	AMD64Context Context ; MUST be the first field
 	
-	i32 Priority
-	
 	Task* Next
 	Task* AwaitedBy
 	
+	void* InitialRIP
+	void* InitialRSP
+	
+	define void ResetExecution() {
+		this~>Context->RIP := this->InitialRIP
+		this~>Context->RSP := this->InitialRSP
+	}
+	
+	i32 Priority
 	i8 NeedsUserMode
 	i8 State
 	
@@ -30,6 +39,14 @@ struct Task {
 	}
 	
 	define void Resume() {
+		if !(this->InitialRIP) {
+			this->InitialRIP := this~>Context->RIP
+		}
+		
+		if !(this->InitialRSP) {
+			this->InitialRSP := this~>Context->RSP
+		}
+		
 		; Doesn't return
 		
 		CurrentTask := this
@@ -42,45 +59,85 @@ struct Task {
 		}
 	}
 	
-	define Task* FindNextRunnable() {
-		return null
+	define void Yield() {
+		this->State := TASK_CAN_RUN
 	}
-	
+	define void Block() {
+		this->State := TASK_BLOCKED
+	}
 	define void End() {
+		this->State := TASK_KILLED
+		
 		Task* Waiter := this->AwaitedBy
 		
-		if (Waiter) {
+		while (Waiter) {
 			Waiter->State := TASK_CAN_RUN
+			
+			Waiter := Waiter->AwaitedBy
 		}
-		
-		Task* Next := this->Next
-		
-		Free(this)
-		
-		Next->Resume()
+	}
+	
+	define i8 CouldRun() {
+		return this->State <= TASK_RUNNING
 	}
 }
 
-Task RawDispatchTask
-Task* DispatchTask := &RawDispatchTask
+Task* RootTask := null
+Task* DelayTask := null
 
-define void EndCurrentTask() {
-	CurrentTask->End()
-}
-
-struct TaskQueue {
-	Task* Next
+struct TaskScheduler {
+	define void RunCurrent() {
+		CurrentTask->State := TASK_RUNNING
+		CurrentTask->Resume()
+	}
 	
-	define Task* Allocate() {
-		return Alloc(#Task)
+	define void PickNext() {
+		Task* Current := RootTask
+		
+		while (Current && !Current->CouldRun()) {
+			Current := Current->Next
+		}
+		
+		if !(Current) {
+			CurrentTask := DelayTask
+		}
+		else {
+			CurrentTask := Current
+		}
+	}
+	define void RunNext() {
+		this->PickNext()
+		this->RunCurrent()
+	}
+	
+	define void YieldCurrent() {
+		CurrentTask->State := TASK_PAUSED
+		this->RunNext()
+	}
+	define void BlockCurrent() {
+		CurrentTask->State := TASK_BLOCKED
+		this->RunNext()
+	}
+	define void EndCurrent() {
+		CurrentTask->State := TASK_KILLED
+		this->RunNext()
+	}
+	
+	define Task* OnExternalControlTransfer(Task* NewCurrent) {
+		CurrentTask->State := TASK_CAN_RUN
+		
+		Task* Result := CurrentTask
+		CurrentTask := NewCurrent
+		
+		return Result
 	}
 	
 	define void Enqueue(Task* NewTask) {
-		if (this->Next = null) {
-			this->Next := NewTask
+		if (RootTask = null) {
+			RootTask := NewTask
 		}
 		else {
-			Task* Next := this->Next
+			Task* Next := RootTask
 			
 			while (Next->Next && Next->Priority > NewTask->Priority) {
 				Next := Next->Next
@@ -90,31 +147,78 @@ struct TaskQueue {
 			Next->Next := NewTask
 		}
 	}
-	define Task* Dequeue() {
-		Task* Result := this->Next
-		
-		this->Next := Result->Next
-		
-		return Result
+	
+	define void Add(Task* NewTask) {
+		this->Enqueue(NewTask)
 	}
-	define void RunNext() {
-		Task* Target := this->Dequeue()
+	
+	define Task* MakeLightTask(void* Function) {
+		Task* NewTask := KernelPageAllocator->AllocateVirtual(1)
 		
-		if !(Target) {
-			return
-		}
+		AMD64Context* NewContext := NewTask~>Context
 		
-		Target->Resume()
+		NewContext->RIP := Function
+		NewContext->RSP := (NewTask + PAGE_SIZE) As void*
+		
+		return NewTask
+	}
+	define Task* AddLightTask(void* Function) {
+		Task* NewTask := this->MakeLightTask(Function)
+		
+		this->Add(NewTask)
+		
+		return NewTask
+	}
+	
+	define i8 Quantum(i64 CurrentTickCount) {
+		this->PickNext()
+		
+		return EVENT_CALL_NEXT_LISTENER
 	}
 }
 
-define void DispatchTask() {
-	Task* Tail := CurrentTask->Next
-	
-	while (Tail != null) {
-		if (Tail~>Context->RIP = &DispatchTask) {
-			return
-		}
-		
+TaskScheduler _Scheduler
+TaskScheduler* Scheduler := &_Scheduler
+
+define void SchedulerYield() {
+	if (SaveContext(CurrentTask~>Context)) {
+		return
 	}
+	else {
+		Scheduler->YieldCurrent()
+	}
+}
+define void SchedulerBlock() {
+	if (SaveContext(CurrentTask~>Context)) {
+		return
+	}
+	else {
+		Scheduler->BlockCurrent()
+	}
+}
+define void SchedulerEnd() {
+	Scheduler->EndCurrent()
+}
+define void SchedulerRestart() {
+	; Called after non-task code 
+	
+	Scheduler->RunCurrent()
+}
+
+define void DoSchedulerDelay() {
+	loop {
+		; Nothing better to do
+		
+		Info("Delay\n")
+		
+		for (i32 Index := 0, Index < 0x1000_00, Index++) {}
+	}
+}
+
+define void StartScheduler() {
+	DelayTask := Scheduler->AddLightTask(&DoSchedulerDelay)
+	
+	OnHardwareTimerTick->ListenLast(&TaskScheduler.Quantum, Scheduler)
+	
+	Scheduler->RunNext() ; Will resume the delay loop above unless other tasks can be run
 }

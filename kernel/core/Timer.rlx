@@ -1,50 +1,44 @@
 
 
 struct Timer {
-	void* Function
-	void* Parameter
 	i64 LastFiredAt
 	i64 IntervalMS
+	Task* Target
 	
 	Timer* Next
 	
 	define void MaybeFire(i64 TimeMS) {
 		if ((TimeMS - this->LastFiredAt) >= this->IntervalMS) {
+			this->Target->State := TASK_CAN_RUN
 			
-			asm (rax := this->Function, rdi := this->Parameter) {
-				call, rax
-			}
+			Info("Fire %x\n", this->Target)
 			
 			this->LastFiredAt := TimeMS
 		}
 	}
 }
 
-
 Timer* RootTimer := null
 
-define void OnTick(i64 NowMS) {
+define i8 OnTick(void* Dummy, i64 CurrentWhole) {
 	Timer* NextTimer := RootTimer
 	
 	while (NextTimer) {
-		NextTimer->MaybeFire(NowMS)
+		NextTimer->MaybeFire(CurrentWhole)
 		NextTimer := NextTimer->Next
 	}
+	
+	return EVENT_CALL_NEXT_LISTENER
 }
-
-declare void SetPITCallback(void*)
 
 define void SetupTimers() {
-	asm {cli}
-	SetPITCallback(&OnTick)
-	asm {sti}
+	OnHardwareTimerTick->Listen(&OnTick, null)
 }
 
-define Timer* SetTimer(i64 IntervalMS, void* Function, void* Parameter) {
+define Timer* SetTimer(i64 IntervalMS, Task* Target) {
 	Timer* Result := Alloc(#Timer)
 	
-	Result->Function := Function
-	Result->Parameter := Parameter
+	Result->Target := Target
 	Result->IntervalMS := IntervalMS
 	
 	if (RootTimer) {

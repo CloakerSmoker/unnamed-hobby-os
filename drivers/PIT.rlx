@@ -1,6 +1,7 @@
 ; Int 0x20, IRQ0
 
 #Require "./src/utility/x64.rlx"
+#Require "./src/kernel/core/Events.rlx"
 
 struct PITCounterMode {
 	i64 WholePerTick
@@ -34,9 +35,13 @@ define i64 GetUptimeMS() {
 }
 
 PITCounterMode* CurrentPITMode := null
-void* OnTickCallback := null
 
-define void OnPITInterrupt() {
+Event _OnTimerTick {
+	Name: "PIT Tick"
+}
+Event* OnHardwareTimerTick := &_OnTimerTick
+
+define void OnPITInterrupt(InterruptContext* Context) {
 	TickCount += 1
 
 	PITWhole += CurrentPITMode->WholePerTick
@@ -45,11 +50,7 @@ define void OnPITInterrupt() {
 	PITWhole += PITFraction / CurrentPITMode->FractionToWholeDivisor
 	PITFraction %= CurrentPITMode->FractionToWholeDivisor
 	
-	if (OnTickCallback) {
-		asm (rax := OnTickCallback, rdi := PITWhole) {
-			call, rax
-		}
-	}
+	OnHardwareTimerTick->Fire(PITWhole As void*)
 	
 	SendEOI(0)
 }
@@ -93,9 +94,6 @@ define void SetPITMode(PITCounterMode* Mode) {
 	InitializePIT(Command, Mode->ReloadValue)
 	
 	EnablePICLine(0, true)
-}
-define void SetPITCallback(void* Callback) {
-	OnTickCallback := Callback
 }
 
 define void SleepTicks(i32 Ticks) {

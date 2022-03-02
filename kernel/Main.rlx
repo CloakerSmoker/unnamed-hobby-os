@@ -73,6 +73,11 @@ AMD64Context KernelContext
 #Require "./src/utility/Memory.rlx"
 #Require "./src/utility/Exception.rlx"
 
+declare void SchedulerYield()
+
+#Require "./src/kernel/core/Interrupts.rlx"
+#Require "./src/kernel/core/Devices.rlx"
+#Require "./src/kernel/core/Tasks.rlx"
 #Require "./src/kernel/core/Timer.rlx"
 
 #Require "./src/kernel/graphics/LoadFON.rlx"
@@ -81,9 +86,6 @@ AMD64Context KernelContext
 define void PrintCharacter(i8 Character) {
 	KernelTerminal->Print(&Character, 1)
 }
-
-#Require "./src/kernel/core/Interrupts.rlx"
-#Require "./src/kernel/core/Devices.rlx"
 
 Ext2* FS := null
 INode* RootINode := null
@@ -94,7 +96,6 @@ INode* RootINode := null
 
 #Require "./src/drivers/Ext2Interface.rlx"
 
-#Require "./src/kernel/core/Tasks.rlx"
 #Require "./src/kernel/user-mode/Process.rlx"
 #Require "./src/kernel/core/SystemCalls.rlx"
 
@@ -230,6 +231,8 @@ define void VisitPCIFunction(i32 Bus, i32 Slot, i32 Function) {
 }
 
 define void MainContinuation() {
+	DisableInterrupts()
+	
 	Info("Paging initialized, AddressSpaceManager in control\n")
 	
 	KernelPageAllocator := PageHeap:Adopt(ADDRESS_OF_KERNEL_PAGES As i64, NUMBER_OF_KERNEL_PAGES)
@@ -301,10 +304,7 @@ define void MainContinuation() {
 	
 	Print("Set up PIT/timers\n")
 	
-	;Print("\nTesting user-mode\n")
-	
 	SetupSystemCalls()
-	;Test()
 	
 	SetupExecute()
 	
@@ -396,15 +396,10 @@ define void MainContinuation() {
 	;
 	;BootFont->Draw(NativeScreen->Canvas, 0x00_00_00, 0xFF_FF_FF, 0, 0, 'A')
 	
-	
-	
-	
 	KernelTerminal->SetCursorTimer()
 	
 	SetupShell()
 	
-	Prompt()
-	Shell()
-	
-	loop {asm {emit, 0xF4}}
+	EnableInterrupts()
+	StartScheduler()
 }

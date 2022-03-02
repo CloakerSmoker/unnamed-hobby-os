@@ -1,0 +1,94 @@
+
+struct EventListener {
+	EventListener* Next
+	void* Function
+	void* Parameter
+}
+
+i8 EVENT_CALL_NEXT_LISTENER := 0
+i8 EVENT_HANDLED := 1
+
+struct Event {
+	EventListener* FirstListener
+	i8* Name
+	i32 FireCounter
+	
+	define EventListener* ListenFirst(void* Function, void* Parameter) {
+		EventListener* Result := Alloc(#EventListener)
+		
+		Result->Function := Function
+		Result->Parameter := Parameter
+		
+		Result->Next := this->FirstListener
+		this->FirstListener := Result
+		
+		return Result
+	}
+	define EventListener* ListenLast(void* Function, void* Parameter) {
+		EventListener* Result := Alloc(#EventListener)
+		
+		Result->Function := Function
+		Result->Parameter := Parameter
+		
+		if !(this->FirstListener) {
+			this->FirstListener := Result
+		}
+		else {
+			EventListener* Current := this->FirstListener
+			
+			while (Current->Next) {
+				Current := Current->Next
+			}
+			
+			Current->Next := Result
+		}
+		
+		return Result
+	}
+	define EventListener* Listen(void* Function, void* Parameter) {
+		return this->ListenFirst(Function, Parameter)
+	}
+	
+	define void RemoveListener(EventListener* Listener) {
+		if (this->FirstListener = Listener) {
+			this->FirstListener := Listener->Next
+		}
+		else if (this->FirstListener) {
+			EventListener* Current := this->FirstListener
+			
+			while (Current) {
+				if (Current->Next = Listener) {
+					Current->Next := Listener->Next
+				}
+				
+				Current := Current->Next
+			}
+		}
+	}
+	
+	static i8 CallListener(void* Parameter, void* Data, void* this, void* Listener, void* Function) asm {
+		jmp, r8
+	}
+	
+	define void Fire(void* Data) {
+		this->FireCounter++
+		
+		EventListener* Current := this->FirstListener
+		
+		while (Current) {
+			if (Event:CallListener(Current->Parameter, Data, this, Current, Current->Function)) {
+				break
+			}
+			
+			Current := Current->Next
+		}
+	}
+	
+	define void Wait() {
+		i64 OriginalCounter := this->FireCounter
+		
+		while (this->FireCounter = OriginalCounter) {
+			SchedulerYield()
+		}
+	}
+}

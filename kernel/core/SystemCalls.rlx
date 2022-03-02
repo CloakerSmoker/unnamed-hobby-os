@@ -608,8 +608,20 @@ define void SystemCallArchPrctl(i64 SubFunction, void* Parameter) {
 	}
 }
 
-define void* GetKernelSystemCallStack() {
-	return Kernel->SystemCallStack
+
+Task* SystemCallTask := null
+
+define void ExitSystemCall() {
+	Scheduler->RunNext()
+}
+
+define void EnterSystemCall(AMD64Context* UserContext) {
+	Scheduler->OnExternalControlTransfer(UserContext As Task*)
+	
+	SystemCallTask~>Context->RIP := &HandleSystemCall
+	SystemCallTask~>Context->RDI := UserContext As i64
+	SystemCallTask~>Context->Push(&ExitSystemCall As i64)
+	SystemCallTask->Resume()
 }
 
 define void OnSystemCall() asm {
@@ -633,11 +645,6 @@ define void OnSystemCall() asm {
 	mov, {rdi + 0x20} As i64*, rsp ; Context.RSP = UserRSP
 	; (since we push rax/rdi, we need to update the saved RSP after our pops)
 	
-	call, @GetKernelSystemCallStack   ; Get stack for kernel code
-	mov, rsp, rax
-	
-	push, rdi ; Save the user-mode context (and also pass it as a parameter to HandleSystemCall)
-	
 	sti
 	jmp, @HandleSystemCall
 }
@@ -659,6 +666,8 @@ define void SetupSystemCalls() {
 	RegisterSystemCall(4, &SystemCallPathStatus)
 	RegisterSystemCall(5, &SystemCallFileStatus)
 	RegisterSystemCall(8, &SystemCallSeek)
+	
+	SystemCallTask := Scheduler->MakeLightTask(&HandleSystemCall)
 }
 
 define void UserModeReturnStub() asm {

@@ -51,7 +51,7 @@ define void StartKernel(void* CR3, void* FrameBuffer, i64 MaxKernelAddress, void
 
 define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
     i64 Status := 0
-
+	
 	Print("Hello new EFI world!\n")
 	
 	;SystemTable->ConsoleInput->Reset()
