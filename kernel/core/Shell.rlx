@@ -583,7 +583,6 @@ Timer* ShellPumpInputTimer := null
 
 define void ShellPumpInputThread() {
 	loop {
-		Info("SPI\n")
 		ShellPumpInput()
 		SchedulerBlock()
 	}
@@ -599,5 +598,5 @@ define void SetupShell() {
 	Task* ShellPumpInputTask := Scheduler->AddLightTask(&ShellPumpInputThread)
 	
 	Prompt()
-	ShellPumpInputTimer := SetTimer(1000, ShellPumpInputTask)
+	ShellPumpInputTimer := SetTimer(20, ShellPumpInputTask)
 }

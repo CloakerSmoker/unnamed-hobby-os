@@ -83,14 +83,16 @@ struct TaskScheduler {
 		
 		Task* Current := RootTask
 		
-		;Info("Task %x can run? %i\n", Current, Current->CouldRun())
-		
-		Info("@%i.%i [%x, %x] ", PITWhole, PITFraction, RootTask, CurrentTask)
+		;Info("[%i.%i] %x -> ", PITWhole, PITFraction, CurrentTask)
 		
 		while (Current) {
-			Info("(%x %i), ", Current, Current->State)
+			;Info("(%x %i)", Current, Current->State)
 			
 			Current := Current->Next
+			
+			if (Current) {
+				;Info(", ")
+			}
 		}
 		
 		Current := RootTask
@@ -99,14 +101,17 @@ struct TaskScheduler {
 			Current := Current->Next
 		}
 		
-		Info(" = %x\n", Current)
+		;Info(" = %x", Current)
 		
 		if !(Current) {
 			CurrentTask := DelayTask
 		}
 		else {
+			;Info(" {%x %x}", Current~>Context->RIP, Current~>Context->RSP)
 			CurrentTask := Current
 		}
+		
+		;Info("\n")
 		
 		;Info("Picked %x to run next\n", CurrentTask)
 	}
@@ -200,6 +205,8 @@ define void SchedulerYield() asm {
 	
 	pop, rbx ; grab return address, store into context
 	mov, {rdi} As i64*, rbx        ; Context.RIP = rax
+	mov, {rdi + 0x20} As i64*, rsp ; Fix RSP, original capture is off by 8 because of our
+	;  return address
 	
 	jmp, @_SchedulerYield
 }
@@ -214,6 +221,8 @@ define void SchedulerBlock() asm {
 	
 	pop, rbx ; grab return address, store into context
 	mov, {rdi} As i64*, rbx        ; Context.RIP = rax
+	mov, {rdi + 0x20} As i64*, rsp ; Fix RSP, original capture is off by 8 because of our
+	;  return address
 	
 	jmp, @_SchedulerBlock
 }
@@ -245,9 +254,16 @@ define void StartScheduler() {
 	
 	OnHardwareTimerTick->ListenLast(&TaskScheduler.Quantum, Scheduler)
 	
+	loop {
+		asm {
+			sti
+			emit, 0xF4
+		}
+	}
+	
 	;Info("2")
 	
-	Scheduler->RunNext() ; Will resume the delay loop above unless other tasks can be run
+	;Scheduler->RunNext() ; Will resume the delay loop above unless other tasks can be run
 	
 	;Info("3")
 }

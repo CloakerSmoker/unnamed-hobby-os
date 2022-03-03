@@ -167,8 +167,6 @@ struct Terminal {
 	
 	define void DoCursorTimerTick() {
 		loop {
-			Info("DCTT %x\n", this)
-			
 			this->ToggleCursor()
 			
 			SchedulerBlock()
