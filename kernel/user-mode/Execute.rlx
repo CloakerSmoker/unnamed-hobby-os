@@ -82,7 +82,7 @@ define void SetupExecute() {
 	UserVirtualAddresses := PageHeap:Adopt(ADDRESS_OF_USER_PAGES As i64, NUMBER_OF_USER_PAGES)
 }
 
-define i32 Execute(void* Buffer, i32 ArgumentCount, i8** Arguments, i32 EnvironmentCount, i8** Environment) {
+define Process* Execute(void* Buffer, i32 ArgumentCount, i8** Arguments, i32 EnvironmentCount, i8** Environment) {
 	ELFHeader* ELFData := Buffer As ELFHeader*
 	
 	UserVirtualAddresses->FreeAll()
@@ -113,14 +113,7 @@ define i32 Execute(void* Buffer, i32 ArgumentCount, i8** Arguments, i32 Environm
 	Context->RSP := RSP
 	Context->RawRIP := ELFData->EntryPoint
 	
-	CurrentProcess->Start()
+	Scheduler->Enqueue(CurrentProcess~>Task)
 	
-	i32 ExitCode := CurrentProcess->ExitCode
-	
-	KernelHeap->Free(CurrentProcess)
-	Mappings->Delete()
-	
-	CurrentProcess := LastProcess
-	
-	return ExitCode
+	return CurrentProcess
 }

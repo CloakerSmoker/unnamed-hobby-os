@@ -18,6 +18,8 @@ struct Process {
 		Task Task
 	}
 	
+	Event OnKilled
+	
 	i32 ExitCode
 	
 	define void Initialize(ELFHeader* Header, MemoryMappingGroup* Mappings) {
@@ -50,11 +52,6 @@ struct Process {
 	
 	define void Start() {
 		this~>Task->NeedsUserMode := true
-		
-		if (SaveContext(&KernelContext)) {
-			return
-		}
-		
 		this->Run()
 	}
 	
@@ -77,7 +74,12 @@ struct Process {
 	
 	define void Exit(i32 Code) {
 		this->ExitCode := Code
-		RestoreContext(&KernelContext)
+		this~>OnKilled->Fire(Code As void*)
+		
+		SchedulerEnd()
+		
+		;KernelHeap->Free(CurrentProcess)
+		;Mappings->Delete()
 	}
 	
 	LinuxSignalAction[31] Actions

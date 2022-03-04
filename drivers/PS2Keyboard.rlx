@@ -16,15 +16,20 @@ i16 PS2_WAIT_INPUT := 0x100
 
 declare void PS2Wait(i8, i8)
 
-void* PS2OnKeyCallback := null
-
-define void PS2OnKey(i32 ScanCode, i8 ASCIICode, void* Callback) asm {
-	jmp, rdx
-}
-
 i8 PS2_SHIFT_STATE := false
 
 i32 PS2Prefix := 0
+
+Event _OnKeyEvent {
+	Name: "PS2 Key Event"
+}
+Event* OnKeyEvent := &_OnKeyEvent
+
+struct KeyEventInfo {
+	i32 ScanCode
+	i32 ASCIICode
+	i32 Modifiers
+}
 
 define void OnPS2Event() {
 	; IRQ1 handler
@@ -55,9 +60,13 @@ define void OnPS2Event() {
 		PS2_SHIFT_STATE := true
 	}
 	else {
-		if (PS2OnKeyCallback != null) {
-			PS2OnKey(ScanCode, ASCIICode, PS2OnKeyCallback)
+		KeyEventInfo KeyEvent {
+			ScanCode: ScanCode,
+			ASCIICode: ASCIICode,
+			Modifiers: PS2_SHIFT_STATE
 		}
+		
+		OnKeyEvent->Fire(&KeyEvent)
 	}
 }
 
@@ -102,9 +111,6 @@ define i8 PS2SendCommand(i16 Command, ... Bytes) {
 	return 0
 }
 
-define void SetOnKeyCallback(void* Callback) {
-	PS2OnKeyCallback := Callback
-}
 define void SetupKeyboard() {
 	; Called with interrupts disabled, and before the IDT is loaded
 	

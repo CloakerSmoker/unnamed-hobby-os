@@ -14,6 +14,13 @@ MemoryFIFO* RunningProgramInput := null
 
 i32 LastStatus := 0
 
+define i8 OnChildKilled(Process* Child, i32 ExitCode) {
+	LastStatus := ExitCode
+	RunningProgram := false
+	
+	return EVENT_CALL_NEXT_LISTENER
+}
+
 define void OnCommand(i8* CommandLine) {
 	i32 ParameterStart := 0
 	i32 ParameterCount := 0
@@ -305,11 +312,11 @@ define void OnCommand(i8* CommandLine) {
 			
 			i8* User := "USER=root"
 			
-			LastStatus := Execute(FileData, ParameterCount, Parameters, 1, &User)
+			Process* Child := Execute(FileData, ParameterCount, Parameters, 1, &User)
 			
 			KernelPageAllocator->FreeVirtual(FileData, FilePages)
 			
-			RunningProgram := false
+			Child~>OnKilled->Listen(&OnChildKilled, Child)
 		}
 	}
 	else if (StringEquals(Command, "ksyscall")) {
@@ -373,8 +380,11 @@ i32 ShellInputIndex := 0
 
 i8 ControlHeld := false
 
-define void ShellOnKey(i32 ScanCode, i8 ASCIICode) {
+define void ShellOnKey(void* Dummy, KeyEventInfo* KeyEvent) {
 	;Info("%x %x\n", ScanCode, ASCIICode)
+	
+	i32 ScanCode := KeyEvent->ScanCode
+	i32 ASCIICode := KeyEvent->ASCIICode
 	
 	if (ScanCode = SCANCODE_CONTROL_DOWN) {
 		ControlHeld := true
@@ -466,14 +476,7 @@ define void ShellOnKey(i32 ScanCode, i8 ASCIICode) {
 		
 		KeyboardBuffer->Write(&ASCIICode, 1)
 	}
-}
-
-define void ShellPleaseSendForMe(i8* Data, i32 Size) {
-	;Info("%s", Data)
-	InputBuffer->Write(Data, Size)
-}
-
-define void ShellPumpInput() {
+	
 	i32 Size := KeyboardBuffer->Available()
 	
 	i8 BlockForLine := (ShellConfig->LocalFlags & LINUX_TERMIOS_LOCAL_FLAG_ICANON) != 0
@@ -543,12 +546,15 @@ define void ShellPumpInput() {
 	}
 }
 
+define void ShellPleaseSendForMe(i8* Data, i32 Size) {
+	;Info("%s", Data)
+	InputBuffer->Write(Data, Size)
+}
+
 define i32 ShellPollForInput(i32 Timeout) {
 	i64 End := GetUptimeMS() + Timeout
 	
 	while (GetUptimeMS() <= End) {
-		ShellPumpInput()
-		
 		if (InputBuffer->Available()) {
 			return InputBuffer->Available()
 		}
@@ -563,7 +569,7 @@ define i32 ShellGatherInput(i8* Destination, i32 Size) {
 	i8 BlockForLine := (ShellConfig->LocalFlags & LINUX_TERMIOS_LOCAL_FLAG_ICANON) != 0
 	
 	if (BlockForLine) {
-		while (InputBuffer->Available() < ShellConfig->MinimumReadSize) {ShellPumpInput()}
+		while (InputBuffer->Available() < ShellConfig->MinimumReadSize) {}
 	}
 	
 	i32 Available := InputBuffer->Available()
@@ -579,24 +585,12 @@ define i32 ShellGatherInput(i8* Destination, i32 Size) {
 	return Size
 }
 
-Timer* ShellPumpInputTimer := null
-
-define void ShellPumpInputThread() {
-	loop {
-		ShellPumpInput()
-		SchedulerBlock()
-	}
-}
-
 define void SetupShell() {
-	SetOnKeyCallback(&ShellOnKey)
+	OnKeyEvent->Listen(&ShellOnKey, null)
 	
 	ShellConfig->ControlCharacters[LINUX_TERMIOS_CHARACTER_VERASE] := ASCII_BACK As i8
 	ShellConfig->ControlCharacters[LINUX_TERMIOS_CHARACTER_VEOL  ] := 0xD
 	ShellConfig->ControlCharacters[LINUX_TERMIOS_CHARACTER_VEOL2 ] := 0xA
 	
-	Task* ShellPumpInputTask := Scheduler->AddLightTask(&ShellPumpInputThread)
-	
 	Prompt()
-	ShellPumpInputTimer := SetTimer(20, ShellPumpInputTask)
 }

@@ -22,7 +22,12 @@ struct Task {
 	void* InitialRSP
 	
 	i32 Priority
-	i8 NeedsUserMode
+	
+	union {
+		i8 NeedsUserMode
+		i8 IsProcess
+	}
+	
 	i8 State
 	
 	static Task* New(i32 Priority) {
