@@ -62,86 +62,86 @@ define void HandleSystemCall(AMD64Context* Context) {
 			SystemCallExit(Context->RDI)
 		}
 		else if (Number = LINUX_SYSCALL_UNLINK) {
-			ResumeUserMode(Context)
+			return
 		}
 		else if (Number = LINUX_SYSCALL_ACCESS) {
 			Context->RAX := 0
 			
-			ResumeUserMode(Context)
+			return
 		}
 		else if (Number = LINUX_SYSCALL_FTRUNCATE) {
 			Context->RAX := SystemCallTruncate(Context->RDI, Context->ESI)
 			
-			ResumeUserMode(Context)
+			return
 		}
 		else if (Number = LINUX_SYSCALL_CHDIR) {
 			Context->RAX := SystemCallSetWorkingDirectory(Context->RDI As i8*)
 			
-			ResumeUserMode(Context)
+			return
 		}
 		else if (Number = LINUX_SYSCALL_GETCWD) {
 			Context->RAX := SystemCallGetWorkingDirectory(Context->RDI As i8*, Context->ESI)
 			
-			ResumeUserMode(Context)
+			return
 		}
 		else if (Number = LINUX_SYSCALL_RT_SIGACTION) {
 			SystemCallSetSignalAction(Context->EDI, Context->RSI As void*, Context->RDX As void*)
 			
-			ResumeUserMode(Context)
+			return
 		}
 		else if (Number = LINUX_SYSCALL_RT_SIGPROCMASK) {
 			SystemCallSetSignalMask(Context->EDI, Context->RSI As i64*, Context->RDX As i64*)
 			
-			ResumeUserMode(Context)
+			return
 		}
 		else if (Number = LINUX_SYSCALL_POLL) {
 			Context->RAX := SystemCallPoll(Context->RDI As void*, Context->ESI, Context->EDX) As i64
 			
-			ResumeUserMode(Context)
+			return
 		}
 		else if (Number = SYSCALL_MAP_MEMORY) {
 			Context->RAX := SystemCallMapMemory(Context->RDI As void*, Context->ESI, Context->EDX, Context->R10D, Context->R8D, Context->R9D) As i64
 			
-			ResumeUserMode(Context)
+			return
 		}
 		else if (Number = SYSCALL_UNMAP_MEMORY) {
 			Context->RAX := SystemCallUnMapMemory(Context->RDI As void*, Context->ESI)
 			
-			ResumeUserMode(Context)
+			return
 		}
 		else if (Number = SYSCALL_ARCH_PRCTL) {
 			DoSystemCall(Context->RDI, Context->RSI, Context->RDX, Context->R10, Context, &SystemCallArchPrctl)
 			
 			Context->RAX := 0
 			
-			ResumeUserMode(Context)
+			return
 		}
 		else if (Number = SYSCALL_SET_TID_PTR) {
 			Context->RAX := 1
 			
-			ResumeUserMode(Context)
+			return
 		}
 		else if (Number = SYSCALL_DEVICE_CONTROL) {
 			Context->RAX := SystemCallDeviceControl(Context->RDI, Context->ESI, Context->RDX As void*)
 			
-			ResumeUserMode(Context)
+			return
 		}
 		else if (Number = SYSCALL_WRITE_MULTIPLE) {
 			Context->RAX := SystemCallWriteMultiple(Context->RDI, Context->RSI As void*, Context->EDX)
 			
-			ResumeUserMode(Context)
+			return
 		}
 		else if (Number = SYSCALL_SENDFILE) {
 			DoSystemCall(Context->RDI, Context->RSI, Context->RDX, Context->R10, Context, &SystemCallSendFile)
 			
 			Context->RAX := 0
 			
-			ResumeUserMode(Context)
+			return
 		}
 		else if (Number = SYSCALL_BREAK) {
 			Context->RAX := SystemCallProgramBreak(Context->RDI As void*) As i64
 			
-			ResumeUserMode(Context)
+			return
 		}
 		
 		if (Number > SYSCALL_MAX_INDEX) {
@@ -149,10 +149,6 @@ define void HandleSystemCall(AMD64Context* Context) {
 			Context->RDI := -1
 			
 			Print("UNIMPLEMENTED SYSCALL %x\n", Number)
-			
-			RestoreContext(&KernelContext)
-			
-			;ResumeUserMode(Context)
 		}
 		
 		void* Function := SystemCalls[Number]
@@ -172,7 +168,7 @@ define void HandleSystemCall(AMD64Context* Context) {
 		SystemCallExit(-100123)
 	}
 	
-	ResumeUserMode(Context)
+	;ResumeUserMode(Context)
 }
 
 define void RegisterSystemCall(i32 Index, void* Function) {
@@ -609,19 +605,12 @@ define void SystemCallArchPrctl(i64 SubFunction, void* Parameter) {
 }
 
 
-Task* SystemCallTask := null
-
 define void ExitSystemCall() {
 	Scheduler->RunNext()
 }
 
 define void EnterSystemCall(AMD64Context* UserContext) {
-	Scheduler->OnExternalControlTransfer(UserContext As Task*)
-	
-	SystemCallTask~>Context->RIP := &HandleSystemCall
-	SystemCallTask~>Context->RDI := UserContext As i64
-	SystemCallTask~>Context->Push(&ExitSystemCall As i64)
-	SystemCallTask->Resume()
+	CurrentThread->FireSystemCall()
 }
 
 define void OnSystemCall() asm {
@@ -645,8 +634,7 @@ define void OnSystemCall() asm {
 	mov, {rdi + 0x20} As i64*, rsp ; Context.RSP = UserRSP
 	; (since we push rax/rdi, we need to update the saved RSP after our pops)
 	
-	sti
-	jmp, @HandleSystemCall
+	jmp, @EnterSystemCall
 }
 
 define void SetupSystemCalls() {
@@ -657,7 +645,7 @@ define void SetupSystemCalls() {
 	
 	WriteMSR(AMD64_MSR_LSTAR, &OnSystemCall As i64)
 	
-	WriteMSR(AMD64_MSR_SFMASK, 0x600)
+	WriteMSR(AMD64_MSR_SFMASK, 0x600 | X64_RFLAGS_IF)
 	
 	RegisterSystemCall(0, &SystemCallRead)
 	RegisterSystemCall(1, &SystemCallWrite)
@@ -666,8 +654,6 @@ define void SetupSystemCalls() {
 	RegisterSystemCall(4, &SystemCallPathStatus)
 	RegisterSystemCall(5, &SystemCallFileStatus)
 	RegisterSystemCall(8, &SystemCallSeek)
-	
-	SystemCallTask := Scheduler->MakeLightTask(&HandleSystemCall)
 }
 
 define void UserModeReturnStub() asm {

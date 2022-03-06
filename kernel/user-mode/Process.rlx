@@ -2,6 +2,80 @@
 #Require "./src/kernel/core/MemoryMapping.rlx"
 #Require "./src/linux/Signals.rlx"
 
+declare void HandleSystemCall(AMD64Context*)
+
+UserThread* CurrentThread := null
+
+struct UserThread {
+	Task* UserTask ; Just holds state
+	Task* KernelTask ; Actually scheduled
+	
+	i8 HasPendingSystemCall
+	
+	define void DoKernelThread() {
+		AMD64Context BeforeSystemCallCheck
+		
+		; Since this thread "manually" yeilds to the user-mode task, we need to do a bit
+		;  of a dance to make sure that control ends up in the right place when this thread
+		;   is interrupted and resumed
+		
+		; Each time this thread resumes, we need to do a few things:
+		;  1) Handle system calls
+		;  2) Dispatch signals (TODO)
+		; and finally
+		;  3) Resume the user task
+		
+		; We can get interrupted during 1/2 which will save our context, but once we reach
+		;  3 there's nothing left to save our context, making a bit of a problem.
+		
+		; We need to persist any interrupted state during 1/2, but need to reset state back
+		;  to the top of this function before 3 (otherwise the next time we're resumed, then
+		;   we'd actually end up resuming previous code which was already interrupted and
+		;    likely finished executing)
+		
+		; This is accomplished by only saving the "top of function" state into the actual
+		;  task once steps 1/2 are completely done and we know that any state in our task
+		;   is just garbage.
+		
+	
+		SaveContext(&BeforeSystemCallCheck)
+		
+		if (this->HasPendingSystemCall) {
+			Info("Handling system call\n")
+			EnableInterrupts()
+			HandleSystemCall(this->UserTask~>Context)
+			DisableInterrupts()
+			Info("Handled system call\n")
+			
+			this->HasPendingSystemCall := false
+		}
+		
+		MoveMemory(this->KernelTask~>Context, &BeforeSystemCallCheck, #AMD64Context)
+		
+		CurrentThread := this
+		
+		Scheduler->RunNow(this->UserTask)
+	}
+	
+	define void Start(void* Stack, void* Code) {
+		this->UserTask~>Context->RSP := Stack
+		this->UserTask~>Context->RIP := Code
+		this->UserTask->NeedsUserMode := true
+		
+		this->KernelTask~>Context->RIP := &UserThread.DoKernelThread
+		this->KernelTask~>Context->RDI := this As i64
+		this->KernelTask~>Context->Flags := 0
+		
+		Scheduler->Enqueue(this->KernelTask)
+	}
+	
+	define void FireSystemCall() {
+		this->HasPendingSystemCall := true
+		
+		Scheduler->RunNow(this->KernelTask)
+	}
+}
+
 struct Process {
 	i64[10] FileDescriptorsToHandles
 	i32 FileDescriptorCount
@@ -13,10 +87,7 @@ struct Process {
 	void* BreakStart
 	i64 BreakPages
 	
-	union {
-		AMD64Context Context
-		Task Task
-	}
+	UserThread MainThread
 	
 	Event OnKilled
 	
@@ -44,15 +115,9 @@ struct Process {
 		
 		this->BreakStart := ((MaxAddress + PAGE_SIZE) & 0x7FFF_FFFF_FFFF_F000) As void*
 		this->BreakPages := 0
-	}
-	
-	define void Run() {
-		this~>Task->Resume()
-	}
-	
-	define void Start() {
-		this~>Task->NeedsUserMode := true
-		this->Run()
+		
+		this~>MainThread->UserTask   := Task:New(0)
+		this~>MainThread->KernelTask := Task:NewWithStack(0, 1)
 	}
 	
 	define void* GetBreak() {
@@ -76,6 +141,7 @@ struct Process {
 		this->ExitCode := Code
 		this~>OnKilled->Fire(Code As void*)
 		
+		DisableInterrupts()
 		SchedulerEnd()
 		
 		;KernelHeap->Free(CurrentProcess)
@@ -129,7 +195,7 @@ struct Process {
 		this->SignalMask |= Mask
 		this->SignalMask |= Action->Mask
 		
-		AMD64Context* Context := this~>Context
+		AMD64Context* Context := this~>MainThread->UserTask~>Context
 		
 		void* OriginalRSP := Context->RSP
 		
@@ -162,8 +228,6 @@ struct Process {
 		Context->RSI := Info As i64
 		Context->RDX := UserContext As i64
 		Context->RIP := Action->Handler
-		
-		this->Run()
 	}
 	
 	define void FireSignals() {
@@ -183,8 +247,6 @@ struct Process {
 	
 	define void Resume() {
 		this->FireSignals() ; Doesn't return if a signal is fired
-		
-		this->Run() ; Doesn't return at all
 	}
 	
 	define void QueueSignal(i32 Number, i32 Error, i32 Code) {
@@ -199,7 +261,7 @@ struct Process {
 	define void SignalReturn() {
 		; Called from syscall handler, shouldn't return
 		
-		this->CurrentSignalContext~>Registers->PopulateContext(this~>Context)
+		;this->CurrentSignalContext~>Registers->PopulateContext(this~>Context)
 		this->SignalMask := this->CurrentSignalContext->Mask
 		this->CurrentSignal := 0
 		

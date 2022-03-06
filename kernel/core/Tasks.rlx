@@ -38,6 +38,19 @@ struct Task {
 		return this
 	}
 	
+	static Task* NewWithStack(i32 Priority, i32 StackPages) {
+		i32 TotalPages := 1 + StackPages
+		
+		Task* this := KernelPageAllocator->AllocateVirtual(TotalPages)
+		
+		AMD64Context* Context := this~>Context
+		
+		Context->RSP   := (this + (PAGE_SIZE * TotalPages)) As void*
+		Context->Flags := X64_RFLAGS_IF
+		
+		return this
+	}
+	
 	define void Resume() {
 		; Doesn't return
 		
@@ -83,20 +96,34 @@ struct TaskScheduler {
 		CurrentTask->Resume()
 	}
 	
+	define void RunNow(Task* Next) {
+		CurrentTask->State := TASK_CAN_RUN
+		
+		CurrentTask := Next
+		this->RunCurrent()
+	}
+	
 	define void PickNext() {
-		DisableInterrupts()
+		if (InterrupsAreEnabled()) {
+			DisableInterrupts()
+			
+			Info("SCHEDULER CALLED WITH INTERRUPTS ON\n")
+			Info("Stack:\n%stackdump\nHalting")
+			
+			loop {}
+		}
 		
 		Task* Current := RootTask
 		
-		;Info("[%i.%i] %x -> ", PITWhole, PITFraction, CurrentTask)
+		Info("[%i.%i] %x -> ", PITWhole, PITFraction, CurrentTask)
 		
 		while (Current) {
-			;Info("(%x %i)", Current, Current->State)
+			Info("(%x %i)", Current, Current->State)
 			
 			Current := Current->Next
 			
 			if (Current) {
-				;Info(", ")
+				Info(", ")
 			}
 		}
 		
@@ -106,17 +133,17 @@ struct TaskScheduler {
 			Current := Current->Next
 		}
 		
-		;Info(" = %x", Current)
+		Info(" = %x", Current)
 		
 		if !(Current) {
 			CurrentTask := DelayTask
 		}
 		else {
-			;Info(" {%x %x}", Current~>Context->RIP, Current~>Context->RSP)
+			Info(" {%x %x}", Current~>Context->RIP, Current~>Context->RSP)
 			CurrentTask := Current
 		}
 		
-		;Info("\n")
+		Info("\n")
 		
 		;Info("Picked %x to run next\n", CurrentTask)
 	}
@@ -204,6 +231,8 @@ define void _SchedulerYield() {
 	Scheduler->YieldCurrent()
 }
 define void SchedulerYield() asm {
+	cli
+	
 	call, @GetCurrentTaskContext
 	mov, rdi, rax      ; Parameter = CurrentTaskContext
 	call, @SaveContext ; Capure interrupted context, with anything extra cleaned up below
@@ -220,6 +249,8 @@ define void _SchedulerBlock() {
 	Scheduler->BlockCurrent()
 }
 define void SchedulerBlock() asm {
+	cli
+	
 	call, @GetCurrentTaskContext
 	mov, rdi, rax      ; Parameter = CurrentTaskContext
 	call, @SaveContext ; Capure interrupted context, with anything extra cleaned up below

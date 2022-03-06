@@ -11,7 +11,7 @@ define void ResumeUserMode(AMD64Context* Context) {
 	void* TerribleHack := &RestoreUserModeContext
 	
 	asm (rax := Context->RSP, rdi := Context, rcx := TerribleHack) {
-		mov, r11, 0x200
+		mov, r11, 0
 		mov, rsp, rax
 		xchg, bx, bx
 		sysret

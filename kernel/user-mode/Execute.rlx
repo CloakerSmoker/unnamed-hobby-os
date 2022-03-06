@@ -108,12 +108,8 @@ define Process* Execute(void* Buffer, i32 ArgumentCount, i8** Arguments, i32 Env
 	CurrentProcess := KernelHeap->Allocate('PROC', #Process)
 	CurrentProcess->Initialize(ELFData, Mappings)
 	
-	AMD64Context* Context := CurrentProcess~>Task~>Context
-	Context->Zero()
-	Context->RSP := RSP
-	Context->RawRIP := ELFData->EntryPoint
-	
-	Scheduler->Enqueue(CurrentProcess~>Task)
+	UserThread* Thread := CurrentProcess~>MainThread
+	Thread->Start(RSP, ELFData->EntryPoint As void*)
 	
 	return CurrentProcess
 }

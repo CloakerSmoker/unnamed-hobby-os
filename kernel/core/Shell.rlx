@@ -18,6 +18,8 @@ define i8 OnChildKilled(Process* Child, i32 ExitCode) {
 	LastStatus := ExitCode
 	RunningProgram := false
 	
+	Prompt()
+	
 	return EVENT_CALL_NEXT_LISTENER
 }
 
@@ -317,6 +319,8 @@ define void OnCommand(i8* CommandLine) {
 			KernelPageAllocator->FreeVirtual(FileData, FilePages)
 			
 			Child~>OnKilled->Listen(&OnChildKilled, Child)
+			
+			return
 		}
 	}
 	else if (StringEquals(Command, "ksyscall")) {
