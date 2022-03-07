@@ -274,6 +274,9 @@ PrintOutputAdapterPrototype* Printer := &DefaultPrinter
 define void Print(i8* Format, ... Parameters) {
 	Printer->RawPrint(Format, Parameters)
 }
+define void RawPrint(i8* Format, void* Parameters) {
+	Printer->RawPrint(Format, Parameters)
+}
 define void PrintCharacters(i8* Characters, i32 Length) {
 	Printer->PrintCharacters(Characters, Length)
 }

@@ -186,18 +186,20 @@ struct Terminal {
 	}
 	
 	define void DoEscape() {
-		Info("DoEscape ")
-		
-		for (i32 DumpIndex := 0, DumpIndex < this->EscapeIndex, DumpIndex++) {
-			if (DumpIndex >= 2) {
-				Info("%c", this~>EscapeBuffer[DumpIndex] & 0xFF)
+		if (DEBUG_TERMINAL_ESCAPES) {
+			Info("DoEscape ")
+			
+			for (i32 DumpIndex := 0, DumpIndex < this->EscapeIndex, DumpIndex++) {
+				if (DumpIndex >= 2) {
+					Info("%c", this~>EscapeBuffer[DumpIndex] & 0xFF)
+				}
+				else {
+					Info("%B ", this~>EscapeBuffer[DumpIndex] & 0xFF)
+				}
 			}
-			else {
-				Info("%B ", this~>EscapeBuffer[DumpIndex] & 0xFF)
-			}
+			
+			Info("\n")
 		}
-		
-		Info("\n")
 		
 		i8* Escape := this~>EscapeBuffer
 		i32 Length := this->EscapeIndex
@@ -248,7 +250,7 @@ struct Terminal {
 			
 			i32 FormatLength := FormatString(CursorPositionEscape, 40, "^E%i;%iR", this->Y + 1, this->X + 1)
 			
-			Info("Formatted '%s' %x\n", CursorPositionEscape, FormatLength)
+			;Info("Formatted '%s' %x\n", CursorPositionEscape, FormatLength)
 			
 			ShellPleaseSendForMe(CursorPositionEscape, FormatLength)
 		}

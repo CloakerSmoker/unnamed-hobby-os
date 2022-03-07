@@ -49,9 +49,11 @@ define void HandleSystemCall(AMD64Context* Context) {
 	
 	;Print("Syscall %x\n", Number)
 	
-	i8* Name := GetLinuxSysCallName(Number)
-	
-	Info("%s(%x, %x, %x, %x, %x, %x)\n", Name, Context->RDI, Context->RSI, Context->RDX, Context->R10, Context->R8, Context->R9)
+	if (DEBUG_SYSTEM_CALLS) {
+		i8* Name := GetLinuxSysCallName(Number)
+		
+		Info("%s(%x, %x, %x, %x, %x, %x)\n", Name, Context->RDI, Context->RSI, Context->RDX, Context->R10, Context->R8, Context->R9)
+	}
 	
 	if (Number = SYSCALL_EXIT_GROUP) {
 		Number := SYSCALL_EXIT
@@ -148,13 +150,13 @@ define void HandleSystemCall(AMD64Context* Context) {
 			Context->RAX := -1
 			Context->RDI := -1
 			
-			Print("UNIMPLEMENTED SYSCALL %x\n", Number)
+			Info("UNIMPLEMENTED SYSCALL %x\n", Number)
 		}
 		
 		void* Function := SystemCalls[Number]
 		
 		if (Function = null) {
-			Print("UNIMPLEMENTED SYSCALL %x\n", Number)
+			Info("UNIMPLEMENTED SYSCALL %x\n", Number)
 			
 			RestoreContext(&KernelContext)
 		}
@@ -163,8 +165,8 @@ define void HandleSystemCall(AMD64Context* Context) {
 		}
 	}
 	catch (i64 Code) {
-		Print("Exception %l during syscall\n", Code)
-		Print("%x(%x, %x, %x, %x, %x, %x)\n", Number, Context->RDI, Context->RSI, Context->RDX, Context->R10, Context->R8, Context->R9)
+		Info("Exception %l during syscall\n", Code)
+		Info("%x(%x, %x, %x, %x, %x, %x)\n", Number, Context->RDI, Context->RSI, Context->RDX, Context->R10, Context->R8, Context->R9)
 		SystemCallExit(-100123)
 	}
 	
@@ -255,7 +257,9 @@ define i64 SystemCallWrite(i64 FileDescriptor, i8* Buffer, i32 Size) {
 	if (FileDescriptor = 1 || FileDescriptor = 2) {
 		PrintCharacters(Buffer, Size)
 		
-		Info("Output:\n%hexdump", Buffer, Size)
+		if (DEBUG_SYS_WRITE) {
+			Info("%hexdump", Buffer, Size)
+		}
 		
 		return Size
 	}

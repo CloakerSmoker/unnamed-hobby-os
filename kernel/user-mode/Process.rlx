@@ -41,11 +41,9 @@ struct UserThread {
 		SaveContext(&BeforeSystemCallCheck)
 		
 		if (this->HasPendingSystemCall) {
-			Info("Handling system call\n")
 			EnableInterrupts()
 			HandleSystemCall(this->UserTask~>Context)
 			DisableInterrupts()
-			Info("Handled system call\n")
 			
 			this->HasPendingSystemCall := false
 		}

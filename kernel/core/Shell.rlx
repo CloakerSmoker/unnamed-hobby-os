@@ -584,7 +584,9 @@ define i32 ShellGatherInput(i8* Destination, i32 Size) {
 	
 	InputBuffer->Read(Destination, Size)
 	
-	;Info("Input:\n%hexdump", Destination, Size)
+	if (DEBUG_SYS_WRITE) {
+		Info("%hexdump", Destination, Size)
+	}
 	
 	return Size
 }
