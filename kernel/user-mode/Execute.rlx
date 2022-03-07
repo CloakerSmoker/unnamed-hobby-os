@@ -109,7 +109,7 @@ define Process* Execute(void* Buffer, i32 ArgumentCount, i8** Arguments, i32 Env
 	CurrentProcess->Initialize(ELFData, Mappings)
 	
 	UserThread* Thread := CurrentProcess~>MainThread
-	Thread->Start(RSP, ELFData->EntryPoint As void*)
+	Thread->Start(2, CurrentProcess~>Signals, RSP, ELFData->EntryPoint As void*)
 	
 	return CurrentProcess
 }

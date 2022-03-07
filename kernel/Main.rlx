@@ -66,8 +66,6 @@ KernelInfo RawKernelInfo
 
 KernelInfo* Kernel := &RawKernelInfo
 
-AMD64Context KernelContext
-
 #Require "./src/kernel/core/Descriptors.rlx"
 
 #Require "./src/utility/Memory.rlx"

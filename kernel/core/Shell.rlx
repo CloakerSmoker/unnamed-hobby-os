@@ -426,7 +426,7 @@ define void ShellOnKey(void* Dummy, KeyEventInfo* KeyEvent) {
 				;  Just don't press in kernel mode.
 				
 				if (ShellConfig->LocalFlags & LINUX_TERMIOS_LOCAL_FLAG_ISIG) {
-					CurrentProcess->FireSignal(LINUX_SIGNAL_NUMBER_INT, 0, 0)
+					CurrentProcess->QueueSignal(LINUX_SIGNAL_NUMBER_INT, 0, 0)
 				}
 				else {
 					KeyboardBuffer->Write(ShellConfig~>InterruptCharacter, 1)
@@ -529,14 +529,26 @@ define void ShellOnKey(void* Dummy, KeyEventInfo* KeyEvent) {
 			ShellInputIndex += Size
 		}
 		
-		;Print("(%x %x)", Tail, LineEnding)
+		Info("\n(%x %x)\n", Tail, LineEnding)
+		
+		if (RunningProgram) {
+			Tail := ((Tail >> 8) & 0xFF) As i8
+			LineEnding := ShellConfig->ControlCharacters[LINUX_TERMIOS_CHARACTER_VEOL2]
+		}
+		
+		Info("\n(%x %x)\n", Tail, LineEnding)
 		
 		if (Tail = LineEnding) {
-			ShellInputLine[ShellInputIndex - 2] := 0
+			if (RunningProgram) {
+				ShellInputLine[ShellInputIndex - 1] := 0
+			}
+			else {
+				ShellInputLine[ShellInputIndex - 2] := 0
+			}
 			
 			if (RunningProgram && BlockForLine) {
-				ShellInputLine[ShellInputIndex - 2] := 0x0A
-				ShellInputLine[ShellInputIndex - 1] := 0
+				ShellInputLine[ShellInputIndex - 1] := 0x0A
+				ShellInputLine[ShellInputIndex] := 0
 				
 				InputBuffer->Write(ShellInputLine, ShellInputIndex - 1)
 				ShellInputIndex := 0
@@ -573,7 +585,7 @@ define i32 ShellGatherInput(i8* Destination, i32 Size) {
 	i8 BlockForLine := (ShellConfig->LocalFlags & LINUX_TERMIOS_LOCAL_FLAG_ICANON) != 0
 	
 	if (BlockForLine) {
-		while (InputBuffer->Available() < ShellConfig->MinimumReadSize) {}
+		while (InputBuffer->Available() < ShellConfig->MinimumReadSize) { SchedulerYield() }
 	}
 	
 	i32 Available := InputBuffer->Available()

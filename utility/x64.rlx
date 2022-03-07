@@ -213,11 +213,8 @@ struct AMD64Context {
 	}
 	
 	define void* StackAllocate(i32 Size) {
-		void* Result := this->RSP
-		
 		this->RSP -= Size
-		
-		return Result
+		return this->RSP
 	}
 	define void StackFree(i32 Size) {
 		this->RSP += Size

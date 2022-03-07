@@ -168,7 +168,7 @@ define void PageFault(AMD64Context* Context, i64 ErrorCode) {
 	PAGE_FAULT_CHANCE--
 	
 	if (RECOVER_FROM_USER_PAGE_FAULT && (ErrorCode & PAGE_FAULT_USER_SUPERVISOR)) {
-		RestoreContext(&KernelContext)
+		;RestoreContext(&KernelContext)
 	}
 	
 	GenericInterrupt(Context, 0xE)

@@ -32,6 +32,7 @@ declare i64 SystemCallDeviceControl(i64, i32, void*)
 declare i64 SystemCallWriteMultiple(i64, void*, i32)
 declare i64 SystemCallTruncate(i64, i32)
 declare void SystemCallExit(i64)
+declare void SystemCallExitGroup(i64)
 declare void* SystemCallProgramBreak(void*)
 declare void* SystemCallMapMemory(void*, i32, i32, i32, i32, i32)
 declare i64 SystemCallUnMapMemory(void*, i32)
@@ -55,13 +56,12 @@ define void HandleSystemCall(AMD64Context* Context) {
 		Info("%s(%x, %x, %x, %x, %x, %x)\n", Name, Context->RDI, Context->RSI, Context->RDX, Context->R10, Context->R8, Context->R9)
 	}
 	
-	if (Number = SYSCALL_EXIT_GROUP) {
-		Number := SYSCALL_EXIT
-	}
-	
 	try {
 		if (Number = SYSCALL_EXIT) {
 			SystemCallExit(Context->RDI)
+		}
+		else if (Number = SYSCALL_EXIT_GROUP) {
+			SystemCallExitGroup(Context->RDI)
 		}
 		else if (Number = LINUX_SYSCALL_UNLINK) {
 			return
@@ -93,6 +93,11 @@ define void HandleSystemCall(AMD64Context* Context) {
 		}
 		else if (Number = LINUX_SYSCALL_RT_SIGPROCMASK) {
 			SystemCallSetSignalMask(Context->EDI, Context->RSI As i64*, Context->RDX As i64*)
+			
+			return
+		}
+		else if (Number = LINUX_SYSCALL_RT_SIGRETURN) {
+			CurrentThread->SignalReturn()
 			
 			return
 		}
@@ -151,6 +156,8 @@ define void HandleSystemCall(AMD64Context* Context) {
 			Context->RDI := -1
 			
 			Info("UNIMPLEMENTED SYSCALL %x\n", Number)
+			
+			loop {}
 		}
 		
 		void* Function := SystemCalls[Number]
@@ -158,7 +165,7 @@ define void HandleSystemCall(AMD64Context* Context) {
 		if (Function = null) {
 			Info("UNIMPLEMENTED SYSCALL %x\n", Number)
 			
-			RestoreContext(&KernelContext)
+			loop {}
 		}
 		else {
 			Context->RAX := DoSystemCall(Context->RDI, Context->RSI, Context->RDX, Context->R10, Context, Function)
@@ -178,7 +185,10 @@ define void RegisterSystemCall(i32 Index, void* Function) {
 }
 
 define void SystemCallExit(i64 Code) {
-	CurrentProcess->Exit(Code As i32)
+	CurrentThread->Exit(Code As i32)
+}
+define void SystemCallExitGroup(i64 Code) {
+	CurrentProcess->ExitAll(Code As i32)
 }
 
 declare void ShellGatherInput(i8*, i32)
@@ -211,14 +221,14 @@ define i32 SystemCallPoll(LinuxPollTarget* Targets, i32 TargetCount, i32 Timeout
 
 define void SystemCallSetSignalAction(i32 Number, LinuxSignalAction* New, LinuxSignalAction* Old) {
 	if (Old) {
-		MoveMemory(Old, CurrentProcess->Actions[Number], #LinuxSignalAction)
+		MoveMemory(Old, CurrentProcess~>Signals->Actions[Number], #LinuxSignalAction)
 	}
 	
-	MoveMemory(CurrentProcess->Actions[Number], New, #LinuxSignalAction)
+	MoveMemory(CurrentProcess~>Signals->Actions[Number], New, #LinuxSignalAction)
 }
 
 define void SystemCallSetSignalMask(i32 Operation, i64* New, i64* Old) {
-	i64 Mask := CurrentProcess->SignalMask
+	i64 Mask := CurrentThread->SignalMask
 	
 	if (Old != null) {
 		*Old := Mask
@@ -236,7 +246,7 @@ define void SystemCallSetSignalMask(i32 Operation, i64* New, i64* Old) {
 		}
 	}
 	
-	CurrentProcess->SignalMask := Mask
+	CurrentThread->SignalMask := Mask
 }
 
 define i64 SystemCallRead(i64 FileDescriptor, i8* Buffer, i32 Size) {
