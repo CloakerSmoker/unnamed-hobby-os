@@ -1,0 +1,106 @@
+#Require "./src/kernel/core/UserMode.rlx"
+
+Task* CurrentTask := null
+
+define Task* GetCurrentTaskContext() {
+	return CurrentTask ; For inline assembly to call
+}
+
+i8 TASK_CAN_RUN := 0
+i8 TASK_RUNNING := 1
+i8 TASK_BLOCKED := 2
+i8 TASK_PAUSED  := 3
+i8 TASK_KILLED  := 4
+
+i32 TASK_ON_HEAP := -1
+
+struct Task {
+	AMD64Context Context ; MUST be the first field
+	
+	Task* Next
+	Task* AwaitedBy
+	
+	void* InitialRIP
+	void* InitialRSP
+	
+	i32 Priority
+	i32 AllocationInfo 
+	; TASK_ON_HEAP for heap, 0 for N/A (embedded in something else), N>0 for
+	;  allocated out of KernelPageAllocator with N pages
+	
+	union {
+		i8 NeedsUserMode
+		i8 IsProcess
+	}
+	
+	i8 State
+	
+	static Task* New(i32 Priority) {
+		Task* this := Alloc(#Task)
+		
+		this->AllocationInfo := TASK_ON_HEAP
+		this->Priority := Priority
+		
+		return this
+	}
+	
+	static Task* NewWithStack(i32 Priority, i32 StackPages) {
+		i32 TotalPages := 1 + StackPages
+		
+		Task* this := KernelPageAllocator->AllocateVirtual(TotalPages)
+		
+		this->AllocationInfo := TotalPages
+		
+		AMD64Context* Context := this~>Context
+		
+		Context->RSP   := (this + (PAGE_SIZE * TotalPages)) As void*
+		Context->Flags := X64_RFLAGS_IF
+		
+		return this
+	}
+	
+	define void Free() {
+		if (this->AllocationInfo = TASK_ON_HEAP) {
+			Free(this)
+		}
+		else if (this->AllocationInfo > 0) {
+			KernelPageAllocator->FreeVirtual(this, this->AllocationInfo)
+		}
+	}
+	
+	define void Resume() {
+		; Doesn't return
+		
+		CurrentTask := this
+
+		if (this->NeedsUserMode) {
+			ResumeUserMode(this~>Context)
+		}
+		else {
+			RestoreFullContext(this~>Context)
+		}
+	}
+	
+	define void Yield() {
+		this->State := TASK_CAN_RUN
+	}
+	define void Block() {
+		this->State := TASK_BLOCKED
+	}
+	define void End() {
+		this->State := TASK_KILLED
+		
+		Task* Waiter := this->AwaitedBy
+		
+		while (Waiter) {
+			Waiter->State := TASK_CAN_RUN
+			
+			Waiter := Waiter->AwaitedBy
+		}
+	}
+	
+	define i8 CouldRun() {
+		return this->State <= TASK_RUNNING
+	}
+}
+

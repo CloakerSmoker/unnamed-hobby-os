@@ -75,8 +75,10 @@ declare void SchedulerYield()
 
 #Require "./src/kernel/core/Interrupts.rlx"
 #Require "./src/kernel/core/Devices.rlx"
-#Require "./src/kernel/core/Tasks.rlx"
-#Require "./src/kernel/core/Timer.rlx"
+
+#Require "./src/kernel/multitasking/Tasks.rlx"
+#Require "./src/kernel/multitasking/Scheduler.rlx"
+#Require "./src/kernel/multitasking/Timers.rlx"
 
 #Require "./src/kernel/graphics/LoadFON.rlx"
 #Require "./src/kernel/graphics/Terminal.rlx"

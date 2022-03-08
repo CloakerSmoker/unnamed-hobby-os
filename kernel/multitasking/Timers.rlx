@@ -1,4 +1,6 @@
 
+#Require "./src/kernel/multitasking/Tasks.rlx"
+#Require "./src/kernel/core/Events.rlx"
 
 struct Timer {
 	i64 LastFiredAt
