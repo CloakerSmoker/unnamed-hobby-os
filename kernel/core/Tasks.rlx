@@ -224,6 +224,16 @@ struct TaskScheduler {
 	define i8 Quantum(i64 CurrentTickCount) {
 		;Info("%x,", CurrentTask~>Context->RIP)
 		
+		Task* Current := RootTask
+		
+		while (Current) {
+			if (Current->State = TASK_PAUSED) {
+				Current->State := TASK_CAN_RUN
+			}
+			
+			Current := Current->Next
+		}
+		
 		this->PickNext()
 		
 		return EVENT_CALL_NEXT_LISTENER

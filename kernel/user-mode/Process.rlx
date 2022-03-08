@@ -145,7 +145,7 @@ struct UserThread {
 	
 	define void Exit(i32 Code) {
 		this->ExitCode := Code
-		this~>OnKilled->Fire(Code As void*)
+		this~>OnKilled->Fire(this)
 		
 		DisableInterrupts()
 		this->KernelTask->State := TASK_KILLED
