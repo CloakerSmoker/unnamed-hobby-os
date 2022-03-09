@@ -254,17 +254,12 @@ define void MainContinuation() {
 	
 	Info("Mapped the framebuffer\n")
 	
-	;NativeScreen->Adopt(FrameBuffer, SCREEN_WIDTH, SCREEN_HEIGHT, BYTES_PER_PIXEL, 0, 0x00_00_00)
-	NativeScreen->Adopt(ADDRESS_OF_FRAME_BUFFER, RGB32, SCREEN_WIDTH, SCREEN_HEIGHT, 0xFF_FF_FF)
+	NativeScreen->Adopt(ADDRESS_OF_FRAME_BUFFER, RGB32, SCREEN_WIDTH, SCREEN_HEIGHT, TERMINAL_BACKGROUND)
 	NativeScreen->Clear()
-	
-	BootFont->Draw(NativeScreen->Canvas, 0x00_00_00, 0xFF_FF_FF, 0, 0, 'A')
 	
 	Info("Adopted screen\n")
 	
-	KernelTerminal->Adopt(NativeScreen, BootFont, 0xFF_FF_FF, 0x00_00_00)
-	;KernelTerminal->Adopt(NativeScreen, BootFont, 0x00_00_00, 0xFF_FF_FF)
-	
+	KernelTerminal->Adopt(NativeScreen, BootFont, TERMINAL_FOREGROUND, TERMINAL_BACKGROUND)
 	KernelTerminal->Clear()
 	
 	KernelTerminal->PrintLine("BOOT: Screen *probably* works")
@@ -315,8 +310,6 @@ define void MainContinuation() {
 	
 	SetupExecute()
 	
-	;Print("Back in kernel code\n\n")
-	
 	DiskController := KernelHeap->Allocate('IDE', #IDEDiskController)
 	
 	PCIEnumerateBusses(&VisitPCIFunction)
@@ -366,42 +359,12 @@ define void MainContinuation() {
 	
 	void* Ext2Scratch := KernelPageAllocator->AllocateVirtual(2)
 	
-	;void* SB := KernelHeapAllocate('SB', 2048)
-	;void* TI := KernelHeapAllocate('TI', 1024)
-	;void* TB1 := KernelHeapAllocate('TB1', 1024)
-	;void* TB2 := KernelHeapAllocate('TB2', 1024)
-	;void* BMP := KernelHeapAllocate('BMP', 1024)
-	
 	FS := KernelHeapAllocate('RootFS', #Ext2)
 	FS->Device := OSPatition
 	
 	FS->Initialize(Ext2Scratch, Ext2Scratch + 0x800, Ext2Scratch + 0xC00, Ext2Scratch + 0x1000, Ext2Scratch + 0x1400)
 	
 	RootINode := CloneMemory(FS->ReadINode(2), #INode)
-	
-	
-	
-	
-	;i64 FontHandle := Ext2Open(FS, "fanta.fon")
-	;
-	;FontHandle := Ext2Seek(FS, FontHandle, 0, SEEK_RELATIVE_END)
-	;i32 FontSize := Ext2Tell(FS, FontHandle) As i32
-	;FontHandle := Ext2Seek(FS, FontHandle, 0, SEEK_SET)
-	;
-	;void* FontBuffer := Alloc(FontSize)
-	;
-	;i32 BytesRead := 0
-	;FontHandle := Ext2Read(FS, FontHandle, FontBuffer, FontSize, &BytesRead)
-	;
-	;Ext2Close(FS, FontHandle)
-	;
-	;_Font* Loaded := LoadFON(FontBuffer, FontSize)
-	
-	;BootFont->Width := 12
-	
-	;Info("A @ %x\n", BootFont->Glyphs['A']->Render)
-	;
-	;BootFont->Draw(NativeScreen->Canvas, 0x00_00_00, 0xFF_FF_FF, 0, 0, 'A')
 	
 	KernelTerminal->SetCursorTimer()
 	
