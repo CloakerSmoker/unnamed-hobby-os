@@ -1,9 +1,9 @@
 struct FNTCharacterTableEntry2 unaligned {
 	i16 CharacterWidth
-	i16 BitmapOffset
+	i16 RawBitmapOffset
 	
 	define i32 BitmapOffset() {
-		return (this->BitmapOffset As i32) & 0xFFFF
+		return (this->RawBitmapOffset As i32) & 0xFFFF
 	}
 }
 

@@ -4,10 +4,10 @@
 ; ATA(0)>Remap(512)>GPT('Dog')>Remap(1024)
 
 struct BlockDevicePrototype {
-	void* Read
-	void* Write
-	void* GetBytesPerBlock
-	void* Initialize
+	void(void*, i64, i64, void*) Read
+	void(void*, i64, i64, void*) Write
+	i64(void*) GetBytesPerBlock
+	void(void*, i8**, i64) Initialize
 	
 	i8* Name
 	
@@ -24,12 +24,6 @@ struct BlockDevicePrototype {
 	}
 	
 	i8 CanHaveMultipleChildren
-	
-	define void Initialize(BlockDevice* Instance, i8** Options, i64 OptionCount) {
-		asm (rax := this->Initialize, rdi := Instance, rsi := Options, rdx := OptionCount) {
-			call, rax
-		}
-	}
 }
 
 i32 BlockDevicePrototypeCount

@@ -83,16 +83,14 @@ define i32 AddPrintFormat(PrintFormatPrototype* Prototype) {
 }
 
 struct PrintOutputAdapterPrototype {
-	void* PrintCharacter
-	void* PrintCharacters
+	void(PrintOutputAdapterPrototype*, i8) DoPrintCharacter
 	
 	i32 Index  ; Scratch space for PrintCharacter implementations
 	i32 Length ; TODO: Come up with something smarter than this
 	i8* Buffer
 	
-	define void PrintCharacter(i8 Character) asm {
-		mov, rax, {rdi} As i64*
-		jmp, rax
+	define void PrintCharacter(i8 Character) {
+		this->DoPrintCharacter(this, Character)
 	}
 	define void PrintCharacters(i8* Characters, i32 Length) {
 		for (i32 Index := 0, Index < Length, Index++) {
@@ -266,7 +264,7 @@ define void DefaultPrintCharacter(PrintOutputAdapterPrototype* this, i8 Characte
 }
 
 PrintOutputAdapterPrototype DefaultPrinter {
-	PrintCharacter: &DefaultPrintCharacter
+	DoPrintCharacter: &DefaultPrintCharacter
 }
 
 PrintOutputAdapterPrototype* Printer := &DefaultPrinter
@@ -287,7 +285,7 @@ define void FormatLengthPrintCharacter(PrintOutputAdapterPrototype* this, i8 Cha
 }
 
 PrintOutputAdapterPrototype FormatLengthPrinter {
-	PrintCharacter: &FormatLengthPrintCharacter
+	DoPrintCharacter: &FormatLengthPrintCharacter
 }
 
 define i32 FormatLength(i8* Format, ... Parameters) {
@@ -306,7 +304,7 @@ define void FormatStringPrintCharacter(PrintOutputAdapterPrototype* this, i8 Cha
 }
 
 PrintOutputAdapterPrototype RawFormatStringPrinter {
-	PrintCharacter: &FormatStringPrintCharacter
+	DoPrintCharacter: &FormatStringPrintCharacter
 }
 PrintOutputAdapterPrototype* FormatStringPrinter := &RawFormatStringPrinter
 

@@ -59,9 +59,13 @@ define void HandleSystemCall(AMD64Context* Context) {
 	try {
 		if (Number = SYSCALL_EXIT) {
 			SystemCallExit(Context->RDI)
+			
+			return
 		}
 		else if (Number = SYSCALL_EXIT_GROUP) {
 			SystemCallExitGroup(Context->RDI)
+			
+			return
 		}
 		else if (Number = LINUX_SYSCALL_UNLINK) {
 			return

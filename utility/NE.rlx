@@ -84,31 +84,31 @@ i32 NE_RESOURCE_TYPE_ID_FONT_DIRECTORY := 0x8007
 i32 NE_RESOURCE_TYPE_ID_FONT           := 0x8008
 
 struct NEResource {
-	i16 FileOffset
-	i16 Size
+	i16 RawFileOffset
+	i16 RawSize
 	i16 Flags
-	i16 ID
+	i16 RawID
 	i32 Reserved
 	
 	define i32 FileOffset() {
-		return (this->FileOffset As i32) & 0xFFFF
+		return (this->RawFileOffset As i32) & 0xFFFF
 	}
 	define i32 Size() {
-		return (this->Size As i32) & 0xFFFF
+		return (this->RawSize As i32) & 0xFFFF
 	}
 	define i32 ID() {
-		return (this->ID As i32) & 0xFFFF
+		return (this->RawID As i32) & 0xFFFF
 	}
 }
 
 struct NEResourceTableEntry unaligned {
-	i16 TypeID
+	i16 RawTypeID
 	i16 ResourceCount
 	i32 Reserved
 	NEResource[0] Resources
 	
 	define i32 TypeID() {
-		return (this->TypeID As i32) & 0xFFFF
+		return (this->RawTypeID As i32) & 0xFFFF
 	}
 	
 	define NEResource* GetEntry(i32 TargetIndex) {
