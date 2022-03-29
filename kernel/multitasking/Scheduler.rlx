@@ -126,7 +126,7 @@ struct TaskScheduler {
 	define Task* MakeLightTask(void* Function) {
 		Task* NewTask := Task:NewWithStack(0, 2)
 		
-		NewTask~>Context->RIP   := Function
+		NewTask~>Context->RIP := Function
 		
 		return NewTask
 	}
@@ -138,7 +138,7 @@ struct TaskScheduler {
 		return NewTask
 	}
 	
-	define i8 Quantum(i64 CurrentTickCount) {
+	define EventState Quantum(void* CurrentTickCount, Event* Fired) {
 		;Info("%x,", CurrentTask~>Context->RIP)
 		
 		Task* Current := RootTask
@@ -153,7 +153,7 @@ struct TaskScheduler {
 		
 		this->PickNext()
 		
-		return EVENT_CALL_NEXT_LISTENER
+		return EventState:CallNextListener
 	}
 }
 
@@ -216,7 +216,7 @@ define void StartScheduler() {
 	
 	DelayTask := Scheduler->MakeLightTask(&DoSchedulerDelay)
 	
-	OnHardwareTimerTick->ListenLast(&TaskScheduler.Quantum, Scheduler)
+	OnHardwareTimerTick->ListenMethod(&TaskScheduler.Quantum, Scheduler)
 	
 	loop {
 		asm {

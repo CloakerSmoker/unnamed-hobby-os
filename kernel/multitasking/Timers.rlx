@@ -22,7 +22,9 @@ struct Timer {
 
 Timer* RootTimer := null
 
-define i8 OnTick(void* Dummy, i64 CurrentWhole) {
+define EventState OnTick(void* RawCurrentWhole, Event* Fired) {
+	i64 CurrentWhole := RawCurrentWhole As i64
+	
 	Timer* NextTimer := RootTimer
 	
 	while (NextTimer) {
@@ -30,11 +32,11 @@ define i8 OnTick(void* Dummy, i64 CurrentWhole) {
 		NextTimer := NextTimer->Next
 	}
 	
-	return EVENT_CALL_NEXT_LISTENER
+	return EventState:CallNextListener
 }
 
 define void SetupTimers() {
-	OnHardwareTimerTick->Listen(&OnTick, null)
+	OnHardwareTimerTick->ListenFunction(&OnTick)
 }
 
 define Timer* SetTimer(i64 IntervalMS, Task* Target) {

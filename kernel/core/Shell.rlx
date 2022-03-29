@@ -14,13 +14,13 @@ MemoryFIFO* RunningProgramInput := null
 
 i32 LastStatus := 0
 
-define i8 OnChildKilled(Process* Child, i32 ExitCode) {
-	LastStatus := ExitCode
+define EventState OnChildKilled(Process* Child, Event* Fired) {
+	LastStatus := Child->ExitCode
 	RunningProgram := false
 	
 	Prompt()
 	
-	return EVENT_CALL_NEXT_LISTENER
+	return EventState:CallNextListener
 }
 
 define void OnCommand(i8* CommandLine) {
@@ -318,7 +318,7 @@ define void OnCommand(i8* CommandLine) {
 			
 			KernelPageAllocator->FreeVirtual(FileData, FilePages)
 			
-			Child~>OnKilled->Listen(&OnChildKilled, Child)
+			Child~>OnKilled->ListenFunction(&OnChildKilled)
 			
 			return
 		}
@@ -384,7 +384,7 @@ i32 ShellInputIndex := 0
 
 i8 ControlHeld := false
 
-define void ShellOnKey(void* Dummy, KeyEventInfo* KeyEvent) {
+define EventState ShellOnKey(KeyEventInfo* KeyEvent, Event* Fired) {
 	;Info("%x %x\n", ScanCode, ASCIICode)
 	
 	i32 ScanCode := KeyEvent->ScanCode
@@ -432,18 +432,18 @@ define void ShellOnKey(void* Dummy, KeyEventInfo* KeyEvent) {
 					KeyboardBuffer->Write(ShellConfig~>InterruptCharacter, 1)
 				}
 				
-				return
+				return EventState:CallNextListener
 			}
 			else if (ASCIICode = 'q') {
 				ShellInputIndex := 0
 				InputBuffer->Clear()
 				
-				return
+				return EventState:CallNextListener
 			}
 			else if (ASCIICode = 'd') {
 				KeyboardBuffer->Write(ShellConfig~>EOFCharacter, 1)
 				
-				return
+				return EventState:CallNextListener
 			}
 			else {
 				i8 Escape := 0x1B
@@ -496,7 +496,7 @@ define void ShellOnKey(void* Dummy, KeyEventInfo* KeyEvent) {
 			
 			InputBuffer->Write(&ShellInputLine[ShellInputIndex], Size)
 			
-			return
+			return EventState:CallNextListener
 		}
 		
 		i16 Tail := *(&ShellInputLine[ShellInputIndex + Size - 2] As i16*)
@@ -556,6 +556,8 @@ define void ShellOnKey(void* Dummy, KeyEventInfo* KeyEvent) {
 			}
 		}
 	}
+	
+	return EventState:CallNextListener
 }
 
 define void ShellPleaseSendForMe(i8* Data, i32 Size) {
@@ -600,7 +602,7 @@ define i32 ShellGatherInput(i8* Destination, i32 Size) {
 }
 
 define void SetupShell() {
-	OnKeyEvent->Listen(&ShellOnKey, null)
+	OnKeyEvent->ListenFunction(&ShellOnKey)
 	
 	ShellConfig->ControlCharacters[LINUX_TERMIOS_CHARACTER_VERASE] := ASCII_BACK As i8
 	ShellConfig->ControlCharacters[LINUX_TERMIOS_CHARACTER_VEOL  ] := 0xD

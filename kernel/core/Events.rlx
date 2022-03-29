@@ -1,52 +1,54 @@
 
-struct EventListener {
-	EventListener* Next
-	void* Function
-	void* Parameter
+enum EventState {
+	CallNextListener
+	Handled
 }
 
-i8 EVENT_CALL_NEXT_LISTENER := 0
-i8 EVENT_HANDLED := 1
+enum EventHandlerKind {
+	Function
+	Method
+}
+
+struct EventListener {
+	EventListener* Next
+	
+	union {
+		EventState(void*, Event*) Function
+		EventState(void*, void*, Event*) Method
+	}
+	
+	void* Parameter
+	
+	EventHandlerKind Kind
+}
 
 struct Event {
 	EventListener* FirstListener
 	i8* Name
 	i32 FireCounter
 	
-	define EventListener* ListenFirst(void* Function, void* Parameter) {
+	define EventListener* ListenMethod(EventState(void*, void*, Event*) Method, void* Parameter) {
 		EventListener* Result := Alloc(#EventListener)
 		
-		Result->Function := Function
+		Result->Method := Method
 		Result->Parameter := Parameter
+		Result->Kind := EventHandlerKind:Method
 		
 		Result->Next := this->FirstListener
 		this->FirstListener := Result
 		
 		return Result
 	}
-	define EventListener* ListenLast(void* Function, void* Parameter) {
+	define EventListener* ListenFunction(EventState(void*, Event*) Function) {
 		EventListener* Result := Alloc(#EventListener)
 		
 		Result->Function := Function
-		Result->Parameter := Parameter
+		Result->Kind := EventHandlerKind:Function
 		
-		if !(this->FirstListener) {
-			this->FirstListener := Result
-		}
-		else {
-			EventListener* Current := this->FirstListener
-			
-			while (Current->Next) {
-				Current := Current->Next
-			}
-			
-			Current->Next := Result
-		}
+		Result->Next := this->FirstListener
+		this->FirstListener := Result
 		
 		return Result
-	}
-	define EventListener* Listen(void* Function, void* Parameter) {
-		return this->ListenFirst(Function, Parameter)
 	}
 	
 	define void RemoveListener(EventListener* Listener) {
@@ -66,17 +68,22 @@ struct Event {
 		}
 	}
 	
-	static i8 CallListener(void* Parameter, void* Data, void* this, void* Listener, void* Function) asm {
-		jmp, r8
-	}
-	
 	define void Fire(void* Data) {
 		this->FireCounter++
 		
 		EventListener* Current := this->FirstListener
 		
 		while (Current) {
-			if (Event:CallListener(Current->Parameter, Data, this, Current, Current->Function)) {
+			EventState State := EventState:CallNextListener
+			
+			if (Current->Kind = EventHandlerKind:Function) {
+				State := Current->Function(Data, this)
+			}
+			else if (Current->Kind = EventHandlerKind:Method) {
+				State := Current->Method(Current->Parameter, Data, this)
+			}
+			
+			if (State = EventState:Handled) {
 				break
 			}
 			
