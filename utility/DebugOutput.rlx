@@ -10,7 +10,7 @@ define void DebugSerialPrintCharacter(void* this, i8 Character) {
 }
 
 PrintOutputAdapterPrototype RawSerialPrinter {
-	DoPrintCharacter: &DebugSerialPrintCharacter
+	PrintCharacter: &DebugSerialPrintCharacter
 }
 
 PrintOutputAdapterPrototype* SerialPrinter := &RawSerialPrinter

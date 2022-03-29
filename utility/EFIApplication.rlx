@@ -30,7 +30,7 @@ define void DoWideStringPrint(PrintOutputAdapterPrototype* this, i8* Format, i32
 
 PrintFormatPrototype WideStringFormatPrototype {
 	Name: "w",
-	DoFormat: &DoWideStringPrint
+	Format: &DoWideStringPrint
 }
 
 i32 WIDE_STRING_FORMAT_PROTOTYPE_ID := AddPrintFormat(&WideStringFormatPrototype)
@@ -75,7 +75,7 @@ define void DoGUIDPrint(PrintOutputAdapterPrototype* this, i8* Format, i32* Form
 
 PrintFormatPrototype GUIDFormatPrototype {
 	Name: "guid",
-	DoFormat: &DoGUIDPrint
+	Format: &DoGUIDPrint
 }
 
 i32 GUID_FORMAT_PROTOTYPE_ID := AddPrintFormat(&GUIDFormatPrototype)

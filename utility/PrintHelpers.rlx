@@ -67,7 +67,7 @@ define void DoHexDumpPrint(PrintOutputAdapterPrototype* this, i8* Format, i32* F
 
 PrintFormatPrototype HexDumpFormatPrototype {
 	Name: "hexdump",
-	DoFormat: &DoHexDumpPrint
+	Format: &DoHexDumpPrint
 }
 
 i32 HEX_DUMP_FORMAT_PROTOTYPE_ID := AddPrintFormat(&HexDumpFormatPrototype)
@@ -119,7 +119,7 @@ define void DoStackDumpPrint(PrintOutputAdapterPrototype* this, i8* Format, i32*
 
 PrintFormatPrototype StackDumpFormatPrototype {
 	Name: "stackdump",
-	DoFormat: &DoStackDumpPrint
+	Format: &DoStackDumpPrint
 }
 
 i32 STACK_DUMP_FORMAT_PROTOTYPE_ID := AddPrintFormat(&StackDumpFormatPrototype)

@@ -1,5 +1,5 @@
 struct PixelFormat {
-	void(PixelFormat*, void*, i32) DoSetColor
+	void(PixelFormat*, void*, i32) SetColor
 	
 	i32 Size
 	
@@ -24,9 +24,6 @@ struct PixelFormat {
 	define void SetColor_Generic(void* Pixel, i32 Color) {
 		return
 	}
-	define void SetColor(void* Pixel, i32 Color) {
-		this->DoSetColor(this, Pixel, Color)
-	}
 }
 
 PixelFormat _RGB24 {
@@ -41,7 +38,7 @@ PixelFormat _RGB24 {
 	
 	Size: 3,
 	
-	DoSetColor: &PixelFormat.SetColor_24_R8_G8_B8
+	SetColor: &PixelFormat.SetColor_24_R8_G8_B8
 }
 
 PixelFormat* RGB24 := &_RGB24
@@ -58,13 +55,13 @@ PixelFormat _RGB32 {
 	
 	Size: 4,
 	
-	DoSetColor: &PixelFormat.SetColor_32_R8_G8_B8
+	SetColor: &PixelFormat.SetColor_32_R8_G8_B8
 }
 
 PixelFormat* RGB32 := &_RGB32
 
 struct PixelBuffer {
-	void*(PixelBuffer*, i32, i32) DoGetPixelAddress
+	void*(PixelBuffer*, i32, i32) GetPixelAddress
 	
 	PixelFormat* Format
 	void* Buffer
@@ -110,10 +107,6 @@ struct PixelBuffer {
 		return null
 	}
 	
-	define void* GetPixelAddress(i32 X, i32 Y) {
-		return this->DoGetPixelAddress(this, X, Y)
-	}
-	
 	define void SetPixelColor(i32 X, i32 Y, i32 Color) {
 		this->Format->SetColor(this->GetPixelAddress(X, Y), Color)
 	}
@@ -156,13 +149,13 @@ struct PixelBuffer {
 		this->Size := this->Count * this->Format->Size
 		
 		if (Format = RGB24) {
-			this->DoGetPixelAddress := &PixelBuffer.GetPixelAddress_24_R8_G8_B8
+			this->GetPixelAddress := &PixelBuffer.GetPixelAddress_24_R8_G8_B8
 		}
 		else if (Format = RGB32) {
-			this->DoGetPixelAddress := &PixelBuffer.GetPixelAddress_32_R8_G8_B8
+			this->GetPixelAddress := &PixelBuffer.GetPixelAddress_32_R8_G8_B8
 		}
 		else {
-			this->DoGetPixelAddress := &PixelBuffer.GetPixelAddress_Generic
+			this->GetPixelAddress := &PixelBuffer.GetPixelAddress_Generic
 		}
 	}
 }

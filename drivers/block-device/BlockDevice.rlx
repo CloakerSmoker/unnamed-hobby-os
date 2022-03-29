@@ -48,23 +48,13 @@ struct BlockDevice {
 	}
 	
 	define void Read(i64 FirstBlock, i64 BlockCount, void* Buffer) {
-		asm (rax := this~>Link->Prototype->Read, rdi := this, rsi := FirstBlock, rdx := BlockCount, rcx := Buffer) {
-			call, rax
-		}
+		this~>Link->Prototype->Read(this, FirstBlock, BlockCount, Buffer)
 	}
 	define void Write(i64 FirstBlock, i64 BlockCount, void* Buffer) {
-		asm (rax := this~>Link->Prototype->Write, rdi := this, rsi := FirstBlock, rdx := BlockCount, rcx := Buffer) {
-			call, rax
-		}
+		this~>Link->Prototype->Write(this, FirstBlock, BlockCount, Buffer)
 	}
 	define i64 GetBytesPerBlock() {
-		asm (rax := this~>Link->Prototype->GetBytesPerBlock, rdi := this) {
-			call, rax
-			leave
-			ret
-		}
-		
-		return 0
+		return this~>Link->Prototype->GetBytesPerBlock(this)
 	}
 	
 	define i8 IsValid() {
