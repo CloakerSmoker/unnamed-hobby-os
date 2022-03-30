@@ -326,6 +326,7 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	
 	for (i32 KernelBlockIndex := 0, KernelBlockIndex < KernelBlockCount, KernelBlockIndex += 1) {
 		FS->ReadINodeData(KernelFile + (KernelBlockIndex * 0x400), KernelNode, KernelBlockIndex)
+		Print(" %i / %i", KernelBlockIndex, KernelBlockCount)
 		ProgressUpdate(KernelSize, "Reading kernel...", KernelBlockIndex * 0x400)
 	}
 	

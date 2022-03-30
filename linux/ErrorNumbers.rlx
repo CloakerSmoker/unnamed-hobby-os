@@ -32,3 +32,38 @@ i32 LINUX_ERROR_MLINK := 31 ; Too many links
 i32 LINUX_ERROR_PIPE := 32 ; Broken pipe
 i32 LINUX_ERROR_DOM := 33 ; Math argument out of domain of func
 i32 LINUX_ERROR_RANGE := 34 ; Math result not representable
+
+enum ErrorNumber {
+	Permission
+	NoEntry
+	NoProcess
+	Interrupted
+	IO
+	NXIO
+	TooManyArguments
+	ExecuteFormatError
+	BadFileNumber
+	NoChildProcesses
+	TryAgain
+	OutOfMemory
+	PremissionDenied
+	BadAddress
+	MustBeBlockDevice
+	Busy
+	Exist
+	CrossDeviceLink
+	NoDevice
+	NotADirectory
+	IsDirectory
+	InvalidArgument
+	FileTableOverflow
+	TooManyOpenFiles
+	NotATypewriter
+	TextFileBusy
+	FileTooLarge
+	NoSpaceLeft
+	IllegalSeek
+	ReadOnly
+	TooManyLinks
+	BrokenPipe
+}

@@ -25,7 +25,7 @@ define void InitializeOutputPort() {
 
 void EarlyInitializeOutputPort := InitializeOutputPort()
 
-define void Info(i8* Format, ... Args) {
+define void RawInfo(i8* Format, void* Args) {
 	if (USE_BOCHS_PORT_HACK) {
 		BochsRawPrint(Format, Args)
 	}
@@ -36,5 +36,9 @@ define void Info(i8* Format, ... Args) {
 		}
 		
 		SerialPrinter->RawPrint(Format, Args)
-	}
+	}	
+}
+
+define void Info(i8* Format, ... Args) {
+	RawInfo(Format, Args)
 }

@@ -27,7 +27,7 @@ struct TaskScheduler {
 	
 	define void Debug(i8* Format, ... Parameters) {
 		if (DEBUG_SCHEDULER) {
-			RawPrint(Format, Parameters)
+			RawInfo(Format, Parameters)
 		}
 	}
 	
