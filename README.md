@@ -6,40 +6,67 @@ Expects to be cloned with the structure
         * \<this-repo\>
     * build/
         * Nothing, just needs to exist for compiled binaries
-    * `Ext2Tool.elf` (compile `./src/host/Ext2Tool.rlx`, used to create the ext2 disk image)
 * `nasm` (somewhere on path)
 
-Build with `source ./src/build.fish`, which will:
+Additionally, a few tools need to be built on the host to actually build a disk image (since nasm is the only external program used).
 
-* assemble the 1st stage bootloader
-* compile the 2nd stage bootloader
-* compile the kernel,
+This can be done with the script `src/build_host_tools.rlx`, which builds:
+
+* `Ext2Tool.elf` - which uses the full Ext2 driver to build disk images from user mode
+* `Fat32Tool.elf` - same as Ext2Tool, but with FAT32 instead (for EFI system partitions)
+* `GPTTool.elf` - same concept as the previous two, but imports other images as partitions in a new GPT partitioned disk image
+
+Next, build with `source ./src/efi_build.fish`, which will:
+
+* compile the EFI bootloader
+* compile the kernel
 * compile user mode test programs
 
 and then
 
-* create a 2mb ext2 disk image (`disk.img`)
-* import the 1st stage bootloader to the boot sector
-* import the 2nd stage bootloader to inode 5 (static index referenced by the 1st stage)
+* create a 120mb GPT disk image with 2 paritions (70mb EFI system, 50mb OS root)
+* format the EFI system partition as FAT32
+* import the EFI bootloader to `\EFI\BOOT\BOOTX64.EFI`
+* format the root partition as Ext2
 * import the kernel executable to `kernel.elf`
 * import test files
 
-which will then get `./build/disk.img` (hopefully) ready to boot.
+which will then get `./build/EFIBoot.img` (hopefully) ready to boot.
+
+---
+
+At any step, the `XXXXTool.elf` binaries can be used to inspect the created image, and should be invoked as
+
+```
+./GPTTool.elf 'File(EFIBoot.img,512)'
+```
+
+or (for the FS specific tools)
+
+```
+./XXXXTool.elf 'File(EFIBoot.img,512)>GPT(N)'
+```
+
+where `N` is a partition number either 0 or 1 (EFI system/OS root).
 
 ## Configuration
 
 (Spoiler: there isn't much)
 
-Most options live in `./src/kernel/Main.rlx` as global variables (but end up getting evaulated at compile time, don't worry). 
+All configuration lives in `./src/kernel/Config.rlx`.
 
-The big one is `USE_BOCHS_PORT_HACK` which needs to be disabled when compiling for anything but Bochs.
-
-The only other ones worth looking at are `USE_SERIAL_OUTPUT`/`SERIAL_OUTPUT_PORT` which control printing debug info (same info as printed to Bochs) out over a serial port. `SERIAL_OUTPUT_PORT` should be 1-4 to pick a port.
+* `USE_BOCHS_PORT_HACK` - print debug info to the Bochs console via a magic instruction.
+* `USE_SERIAL_OUTPUT`/`SERIAL_OUTPUT_PORT` - print debug info over a serial port, assuming serial port `N` exists.
+* `TERMINAL_FOREGROUND`/`TERMINAL_BACKGROUND` - default terminal foreground/background colors. You'll want to change these since I prefer a black on white look.
+* `BOOT_FONT_FON` - a `.fon` file for the default terminal font, must be a version 2/3 bitmap `FON` file.
+* `DEBUG_XXXX` - debug flags, will print lots of info to the debug port (either Bochs or serial, or none if neither are enabled). Not recommended, especially since printing to a serial port can be very slow and some debug events fire every 10ms (or on every system call).
 
 ## Other
 
-The 1st stage bootloader doesn't do much, it just sets up a barebones 64 bit mode environment (first 4mb identity mapped), and then reads the disk to figure out what the first block of inode 5 is (the 2nd stage). Then, it reads the first 13 blocks of the 2nd stage bootloader into memory and starts running it.
+The FAT32 driver doesn't actually support long file names, and only works with 8.3. Thankfully, EFI implementations don't really care, and since `\EFI\BOOT\BOOTX64.EFI` are all 8.3 form by default, this isn't a problem. Just don't expect the driver to handle non 8.3 file systems correctly.
 
-Hopefully the 2nd stage never gets bigger than... (13 * 1024) bytes. To keep it small, it uses a trimmed down read-only version of the ext2 library, and does minimal error checking and only prints via the Bochs port.
+The generated partition/FS UUIDs are not random, and are only psuedorandom when generated in one session of `GPTTool.elf`.
 
-The 2nd stage pretty much just finds `kernel.elf`, and then maps its sections into memory and jumps to the entrypoint.
+The Ext2 driver isn't super well optimized, and a majority of the work done in the bootloader is actually just reading the kernel.
+
+Control+C (while properly sending SIGINT) will crash if ran in the shell due to a very obscure bug.
