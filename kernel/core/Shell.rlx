@@ -69,13 +69,13 @@ define void OnCommand(i8* CommandLine) {
 		i32 NextEntryOffset := FS->StartWalkDirectory(RootINode)
 		
 		loop {
-			DirectoryEntry* NextEntry := FS->WalkDirectoryNext(RootINode, &NextEntryOffset)
+			Ext2DirectoryEntry* NextEntry := FS->WalkDirectoryNext(RootINode, &NextEntryOffset)
 			
 			if (NextEntry = null) {
 				break
 			}
 			
-			INode* NextNode := FS->ReadINode(NextEntry->INode)
+			Ext2INode* NextNode := FS->ReadINode(NextEntry->INode)
 			
 			if (NextNode->IsDirectory()) {
 				Print(" D ")
@@ -103,7 +103,7 @@ define void OnCommand(i8* CommandLine) {
 		i64 Handle := Ext2Open(FS, Path)
 		
 		if (Handle) {
-			Ext2DirectoryEntry Entry
+			Ext2StaticDirectoryEntry Entry
 			
 			loop {
 				i32 EntriesRead := 0
@@ -282,7 +282,7 @@ define void OnCommand(i8* CommandLine) {
 	else if (StringEquals(Command, "exec")) {
 		i8* Path := CommandParameters[1]
 		
-		DirectoryEntry* FoundFileEntry := FS->FindDirectoryEntryByPath(RootINode, Path)
+		Ext2DirectoryEntry* FoundFileEntry := FS->FindDirectoryEntryByPath(RootINode, Path)
 		
 		if (FoundFileEntry = null || !FoundFileEntry->IsFile()) {
 			Print(" Could not find file '^%s'\n", Path)
@@ -290,9 +290,9 @@ define void OnCommand(i8* CommandLine) {
 		else {
 			RunningProgram := true
 			
-			INode FoundFileNode
+			Ext2INode FoundFileNode
 			
-			MoveMemory(&FoundFileNode, FS->ReadINode(FoundFileEntry->INode), #INode)
+			MoveMemory(&FoundFileNode, FS->ReadINode(FoundFileEntry->INode), #Ext2INode)
 			
 			i32 FileBlockCount := FoundFileNode.FileSizeLow / 1024
 			

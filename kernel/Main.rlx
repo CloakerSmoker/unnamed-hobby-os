@@ -88,7 +88,7 @@ define void PrintCharacter(i8 Character) {
 }
 
 Ext2* FS := null
-INode* RootINode := null
+Ext2INode* RootINode := null
 
 #Require "./src/drivers/block-device/BlockDevice.rlx"
 #Require "./src/drivers/block-device/ATABlockDevice.rlx"

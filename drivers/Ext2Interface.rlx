@@ -19,9 +19,9 @@ i8 OPEN_CREATE_DIRECTORY := 2
 define i64 Ext2Open(Ext2* FileSystem, i64 AtHandle, i8* Path, i8 Flags) {
 	i32 AtINodeNumber := Ext2UnpackHandle(AtHandle, null)
 	
-	INode* AtNode := FileSystem->ReadINode(AtINodeNumber)
+	Ext2INode* AtNode := FileSystem->ReadINode(AtINodeNumber)
 	
-	DirectoryEntry* Entry := FileSystem->FindDirectoryEntryByPath(AtNode, Path)
+	Ext2DirectoryEntry* Entry := FileSystem->FindDirectoryEntryByPath(AtNode, Path)
 	
 	if (Entry) {
 		return Entry->INode
@@ -67,7 +67,7 @@ define i64 Ext2Seek(Ext2* FileSystem, i64 Handle, i32 Offset, i8 Mode) {
 		return Ext2PackHandle(INodeNumber, OldOffset + Offset)
 	}
 	else if (Mode = SEEK_RELATIVE_END) {
-		INode* Node := FileSystem->ReadINode(INodeNumber)
+		Ext2INode* Node := FileSystem->ReadINode(INodeNumber)
 		
 		return Ext2PackHandle(INodeNumber, Node->FileSizeLow + Offset)
 	}
@@ -88,7 +88,7 @@ define i64 Ext2Read(Ext2* FileSystem, i64 Handle, void* Buffer, i32 Size, i32* B
 	i32 Offset := 0
 	i32 INodeNumber := Ext2UnpackHandle(Handle, &Offset)
 
-	INode* Node := FileSystem->ReadINode(INodeNumber)
+	Ext2INode* Node := FileSystem->ReadINode(INodeNumber)
 	
 	if (Offset + Size >= Node->FileSizeLow) {
 		Size := Node->FileSizeLow - Offset
@@ -144,19 +144,19 @@ define i64 Ext2Read(Ext2* FileSystem, i64 Handle, void* Buffer, i32 Size, i32* B
 	return Ext2PackHandle(INodeNumber, Offset + *BytesRead)
 }
 
-struct Ext2DirectoryEntry {
+struct Ext2StaticDirectoryEntry {
 	i32 INodeNumber
 	i32 NameLength
 	i8[120] Name
 }
 
-define i64 Ext2ReadDirectoryEntries(Ext2* FileSystem, i64 Handle, Ext2DirectoryEntry* Out, i32 Count, i32* EntriesRead) {
+define i64 Ext2ReadDirectoryEntries(Ext2* FileSystem, i64 Handle, Ext2StaticDirectoryEntry* Out, i32 Count, i32* EntriesRead) {
 	*EntriesRead := 0
 	
 	i32 Offset := 0
 	i32 INodeNumber := Ext2UnpackHandle(Handle, &Offset)
 
-	INode* Node := FileSystem->ReadINode(INodeNumber)
+	Ext2INode* Node := FileSystem->ReadINode(INodeNumber)
 	
 	if (!Node->IsDirectory()) {
 		return -3
@@ -171,7 +171,7 @@ define i64 Ext2ReadDirectoryEntries(Ext2* FileSystem, i64 Handle, Ext2DirectoryE
 	}
 	
 	for (i32 Index := 0, Index < Count, Index++) {
-		DirectoryEntry* Next := FileSystem->WalkDirectoryNext(Node, &WalkHandle)
+		Ext2DirectoryEntry* Next := FileSystem->WalkDirectoryNext(Node, &WalkHandle)
 		
 		if (Next = null) {
 			return -3
@@ -204,7 +204,7 @@ define i64 Ext2GetStatus(Ext2* FileSystem, i64 Handle, Ext2Status* Out) {
 	i32 Offset := 0
 	i32 INodeNumber := Ext2UnpackHandle(Handle, &Offset)
 
-	INode* Node := FileSystem->ReadINode(INodeNumber)
+	Ext2INode* Node := FileSystem->ReadINode(INodeNumber)
 	
 	Out->INodeNumber := INodeNumber
 	Out->IsFile := Node->IsFile()
@@ -221,7 +221,7 @@ define i64 Ext2Write(Ext2* FileSystem, i64 Handle, void* Data, i32 Size) {
 	i32 Offset := 0
 	i32 INodeNumber := Ext2UnpackHandle(Handle, &Offset)
 
-	INode* Node := FileSystem->ReadINode(INodeNumber)
+	Ext2INode* Node := FileSystem->ReadINode(INodeNumber)
 	
 	i32 BlockCount := Size / 1024
 	

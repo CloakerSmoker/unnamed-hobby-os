@@ -10,7 +10,7 @@
 
 #Require "$/Debug.rlx"
 
-define void PrintSuperBlock(SuperBlock* this) {
+define void PrintSuperBlock(Ext2SuperBlock* this) {
 	Print("SuperBlock {\n")
 	Print("	TotalINodes: %i\n", this->TotalINodes)
 	Print("	TotalBlocks: %i\n", this->TotalBlocks)
@@ -34,7 +34,7 @@ define void PrintSuperBlock(SuperBlock* this) {
 	Print("	RevisionLevel: %i\n", this->RevisionLevel)
 	Print("}\n")
 }
-define void PrintBlockGroupDescriptor(BlockGroupDescriptor* this) {
+define void PrintBlockGroupDescriptor(Ext2BlockGroupDescriptor* this) {
 	Print("BlockGroupDescriptor {\n")
 	Print("	BlockBitmap: %i \t(sector %i | offset %x)\n", this->BlockBitmap, this->BlockBitmap * 2, this->BlockBitmap * 1024)
 	Print("	INodeBitmap: %i \t(sector %i | offset %x)\n", this->INodeBitmap, this->INodeBitmap * 2, this->INodeBitmap * 1024)
@@ -100,7 +100,7 @@ define void DirectoryTree(Ext2* FS, INode* Root, i32 TabCount) {
 	i32 State := FS->StartWalkDirectory(Root)
 	
 	loop {
-		DirectoryEntry* NextEntry := FS->WalkDirectoryNext(Root, &State)
+		Ext2DirectoryEntry* NextEntry := FS->WalkDirectoryNext(Root, &State)
 		
 		if (NextEntry = null) {
 			break
@@ -163,7 +163,7 @@ define void Prompt(Ext2* FS) {
 			i32 NextEntryOffset := FS->StartWalkDirectory(RootINode)
 			
 			loop {
-				DirectoryEntry* NextEntry := FS->WalkDirectoryNext(RootINode, &NextEntryOffset)
+				Ext2DirectoryEntry* NextEntry := FS->WalkDirectoryNext(RootINode, &NextEntryOffset)
 				
 				if (NextEntry = null) {
 					break
@@ -182,7 +182,7 @@ define void Prompt(Ext2* FS) {
 			}
 		}
 		else if (StringEquals(Command, "cd")) {
-			DirectoryEntry* NewRootEntry := FS->FindDirectoryEntryByPath(RootINode, Path)
+			Ext2DirectoryEntry* NewRootEntry := FS->FindDirectoryEntryByPath(RootINode, Path)
 			
 			if (NewRootEntry = null || !NewRootEntry->IsDirectory()) {
 				Print(" Could not find directory '^C0%s^F0'\n", Path)
@@ -195,7 +195,7 @@ define void Prompt(Ext2* FS) {
 			}
 		}
 		else if (StringEquals(Command, "bi")) {
-			DirectoryEntry* FoundNodeEntry := FS->FindDirectoryEntryByPath(RootINode, Path)
+			Ext2DirectoryEntry* FoundNodeEntry := FS->FindDirectoryEntryByPath(RootINode, Path)
 			
 			if (FoundNodeEntry = null) {
 				Print(" Could not find file/directory '^C0%s^F0'\n", Path)
@@ -228,7 +228,7 @@ define void Prompt(Ext2* FS) {
 			}
 		}
 		else if (StringEquals(Command, "cat")) {
-			DirectoryEntry* FoundFileEntry := FS->FindDirectoryEntryByPath(RootINode, Path)
+			Ext2DirectoryEntry* FoundFileEntry := FS->FindDirectoryEntryByPath(RootINode, Path)
 			
 			if (FoundFileEntry = null || !FoundFileEntry->IsFile()) {
 				Print(" Could not find file '^C0%s^F0'\n", Path)
@@ -275,7 +275,7 @@ define void Prompt(Ext2* FS) {
 		else if (StringEquals(Command, "bg")) {
 			i32 Index := AToI(Path) As i16
 			Print("%i = \n", Index)
-			BlockGroupDescriptor* BGD := FS->GetBlockGroupDescriptor(Index)
+			Ext2BlockGroupDescriptor* BGD := FS->GetBlockGroupDescriptor(Index)
 			
 			PrintBlockGroupDescriptor(BGD)
 		}
@@ -427,7 +427,7 @@ define void Prompt(Ext2* FS) {
 				Print("Could not open real file '%s', error %i\n", OutputRealPath, OutputFile)
 			}
 			
-			DirectoryEntry* OutputEntry := FS->FindDirectoryEntryByPath(RootINode, Path)
+			Ext2DirectoryEntry* OutputEntry := FS->FindDirectoryEntryByPath(RootINode, Path)
 			
 			if (OutputEntry = null || !OutputEntry->IsFile()) {
 				Print("Specified file does not exist, or is a directory\n")
@@ -610,7 +610,7 @@ define i32 Main(i64 ArgC, i8** ArgV) {
 	;
 	;i32 Count := SplitPath(ArgV[1], Path, 5)
 	;
-	;DirectoryEntry* Result := FS->FindDirectoryEntryByPath(Path, Count, true)
+	;Ext2DirectoryEntry* Result := FS->FindDirectoryEntryByPath(Path, Count, true)
 	;
 	;if (Result > 0x200) {
 	;	Print("Found file '%s' at INode %i\n", Result~>Name, Result->INode)

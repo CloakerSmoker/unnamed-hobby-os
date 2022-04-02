@@ -523,7 +523,7 @@ define i64 SystemCallClose(i64 FileDescriptor) {
 define i64 DoFileStatus(i32 INodeNumber, LinuxFileStatus* Out) {
 	Out->INodeNumber := INodeNumber
 	
-	INode* Node := FS->ReadINode(INodeNumber)
+	Ext2INode* Node := FS->ReadINode(INodeNumber)
 	
 	Out->LinkCount := Node->HardLinkCount
 	
@@ -548,9 +548,9 @@ define i64 DoFileStatus(i32 INodeNumber, LinuxFileStatus* Out) {
 define i64 SystemCallPathStatus(i8* Path, LinuxFileStatus* Out) {
 	;Info("Stat(%s, %x)\n", Path, Out)
 	
-	INode* AtNode := FS->ReadINode(2)
+	Ext2INode* AtNode := FS->ReadINode(2)
 	
-	DirectoryEntry* Entry := FS->FindDirectoryEntryByPath(AtNode, Path)
+	Ext2DirectoryEntry* Entry := FS->FindDirectoryEntryByPath(AtNode, Path)
 	
 	if !(Entry) {
 		return -LINUX_ERROR_NOENT

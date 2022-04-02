@@ -72,7 +72,7 @@ struct LinuxSignalList {
 
 struct LinuxSignalInfo {
 	i32 SignalNumber
-	i32 ErrorNumber
+	i32 Error
 	i32 SignalCode
 	
 	void* Address

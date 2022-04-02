@@ -155,18 +155,18 @@ struct UserThread {
 		;Mappings->Delete()
 	}
 	
-	define void DoDefaultSignalAction(i32 Number, i32 ErrorNumber, i32 SignalCode) {
+	define void DoDefaultSignalAction(i32 Number, i32 Error, i32 SignalCode) {
 		this->Exit(Number)
 	}
 	
-	define void SetupSignalState(i32 Number, i32 ErrorNumber, i32 SignalCode) {
+	define void SetupSignalState(i32 Number, i32 Error, i32 SignalCode) {
 		i64 Mask := SignalMask(Number)
 		i64 OldMask := this->SignalMask
 		
 		LinuxSignalAction* Action := this->ParentSignals->Actions[Number]
 		
 		if (Action->Handler = LINUX_SIGNAL_HANDLER_DEFAULT) {
-			this->DoDefaultSignalAction(Number, ErrorNumber, SignalCode)
+			this->DoDefaultSignalAction(Number, Error, SignalCode)
 			
 			return
 		}
@@ -184,7 +184,7 @@ struct UserThread {
 		LinuxSignalInfo* Info := Context->StackAllocate(#LinuxSignalInfo)
 		
 		Info->SignalNumber := Number
-		Info->ErrorNumber := ErrorNumber
+		Info->Error := Error
 		Info->SignalCode := SignalCode
 		
 		LinuxSignalUserContext* UserContext := Context->StackAllocate(#LinuxSignalUserContext)
