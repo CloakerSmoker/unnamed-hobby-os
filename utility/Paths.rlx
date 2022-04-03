@@ -1,0 +1,52 @@
+define i8* ExpandPath(i8* Path) {
+	i32 Length := StringLength(Path)
+
+	i8* Result := Alloc(Length + 2)
+	i32 ResultIndex := 0
+	
+	i8* CurrentPart := Path
+
+	for (i32 Index := 0, Index < Length, Index++) {
+		i8 AtSeperator := Path[Index] = '/'
+		i8 AtEnd := Index + 1 = Length
+		
+		if (AtSeperator || AtEnd) {
+			if (AtSeperator) {
+				Path[Index] := 0
+			}
+			else {
+				Path[Index + AtEnd] := 0
+			}
+			
+			if (StringEquals(CurrentPart, ".")) {
+				
+			}
+			else if (StringEquals(CurrentPart, "..")) {
+				for (i32 ReverseIndex := ResultIndex - 1, ReverseIndex >= 0, ReverseIndex--) {
+					if (Result[ReverseIndex] = '/') {
+						Result[ReverseIndex] := 0
+						ResultIndex := ReverseIndex
+						break
+					}
+				}
+			}
+			else {
+				Result[ResultIndex++] := '/'
+				
+				MoveMemory(&Result[ResultIndex], CurrentPart, StringLength(CurrentPart))	
+				ResultIndex += StringLength(CurrentPart)
+			}
+			
+			if (AtEnd && AtSeperator) {
+				Result[ResultIndex++] := '/'
+				Result[ResultIndex] := 0
+			}
+			
+			CurrentPart := &Path[Index + 1]
+		}
+	}
+	
+	MoveMemory(Result, Result + 1, ResultIndex)
+	
+	return Result
+}

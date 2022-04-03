@@ -1,6 +1,7 @@
 
 #Require "./src/utility/ScanCodes.rlx"
 #Require "./src/utility/MemoryFIFO.rlx"
+#Require "./src/utility/Paths.rlx"
 #Require "./src/kernel/user-mode/Execute.rlx"
 
 define void Prompt() {
@@ -24,6 +25,7 @@ define EventState OnChildKilled(Process* Child, Event* Fired) {
 }
 
 Ext2Handle* CWD := null
+i8[40] PWD
 
 define void OnCommand(i8* CommandLine) {
 	i32 ParameterStart := 0
@@ -319,6 +321,45 @@ define void OnCommand(i8* CommandLine) {
 		i64 Value := AToI(CommandParameters[0], 16)
 		
 		syscall:(1, Value)
+	}
+	else if (StringEquals(Command, "cd")) {
+		i8* Path := CommandParameters[1]
+		
+		Ext2Handle* NewCWD := FS->Open(CWD, Path)
+		
+		if !(NewCWD) {
+			Print("Could not find '%s'\n", Path)
+			Prompt()
+			return
+		}
+		
+		Ext2Status NewCWDStatus
+		FS->Status(NewCWD, &NewCWDStatus)
+		
+		if !(NewCWDStatus.IsDirectory) {
+			Print("'%s' is not a directory\n", Path)
+		}
+		else {
+			CWD := NewCWD
+			
+			i32 PWDLength := StringLength(PWD)
+			i32 PathLength := StringLength(Path)
+			MoveMemory(&PWD[PWDLength + 1], Path, PathLength)
+			PWD[PWDLength] := '/'
+			PWD[PWDLength + 1 + PathLength] := 0
+			
+			i8* NewPWD := ExpandPath(PWD)
+			MoveMemory(PWD, NewPWD, StringLength(NewPWD))
+			Free(NewPWD)
+		}
+	}
+	else if (StringEquals(Command, "pwd")) {
+		if (CWD~>Node->INodeNumber = 2) {
+			Print("/\n")
+		}
+		else {
+			Print("%s\n", PWD)
+		}
 	}
 	else {
 		Print(" Unknown command '%s'\n", Command)
