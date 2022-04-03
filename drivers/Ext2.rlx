@@ -1,5 +1,6 @@
 #Require "./src/drivers/block-device/BlockDevice.rlx"
 #Require "$/MemoryBase.rlx"
+#Require "./src/utility/x64.rlx"
 
 i16 EXT2_SUPER_MAGIC := 0xEF53 As i16
 
@@ -267,6 +268,38 @@ struct Ext2Extent {
 	i32 Count
 }
 
+struct Ext2Handle {
+	Ext2INode Node
+	
+	void* CurrentExtentBuffer
+	Ext2Extent CurrentExtent
+	
+	i32 Offset
+	i8 CachedExtentIsValid
+}
+
+struct Ext2Status {
+	i32 INodeNumber
+	i32 Size
+	i8 IsFile
+	i8 IsDirectory
+	i16 Permissions
+}
+
+struct Ext2StaticDirectoryEntry {
+	i32 INodeNumber
+	i32 NameLength
+	i8[120] Name
+}
+
+i8 EXT2_OPEN_IF_EXISTS := 0
+i8 EXT2_OPEN_CREATE := 1
+i8 EXT2_OPEN_CREATE_DIRECTORY := 2
+
+i8 EXT2_SEEK_SET := 0
+i8 EXT2_SEEK_RELATIVE := 1
+i8 EXT2_SEEK_RELATIVE_END := 2
+
 i64 EXT2_EXCEPTION_NO_DATA_BLOCK := 'EXT2_NDB'
 i64 EXT2_EXCEPTION_DATA_OUT_OF_RANGE := 'EXT2_DRG'
 i64 EXT2_EXCEPTION_BAD_PARAMETER := 'EXT2_BPM'
@@ -322,8 +355,6 @@ define i8* Ext2ExceptionToString(i64 Exception) {
 		return "Unknown error"
 	}
 }
-
-;#Require "$/ExceptionBase.rlx"
 
 struct Ext2 {
 	Ext2SuperBlock* SuperBlock
@@ -1297,8 +1328,8 @@ struct Ext2 {
 		
 		this->CommitBlockGroupDescriptors()
 		
-		; Alright, so we've got a functional FS now, but it doesn't have a root INode set, and is pretty useless
-		;  so, we just need to grab INode 2 (EXT2_ROOT_INODE) and set it up as a directory, along with creating
+		; Alright, so we've got a mostly functional FS now, but it doesn't have a root INode set, and is pretty useless
+		;  so we just need to grab INode 2 (EXT2_ROOT_INODE) and set it up as a directory, along with creating
 		;   directory entries for "." and ".." (which both point back at the root INode)
 		
 		Ext2INode* RootNode := this->ReadINode(2)
@@ -1312,5 +1343,275 @@ struct Ext2 {
 		this->DirectoryAppendEntry(RootNode, "..", 2, DIRECTORY_ENTRY_DIRECTORY)
 		
 		; And that's that. Now we've got a functional FS, ready to be used.
+	}
+	
+	; ==============================
+	
+	define Ext2Handle* MakeHandle(Ext2INode* Node) {
+		Ext2Handle* Result := Alloc(#Ext2Handle)
+		
+		MoveMemory(Result~>Node, Node, #Ext2INode)
+		
+		return Result
+	}
+	
+	Ext2INode RootINode
+	Ext2Handle* RootHandle
+	
+	define void SetupInterface() {
+		MoveMemory(this~>RootINode, this->ReadINode(2), #Ext2INode)
+		
+		this->RootHandle := this->MakeHandle(this~>RootINode)
+	}
+	
+	define Ext2Handle* MakeHandle(i32 INodeNumber) {
+		return this->MakeHandle(this->ReadINode(INodeNumber))
+	}
+	
+	define Ext2Handle* Open(Ext2Handle* At, i8* Path, i8 Flags) {
+		if (Path[0] = '/') {
+			At := this->RootHandle
+		}
+		
+		Ext2DirectoryEntry* Entry := this->FindDirectoryEntryByPath(At~>Node, Path)
+		
+		if (Entry) {
+			return this->MakeHandle(Entry->INode)
+		}
+		else {
+			i32 CreatedNodeNumber := -1
+			
+			if (Flags & EXT2_OPEN_CREATE) {
+				CreatedNodeNumber := this->MakeFile(At~>Node, Path)
+			}
+			else if (Flags & EXT2_OPEN_CREATE_DIRECTORY) {
+				CreatedNodeNumber := this->MakeDirectory(At~>Node, Path)
+			}
+			else {
+				return null
+			}
+			
+			return this->MakeHandle(CreatedNodeNumber)
+		}
+	}
+	define Ext2Handle* Open(Ext2Handle* At, i8* Path) {
+		return this->Open(At, Path, EXT2_OPEN_IF_EXISTS)
+	}
+	define Ext2Handle* Open(i8* Path, i8 Flags) {
+		return this->Open(this->RootHandle, Path, Flags)
+	}
+	define Ext2Handle* Open(i8* Path) {
+		return this->Open(this->RootHandle, Path, EXT2_OPEN_IF_EXISTS)
+	}
+	
+	define void Seek(Ext2Handle* Handle, i32 Offset, i8 Mode) {
+		if (Mode = EXT2_SEEK_SET) {
+			Handle->Offset := Offset
+		}
+		else if (Mode = EXT2_SEEK_RELATIVE) {
+			Handle->Offset += Offset
+		}
+		else if (Mode = EXT2_SEEK_RELATIVE_END) {
+			Handle->Offset := Handle~>Node->FileSizeLow
+		}
+		
+		Handle->CachedExtentIsValid := false
+	}
+	
+	define i32 Tell(Ext2Handle* Handle) {
+		return Handle->Offset
+	}
+	
+	define i32 Read(Ext2Handle* Handle, void* Buffer, i32 Size) {
+		i32 BytesRead := 0
+		Ext2INode* Node := Handle~>Node
+		i32 Offset := Handle->Offset
+		
+		if (Offset + Size >= Node->FileSizeLow) {
+			Size := Node->FileSizeLow - Offset
+		}
+		
+		i32 BlockCount := Size / 1024
+		i32 FirstBlock := Offset / 1024
+		
+		if (Offset % 1024) {
+			; Read the first (partial) block
+		
+			this->ReadINodeData(this->TempBlock, Node, FirstBlock)
+			
+			i32 FirstBlockRemainder := Offset % 1024
+			i32 FirstBlockSize := 1024 - FirstBlockRemainder
+			
+			if (Size < FirstBlockSize) {
+				FirstBlockSize := Size
+			}
+			
+			MoveMemory(Buffer, this->TempBlock + FirstBlockRemainder, FirstBlockSize)
+
+			FirstBlock += 1
+			
+			Buffer += FirstBlockSize
+			Size -= FirstBlockSize
+			
+			BytesRead += FirstBlockSize
+		}
+		
+		; Read any middle (full) blocks, and the last full block (if the last block is full)
+		
+		;for (i32 Index := 0, Index < BlockCount, Index++) {
+		;	this->ReadINodeData(Buffer, Node, FirstBlock + Index)
+		;	
+		;	Buffer += 1024
+		;	BytesRead += 1024
+		;}
+		
+		i32 Index := 0
+		
+		while (Index < BlockCount) {
+			Ext2Extent NextExtent
+			
+			this->FindINodeDataExtent(Node, Index, &NextExtent)
+			
+			if (Index + NextExtent.Count > BlockCount) {
+				NextExtent.Count := BlockCount - Index
+			}
+			
+			this->ReadExtent(&NextExtent, Buffer)
+			
+			Buffer += NextExtent.Count * 1024
+			Index += NextExtent.Count
+		}
+		
+		if (Size % 1024) {
+			; Read the last (partial) block
+			
+			i32 LastBlock := FirstBlock + BlockCount
+			
+			this->ReadINodeData(this->TempBlock, Node, LastBlock)
+			
+			MoveMemory(Buffer, this->TempBlock, Size % 1024)
+			
+			BytesRead += Size % 1024
+		}
+		
+		Handle->Offset += BytesRead
+		
+		return BytesRead
+	}
+	
+	define void Write(Ext2Handle* Handle, void* Data, i32 Size) {
+		Ext2INode* Node := Handle~>Node
+		
+		i32 BlockCount := Size / 1024
+		
+		i32 NextBlock := Handle->Offset / 1024
+		
+		i32 FirstBlockExistingData := Handle->Offset % 1024
+		
+		if (FirstBlockExistingData && Node->FileSizeLow > 0) {
+			; Writing data which starts in the middle of a block, which means that we need to read the old data
+			;  and overwrite it, then write this first block back
+			
+			this->ReadINodeData(this->TempBlock, Node, NextBlock) ; Get old data
+			
+			; Figure out where to start writing/how much to write. 
+			; This covers a [---|XXX|---] style write along with a [---|XXX|YYY] style write
+			
+			i32 FirstBlockWriteStart := FirstBlockExistingData
+			i32 FirstBlockWriteSize := Size
+			
+			if (FirstBlockWriteSize > 1024) {
+				; [---|XXX|YYY] style, we need to figure out how big [XXX|YYY] is, aka 1024 - [---]
+				
+				FirstBlockWriteSize := 1024 - FirstBlockExistingData
+			}
+			
+			MoveMemory(this->TempBlock + FirstBlockWriteStart, Data, FirstBlockWriteSize)
+			
+			this->WriteINodeBlock(Node, NextBlock, this->TempBlock)
+			
+			;Print("[wrote %x bytes to offset %x of first block]", FirstBlockWriteSize, NewFirstBlockSize)
+			
+			Handle->Offset += FirstBlockWriteSize
+			Data += FirstBlockWriteSize
+			Size -= FirstBlockWriteSize
+			
+			NextBlock += 1
+			BlockCount -= 1
+		}
+		
+		for (i32 Index := 0, Index < BlockCount, Index++) {
+			this->WriteINodeBlock(Node, NextBlock + Index, Data)
+			
+			Data += 1024
+		}
+		
+		i32 LastBlockSize := Size % 1024
+		
+		if (LastBlockSize) {
+			i32 LastBlock := NextBlock + BlockCount
+			
+			if (LastBlock * 1024 < Node->FileSizeLow) {
+				this->ReadINodeData(this->TempBlock, Node, LastBlock)
+				;Print("[Read %s from tail block]", this->TempBlock)
+			}
+			
+			MoveMemory(this->TempBlock, Data, LastBlockSize)
+			FastSetMemory8(this->TempBlock + LastBlockSize, 1024 - LastBlockSize, 0)
+			;Print("[Writing %s to tail block]", this->TempBlock)
+			
+			this->WriteINodeBlock(Node, LastBlock, this->TempBlock)
+		}
+		
+		Handle->Offset += Size
+		
+		Node->FileSizeLow := Handle->Offset
+		this->WriteINode(Node)
+	}
+	
+	define void Status(Ext2Handle* Handle, Ext2Status* Out) {
+		Ext2INode* Node := Handle~>Node
+
+		Out->INodeNumber := Node->INodeNumber
+		Out->IsFile := Node->IsFile()
+		Out->IsDirectory := Node->IsDirectory()
+		Out->Permissions := Node->GetPermissions()
+		Out->Size := Node->FileSizeLow
+	}
+	
+	define i32 ReadDirectoryEntries(Ext2Handle* Handle, Ext2StaticDirectoryEntry* Out, i32 Count) {
+		i32 EntriesRead := 0
+		Ext2INode* Node := Handle~>Node
+		
+		if (!Node->IsDirectory()) {
+			return -3
+		}
+		
+		i32 WalkHandle := Handle->Offset
+		
+		for (i32 Index := 0, Index < Count, Index++) {
+			Ext2DirectoryEntry* Next := this->WalkDirectoryNext(Node, &WalkHandle)
+			
+			if (Next = null) {
+				return -3
+			}
+			
+			EntriesRead += 1
+			
+			Out->INodeNumber := Next->INode
+			Out->NameLength := Next->NameLength
+			
+			MoveMemory(Out~>Name, Next~>Name, Next->NameLength)
+			
+			Out~>Name[Next->NameLength] := 0
+			
+			Out += #Ext2DirectoryEntry
+		}
+		
+		return EntriesRead
+	}
+	
+	define void Close(Ext2Handle* Handle) {
+		Free(Handle)
 	}
 }

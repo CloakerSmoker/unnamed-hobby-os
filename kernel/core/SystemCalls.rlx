@@ -260,11 +260,7 @@ define i64 SystemCallRead(i64 FileDescriptor, i8* Buffer, i32 Size) {
 	
 	FileDescriptor -= 3
 	
-	i32 BytesRead := 0
-	i64 NewHandle := Ext2Read(FS, CurrentProcess->FileDescriptorsToHandles[FileDescriptor], Buffer, Size, &BytesRead)
-	CurrentProcess->FileDescriptorsToHandles[FileDescriptor] := NewHandle
-	
-	return BytesRead
+	return FS->Read(CurrentProcess->FileDescriptorsToHandles[FileDescriptor], Buffer, Size)
 }
 
 define i64 SystemCallWrite(i64 FileDescriptor, i8* Buffer, i32 Size) {
@@ -280,8 +276,7 @@ define i64 SystemCallWrite(i64 FileDescriptor, i8* Buffer, i32 Size) {
 	
 	FileDescriptor -= 3
 	
-	i64 NewHandle := Ext2Write(FS, CurrentProcess->FileDescriptorsToHandles[FileDescriptor], Buffer, Size)
-	CurrentProcess->FileDescriptorsToHandles[FileDescriptor] := NewHandle
+	FS->Write(CurrentProcess->FileDescriptorsToHandles[FileDescriptor], Buffer, Size)
 	
 	return Size
 }
@@ -498,15 +493,15 @@ define i64 SystemCallOpen(i8* Path, i32 Flags, i32 Mode) {
 		return -LINUX_ERROR_FAULT
 	}
 	
-	i8 Ext2Flags := OPEN_IF_EXISTS
+	i8 Ext2Flags := EXT2_OPEN_IF_EXISTS
 	
 	if (Flags & LINUX_FILE_CREATE_NEW) {
-		Ext2Flags := OPEN_CREATE
+		Ext2Flags := EXT2_OPEN_CREATE
 	}
 	
 	i32 FileDescriptor := CurrentProcess->FileDescriptorCount++
 	
-	CurrentProcess->FileDescriptorsToHandles[FileDescriptor] := Ext2Open(FS, Path, Ext2Flags)
+	CurrentProcess->FileDescriptorsToHandles[FileDescriptor] := FS->Open(Path, Ext2Flags)
 	
 	return FileDescriptor + 3
 }
@@ -514,33 +509,39 @@ define i64 SystemCallOpen(i8* Path, i32 Flags, i32 Mode) {
 define i64 SystemCallClose(i64 FileDescriptor) {
 	FileDescriptor -= 3
 	
-	i64 NewHandle := Ext2Close(FS, CurrentProcess->FileDescriptorsToHandles[FileDescriptor])
-	CurrentProcess->FileDescriptorsToHandles[FileDescriptor] := NewHandle
+	FS->Close(CurrentProcess->FileDescriptorsToHandles[FileDescriptor])
+	CurrentProcess->FileDescriptorsToHandles[FileDescriptor] := null
 	
 	return 0
 }
 
-define i64 DoFileStatus(i32 INodeNumber, LinuxFileStatus* Out) {
-	Out->INodeNumber := INodeNumber
+define void DoFileStatus(Ext2Handle* Handle, LinuxFileStatus* Out) {
+	Ext2Status Temp
 	
-	Ext2INode* Node := FS->ReadINode(INodeNumber)
+	FS->Status(Handle, &Temp)
 	
-	Out->LinkCount := Node->HardLinkCount
-	
-	Out->Size := Node->FileSizeLow
+	Out->Size := Temp.Size
 	Out->BlockSize := 512
-	Out->BlockCount := Node->DiskSectorsUsed
+	Out->BlockCount := (Temp.Size / 512) + 1
 	
 	Out->Mode := 0
 	
-	if (Node->IsFile()) {
+	if (Temp.IsFile) {
 		Out->Mode |= LINUX_FILE_STATUS_IS_FILE
 	}
-	else if (Node->IsDirectory()) {
+	else if (Temp.IsDirectory) {
 		Out->Mode |= LINUX_FILE_STATUS_IS_DIRECTORY
 	}
 	
 	Out->Mode |= 0o777
+}
+
+define i64 SystemCallFileStatus(i64 FileDescriptor, LinuxFileStatus* Out) {
+	FileDescriptor -= 3
+	
+	Ext2Handle* FileHandle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
+	
+	DoFileStatus(FileHandle, Out)
 	
 	return 0
 }
@@ -548,25 +549,16 @@ define i64 DoFileStatus(i32 INodeNumber, LinuxFileStatus* Out) {
 define i64 SystemCallPathStatus(i8* Path, LinuxFileStatus* Out) {
 	;Info("Stat(%s, %x)\n", Path, Out)
 	
-	Ext2INode* AtNode := FS->ReadINode(2)
+	Ext2Handle* FileHandle := FS->Open(Path)
 	
-	Ext2DirectoryEntry* Entry := FS->FindDirectoryEntryByPath(AtNode, Path)
-	
-	if !(Entry) {
+	if !(FileHandle) {
 		return -LINUX_ERROR_NOENT
 	}
 	
-	return DoFileStatus(Entry->INode, Out)
-}
-define i64 SystemCallFileStatus(i64 FileDescriptor, LinuxFileStatus* Out) {
-	FileDescriptor -= 3
+	DoFileStatus(FileHandle, Out)
+	FS->Close(FileHandle)
 	
-	i64 FileHandle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
-	
-	i32 Offset := 0
-	i32 INodeNumber := Ext2UnpackHandle(FileHandle, &Offset)
-	
-	return DoFileStatus(INodeNumber, Out)
+	return 0
 }
 
 define i64 SystemCallTruncate(i64 FileDescriptor, i32 Size) {
@@ -576,11 +568,7 @@ define i64 SystemCallTruncate(i64 FileDescriptor, i32 Size) {
 define i64 SystemCallSeek(i64 FileDescriptor, i32 Offset, i8 Mode) {
 	FileDescriptor -= 3
 	
-	i64 NewHandle := Ext2Seek(FS, CurrentProcess->FileDescriptorsToHandles[FileDescriptor], Offset, Mode)
-	CurrentProcess->FileDescriptorsToHandles[FileDescriptor] := NewHandle
-	
-	Offset := 0
-	Ext2UnpackHandle(NewHandle, &Offset)
+	FS->Seek(CurrentProcess->FileDescriptorsToHandles[FileDescriptor], Offset, Mode)
 	
 	return Offset
 }

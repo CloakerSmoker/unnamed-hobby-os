@@ -333,16 +333,12 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 		
 		;Print("Extent { %x - %x }\n", NextKernelExtent.First, NextKernelExtent.First + NextKernelExtent.Count)
 		
-		FS->ReadExtent(&NextKernelExtent, KernelFile + (KernelBlockIndex * 1024))
+		FS->ReadExtent(&NextKernelExtent, KernelFile + (KernelBlockIndex * 0x400))
 		
 		KernelBlockIndex += NextKernelExtent.Count
+		
+		ProgressUpdate(KernelSize, "Reading kernel...", KernelBlockIndex * 0x400)
 	}
-	
-	;for (i32 KernelBlockIndex := 0, KernelBlockIndex < KernelBlockCount, KernelBlockIndex += 1) {
-	;	FS->ReadINodeData(KernelFile + (KernelBlockIndex * 0x400), KernelNode, KernelBlockIndex)
-	;	Print(" %i / %i", KernelBlockIndex, KernelBlockCount)
-	;	ProgressUpdate(KernelSize, "Reading kernel...", KernelBlockIndex * 0x400)
-	;}
 	
 	Print("\nDone\n")
 	

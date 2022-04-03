@@ -241,7 +241,7 @@ struct UserThread {
 }
 
 struct Process {
-	i64[10] FileDescriptorsToHandles
+	Ext2Handle*[10] FileDescriptorsToHandles
 	i32 FileDescriptorCount
 	
 	ELFHeader* ELF

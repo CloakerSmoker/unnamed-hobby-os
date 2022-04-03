@@ -87,14 +87,13 @@ define void PrintCharacter(i8 Character) {
 	KernelTerminal->Print(&Character, 1)
 }
 
-Ext2* FS := null
-Ext2INode* RootINode := null
-
 #Require "./src/drivers/block-device/BlockDevice.rlx"
 #Require "./src/drivers/block-device/ATABlockDevice.rlx"
 #Require "./src/drivers/block-device/GPTBlockDevice.rlx"
 
-#Require "./src/drivers/Ext2Interface.rlx"
+#Require "./src/drivers/Ext2.rlx"
+
+Ext2* FS := null
 
 #Require "./src/kernel/user-mode/Process.rlx"
 #Require "./src/kernel/core/SystemCalls.rlx"
@@ -363,8 +362,7 @@ define void MainContinuation() {
 	FS->Device := OSPatition
 	
 	FS->Initialize(Ext2Scratch, Ext2Scratch + 0x800, Ext2Scratch + 0xC00, Ext2Scratch + 0x1000, Ext2Scratch + 0x1400)
-	
-	RootINode := CloneMemory(FS->ReadINode(2), #INode)
+	FS->SetupInterface()
 	
 	KernelTerminal->SetCursorTimer()
 	
