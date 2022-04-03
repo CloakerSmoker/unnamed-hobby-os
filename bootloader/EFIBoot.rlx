@@ -295,19 +295,19 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	
 	void* Temp := SystemTable->BootServices->AllocatePages(2)
 	FS->Initialize(Temp, Temp + 0x800, Temp + 0xC00, Temp + 0x1000, Temp + 0x1400)
+	FS->SetupInterface()
 	
-	Ext2INode* RootINode := CloneMemory(FS->ReadINode(2), #Ext2INode)
+	Ext2Handle* KernelHandle := FS->Open("/kernel.elf")
 	
-	Ext2DirectoryEntry* KernelEntry := FS->FindDirectoryEntryByName(RootINode, "kernel.elf")
-	
-	if (KernelEntry = null || !KernelEntry->IsFile()) {
+	if (KernelHandle = null) {
 		SystemTable->ConsoleError->OutputString("Could not find `kernel.elf`"w)
 		return -1
 	}
 	
-	Ext2INode* KernelNode := FS->ReadINode(KernelEntry->INode)
+	Ext2Status KernelStatus
+	FS->Status(KernelHandle, &KernelStatus)
 	
-	i32 KernelSize := KernelNode->FileSizeLow
+	i32 KernelSize := KernelStatus.Size
 	i32 KernelPageCount := KernelSize / 0x1000
 	
 	if (KernelSize % 0x1000) {
@@ -316,31 +316,13 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	
 	void* KernelFile := SystemTable->BootServices->AllocatePages(KernelPageCount)
 	
-	i32 KernelBlockCount := KernelSize / 0x400
+	Print("Reading kernel...\n")
 	
-	if (KernelSize % 0x400) {
-		KernelBlockCount += 1
-	}
-	
-	ProgressUpdate(KernelSize, "Reading kernel...", 0)
-	
-	i32 KernelBlockIndex := 0
-	
-	while (KernelBlockIndex < KernelBlockCount) {
-		Ext2Extent NextKernelExtent
-		
-		FS->FindINodeDataExtent(KernelNode, KernelBlockIndex, &NextKernelExtent)
-		
-		;Print("Extent { %x - %x }\n", NextKernelExtent.First, NextKernelExtent.First + NextKernelExtent.Count)
-		
-		FS->ReadExtent(&NextKernelExtent, KernelFile + (KernelBlockIndex * 0x400))
-		
-		KernelBlockIndex += NextKernelExtent.Count
-		
-		ProgressUpdate(KernelSize, "Reading kernel...", KernelBlockIndex * 0x400)
-	}
+	FS->Read(KernelHandle, KernelFile, KernelSize)
 	
 	Print("\nDone\n")
+	
+	FS->Close(KernelHandle)
 	
 	ELFHeader* KernelELF := KernelFile
 	
