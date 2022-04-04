@@ -1,4 +1,6 @@
 rm EFIBoot.img
+rm EFIBoot.qcow2
+rm src/EFIBoot.qcow2
 
 nrlx -i ./src/bootloader/EFIBoot.rlx -o ./build/EFIBoot.efi --pe --crlf --pe-subsystem 10; or exit
 
@@ -52,5 +54,8 @@ import new_compiler.elf compiler
 import Signaler.elf signaler.elf
 quit
 " | ./Ext2Tool.elf 'File(EFIBoot.img,512)>GPT(1)'
+
+qemu-img convert -f raw -O qcow2 EFIBoot.img EFIBoot.qcow2
+cp EFIBoot.qcow2 src/
 
 echo "Done!"

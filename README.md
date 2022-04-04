@@ -1,12 +1,38 @@
-# unnamed project
+# Unnamed hobby OS
+
+## Screenshots
+
+Post-boot screen:
+
+![](README-assets/boot.png)
+
+A few simple builtin commands:
+
+![](README-assets/commands.png)
+
+`vi` from busybox running:
+
+![](README-assets/vi.png)
+
+## "Features"
+
+* EFI Bootloader
+* 64 bit kernel
+* Entirely homemade toolchain (compiler, bootloader, disk image utilities)
+* Only crashes sometimes.
+* Can detect up to ***4*** disks (but only uses one)
+* Has a custom font (which isn't used anymore, because I'm not very good at drawing characters)
+* Support for nearly any Windows 2.0/3.1 bit-mapped font. What's not to love about fonts for 16 bit machines on a 64 bit one?
+* Can multitask. Hopefully. I haven't tested it beyond flashing the cursor.
+
+## Boring stuff
 
 Expects to be cloned with the structure
-* any_name/
+* any-name/
     * src/
         * \<this-repo\>
     * build/
         * Nothing, just needs to exist for compiled binaries
-* `nasm` (somewhere on path)
 
 Additionally, a few tools need to be built on the host to actually build a disk image (since nasm is the only external program used).
 
