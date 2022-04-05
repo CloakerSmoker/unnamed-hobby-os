@@ -14,6 +14,10 @@ A few simple builtin commands:
 
 ![](README-assets/vi.png)
 
+Compiling and running a program:
+
+![](README-assets/compiler.png)
+
 ## "Features"
 
 * EFI Bootloader
