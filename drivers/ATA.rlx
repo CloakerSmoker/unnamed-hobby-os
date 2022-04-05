@@ -242,6 +242,10 @@ struct ATADevice {
 	define void DoReadWrite(i32 Command, i32 LBA, i32 SectorCount) {
 		this->Channel->WaitForNotBusy()
 		
+		if (DEBUG_ATA_PIO_READWRITE) {
+			Info("[ATAPIO] DoReadWrite %x LBA %x, %x sectors\n", Command, LBA, SectorCount)
+		}
+		
 		i32 DeviceSelection := ATA_DEVICE_SELECTION_MUST_SET | ATA_DEVICE_SELECTION_USE_CHS
 		
 		if (this->IsMasterOrSlave = ATA_DEVICE_IS_MASTER) {
@@ -264,6 +268,14 @@ struct ATADevice {
 	}
 	
 	define void Read(i64 FirstBlock, i64 BlockCount, void* RawBuffer) {
+		while (BlockCount > 250) {
+			this->Read(FirstBlock, 250, RawBuffer)
+			
+			FirstBlock += 250
+			BlockCount -= 250
+			RawBuffer += 250 * 512
+		}
+		
 		this->DoReadWrite(ATA_COMMAND_READ_PIO, FirstBlock As i32, BlockCount As i32)
 		
 		i16* Buffer := RawBuffer
@@ -279,6 +291,14 @@ struct ATADevice {
 		}
 	}
 	define void Write(i64 FirstBlock, i64 BlockCount, void* RawBuffer) {
+		while (BlockCount > 250) {
+			this->Write(FirstBlock, 250, RawBuffer)
+			
+			FirstBlock += 250
+			BlockCount -= 250
+			RawBuffer += 250 * 512
+		}
+		
 		this->DoReadWrite(ATA_COMMAND_WRITE_PIO, FirstBlock As i32, BlockCount As i32)
 		
 		i16* Buffer := RawBuffer

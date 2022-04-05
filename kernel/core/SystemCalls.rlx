@@ -568,9 +568,7 @@ define i64 SystemCallTruncate(i64 FileDescriptor, i32 Size) {
 define i64 SystemCallSeek(i64 FileDescriptor, i32 Offset, i8 Mode) {
 	FileDescriptor -= 3
 	
-	FS->Seek(CurrentProcess->FileDescriptorsToHandles[FileDescriptor], Offset, Mode)
-	
-	return Offset
+	return FS->Seek(CurrentProcess->FileDescriptorsToHandles[FileDescriptor], Offset, Mode)
 }
 
 define i64 SystemCallSetWorkingDirectory(i8* Path) {

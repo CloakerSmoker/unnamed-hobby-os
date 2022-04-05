@@ -1409,7 +1409,7 @@ struct Ext2 {
 		return this->Open(this->RootHandle, Path, EXT2_OPEN_IF_EXISTS)
 	}
 	
-	define void Seek(Ext2Handle* Handle, i32 Offset, i8 Mode) {
+	define i32 Seek(Ext2Handle* Handle, i32 Offset, i8 Mode) {
 		if (Mode = EXT2_SEEK_SET) {
 			Handle->Offset := Offset
 		}
@@ -1421,6 +1421,8 @@ struct Ext2 {
 		}
 		
 		Handle->CachedExtentIsValid := false
+		
+		return Handle->Offset
 	}
 	
 	define i32 Tell(Ext2Handle* Handle) {
@@ -1477,8 +1479,20 @@ struct Ext2 {
 			
 			this->FindINodeDataExtent(Node, Index, &NextExtent)
 			
+			if (DEBUG_EXT2_OPTIMIZATION) {
+				Info("[EXT2] Read inode %i extent %x-%x ", Node->INodeNumber, NextExtent.First, NextExtent.First + NextExtent.Count)
+			}
+			
 			if (Index + NextExtent.Count > BlockCount) {
 				NextExtent.Count := BlockCount - Index
+				
+				if (DEBUG_EXT2_OPTIMIZATION) {
+					Info(" (truncated extent to %x)", NextExtent.First + NextExtent.Count)
+				}
+			}
+			
+			if (DEBUG_EXT2_OPTIMIZATION) {
+				Info("\n")
 			}
 			
 			this->ReadExtent(&NextExtent, Buffer)

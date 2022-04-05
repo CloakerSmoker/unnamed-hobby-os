@@ -1,3 +1,5 @@
+i8 DEBUG_EXT2_OPTIMIZATION := false
+
 #Require "./src/utility/EFIApplication.rlx"
 
 #Require "./src/drivers/block-device/BlockDevice.rlx"

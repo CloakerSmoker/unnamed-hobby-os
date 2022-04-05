@@ -1,5 +1,9 @@
 #Require "./src/drivers/EFI.rlx"
 
+define void Info(i8* Format, ... Parameters) {
+	
+}
+
 EFI_HANDLE* IMAGE_HANDLE
 EFI_SYSTEM_TABLE* SYSTEM_TABLE
 
