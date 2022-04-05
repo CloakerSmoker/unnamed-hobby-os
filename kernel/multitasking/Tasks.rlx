@@ -35,6 +35,10 @@ struct Task {
 	
 	i8 State
 	
+	define void Zero() {
+		FastSetMemory8(this, 0, #Task)
+	}
+	
 	static Task* New(i32 Priority) {
 		Task* this := Alloc(#Task)
 		
@@ -48,6 +52,7 @@ struct Task {
 		i32 TotalPages := 1 + StackPages
 		
 		Task* this := KernelPageAllocator->AllocateVirtual(TotalPages)
+		this->Zero()
 		
 		this->AllocationInfo := TotalPages
 		

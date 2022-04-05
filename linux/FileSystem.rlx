@@ -12,7 +12,7 @@ struct LinuxFileStatus {
 	i32 UserID
 	i32 GroupID
 	
-	i64 Padding1
+	i32 Padding1
 	i64 RepresentedDevice
 	
 	i64 Size

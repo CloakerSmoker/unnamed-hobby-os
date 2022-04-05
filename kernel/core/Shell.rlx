@@ -19,6 +19,8 @@ define EventState OnChildKilled(Process* Child, Event* Fired) {
 	LastStatus := Child->ExitCode
 	RunningProgram := false
 	
+	Child->FreeThreads()
+	
 	Prompt()
 	
 	return EventState:CallNextListener

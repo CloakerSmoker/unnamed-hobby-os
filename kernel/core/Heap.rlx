@@ -75,9 +75,9 @@ struct Heap {
 					
 					;Info("\t\t{ TailSpace = %x }\n", TailSpace)
 					
-					Block->Size := Size
-					
 					if (TailSpace >= TAIL_SPACE_FOR_NEW_BLOCK) {
+						Block->Size := Size
+						
 						HeapBlock* Tail := Block->Next()
 						
 						Tail->IsFree := true
@@ -108,7 +108,7 @@ struct Heap {
 		
 		;Info("}\n")
 		
-		Throw('UH-OOF')
+		Throw('HEAP-OOM')
 		
 		return null
 	}

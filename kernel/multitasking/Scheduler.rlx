@@ -43,37 +43,35 @@ struct TaskScheduler {
 		
 		Task* Current := RootTask
 		
-		this->Debug("[%i.%i] %x -> ", PITWhole, PITFraction, CurrentTask)
-		
-		if (DEBUG_SCHEDULER) {
-			while (Current) {
-				this->Debug("(%x %i)", Current, Current->State)
-				
-				Current := Current->Next
-				
-				if (Current) {
-					this->Debug(", ")
-				}
-			}
-			
-			Current := RootTask
-		}
-		
 		while (Current && !Current->CouldRun()) {
 			Current := Current->Next
 		}
 		
-		this->Debug(" = %x", Current)
-		
 		if !(Current) {
 			CurrentTask := DelayTask
+			
+			this->Debug(".")
 		}
 		else {
-			this->Debug(" {%x %x}", Current~>Context->RIP, Current~>Context->RSP)
+			this->Debug("\n[%i.%i] %x -> ", PITWhole, PITFraction, CurrentTask)
+		
+			if (DEBUG_SCHEDULER) {
+				Task* Walk := RootTask
+				
+				while (Walk) {
+					this->Debug("(%x %i)", Walk, Walk->State)
+					
+					Walk := Walk->Next
+					
+					if (Walk) {
+						this->Debug(", ")
+					}
+				}
+			}
+			
+			this->Debug(" = %x {%x %x}\n", Current, Current~>Context->RIP, Current~>Context->RSP)
 			CurrentTask := Current
 		}
-		
-		this->Debug("\n")
 	}
 	define void RunNext() {
 		this->PickNext()
@@ -101,6 +99,17 @@ struct TaskScheduler {
 		CurrentTask := NewCurrent
 		
 		return Result
+	}
+	
+	define void Remove(Task* Old) {
+		Task* Next := RootTask
+		
+		while (Next->Next) {
+			if (Next->Next = Old) {
+				Next->Next := Old->Next
+				break
+			}
+		}
 	}
 	
 	define void Enqueue(Task* NewTask) {

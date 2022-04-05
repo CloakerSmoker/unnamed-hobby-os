@@ -177,7 +177,10 @@ define void HandleSystemCall(AMD64Context* Context) {
 	}
 	catch (i64 Code) {
 		Info("Exception %l during syscall\n", Code)
-		Info("%x(%x, %x, %x, %x, %x, %x)\n", Number, Context->RDI, Context->RSI, Context->RDX, Context->R10, Context->R8, Context->R9)
+		
+		i8* Name := GetLinuxSysCallName(Number)
+		
+		Info("%s(%x, %x, %x, %x, %x, %x)\n", Name, Context->RDI, Context->RSI, Context->RDX, Context->R10, Context->R8, Context->R9)
 		SystemCallExit(-100123)
 	}
 	
@@ -430,7 +433,7 @@ define MemoryMapping* LocateMemoryMapping(void* Address, i32 Size) {
 					return End
 				}
 				else {
-					Throw('OH-NO')
+					Throw('MAP-SPLT')
 				}
 			}
 		}

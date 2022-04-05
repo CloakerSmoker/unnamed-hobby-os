@@ -87,7 +87,7 @@ struct PageHeap {
 			}
 		}
 		
-		Throw('UH-OH')
+		Throw('PHEAP-OM')
 		
 		return -1
 	}
