@@ -98,4 +98,15 @@ struct Event {
 			SchedulerYield()
 		}
 	}
+	
+	define void Free() {
+		EventListener* Current := this->FirstListener
+		
+		while (Current) {
+			EventListener* Last := Current
+			Current := Current->Next
+			
+			Free(Last)
+		}
+	}
 }

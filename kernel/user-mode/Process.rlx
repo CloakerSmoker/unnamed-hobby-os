@@ -241,6 +241,7 @@ struct UserThread {
 	
 	define void Free() {
 		Scheduler->Remove(this->KernelTask)
+		this~>OnKilled->Free()
 		this->KernelTask->Free()
 		this->UserTask->Free()
 	}
@@ -342,8 +343,10 @@ struct Process {
 	
 	INode* WorkingDirectory
 	
-	define void FreeThreads() {
+	define void Free() {
 		this~>MainThread->Free()
+		this->Mappings->Delete()
+		this~>OnKilled->Free()
 	}
 }
 

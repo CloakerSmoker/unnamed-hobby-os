@@ -19,7 +19,8 @@ define EventState OnChildKilled(Process* Child, Event* Fired) {
 	LastStatus := Child->ExitCode
 	RunningProgram := false
 	
-	Child->FreeThreads()
+	Child->Free()
+	Free(Child)
 	
 	Prompt()
 	
@@ -305,6 +306,7 @@ define void OnCommand(i8* CommandLine) {
 			void* FileData := KernelPageAllocator->AllocateVirtual(FilePages)
 			
 			FS->Read(File, FileData, FileStatus.Size)
+			FS->Close(File)
 			
 			;Print("Loaded %x byte image @ %x\n", FoundFileNode.FileSizeLow, FileData)
 			
