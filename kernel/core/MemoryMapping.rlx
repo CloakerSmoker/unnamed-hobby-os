@@ -7,6 +7,7 @@ i32 VIRTUAL_MEMORY_ALLOCATION := 2
 struct MemoryMapping {
 	void* Virtual
 	i64 Physical
+	i64 Flags
 	i32 PageCount
 	i32 AllocatorIndex
 	MemoryMapping* Next
@@ -18,22 +19,26 @@ struct MemoryMappingGroup {
 	PageHeap* VirtualAllocator
 	MemoryMapping* First
 	
+	i8 Active
+	
 	static MemoryMappingGroup* New(AddressSpaceManager* AddressSpace, PageHeap* PhysicalAllocator, PageHeap* VirtualAllocator) {
-		MemoryMappingGroup* this := Alloc(#MemoryMappingGroup)
+		MemoryMappingGroup* this := Alloc('MMG', #MemoryMappingGroup)
 		
 		this->AddressSpace := AddressSpace
 		this->PhysicalAllocator := PhysicalAllocator
 		this->VirtualAllocator := VirtualAllocator
+		this->Active := false
 		
 		return this
 	}
 	
-	define MemoryMapping* RecordMapping(void* Virtual, i64 Physical, i32 Count, i32 Allocator) {
-		MemoryMapping* New := Alloc(#MemoryMapping)
+	define MemoryMapping* RecordMapping(void* Virtual, i64 Physical, i64 Flags, i32 Count, i32 Allocator) {
+		MemoryMapping* New := Alloc('MM', #MemoryMapping)
 		
 		New->Virtual := Virtual
-		New->PageCount := Count
 		New->Physical := Physical
+		New->Flags := Flags
+		New->PageCount := Count
 		New->AllocatorIndex := Allocator
 		
 		if (this->First) {
@@ -48,15 +53,22 @@ struct MemoryMappingGroup {
 	}
 	
 	define MemoryMapping* Map(void* Virtual, i64 Physical, i32 Count, i64 Flags) {
-		this->AddressSpace->MapRange(Virtual, Physical / PAGE_SIZE, Count, Flags | PAGE_PRESENT)
+		i32 Allocator := 3
 		
-		return this->RecordMapping(Virtual, Physical, Count, 0)
+		Flags |= PAGE_PRESENT
+		
+		if (this->Active) {
+			Allocator := 0
+			this->AddressSpace->MapRange(Virtual, Physical / PAGE_SIZE, Count, Flags)
+		}
+		
+		return this->RecordMapping(Virtual, Physical, Flags, Count, Allocator)
 	}
 	
 	define i64 AllocatePhysical(i32 Count) {
 		i64 Physical := this->PhysicalAllocator->Allocate(Count)
 		
-		this->RecordMapping(null, Physical, Count, 1)
+		this->RecordMapping(null, Physical, 0, Count, 1)
 		
 		return Physical
 	}
@@ -64,25 +76,21 @@ struct MemoryMappingGroup {
 	define void* AllocateVirtual(i32 Count) {
 		void* Virtual := this->VirtualAllocator->Allocate(Count) As void*
 		
-		this->RecordMapping(Virtual, 0, Count, 2)
+		this->RecordMapping(Virtual, 0, 0, Count, 2)
 		
 		return Virtual
 	}
 	
-	define MemoryMapping* AllocateAddress(void* Virtual, i32 Count, i64 Flags) {
+	define MemoryMapping* MapAddressAnonymous(void* Virtual, i32 Count, i64 Flags) {
 		i64 Physical := this->AllocatePhysical(Count)
 		
 		return this->Map(Virtual, Physical, Count, Flags)
 	}
 	
-	define MemoryMapping* AllocateMapping(i32 Count, i64 Flags) {
+	define MemoryMapping* MapAnonymous(i32 Count, i64 Flags) {
 		void* Virtual := this->AllocateVirtual(Count)
 		
-		return this->AllocateAddress(Virtual, Count, Flags)
-	}
-	
-	define void* Allocate(i32 Count, i64 Flags) {
-		return this->AllocateMapping(Count, Flags)->Virtual
+		return this->MapAddressAnonymous(Virtual, Count, Flags)
 	}
 	
 	define MemoryMapping* Split(MemoryMapping* Old, i32 SplitPage) {
@@ -96,12 +104,14 @@ struct MemoryMappingGroup {
 		
 		Old->PageCount := OldPages
 		
-		return this->RecordMapping(VirtualSplit, PhysicalSplit, NewPages, VIRTUAL_TO_PHYSICAL_MAPPING)
+		return this->RecordMapping(VirtualSplit, PhysicalSplit, Old->Flags, NewPages, VIRTUAL_TO_PHYSICAL_MAPPING)
 	}
 	define void Split(MemoryMapping* Old, i32 SplitPage, i32 PageCount, MemoryMapping** OutMiddle, MemoryMapping** OutEnd) {
+		i32 OldPageCount := Old->PageCount
+		
 		*OutMiddle := this->Split(Old, SplitPage)
 		
-		if (SplitPage + PageCount = Old->PageCount) {
+		if (SplitPage + PageCount = OldPageCount) {
 			return
 		}
 		
@@ -109,10 +119,17 @@ struct MemoryMappingGroup {
 	}
 	
 	define void UpdateFlags(MemoryMapping* Mapping, i64 Flags) {
-		this->AddressSpace->MapRange(Mapping->Virtual, Mapping->Physical / PAGE_SIZE, Mapping->PageCount, Flags | PAGE_PRESENT)
+		Mapping->Flags := Flags
+		
+		if (this->Active) {
+			this->AddressSpace->MapRange(Mapping->Virtual, Mapping->Physical / PAGE_SIZE, Mapping->PageCount, Flags | PAGE_PRESENT)
+		}
+		else {
+			Mapping->AllocatorIndex := 3
+		}
 	}
 	
-	define MemoryMapping* FindVirtual(void* Virtual) {
+	define MemoryMapping* FindVirtualExact(void* Virtual) {
 		MemoryMapping* Current := this->First
 		
 		while (Current) {
@@ -146,7 +163,122 @@ struct MemoryMappingGroup {
 		return null
 	}
 	
-	define void UnMap(MemoryMapping* Target) {
+	define MemoryMapping* FindVirtual(void* Address, i32 PageCount) {
+		Address &= 0x7FFF_FFFF_FFFF_F000
+		
+		MemoryMapping* Mapping := this->FindVirtualExact(Address)
+		
+		if (Mapping) {
+			if (Mapping->PageCount != PageCount) { 
+				; Address is the exact start of a mapping, but with less pages than the
+				;  mapping actually has. So we split the mapping into a PageCount sized 
+				;   chunk and whatever's left over
+				
+				this->Split(Mapping, PageCount)
+			}
+			
+			return Mapping
+		}
+		else {
+			Mapping := this->FindVirtualContaining(Address)
+			
+			if (Mapping) {
+				if (Mapping->PageCount != PageCount) {
+					; Existing mapping, but not the start of said mapping
+					; Which means we need to split it, potentially twice
+					; Like         Turns into    by doing two splits
+					;  |XXXXXXXX|   |XX|XXX|X|
+					;     ^---^
+					; Of course, a middle->end segment will only split once
+					
+					i32 OffsetInMapping := (Address - Mapping->Virtual) As i32
+					i32 PageIndexInMapping := OffsetInMapping / PAGE_SIZE
+					
+					MemoryMapping* Middle := null
+					MemoryMapping* End := null
+					
+					this->Split(Mapping, PageIndexInMapping, PageCount, &Middle, &End)
+					
+					if (Mapping->Virtual = Address) {
+						return Mapping
+					}
+					else if (Middle->Virtual = Address) {
+						return Middle
+					}
+					else if (End->Virtual = Address) {
+						return End
+					}
+					else {
+						Throw('MAP-SPLT')
+					}
+				}
+			}
+		}
+		
+		return null
+	}
+	
+	define MemoryMapping* MapPages(void* Address, i32 PageCount, i64 Flags) {
+		MemoryMapping* Mapping := null
+		
+		if (Address = null) {
+			Mapping := this->MapAnonymous(PageCount, Flags)
+		}
+		else {
+			Mapping := this->FindVirtual(Address, PageCount)
+			
+			if (Mapping) {
+				this->UpdateFlags(Mapping, Flags)
+			}
+			else {
+				Mapping := this->MapAddressAnonymous(Address, PageCount, Flags)
+			}
+		}
+		
+		return Mapping
+	}
+	
+	define MemoryMapping* Map(void* Address, i32 Size, i64 Flags) {
+		return this->MapPages(Address, SizeToPageCount(Size), Flags)
+	}
+	
+	define void Enable() {
+		MemoryMapping* Current := this->First
+		
+		while (Current) {
+			if (Current->AllocatorIndex = 3) {
+				this->AddressSpace->MapRange(Current->Virtual, Current->Physical / PAGE_SIZE, Current->PageCount, Current->Flags)
+			}
+			
+			Current := Current->Next
+		}
+		
+		this->Active := true
+	}
+	
+	define void Disable(MemoryMapping* Target) {
+		if (Target->AllocatorIndex = 0) {
+			this->AddressSpace->UnmapRange(Target->Virtual, Target->PageCount)
+			Target->AllocatorIndex := 3
+		}
+	}
+	
+	define void Disable() {
+		MemoryMapping* Current := this->First
+		
+		while (Current) {
+			this->Disable(Current)
+			Current := Current->Next
+		}
+		
+		this->Active := true
+	}
+	
+	define void Undo(MemoryMapping* Target) {
+		if (Target->PageCount = 0) {
+			return
+		}
+		
 		if (Target->AllocatorIndex = 0) {
 			this->AddressSpace->UnmapRange(Target->Virtual, Target->PageCount)
 		}
@@ -156,15 +288,27 @@ struct MemoryMappingGroup {
 		else if (Target->AllocatorIndex = 2) {
 			this->VirtualAllocator->Free(Target->Virtual As i64, Target->PageCount)
 		}
-		
-		Target->AllocatorIndex := 3
 	}
 	
-	define void UnMap() {
+	define void Delete(MemoryMapping* Target) {
+		MemoryMapping** pCurrent := this~>First
+		
+		while (*pCurrent) {
+			if (*pCurrent = Target) {
+				*pCurrent := Target->Next
+				break
+			}
+		}
+		
+		this->Undo(Target)
+		Free(Target)
+	}
+	
+	define void Free() {
 		MemoryMapping* Current := this->First
 		
 		while (Current) {
-			this->UnMap(Current)
+			this->Undo(Current)
 			
 			MemoryMapping* Last := Current
 			Current := Last->Next
@@ -175,8 +319,17 @@ struct MemoryMappingGroup {
 		this->First := null
 	}
 	
-	define void Delete() {
-		this->UnMap()
-		Free(this)
+	define MemoryMappingGroup* Clone() {
+		MemoryMappingGroup* Result := MemoryMappingGroup:New(this->AddressSpace, this->PhysicalAllocator, this->VirtualAllocator)
+		
+		MemoryMapping* Current := this->First
+		
+		;while (Current) {
+		;	this->RecordMapping(Result->
+		;	
+		;	Current := Last->Next
+		;}
+		
+		return null
 	}
 }

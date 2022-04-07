@@ -136,14 +136,12 @@ define void Main(void* CR3, i64 PhysicalFrameBuffer, i32 MaxKernelAddress) {
 	i64 KernelStackPages := PhysicalMemory->Allocate(40)
 	i64 KernelHeapPages  := PhysicalMemory->Allocate(PAGE_COUNT_FOR_2MB)
 	i64 KernelPages      := PhysicalMemory->Allocate(NUMBER_OF_KERNEL_PAGES)
-	i64 UserPages        := PhysicalMemory->Allocate(1)
 	
 	Kernel->Pages           := KernelLoadPages
 	Kernel->PageFramesPages := PageFramesPages
 	Kernel->StackPages      := KernelStackPages
 	Kernel->HeapPages       := KernelHeapPages
 	Kernel->KernelPages     := KernelPages
-	Kernel->UserPages       := UserPages
 	
 	AddressSpaceManager* BootStrapAddressSpace := 0x14_0000 As void*
 	
@@ -184,8 +182,6 @@ define void BootStrap() {
 	KernelAddressSpace->MapRange(ADDRESS_OF_KERNEL_HEAP, Kernel->HeapPages / PAGE_SIZE, BYTES_IN_2MB / PAGE_SIZE)
 	
 	KernelAddressSpace->MapRange(ADDRESS_OF_KERNEL_PAGES, Kernel->KernelPages / PAGE_SIZE, NUMBER_OF_KERNEL_PAGES)
-	
-	KernelAddressSpace->MapRange(ADDRESS_OF_USER_PAGES  , Kernel->UserPages   / PAGE_SIZE, 1)
 	
 	KernelAddressSpace->Takeover(&RawMainContinuation, ADDRESS_OF_KERNEL_STACK + (PAGE_SIZE * 40))
 }
@@ -306,8 +302,6 @@ define void MainContinuation() {
 	EnableInterrupts()
 	
 	SetupSystemCalls()
-	
-	SetupExecute()
 	
 	DiskController := KernelHeap->Allocate('IDE', #IDEDiskController)
 	

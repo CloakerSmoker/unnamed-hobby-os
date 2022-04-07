@@ -35,7 +35,7 @@ define MemoryMappingGroup* MapELF(MemoryMappingGroup* Mappings, ELFHeader* Image
 				FinalFlags |= PAGE_WRITE
 			}
 			
-			MemoryMapping* Mapping := Mappings->AllocateAddress(SectionVirtualPage, SectionPageCount, TempFlags)
+			MemoryMapping* Mapping := Mappings->MapPages(SectionVirtualPage, SectionPageCount, TempFlags)
 			
 			if (Next->MemorySize > Next->FileSize) {
 				void* ZeroArea := SectionMemory + Next->FileSize

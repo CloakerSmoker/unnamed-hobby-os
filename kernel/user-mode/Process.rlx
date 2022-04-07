@@ -253,7 +253,6 @@ struct Process {
 	
 	ELFHeader* ELF
 	MemoryMappingGroup* Mappings
-	PageHeap* PageAllocator
 	
 	void* BreakStart
 	i64 BreakPages
@@ -310,6 +309,13 @@ struct Process {
 		this~>MainThread~>OnKilled->ListenMethod(&Process.OnThreadKilled, this)
 	}
 	
+	define void Unmap() {
+		this->Mappings->Disable()
+	}
+	define void Remap() {
+		this->Mappings->Enable()
+	}
+	
 	define void* GetBreak() {
 		return this->BreakStart + (this->BreakPages * PAGE_SIZE)
 	}
@@ -318,7 +324,7 @@ struct Process {
 		
 		void* FirstNewBreakPage := this->GetBreak()
 		
-		this->Mappings->AllocateAddress(FirstNewBreakPage, AdditionalBreakPages, PAGE_USER | PAGE_WRITE)
+		this->Mappings->MapAddressAnonymous(FirstNewBreakPage, AdditionalBreakPages, PAGE_USER | PAGE_WRITE)
 		
 		SetMemory(FirstNewBreakPage, AdditionalBreakPages * PAGE_SIZE, 0)
 		
@@ -345,8 +351,10 @@ struct Process {
 	
 	define void Free() {
 		this~>MainThread->Free()
-		this->Mappings->Delete()
 		this~>OnKilled->Free()
+		
+		this->Mappings->Free()
+		Free(this->Mappings)
 	}
 }
 

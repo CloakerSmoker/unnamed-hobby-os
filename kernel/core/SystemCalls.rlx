@@ -385,63 +385,6 @@ define i64 ConvertLinuxMemoryProtection(i32 Protection) {
 	return Result
 }
 
-define MemoryMapping* LocateMemoryMapping(void* Address, i32 Size) {
-	i32 PageCount := SizeToPageCount(Size)
-	
-	Address &= 0x7FFF_FFFF_FFFF_F000
-	
-	MemoryMapping* Mapping := CurrentProcess->Mappings->FindVirtual(Address)
-	
-	if (Mapping) {
-		if (Mapping->PageCount != PageCount) { 
-			; Address is the exact start of a mapping, but with less pages than the
-			;  mapping actually has. So we split the mapping into a PageCount sized 
-			;   chunk and whatever's left over
-			
-			CurrentProcess->Mappings->Split(Mapping, PageCount)
-		}
-		
-		return Mapping
-	}
-	else {
-		Mapping := CurrentProcess->Mappings->FindVirtualContaining(Address)
-		
-		if (Mapping) {
-			if (Mapping->PageCount != PageCount) {
-				; Existing mapping, but not the start of said mapping
-				; Which means we need to split it, potentially twice
-				; Like         Turns into    by doing two splits
-				;  |XXXXXXXX|   |XX|XXX|X|
-				;     ^---^
-				; Of course, a middle->end segment will only split once
-				
-				i32 OffsetInMapping := (Address - Mapping->Virtual) As i32
-				i32 PageIndexInMapping := OffsetInMapping / PAGE_SIZE
-				
-				MemoryMapping* Middle := null
-				MemoryMapping* End := null
-				
-				CurrentProcess->Mappings->Split(Mapping, PageIndexInMapping, PageCount, &Middle, &End)
-				
-				if (Mapping->Virtual = Address) {
-					return Mapping
-				}
-				else if (Middle->Virtual = Address) {
-					return Middle
-				}
-				else if (End->Virtual = Address) {
-					return End
-				}
-				else {
-					Throw('MAP-SPLT')
-				}
-			}
-		}
-	}
-	
-	return null
-}
-
 define void* SystemCallMapMemory(void* Address, i32 Size, i32 Protection, i32 Flags, i32 File, i32 Offset) {
 	i64 MemoryFlags := ConvertLinuxMemoryProtection(Protection)
 	
@@ -449,7 +392,7 @@ define void* SystemCallMapMemory(void* Address, i32 Size, i32 Protection, i32 Fl
 	MemoryMapping* Mapping := null
 	
 	if (Address = null) {
-		Mapping := CurrentProcess->Mappings->AllocateMapping(PageCount, MemoryFlags)
+		Mapping := CurrentProcess->Mappings->MapAnonymous(PageCount, MemoryFlags)
 		Address := Mapping->Virtual
 		
 		if (Flags & LINUX_MAP_ANONYMOUS) {
@@ -457,13 +400,13 @@ define void* SystemCallMapMemory(void* Address, i32 Size, i32 Protection, i32 Fl
 		}
 	}
 	else {
-		Mapping := LocateMemoryMapping(Address, Size)
+		Mapping := CurrentProcess->Mappings->FindVirtual(Address, Size)
 		
 		if (Mapping) {
 			CurrentProcess->Mappings->UpdateFlags(Mapping, MemoryFlags)
 		}
 		else {
-			Mapping := CurrentProcess->Mappings->AllocateAddress(Address, PageCount, MemoryFlags)
+			Mapping := CurrentProcess->Mappings->MapAddressAnonymous(Address, PageCount, MemoryFlags)
 			
 			if (Flags & LINUX_MAP_ANONYMOUS) {
 				SetMemory(Address, Size, 0)
@@ -475,10 +418,10 @@ define void* SystemCallMapMemory(void* Address, i32 Size, i32 Protection, i32 Fl
 }
 
 define i64 SystemCallUnMapMemory(void* Address, i32 Size) {
-	MemoryMapping* Mapping := LocateMemoryMapping(Address, Size)
+	MemoryMapping* Mapping := CurrentProcess->Mappings->FindVirtual(Address, Size)
 	
 	if (Mapping) {
-		CurrentProcess->Mappings->UnMap(Mapping)
+		CurrentProcess->Mappings->Delete(Mapping)
 	}
 	else {
 		return -1
