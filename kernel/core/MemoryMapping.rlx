@@ -152,7 +152,7 @@ struct MemoryMappingGroup {
 			if (Current->AllocatorIndex = VIRTUAL_TO_PHYSICAL_MAPPING) {
 				void* Top := Current->Virtual + (Current->PageCount * PAGE_SIZE)
 				
-				if (Current->Virtual <= Virtual && Virtual <= Top) {
+				if (Current->Virtual <= Virtual && Virtual < Top) {
 					return Current
 				}
 			}
