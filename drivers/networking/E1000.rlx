@@ -1,0 +1,279 @@
+
+
+i16 PCI_VENDOR_INTEL := 0x8086
+
+i16 PCI_DEVICE_E1000 := 0x100E
+i16 PCI_DEVICE_I217 := 0x153A
+i16 PCI_DEVICE_82577LM := 0x10EA
+
+i32 E1000_REGISTER_CTRL        := 0x0000
+i32 E1000_REGISTER_STATUS      := 0x0008
+i32 E1000_REGISTER_EEPROM      := 0x0014
+i32 E1000_REGISTER_CTRL_EXT    := 0x0018
+i32 E1000_REGISTER_ICR         := 0x00C0
+i32 E1000_REGISTER_IMASK       := 0x00D0
+i32 E1000_REGISTER_RCTRL       := 0x0100
+i32 E1000_REGISTER_RXDESCLO    := 0x2800
+i32 E1000_REGISTER_RXDESCHI    := 0x2804
+i32 E1000_REGISTER_RXDESCLEN   := 0x2808
+i32 E1000_REGISTER_RXDESCHEAD  := 0x2810
+i32 E1000_REGISTER_RXDESCTAIL  := 0x2818
+
+i32 E1000_REGISTER_TCTRL       := 0x0400
+i32 E1000_REGISTER_TXDESCLO    := 0x3800
+i32 E1000_REGISTER_TXDESCHI    := 0x3804
+i32 E1000_REGISTER_TXDESCLEN   := 0x3808
+i32 E1000_REGISTER_TXDESCHEAD  := 0x3810
+i32 E1000_REGISTER_TXDESCTAIL  := 0x3818
+
+i32 E1000_REGISTER_RDTR        := 0x2820
+i32 E1000_REGISTER_RXDCTL      := 0x2820
+i32 E1000_REGISTER_RADV        := 0x2820
+i32 E1000_REGISTER_RSRPD       := 0x2820
+
+i32 E1000_REGISTER_TIPG        := 0x0410
+
+i32 E1000_ECTRL_SET_LINK_UP    := 0x0040
+
+i32 E1000_RCTL_EN            := 1 << 1  ; Receiver Enable
+i32 E1000_RCTL_SBP           := 1 << 2  ; Store Bad Packets
+i32 E1000_RCTL_UPE           := 1 << 3  ; Unicast Promiscuous Enabled
+i32 E1000_RCTL_MPE           := 1 << 4  ; Multicast Promiscuous Enabled
+i32 E1000_RCTL_LPE           := 1 << 5  ; Long Packet Reception Enable
+i32 E1000_RCTL_LBM_NONE      := 0 << 6  ; No Loopback
+i32 E1000_RCTL_LBM_PHY       := 3 << 6  ; PHY or external SerDesc loopback
+i32 E1000_RTCL_RDMTS_HALF    := 0 << 8  ; Free Buffer Threshold is 1/2 of RDLEN
+i32 E1000_RTCL_RDMTS_QUARTER := 1 << 8  ; Free Buffer Threshold is 1/4 of RDLEN
+i32 E1000_RTCL_RDMTS_EIGHTH  := 2 << 8  ; Free Buffer Threshold is 1/8 of RDLEN
+i32 E1000_RCTL_MO_36         := 0 << 12 ; Multicast Offset - bits 47:36
+i32 E1000_RCTL_MO_35         := 1 << 12 ; Multicast Offset - bits 46:35
+i32 E1000_RCTL_MO_34         := 2 << 12 ; Multicast Offset - bits 45:34
+i32 E1000_RCTL_MO_32         := 3 << 12 ; Multicast Offset - bits 43:32
+i32 E1000_RCTL_BAM           := 1 << 15 ; Broadcast Accept Mode
+i32 E1000_RCTL_VFE           := 1 << 18 ; VLAN Filter Enable
+i32 E1000_RCTL_CFIEN         := 1 << 19 ; Canonical Form Indicator Enable
+i32 E1000_RCTL_CFI           := 1 << 20 ; Canonical Form Indicator Bit Value
+i32 E1000_RCTL_DPF           := 1 << 22 ; Discard Pause Frames
+i32 E1000_RCTL_PMCF          := 1 << 23 ; Pass MAC Control Frames
+i32 E1000_RCTL_SECRC         := 1 << 26 ; Strip Ethernet CRC
+
+i32 E1000_RCTL_BSIZE_256   := 3 << 16
+i32 E1000_RCTL_BSIZE_512   := 2 << 16
+i32 E1000_RCTL_BSIZE_1024  := 1 << 16
+i32 E1000_RCTL_BSIZE_2048  := 0 << 16
+i32 E1000_RCTL_BSIZE_4096  := (3 << 16) | (1 << 25)
+i32 E1000_RCTL_BSIZE_8192  := (2 << 16) | (1 << 25)
+i32 E1000_RCTL_BSIZE_16384 := (1 << 16) | (1 << 25)
+
+i32 E1000_CMD_EOP  := 1 << 0 ; End of Packet
+i32 E1000_CMD_IFCS := 1 << 1 ; Insert FCS
+i32 E1000_CMD_IC   := 1 << 2 ; Insert Checksum
+i32 E1000_CMD_RS   := 1 << 3 ; Report Status
+i32 E1000_CMD_RPS  := 1 << 4 ; Report Packet Sent
+i32 E1000_CMD_VLE  := 1 << 6 ; VLAN Packet Enable
+i32 E1000_CMD_IDE  := 1 << 7 ; Interrupt Delay Enable
+
+i32 E1000_TCTL_EN         := 1 << 1  ; Transmit Enable
+i32 E1000_TCTL_PSP        := 1 << 3  ; Pad Short Packets
+i32 E1000_TCTL_CT_SHIFT   := 4       ; Collision Threshold
+i32 E1000_TCTL_COLD_SHIFT := 12      ; Collision Distance
+i32 E1000_TCTL_SWXOFF     := 1 << 22 ; Software XOFF Transmission
+i32 E1000_TCTL_RTLC       := 1 << 24  ; Re-transmit on Late Collision
+i32 E1000_TCTL_RRTHRESH_4 := 1 << 29
+
+i32 E1000_TSTA_DD := 1 << 0 ; Descriptor Done
+i32 E1000_TSTA_EC := 1 << 1 ; Excess Collisions
+i32 E1000_TSTA_LC := 1 << 2 ; Late Collision
+i32 E1000_LSTA_TU := 1 << 3 ; Transmit Underrun
+
+i32 E1000_IMASK_TXDW    := 1 << 0
+i32 E1000_IMASK_TXQE    := 1 << 1
+i32 E1000_IMASK_LSC     := 1 << 2
+i32 E1000_IMASK_RXDMT0  := 1 << 4
+i32 E1000_IMASK_DSW     := 1 << 5
+i32 E1000_IMASK_RXO     := 1 << 6
+i32 E1000_IMASK_RXT     := 1 << 7
+i32 E1000_IMASK_MDAC    := 1 << 9
+i32 E1000_IMASK_PHYINT  := 1 << 12
+i32 E1000_IMASK_LSECPN  := 1 << 14
+i32 E1000_IMASK_TXD_LOW := 1 << 15
+i32 E1000_IMASK_SRPD    := 1 << 16
+i32 E1000_IMASK_ACK     := 1 << 17
+i32 E1000_IMASK_MNG     := 1 << 18
+i32 E1000_IMASK_EPRST   := 1 << 20
+i32 E1000_IMASK_ECCER   := 1 << 22
+
+E1000_IMASK_LSC | 
+
+struct E1000ReceiveBuffer unaligned {
+	i64 Address
+	i16 Length
+	i16 Checksum
+	i8 Status
+	i8 Errors
+	i16 Special
+}
+
+struct E1000TransmitBuffer unaligned {
+	i64 Address
+	i16 Length
+	i8 Checksum
+	i8 Command
+	i8 Status
+}
+
+struct E1000 {
+	
+	define void Write(i32 Address, i32 Value) {
+		if (this->BARType = 0) {
+			*((this->MemoryBase + Address) As i32*) := Value
+		}
+		else {
+			OutL(this->IOBase, Address)
+			OutL(this->IOBase + 4, Value)
+		}
+	}
+	define i32 Read(i32 Address) {
+		if (this->BARType = 0) {
+			return *((this->MemoryBase + Address) As i32*)
+		}
+		else {
+			OutL(this->IOBase, Address)
+			return InL(this->IOBase + 4)
+		}
+	}
+	define void Clear(i32 Address) {
+		this->Write(Address, 1)
+	}
+	
+	define i8 CheckForEEProm() {
+		this->Write(E1000_REGISTER_EEPROM, 1)
+		
+		for (i32 Index := 0, Index < 1000, Index++) {
+			i32 Value := this->Read(E1000_REGISTER_EEPROM)
+			
+			if (Value & 0x10) {
+				return true
+			}
+		}
+		
+		return false
+	}
+	
+	define i32 ReadEEProm(i32 Address) {
+		i32 Data := 0
+		i32 Temp := 0
+		
+		if (this->HasEEProm) {
+			this->Write(E1000_REGISTER_EEPROM, 1 | (Address << 8))
+			
+			loop {
+				Temp := this->Read(E1000_REGISTER_EEPROM)
+				
+				if !(Temp & (1 << 4)) {
+					break
+				}
+			}
+		}
+		else {
+			this->Write(E1000_REGISTER_EEPROM, 1 | (Address << 2))
+			
+			loop {
+				Temp := this->Read(E1000_REGISTER_EEPROM)
+				
+				if !(Temp & (1 << 1)) {
+					break
+				}
+			}
+		}
+		
+		return (Temp >> 16) & 0xFFFF
+	}
+	
+	define void ReadMACAddress() {
+		if (this->HasEEProm) {
+			i16* pMAC := this~>MAC As i16*
+			
+			pMAC[0] := this->ReadEEProm(0)
+			pMAC[1] := this->ReadEEProm(1)
+			pMAC[2] := this->ReadEEProm(2)
+		}
+		else {
+			i32* MACBase := this->MemoryBase + 0x5400
+			
+			if (MACBase[0] != 0) {
+				MoveMemory(this->MAC, MACBase, 6)
+			}
+		}
+	}
+	
+	define void SetupReceive() {
+		E1000ReceiveBuffer* Buffers := KernelPageAllocator->AllocateVirtual(1)
+		i64 BuffersPhysical := AddressSpace->VirtualToPhysical(Buffers)
+		
+		this->ReceiveBuffers := Buffers
+		this->ReceiveIndex := 0
+		
+		for (i32 Index := 0, Index < E1000_BUFFER_COUNT, Index++) {
+			void* Buffer := KernelPageAllocator->AllocateVirtual(2)
+			
+			Buffers[Index]->Address := AddressSpace->VirtualToPhysical(Buffer)
+			Buffers[Index]->Status := 0
+		}
+		
+		this->Write(E1000_REGISTER_RXDESCLO, (BuffersPhysical >> 32) & 0xFFFF_FFFF)
+		this->Write(E1000_REGISTER_RXDESCHI, BuffersPhysical & 0xFFFF_FFFF)
+		
+		this->Write(E1000_REGISTER_RXDESCLEN, E1000_BUFFER_COUNT * #E1000ReceiveBuffer)
+		
+		this->Write(E1000_REGISTER_RXDESCHEAD, 0)
+		this->Write(E1000_REGISTER_RXDESCTAIL, E1000_BUFFER_COUNT - 1)
+		
+		this->Write(E1000_REGISTER_RCTRL, E1000_RCTL_EN
+		                                      | E1000_RCTL_SBP
+											  | E1000_RCTL_UPE
+											  | E1000_RCTL_MPE
+											  | E1000_RCTL_LBM_NONE
+											  | E1000_RTCL_RDMTS_HALF
+											  | E1000_RTCL_BAM
+											  | E1000_RTCL_SECRC
+											  | E1000_RCTL_BSIZE_8192
+		)
+	}
+	
+	define void SetupTransmit() {
+		E1000TransmitBuffer* Buffers := KernelPageAllocator->AllocateVirtual(1)
+		i64 BuffersPhysical := AddressSpace->VirtualToPhysical(Buffers)
+		
+		this->TransmitBuffers := Buffers
+		this->TransmitIndex := 0
+		
+		for (i32 Index := 0, Index < E1000_BUFFER_COUNT, Index++) {
+			void* Buffer := KernelPageAllocator->AllocateVirtual(2)
+			
+			Buffers[Index]->Address := AddressSpace->VirtualToPhysical(Buffer)
+			Buffers[Index]->Status := E1000_TSTA_DD
+			Buffers[Index]->Command := 0
+		}
+		
+		this->Write(E1000_REGISTER_TXDESCLO, (BuffersPhysical >> 32) & 0xFFFF_FFFF)
+		this->Write(E1000_REGISTER_TXDESCHI, BuffersPhysical & 0xFFFF_FFFF)
+		
+		this->Write(E1000_REGISTER_TXDESCLEN, E1000_BUFFER_COUNT * #E1000TransmitBuffer)
+		
+		this->Write(E1000_REGISTER_TXDESCHEAD, 0)
+		this->Write(E1000_REGISTER_TXDESCTAIL, 0)
+		
+		this->Write(E1000_REGISTER_TCTRL, E1000_TCTL_EN
+		                                | E1000_TCTL_PSP
+		                                | 15 << E1000_TCTL_CT_SHIFT
+		                                | 64 << E1000_TCTL_COLD_SHIFT
+		                                | E1000_TCTL_RTLC
+		)
+	}
+	
+	define void EnableInterrupts() {
+		this->Write(E1000_REGISTER_IMASK, 
+		this->Clear(E1000_REGISTER_ICR)
+	}
+}

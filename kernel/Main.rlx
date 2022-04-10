@@ -336,31 +336,31 @@ define void MainContinuation() {
 		}
 	}
 	
-	KernelTerminal->PrintLine("BOOT: Mounting disk")
-	
-	i8[2] DiskIndexString
-	
-	DiskIndexString[0] := ('0' + FirstDiskIndex) As i8
-	DiskIndexString[1] := 0
-	
-	BlockDevice* BootDisk := NewBlockDevice(null, &ATABlockDevicePrototype, DiskIndexString)
-	BlockDevice* OSPatition := NewBlockDevice(BootDisk, &GPTPartitionBlockDevicePrototype, "1")
-	
-	;BlockDevice* FSDevice := InstantiateBlockDeviceChainFromPath("ATAPIO(0)>GPT(1)")
-	
-	Print("Device = %x\n", OSPatition)
-	
-	void* Ext2Scratch := KernelPageAllocator->AllocateVirtual(2)
-	
-	FS := KernelHeapAllocate('RootFS', #Ext2)
-	FS->Device := OSPatition
-	
-	FS->Initialize(Ext2Scratch, Ext2Scratch + 0x800, Ext2Scratch + 0xC00, Ext2Scratch + 0x1000, Ext2Scratch + 0x1400)
-	FS->SetupInterface()
-	
-	KernelTerminal->SetCursorTimer()
-	
-	SetupShell()
-	
-	StartScheduler()
+	;KernelTerminal->PrintLine("BOOT: Mounting disk")
+	;
+	;i8[2] DiskIndexString
+	;
+	;DiskIndexString[0] := ('0' + FirstDiskIndex) As i8
+	;DiskIndexString[1] := 0
+	;
+	;BlockDevice* BootDisk := NewBlockDevice(null, &ATABlockDevicePrototype, DiskIndexString)
+	;BlockDevice* OSPatition := NewBlockDevice(BootDisk, &GPTPartitionBlockDevicePrototype, "1")
+	;
+	;;BlockDevice* FSDevice := InstantiateBlockDeviceChainFromPath("ATAPIO(0)>GPT(1)")
+	;
+	;Print("Device = %x\n", OSPatition)
+	;
+	;void* Ext2Scratch := KernelPageAllocator->AllocateVirtual(2)
+	;
+	;FS := KernelHeapAllocate('RootFS', #Ext2)
+	;FS->Device := OSPatition
+	;
+	;FS->Initialize(Ext2Scratch, Ext2Scratch + 0x800, Ext2Scratch + 0xC00, Ext2Scratch + 0x1000, Ext2Scratch + 0x1400)
+	;FS->SetupInterface()
+	;
+	;KernelTerminal->SetCursorTimer()
+	;
+	;SetupShell()
+	;
+	;StartScheduler()
 }

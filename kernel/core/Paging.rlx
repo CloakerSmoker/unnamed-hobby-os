@@ -290,6 +290,11 @@ struct AddressSpaceManager {
 		
 		return PTE
 	}
+	define i64 VirtualToPhysical(void* Address) {
+		i64* Entry := this->FindOrAddPTEntry(Address)
+		
+		return RemovePageFlags((*Entry) As void*) As i64
+	}
 	
 	define void Map(void* Address, i64 PageNumber) {
 		i64* PageTableEntry := RemovePageFlags(this->FindOrAddPTEntry(Address))
