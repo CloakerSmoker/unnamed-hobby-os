@@ -87,8 +87,8 @@ define i32 InL(i16 Port) asm {
 	ret
 }
 define void OutL(i16 Port, i32 Data) asm {
-	mov, dx, dix
-	mov, ax, six
+	mov, edx, edi
+	mov, eax, esi
 	emit, 0xEF ; outl
 	ret
 }

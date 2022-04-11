@@ -102,6 +102,8 @@ Ext2* FS := null
 
 #Require "./src/drivers/PCI/PCI.rlx"
 
+#Require "./src/drivers/networking/E1000.rlx"
+
 declare void BootStrap()
 
 define void RawBootStrap(void* Stack) asm {
@@ -187,6 +189,7 @@ define void BootStrap() {
 }
 
 ATADevice* FirstDisk := null
+E1000* FirstE1000 := null
 
 define void VisitPCIFunction(i32 Bus, i32 Slot, i32 Function) {
 	Print("%x/%x/%x: ", Bus, Slot, Function)
@@ -222,6 +225,26 @@ define void VisitPCIFunction(i32 Bus, i32 Slot, i32 Function) {
 		Print("Found IDE controller\n")
 		Print("\tPCI address: %x/%x/%x\n", Bus, Slot, Function)
 		Print("\tports: %x-%x %x-%x\n", PrimaryIOBase, PrimaryControlBase, SecondaryIOBase, SecondaryControlBase)
+	}
+	else if (Class = PCI_CLASS_CODE_NETWORK_CONTROLLER 
+	     && SubClass = PCI_SUBCLASS_NETWORK_ETHERNET) {
+		 
+		PCIDevice NetworkDevice {
+			Bus: Bus,
+			Slot: Slot,
+			Function: Function
+		}
+		
+		i32 Vendor := NetworkDevice.Read(PCI_HEADER_VENDOR_ID)
+		i32 Device := NetworkDevice.Read(PCI_HEADER_DEVICE_ID)
+		
+		Print("Network interface %x:%x\n", Vendor, Device)
+		
+		if (Vendor = PCI_VENDOR_INTEL && Device = PCI_DEVICE_INTEL_E1000) {
+			FirstE1000 := Alloc('E1000', #E1000)
+			
+			FirstE1000->Initialize(Bus, Slot, Function)
+		}
 	}
 }
 
@@ -335,6 +358,9 @@ define void MainContinuation() {
 			Print("not present\n")
 		}
 	}
+	
+	FirstE1000->Setup()
+	Print("%B:%B:%B:%B:%B:%B\n", FirstE1000->MAC[0], FirstE1000->MAC[1], FirstE1000->MAC[2], FirstE1000->MAC[3], FirstE1000->MAC[4], FirstE1000->MAC[5])
 	
 	;KernelTerminal->PrintLine("BOOT: Mounting disk")
 	;
