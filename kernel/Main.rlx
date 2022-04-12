@@ -251,6 +251,9 @@ define void VisitPCIFunction(i32 Bus, i32 Slot, i32 Function) {
 Task _KernelSetupTask
 Task* KernelSetupTask := &_KernelSetupTask
 
+#Require "./src/drivers/networking/Ethernet.rlx"
+#Require "./src/drivers/networking/ARP.rlx"
+
 define void MainContinuation() {
 	CurrentTask := KernelSetupTask
 	
@@ -361,6 +364,24 @@ define void MainContinuation() {
 	
 	FirstE1000->Setup()
 	Print("%B:%B:%B:%B:%B:%B\n", FirstE1000->MAC[0], FirstE1000->MAC[1], FirstE1000->MAC[2], FirstE1000->MAC[3], FirstE1000->MAC[4], FirstE1000->MAC[5])
+	
+	void* Packet := KernelPageAllocator->AllocateVirtual(2)
+	
+	i32 BodySize := #ARPHeaderMACToIPV4
+	i32 PacketSize := EthernetSize(BodySize)
+	
+	i8* MulticastMAC := i8[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]
+	i8* MyMAC := FirstE1000->MAC
+	i32 MyIP := 0x01020304
+	
+	Print("Status %x\nCommand %x\n", FirstE1000->Read(E1000_REGISTER_STATUS), FirstE1000->Read(E1000_REGISTER_CTRL))
+	
+	void* Buffer := EthernetWriteHeader(Packet, MulticastMAC, MyMAC, ETHERTYPE_ARP)
+	ARPRequestMACToIPV4(Buffer, MyMAC, MyIP, MyMAC, MyIP)
+	
+	Info("%hexdump\n", Packet, PacketSize)
+	
+	FirstE1000->Send(Packet, PacketSize)
 	
 	;KernelTerminal->PrintLine("BOOT: Mounting disk")
 	;

@@ -261,6 +261,9 @@ struct PCIDevice {
 	define void SetIRQ(i32 NewIRQ) {
 		this->Write(PCI_HEADER_INTERRUPT_PIN, NewIRQ)
 	}
+	define i32 GetIRQ() {
+		return this->Read(PCI_HEADER_INTERRUPT_PIN)
+	}
 
 	define i32 FindCapability(i32 ID) {
 		i32 Status := this->Read(PCI_HEADER_STATUS)
