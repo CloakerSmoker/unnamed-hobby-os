@@ -63,8 +63,12 @@ struct KernelInfo {
 }
 
 KernelInfo RawKernelInfo
-
 KernelInfo* Kernel := &RawKernelInfo
+
+#Require "./src/bootloader/BootInfo.rlx"
+
+BootloaderInfo RawBootInfo
+BootloaderInfo* BootInfo := &RawBootInfo
 
 #Require "./src/kernel/core/Descriptors.rlx"
 
@@ -116,19 +120,22 @@ stop:
 	jmp, stop
 }
 
+; Dummy parameters are 100% needed since the kernel is compiled as a linux program
+;  and the compiler automatically sets argc/argv when Main takes <=2 parameters
 
-
-define void Main(void* CR3, i64 PhysicalFrameBuffer, i32 MaxKernelAddress) {
-	Info("Main, FrameBuffer @ %x\n", PhysicalFrameBuffer)
+define void Main(BootloaderInfo* RawInfo, i32 Dummy1, i32 Dummy2) {
+	MoveMemory(BootInfo, RawInfo, #BootloaderInfo)
 	
-	Kernel->FrameBufferPages := PhysicalFrameBuffer
+	Info("Main, FrameBuffer @ %x\n", RawInfo->PhysicalFrameBuffer)
+	
+	Kernel->FrameBufferPages := RawInfo->PhysicalFrameBuffer
 	
 	;PhysicalMemory->AddReserved(0, 0x10_0000) ; < 1mb, bootloader reserved
 	;PhysicalMemory->Add(0x10_0000, 0x350_0000) ; free memory
 	
 	PhysicalMemory := PageHeap:Adopt(0x10_0000, 0x500)
 	
-	i32 KernelSize := MaxKernelAddress - (ADDRESS_OF_KERNEL As i32)
+	i32 KernelSize := (RawInfo->MaxKernelAddress - (ADDRESS_OF_KERNEL As i64)) As i32
 	
 	Kernel->Size := KernelSize
 	Kernel->PageCount := SizeToPageCount(KernelSize) + 1

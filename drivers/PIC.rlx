@@ -41,6 +41,11 @@ define i32 IRQToIDT(i32 IRQ) {
 }
 
 define void SendEOI(i8 IRQLine) {
+	if (LocalAPIC->IsEnabled) {
+		LocalAPIC->EOI()
+		return
+	}
+	
 	if (IRQLine >= 8) {
 		OutB(SLAVE_PIC, 0x20)
 	}
@@ -49,6 +54,10 @@ define void SendEOI(i8 IRQLine) {
 }
 
 define void EnablePICLine(i8 IRQLine, i8 Enabled) {
+	if (LocalAPIC->IsEnabled) {
+		return
+	}
+	
 	i16 Port := MASTER_PIC_DATA
 	
 	if (IRQLine >= 8) {
@@ -66,4 +75,9 @@ define void EnablePICLine(i8 IRQLine, i8 Enabled) {
 	}
 	
 	OutB(Port, Value As i8)
+}
+
+define void DisablePIC() {
+	OutB(MASTER_PIC_DATA, 0)
+	OutB(SLAVE_PIC_DATA, 0)
 }

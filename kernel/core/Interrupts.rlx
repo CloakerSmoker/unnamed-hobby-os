@@ -1,5 +1,4 @@
 #Require "./src/utility/x64.rlx"
-#Require "./src/drivers/PIC.rlx"
 
 declare AMD64Context* GetCurrentTaskContext()
 declare void SchedulerRestart()
@@ -130,6 +129,18 @@ declare void AddHandlerStubs()
 declare void AddKernelHandlers()
 declare void SetupDeviceInterrupts()
 
+define void DisableInterrupts() asm {
+	cli
+	ret
+}
+define void EnableInterrupts() asm {
+	sti
+	ret
+}
+
+#Require "./src/drivers/APIC.rlx"
+#Require "./src/drivers/PIC.rlx"
+
 define void SetupInterrupts() {
 	DescriptorTableHeader IDTHeader
 	
@@ -139,6 +150,8 @@ define void SetupInterrupts() {
 	IDTHeader.Limit := IDT_SIZE As i16
 	
 	RemapPIC(0x20, 0x28)
+	LocalAPIC->Initialize()
+	LocalAPIC->Setup()
 	
 	if (USE_INTERRUPT_STUBS) {
 		AddHandlerStubs()
@@ -152,14 +165,6 @@ define void SetupInterrupts() {
 	}
 }
 
-define void DisableInterrupts() asm {
-	cli
-	ret
-}
-define void EnableInterrupts() asm {
-	sti
-	ret
-}
 define i64 GetFlags() asm {
 	emit, 0x48
 	emit, 0x9C ; PUSHFQ

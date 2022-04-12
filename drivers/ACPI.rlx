@@ -60,7 +60,6 @@ i8 ACPI_APIC_ENTRY_TYPE_LOCAL_APIC_ADDRESS_OVERRIDE := 5
 struct ACPI_APIC_TABLE_ENTRY unaligned {
 	i8 Type
 	i8 Size
-	i8[0] Data
 	
 	define ACPI_APIC_TABLE_ENTRY* Next() {
 		return this + ((this->Size As i32) & 0xFF)

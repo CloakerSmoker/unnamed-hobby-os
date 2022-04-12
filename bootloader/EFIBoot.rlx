@@ -9,6 +9,8 @@ i8 DEBUG_EXT2_OPTIMIZATION := false
 #Require "./src/drivers/GPT.rlx"
 #Require "./src/utility/ELF.rlx"
 
+#Require "./src/bootloader/BootInfo.rlx"
+
 define void* EFILoadELF(EFI_SYSTEM_TABLE* SystemTable, ELFHeader* Header) {
 	void* Data := Header
 	
@@ -43,10 +45,6 @@ define void* EFILoadELF(EFI_SYSTEM_TABLE* SystemTable, ELFHeader* Header) {
 	return null + Header->EntryPoint
 }
 
-define void StartKernel(void* CR3, void* FrameBuffer, i64 MaxKernelAddress, void* KernelMain) asm {
-	jmp, rcx
-}
-
 #Require "./src/drivers/ACPI.rlx"
 
 #Require "./src/utility/ProgressBar.rlx"
@@ -70,104 +68,131 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 		return 0
 	}
 	
-	;ACPI_RSDP* RSDP := null
-	;
-	;for (i32 Index := 0, Index < SystemTable->NumberOfTableEntries, Index++) {
-	;	EFI_CONFIGURATION_TABLE* NextTable := SystemTable->ConfigurationTable[Index]
-	;	
-	;	Print("%guid: %x ", NextTable~>VendorGUID, NextTable->VendorTable)
-	;	
-	;	if (NextTable~>VendorGUID->Equals(ACPI_RSDP_GUID)) {
-	;		Print("RSDP")
-	;		RSDP := NextTable->VendorTable
-	;	}
-	;	
-	;	Print("\n")
-	;}
-	;
+	ACPI_RSDP* RSDP := null
+	
+	for (i32 Index := 0, Index < SystemTable->NumberOfTableEntries, Index++) {
+		EFI_CONFIGURATION_TABLE* NextTable := SystemTable->ConfigurationTable[Index]
+		
+		;Print("%guid: %x ", NextTable~>VendorGUID, NextTable->VendorTable)
+		
+		if (NextTable~>VendorGUID->Equals(ACPI_RSDP_GUID)) {
+			;Print("RSDP")
+			RSDP := NextTable->VendorTable
+		}
+		
+		;Print("\n")
+	}
+	
+	if !(RSDP) {
+		Print("Couldn't find RSDP, bailing out\n")
+		return 0
+	}
+	
 	;Print("\n\n")
-	;
+	
 	;Print("RSDP Signature: %l\n", RSDP->Signature)
-	;
-	;ACPI_TABLE* XSDT := RSDP->XSDTPhysicalAddress As void*
-	;
-	;for (i32 Index := 0, Index < XSDT~>Header->EntryCount(), Index++) {
-	;	ACPI_TABLE* NextACPITable := XSDT->EntryPhysicalAddresses[Index] As void*
-	;	
-	;	Print("Table %i: %l\n", Index, NextACPITable~>Header->Signature)
-	;	
-	;	if (NextACPITable~>Header->Signature = ACPI_TABEL_SIGNATURE_MULTIPLE_APIC_DESCRIPTION) {
-	;		Print("APIC {\n")
-	;		
-	;		ACPI_APIC_TABLE* APIC := NextACPITable->Data()
-	;		
-	;		Print("\tLength: %x\n", NextACPITable~>Header->Length)
-	;		Print("\tLocalAPICPhysicalAddress: %x\n", APIC->LocalAPICPhysicalAddress)
-	;		Print("\tFlags: %x\n", APIC->Flags)
-	;		
-	;		i32 EntryIndex := 0
-	;		ACPI_APIC_TABLE_ENTRY* Current := APIC->First()
-	;		
-	;		while (Current) {
-	;			Print("\t%i: %x\n", EntryIndex++, Current->Type)
-	;			
-	;			if (Current->Type = ACPI_APIC_ENTRY_TYPE_LOCAL_APIC) {
-	;				ACPI_LOCAL_APIC* Local := Current->Data()
-	;				
-	;				Print("\t\tLocal APIC {\n")
-	;				Print("\t\t\tProcessor ID: %x\n", Local->ProcessorID)
-	;				Print("\t\t\tID: %x\n", Local->ID)
-	;				Print("\t\t\tFlags: %x\n", Local->Flags)
-	;				Print("\t\t}\n")
-	;			}
-	;			else if (Current->Type = ACPI_APIC_ENTRY_TYPE_IO_APIC) {
-	;				ACPI_IO_APIC* IO := Current->Data()
-	;				
-	;				Print("\t\tIO APIC {\n")
-	;				Print("\t\t\tID: %x\n", IO->ID)
-	;				Print("\t\t\tPhysicalAddress: %x\n", IO->PhysicalAddress)
-	;				Print("\t\t\tBase: %x\n", IO->GlobalInterruptBase)
-	;				Print("\t\t}\n")
-	;			}
-	;			else if (Current->Type = ACPI_APIC_ENTRY_TYPE_INTERRUPT_OVERRIDE_SOURCE) {
-	;				ACPI_INTERRUPT_OVERRIDE* Override := Current->Data()
-	;				
-	;				Print("\t\tInterrupt Override {\n")
-	;				Print("\t\t\tBus: %x\n", Override->Bus)
-	;				Print("\t\t\tSource: %x\n", Override->Source)
-	;				Print("\t\t\tGlobalInterruptNumber: %x\n", Override->GlobalInterruptNumber)
-	;				Print("\t\t\tFlags: %x\n", Override->Flags)
-	;				Print("\t\t}\n")
-	;			}
-	;			else if (Current->Type = ACPI_APIC_ENTRY_TYPE_INTERRUPT_OVERRIDE_SOURCE) {
-	;				ACPI_NMI_SOURCE* NMI := Current->Data()
-	;				
-	;				Print("\t\tNMI Source {\n")
-	;				Print("\t\t\tFlags: %x\n", NMI->Flags)
-	;				Print("\t\t\tGlobalInterruptNumber: %x\n", NMI->GlobalInterruptNumber)
-	;				Print("\t\t}\n")
-	;			}
-	;			else if (Current->Type = ACPI_APIC_ENTRY_TYPE_LOCAL_APIC_NMI) {
-	;				ACPI_LOCAL_APIC_NMI* LocalNMI := Current->Data()
-	;				
-	;				Print("\t\tLocal APIC NMI {\n")
-	;				Print("\t\t\tProcessor ID: %x\n", LocalNMI->ProcessorID)
-	;				Print("\t\t\tFlags: %x\n", LocalNMI->Flags)
-	;				Print("\t\t\tLocalInterruptNumber: %x\n", LocalNMI->LocalInterruptNumber)
-	;				Print("\t\t}\n")
-	;			}
-	;			
-	;			Current := APIC->Next(Current)
-	;		}
-	;		
-	;		Print("}\n")
-	;	}
-	;}
-	;
-	;SystemTable->ConsoleInput->Reset()
-	;SystemTable->BootServices->WaitForEvent(SystemTable->ConsoleInput->WaitForKey)
-	;
-	;return 0
+	
+	i32[16] IRQMappings
+	
+	for (i32 Index := 0, Index < 16, Index++) {
+		IRQMappings[Index] := Index
+	}
+	
+	i64 IOAPICBase := 0
+	
+	ACPI_TABLE* XSDT := RSDP->XSDTPhysicalAddress As void*
+	
+	for (i32 Index := 0, Index < XSDT~>Header->EntryCount(), Index++) {
+		ACPI_TABLE* NextACPITable := XSDT->EntryPhysicalAddresses[Index] As void*
+		
+		;Print("Table %i: %l\n", Index, NextACPITable~>Header->Signature)
+		
+		if (NextACPITable~>Header->Signature = ACPI_TABEL_SIGNATURE_MULTIPLE_APIC_DESCRIPTION) {
+			;Print("APIC {\n")
+			
+			ACPI_APIC_TABLE* APIC := NextACPITable->Data()
+			
+			;Print("\tLength: %x\n", NextACPITable~>Header->Length)
+			;Print("\tLocalAPICPhysicalAddress: %x\n", APIC->LocalAPICPhysicalAddress)
+			;Print("\tFlags: %x\n", APIC->Flags)
+			
+			i32 EntryIndex := 0
+			ACPI_APIC_TABLE_ENTRY* Current := APIC->First()
+			
+			while (Current) {
+				;Print("\t%i: %x\n", EntryIndex++, Current->Type)
+				
+				if (Current->Type = ACPI_APIC_ENTRY_TYPE_LOCAL_APIC) {
+					ACPI_LOCAL_APIC* Local := Current->Data()
+					
+					;Print("\t\tLocal APIC {\n")
+					;Print("\t\t\tProcessor ID: %x\n", Local->ProcessorID)
+					;Print("\t\t\tID: %x\n", Local->ID)
+					;Print("\t\t\tFlags: %x\n", Local->Flags)
+					;Print("\t\t}\n")
+				}
+				else if (Current->Type = ACPI_APIC_ENTRY_TYPE_IO_APIC) {
+					ACPI_IO_APIC* IO := Current->Data()
+					
+					IOAPICBase := IO->PhysicalAddress & 0xFFFF_FFFF
+					
+					;Print("\t\tIO APIC {\n")
+					;Print("\t\t\tID: %x\n", IO->ID)
+					;Print("\t\t\tPhysicalAddress: %x\n", IO->PhysicalAddress)
+					;Print("\t\t\tBase: %x\n", IO->GlobalInterruptBase)
+					;Print("\t\t}\n")
+				}
+				else if (Current->Type = ACPI_APIC_ENTRY_TYPE_INTERRUPT_OVERRIDE_SOURCE) {
+					ACPI_INTERRUPT_OVERRIDE* Override := Current->Data()
+					
+					IRQMappings[Override->Source] := Override->GlobalInterruptNumber
+					
+					;Print("\t\tInterrupt Override {\n")
+					;Print("\t\t\tBus: %x\n", Override->Bus)
+					;Print("\t\t\tSource: %x\n", Override->Source)
+					;Print("\t\t\tGlobalInterruptNumber: %x\n", Override->GlobalInterruptNumber)
+					;Print("\t\t\tFlags: %x\n", Override->Flags)
+					;Print("\t\t}\n")
+				}
+				else if (Current->Type = ACPI_APIC_ENTRY_TYPE_INTERRUPT_OVERRIDE_SOURCE) {
+					ACPI_NMI_SOURCE* NMI := Current->Data()
+					
+					;Print("\t\tNMI Source {\n")
+					;Print("\t\t\tFlags: %x\n", NMI->Flags)
+					;Print("\t\t\tGlobalInterruptNumber: %x\n", NMI->GlobalInterruptNumber)
+					;Print("\t\t}\n")
+				}
+				else if (Current->Type = ACPI_APIC_ENTRY_TYPE_LOCAL_APIC_NMI) {
+					ACPI_LOCAL_APIC_NMI* LocalNMI := Current->Data()
+					
+					;Print("\t\tLocal APIC NMI {\n")
+					;Print("\t\t\tProcessor ID: %x\n", LocalNMI->ProcessorID)
+					;Print("\t\t\tFlags: %x\n", LocalNMI->Flags)
+					;Print("\t\t\tLocalInterruptNumber: %x\n", LocalNMI->LocalInterruptNumber)
+					;Print("\t\t}\n")
+				}
+				
+				Current := APIC->Next(Current)
+			}
+			
+			;Print("}\n")
+		}
+	}
+	
+	if !(IOAPICBase) {
+		Print("Couldn't find IO-APIC, bailing out\n")
+		return 0
+	}
+	
+	Print("IO-APIC: %x\n", IOAPICBase)
+	
+	Print("IRQ Mappings: ")
+	
+	for (i32 Index := 0, Index < 16, Index++) {
+		if (IRQMappings[Index] != Index) {
+			Print("%x - %x  ", Index, IRQMappings[Index])
+		}
+	}
 	
 	EFI_LOADED_IMAGE_PROTOCOL* LoadedImage := null
 	SystemTable->BootServices->HandleProtocol(ImageHandle, EFI_LOADED_IMAGE_PROTOCOL_GUID, &LoadedImage As void**)
@@ -346,7 +371,7 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	
 	Print("Max kernel address: %x\n", MaxKernelAddress)
 	
-	void* KernelEntryPoint := EFILoadELF(SystemTable, KernelELF)
+	void(BootloaderInfo*) KernelEntryPoint := EFILoadELF(SystemTable, KernelELF)
 	
 	Print("Kernel entry: %x\n", KernelEntryPoint)
 	
@@ -381,13 +406,21 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	;	Print(" %s\n", EFIMemoryTypeToString(NextMemory->Type))
 	;}
 	
+	BootloaderInfo BootInfo {
+		PhysicalFrameBuffer: FrameBuffer As i64,
+		MaxKernelAddress: MaxKernelAddress,
+		IOAPICBase: IOAPICBase
+	}
+	
+	MoveMemory(BootInfo~>IRQMappings, IRQMappings, 16 * #i32)
+	
 	Print("Goodbye EFI!\n")
 	
 	SystemTable->BootServices->ExitBootServices(ImageHandle, MemoryMapKey)
 	
 	asm {cli}
 	
-	StartKernel(null, FrameBuffer, MaxKernelAddress, KernelEntryPoint)
+	KernelEntryPoint(&BootInfo)
 	
 	;i32 SizeNeeded := 0
 	;SystemTable->BootServices->LocateHandle(EFI_LOCATE_SEARCH_TYPE_BY_PROTOCOL, EFI_BLOCK_IO_PROTOCOL_GUID, null, &SizeNeeded, null)

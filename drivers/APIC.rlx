@@ -1,35 +1,138 @@
+i32 APIC_REGISTER_LOCAL_ID := 0x20
+i32 APIC_REGISTER_LOCAL_VERSION := 0x30
+i32 APIC_REGISTER_TASK_PRIORITY := 0x80
+i32 APIC_REGISTER_ARBITRATION_PRIORITY := 0x90
+i32 APIC_REGISTER_PROCESS_PRIORITY := 0xA0
+i32 APIC_REGISTER_END_OF_INTERRUPT := 0xB0
+i32 APIC_REGISTER_REMOTE_READ := 0xC0
+i32 APIC_REGISTER_LOGICAL_DESTINATION := 0xD0
+i32 APIC_REGISTER_DESTINATION_FORMAT := 0xE0
+i32 APIC_REGISTER_SPURIOUS_VECTOR := 0xF0
 
-struct APICMemoryIORegister {
-	i32 Value
-	i8[12] Padding
+i32 APIC_REGISTER_IN_SERVICE_BASE := 0x100
+i32 APIC_REGISTER_IN_SERVICE_SIZE := 8
+
+i32 APIC_REGISTER_TRIGGER_MODES_BASE := 0x180
+i32 APIC_REGISTER_TRIGGER_MODES_SIZE := 8
+
+i32 APIC_REGISTER_INTERRUPT_REQUEST_BASE := 0x200
+i32 APIC_REGISTER_INTERRUPT_REQUEST_SIZE := 8
+
+i32 APIC_REGISTER_ERROR_STATUS := 0x280
+i32 APIC_REGISTER_MACHINE_CHECK := 0x2F0
+i32 APIC_REGISTER_INTERRUPT_COMMAND_1 := 0x300
+i32 APIC_REGISTER_INTERRUPT_COMMAND_2 := 0x310
+i32 APIC_REGISTER_LVT_TIMER := 0x320
+i32 APIC_REGISTER_LVT_THERMAL_SENSOR := 0x330
+i32 APIC_REGISTER_LVT_PERFORMANCE := 0x340
+i32 APIC_REGISTER_LVT_LINT0 := 0x350
+i32 APIC_REGISTER_LVT_LINT1 := 0x360
+i32 APIC_REGISTER_LVT_ERROR := 0x370
+i32 APIC_REGISTER_TIMER_INITIAL := 0x380
+i32 APIC_REGISTER_TIMER_COUNT := 0x390
+i32 APIC_REGISTER_TIMER_DIVIDE := 0x3E0
+
+i32 X64_MSR_APIC_BASE := 0x1b
+i32 X64_MSR_APIC_BASE_ENABLE := 0x800
+i64 X64_MSR_APIC_BASE_MASK := 0xFFFF_FFFF_FFFF_F000
+
+i8 APIC_DELIVERY_MODE_SHIFT  := 7
+i8 APIC_DELIVERY_MODE_FIXED  := 0b000
+i8 APIC_DELIVERY_MODE_SMI    := 0b010
+i8 APIC_DELIVERY_MODE_NMI    := 0b100
+i8 APIC_DELIVERY_MODE_EXTINT := 0b111
+i8 APIC_DELIVERY_MODE_INIT   := 0b101
+
+i8 APIC_POLARITY_SHIFT       := 13
+i8 APIC_POLARITY_ACTIVE_HIGH := 0
+i8 APIC_POLARITY_ACTIVE_LOW  := 1
+
+i8 APIC_TRIGGER_MODE_SHIFT := 15
+i8 APIC_TRIGGER_MODE_EDGE  := 0
+i8 APIC_TRIGGER_MODE_LEVEL := 1
+
+i32 APIC_MASKED  := 1 << 16
+
+declare void DisablePIC()
+
+struct APIC {
+	i8 IsEnabled
+	
+	union {
+		void* MMIO
+	}
+	
+	define i64 GetBase() {
+		return ReadMSR(X64_MSR_APIC_BASE) & X64_MSR_APIC_BASE_MASK
+	}
+	define void SetBase(i64 Base) {
+		WriteMSR(X64_MSR_APIC_BASE, Base)
+	}
+	define void EnableHardware() {
+		WriteMSR(X64_MSR_APIC_BASE, this->GetBase() | X64_MSR_APIC_BASE_ENABLE)
+	}
+	
+	define void Write(i32 Address, i32 Value) {
+		*((this->MMIO + Address) As i32*) := Value
+	}
+	define i32 Read(i32 Address) {
+		return *((this->MMIO + Address) As i32*)
+	}
+	
+	define void Set(i32 Address, i32 Mask) {
+		i32 Old := this->Read(Address)
+		
+		this->Write(Address, Old | Mask)
+	}
+	define void Clear(i32 Address, i32 Mask) {
+		i32 Old := this->Read(Address)
+		
+		this->Write(Address, Old & ~Mask)
+	}
+	
+	define void EOI() {
+		this->Write(APIC_REGISTER_END_OF_INTERRUPT, 0)
+	}
+	
+	define i32 PackVector(i32 Vector, i8 DeliveryMode, i8 Polarity, i8 TriggerMode) {
+		return Vector 
+		    | (DeliveryMode << APIC_DELIVERY_MODE_SHIFT) 
+		    | (Polarity << APIC_POLARITY_SHIFT) 
+		    | (TriggerMode << APIC_TRIGGER_MODE_SHIFT)
+	}
+	
+	define i32 MaskVector(i32 Old) {
+		return Old | APIC_MASKED
+	}
+	define i32 UnmaskVector(i32 Old) {
+		return Old & ~APIC_MASKED
+	}
+	
+	define void WriteVector(i32 Address, i32 PackedVector) {
+		this->Write(Address, PackedVector)
+	}
+	
+	define void Setup() {
+		this->EnableHardware()
+		DisablePIC()
+		
+		this->Set(APIC_REGISTER_SPURIOUS_VECTOR, 0x100)
+		this->IsEnabled := true
+	}
+	
+	define void Initialize() {
+		i64 Base := this->GetBase()
+		i64 BasePage := Base / PAGE_SIZE
+		void* MMIO := Base As void*
+		
+		this->MMIO := MMIO
+		
+		Info("APIC @ %x\n", Base)
+		
+		KernelAddressSpace->MapRange(MMIO, BasePage, 1, PAGE_PRESENT | PAGE_WRITE)
+	}
 }
 
-struct LocalAPICMemoryIO {
-	APICMemoryIORegister[2] Reserved1
-	
-	APICMemoryIORegister ID
-	APICMemoryIORegister Version
-	
-	APICMemoryIORegister[3] Reserved2
-	
-	APICMemoryIORegister TaskPriority
-	APICMemoryIORegister ArbitrationPriority
-	APICMemoryIORegister ProcessorPriority
-	
-	APICMemoryIORegister EndOfInterrupt
-	APICMemoryIORegister RemoteRead
-	APICMemoryIORegister RemoteDestination
-	APICMemoryIORegister DestinationFormat
-	APICMemoryIORegister SpuriousInterruptVector
-	
-	APICMemoryIORegister[7] InService
-	APICMemoryIORegister[7] TriggerModes
-	APICMemoryIORegister[7] InterruptRequest
-	
-	APICMemoryIORegister ErrorStatus
-	
-	APICMemoryIORegister[5] Reserved3
-	
-	APICMemoryIORegister LocalMachineCheck
-	
-}
+APIC RawAPIC
+
+APIC* LocalAPIC := &RawAPIC

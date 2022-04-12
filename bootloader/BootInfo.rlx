@@ -1,0 +1,6 @@
+struct BootloaderInfo {
+	i64 PhysicalFrameBuffer
+	i64 MaxKernelAddress
+	i64 IOAPICBase
+	i32[16] IRQMappings
+}
