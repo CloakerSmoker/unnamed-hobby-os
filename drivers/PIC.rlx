@@ -55,6 +55,8 @@ define void SendEOI(i8 IRQLine) {
 
 define void EnablePICLine(i8 IRQLine, i8 Enabled) {
 	if (LocalAPIC->IsEnabled) {
+		FirstIOAPIC->ForwardInterrupt(IRQLine, LocalAPIC->ID, PIC_MASTER_OFFSET + IRQLine)
+		
 		return
 	}
 	

@@ -62,6 +62,8 @@ struct APIC {
 		void* MMIO
 	}
 	
+	i32 ID
+	
 	define i64 GetBase() {
 		return ReadMSR(X64_MSR_APIC_BASE) & X64_MSR_APIC_BASE_MASK
 	}
@@ -116,6 +118,8 @@ struct APIC {
 		this->EnableHardware()
 		DisablePIC()
 		
+		this->ID := this->Read(APIC_REGISTER_LOCAL_ID)
+		
 		this->Set(APIC_REGISTER_SPURIOUS_VECTOR, 0x100)
 		this->IsEnabled := true
 	}
@@ -134,5 +138,108 @@ struct APIC {
 }
 
 APIC RawAPIC
-
 APIC* LocalAPIC := &RawAPIC
+
+i32 IO_APIC_SELECTION := 0
+i32 IO_APIC_WINDOW := 0x10
+
+i64 IO_APIC_ENTRY_DESTINATION_MASK  := 0xFFFF_FFFF_0000_0000
+i8  IO_APIC_ENTRY_DESTINATION_SHIFT := 56
+i64 IO_APIC_ENTRY_VECTOR_MASK       := 0xFF
+i8  IO_APIC_ENTRY_VECTOR_SHIFT      := 0
+
+struct IOAPIC {
+	i64 PhysicalMMIO
+	
+	void* MMIO
+	
+	i32* Selection
+	i32* Window
+	
+	i32 FirstInterrupt
+	
+	define void Write(i32 Address, i32 Value) {
+		*this->Selection := Address
+		*this->Window := Value
+	}
+	define i32 Read(i32 Address) {
+		*this->Selection := Address
+		return *this->Window
+	}
+	
+	define void Set(i32 Address, i32 Mask) {
+		i32 Old := this->Read(Address)
+		
+		this->Write(Address, Old | Mask)
+	}
+	define void Clear(i32 Address, i32 Mask) {
+		i32 Old := this->Read(Address)
+		
+		this->Write(Address, Old & ~Mask)
+	}
+	
+	define i32 IRQToOffset(i32 IRQ) {
+		i32 Index := BootInfo->IRQMappings[IRQ]
+		
+		return 0x10 + (Index * 2)
+	}
+	
+	define void WriteVector(i32 Index, i64 Value) {
+		i32 Offset := this->IRQToOffset(Index)
+		
+		this->Write(Offset, (Value & 0xFFFF_FFFF) As i32)
+		this->Write(Offset + 1, ((Value >> 32) & 0xFFFF_FFFF) As i32)
+	}
+	define i64 ReadVector(i32 Index) {
+		i32 Offset := this->IRQToOffset(Index)
+		
+		return this->Read(Offset) | (this->Read(Offset + 1) << 32)
+	}
+	
+	define void SetDestination(i32 Index, i32 APICID) {
+		i64 Old := this->ReadVector(Index)
+		
+		Old &= IO_APIC_ENTRY_DESTINATION_MASK
+		Old |= (APICID As i64) << IO_APIC_ENTRY_DESTINATION_SHIFT
+		
+		this->WriteVector(Index, Old)
+	}
+	
+	define void SetVector(i32 Index, i32 Vector) {
+		i64 Old := this->ReadVector(Index)
+		
+		Old &= IO_APIC_ENTRY_VECTOR_MASK
+		Old |= (Vector As i64) << IO_APIC_ENTRY_VECTOR_SHIFT
+		
+		this->WriteVector(Index, Old)
+	}
+	
+	define void ForwardInterrupt(i32 Index, i32 APICID, i32 Vector) {
+		i64 Old := this->ReadVector(Index)
+		
+		Old &= IO_APIC_ENTRY_DESTINATION_MASK | IO_APIC_ENTRY_VECTOR_MASK
+		Old |= (APICID As i64) << IO_APIC_ENTRY_DESTINATION_SHIFT
+		Old |= (Vector As i64) << IO_APIC_ENTRY_VECTOR_SHIFT
+		
+		this->WriteVector(Index, Old)
+	}
+	
+	define void Setup() {
+		
+	}
+	
+	define void Initialize(i64 PhysicalMMIO, i32 FirstInterrupt) {
+		this->PhysicalMMIO := PhysicalMMIO
+		this->MMIO := PhysicalMMIO As void*
+		
+		this->Selection := this->MMIO + IO_APIC_SELECTION
+		this->Window    := this->MMIO + IO_APIC_WINDOW
+		
+		i64 PhysicalMMIOPage := this->PhysicalMMIO / PAGE_SIZE
+		
+		KernelAddressSpace->MapRange(this->MMIO, PhysicalMMIOPage, 1, PAGE_PRESENT | PAGE_WRITE)
+	}
+}
+
+IOAPIC RawFirstIOAPIC
+IOAPIC* FirstIOAPIC := &RawFirstIOAPIC

@@ -491,8 +491,8 @@ struct E1000 {
 		else {
 			RootE1000 := this
 			
-			InsertIDTEntry(IRQToIDT(1), &E1000:OnIRQ, true)
-			EnablePICLine(1, true)
+			InsertIDTEntry(IRQToIDT(9), &E1000:OnIRQ, true)
+			EnablePICLine(9, true)
 		}
 		
 		this~>PCI->Bus := Bus
@@ -501,7 +501,7 @@ struct E1000 {
 		
 		;Info("IRQ %i\n", this~>PCI->GetIRQ())
 		
-		this~>PCI->SetIRQ(1)
+		this~>PCI->SetIRQ(9)
 		
 		i32 Size := -this~>PCI->GetBARSize(0)
 		i32 BAR0 := 0x7000_0000
