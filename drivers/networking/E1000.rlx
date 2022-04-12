@@ -19,7 +19,9 @@ i32 E1000_REGISTER_FCT         := 0x0030
 i32 E1000_REGISTER_FCTTV       := 0x0170
 
 i32 E1000_REGISTER_ICR         := 0x00C0
-i32 E1000_REGISTER_IMASK       := 0x00D0
+i32 E1000_REGISTER_ICS         := 0x00C8
+i32 E1000_REGISTER_IMS         := 0x00D0
+i32 E1000_REGISTER_IMC         := 0x00D8
 i32 E1000_REGISTER_RCTRL       := 0x0100
 i32 E1000_REGISTER_TIPG        := 0x0410
 i32 E1000_REGISTER_RXDESCLO    := 0x2800
@@ -121,22 +123,22 @@ i8 E1000_TSTA_EC := 0b0010 ; Excess Collisions
 i8 E1000_TSTA_LC := 0b0100 ; Late Collision
 i8 E1000_LSTA_TU := 0b1000 ; Transmit Underrun
 
-i32 E1000_IMASK_TXDW    := 1 << 0
-i32 E1000_IMASK_TXQE    := 1 << 1
-i32 E1000_IMASK_LSC     := 1 << 2
-i32 E1000_IMASK_RXDMT0  := 1 << 4
-i32 E1000_IMASK_DSW     := 1 << 5
-i32 E1000_IMASK_RXO     := 1 << 6
-i32 E1000_IMASK_RXT     := 1 << 7
-i32 E1000_IMASK_MDAC    := 1 << 9
-i32 E1000_IMASK_PHYINT  := 1 << 12
-i32 E1000_IMASK_LSECPN  := 1 << 14
-i32 E1000_IMASK_TXD_LOW := 1 << 15
-i32 E1000_IMASK_SRPD    := 1 << 16
-i32 E1000_IMASK_ACK     := 1 << 17
-i32 E1000_IMASK_MNG     := 1 << 18
-i32 E1000_IMASK_EPRST   := 1 << 20
-i32 E1000_IMASK_ECCER   := 1 << 22
+i32 E1000_IMS_TXDW    := 1 << 0
+i32 E1000_IMS_TXQE    := 1 << 1
+i32 E1000_IMS_LSC     := 1 << 2
+i32 E1000_IMS_RXDMT0  := 1 << 4
+i32 E1000_IMS_DSW     := 1 << 5
+i32 E1000_IMS_RXO     := 1 << 6
+i32 E1000_IMS_RXT     := 1 << 7
+i32 E1000_IMS_MDAC    := 1 << 9
+i32 E1000_IMS_PHYINT  := 1 << 12
+i32 E1000_IMS_LSECPN  := 1 << 14
+i32 E1000_IMS_TXD_LOW := 1 << 15
+i32 E1000_IMS_SRPD    := 1 << 16
+i32 E1000_IMS_ACK     := 1 << 17
+i32 E1000_IMS_MNG     := 1 << 18
+i32 E1000_IMS_EPRST   := 1 << 20
+i32 E1000_IMS_ECCER   := 1 << 22
 
 struct E1000ReceiveBuffer unaligned {
 	i64 Address
@@ -363,8 +365,7 @@ struct E1000 {
 	}
 	
 	define void EnableInterrupts() {
-		;this->Write(E1000_REGISTER_IMASK, E1000_IMASK_LSC | E1000_IMASK_RXO | E1000_IMASK_TXQE | E1000_IMASK_TXDW)
-		this->Write(E1000_REGISTER_IMASK, 0x7FFF_FFFF)
+		this->Write(E1000_REGISTER_IMS, E1000_IMS_LSC | E1000_IMS_RXO | E1000_IMS_TXQE | E1000_IMS_TXDW | E1000_IMS_RXT)
 		this->Read(E1000_REGISTER_ICR)
 	}
 	
@@ -375,6 +376,7 @@ struct E1000 {
 	
 	define void Setup() {
 		this~>PCI->SetBusMaster(true)
+		this~>PCI->EnableIRQ(true)
 		
 		this->Reset()
 		
@@ -429,6 +431,9 @@ struct E1000 {
 		i32 Speed := (Status & E1000_STATUS_SPEED_MASK) >> E1000_STATUS_SPEED_SHIFT
 		
 		Print(" Speed: %s\n", Speeds[Speed])
+		
+		EnableInterrupts()
+		this->Write(E1000_REGISTER_ICS, E1000_IMS_LSC)
 	}
 	
 	define void Send(void* Data, i32 Size) {
@@ -494,9 +499,9 @@ struct E1000 {
 		this~>PCI->Slot := Slot
 		this~>PCI->Function := Function
 		
-		Print("IRQ %i\n", this~>PCI->GetIRQ())
+		;Info("IRQ %i\n", this~>PCI->GetIRQ())
 		
-		;this~>PCI->SetIRQ(6)
+		this~>PCI->SetIRQ(1)
 		
 		i32 Size := -this~>PCI->GetBARSize(0)
 		i32 BAR0 := 0x7000_0000

@@ -79,6 +79,10 @@ i32 PCI_HEADER_INTERRUPT_PIN_OFFSET  := 61
 i32 PCI_HEADER_INTERRUPT_PIN_SIZE    := 1
 i32 PCI_HEADER_INTERRUPT_PIN         := 61 | (1 << 8)
 
+i32 PCI_HEADER_INTERRUPT_LINE_OFFSET  := 60
+i32 PCI_HEADER_INTERRUPT_LINE_SIZE    := 1
+i32 PCI_HEADER_INTERRUPT_LINE         := 60 | (1 << 8)
+
 i32 PCI_CAPABILITY_ID_OFFSET   := 0
 i32 PCI_CAPABILITY_ID_SIZE     := 1
 i32 PCI_CAPABILITY_ID          := 0 | (1 << 8)
@@ -88,6 +92,7 @@ i32 PCI_CAPABILITY_NEXT_SIZE   := 1
 i32 PCI_CAPABILITY_NEXT        := 1 | (1 << 8)
 
 i32 PCI_COMMAND_REGISTER_BUS_MASTER      := 1 << 2
+i32 PCI_COMMAND_REGISTER_IRQ_DISABLE     := 1 << 10
 i32 PCI_STATUS_REGISTER_HAS_CAPABILITIES := 1 << 3
 
 i32 PCI_BAR_IS_PORT     := 1
@@ -258,11 +263,23 @@ struct PCIDevice {
 		
 		this->Write(PCI_HEADER_COMMAND, Old)
 	}
+	define void EnableIRQ(i8 Enable) {
+		i32 Old := this->Read(PCI_HEADER_COMMAND)
+		
+		if (Enable) {
+			Old &= ~PCI_COMMAND_REGISTER_IRQ_DISABLE
+		}
+		else {
+			Old |= PCI_COMMAND_REGISTER_IRQ_DISABLE
+		}
+		
+		this->Write(PCI_HEADER_COMMAND, Old)
+	}
 	define void SetIRQ(i32 NewIRQ) {
-		this->Write(PCI_HEADER_INTERRUPT_PIN, NewIRQ)
+		this->Write(PCI_HEADER_INTERRUPT_LINE, NewIRQ)
 	}
 	define i32 GetIRQ() {
-		return this->Read(PCI_HEADER_INTERRUPT_PIN)
+		return this->Read(PCI_HEADER_INTERRUPT_LINE)
 	}
 
 	define i32 FindCapability(i32 ID) {
