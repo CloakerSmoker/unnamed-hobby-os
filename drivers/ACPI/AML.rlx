@@ -98,14 +98,14 @@ struct AMLSuperName {
 	union {
 		i32 LocalNumber
 		i32 ArgNumber
-		AMLNameString Name
+		AMLNameString* Name
 	}
 	
 	i8 Kind
 	
 	define void Print() {
 		if (this->Kind = AML_SUPERNAME_NAME) {
-			this~>Name->Print()
+			this->Name->Print()
 		}
 		else if (this->Kind = AML_SUPERNAME_LOCAL) {
 			Print("Local%i", this->ArgNumber)
@@ -119,16 +119,20 @@ struct AMLSuperName {
 i8 AML_TARGET_SUPERNAME := 0
 i8 AML_TARGET_DEBUG_OBJ := 1
 i8 AML_TARGET_REFERENCE_TYPE := 2
+i8 AML_TARGET_NULL := 3
 
 struct AMLTarget {
 	i8 Kind
 	
 	union {
-		AMLSuperName SuperName
+		AMLSuperName* SuperName
 	}
 	
 	define void Print() {
-		this~>SuperName->Print()
+		if (this->Kind = AML_TARGET_SUPERNAME) {
+			this->SuperName->Print()
+			Print(" := ")
+		}
 	}
 }
 
@@ -141,7 +145,7 @@ i8 AML_TO_INTEGER_OP := 0x99 As i8
 
 struct AMLDataTargetOperation {
 	AMLTermArg* Data
-	AMLTarget Target
+	AMLTarget* Target
 	i8 Operation
 	
 	define void Print() {
@@ -149,8 +153,8 @@ struct AMLDataTargetOperation {
 			"ToBuffer", "ToDecimalString", "ToHexString", "ToInteger"
 		}
 		
-		this~>Target->Print()
-		Print(" := %s(", Names[((this->Operation As i32) & 0xFF) - 0x96])
+		this->Target->Print()
+		Print("%s(", Names[((this->Operation As i32) & 0xFF) - 0x96])
 		PrintTermArg(this->Data)
 		Print(")")
 	}
@@ -177,7 +181,7 @@ i8 AML_DDT_INDEX       := 13
 struct AMLDataDataTargetOperation {
 	AMLTermArg* Left
 	AMLTermArg* Right
-	AMLTarget Target
+	AMLTarget* Target
 	i8 Operation
 	
 	define void Print() {
@@ -185,8 +189,7 @@ struct AMLDataDataTargetOperation {
 			"+", ".", "-", "<<", ">>", "&", "NAND", "|", "NOR", "^", "..", "%", "["
 		}
 		
-		this~>Target->Print()
-		Print(" := ")
+		this->Target->Print()
 		PrintTermArg(this->Left)
 		
 		if (this->Operation = AML_DDT_INDEX) {
@@ -211,7 +214,7 @@ i8 AML_SUPERNAME_SIZEOF := 0x87 As i8
 i8 AML_SUPERNAME_TYPEOF := 0x8E As i8
 
 struct AMLSuperNameOperation {
-	AMLSuperName SuperName
+	AMLSuperName* SuperName
 	i8 Kind
 	
 	define void Print() {
@@ -231,7 +234,7 @@ struct AMLSuperNameOperation {
 			Print("typeof ")
 		}
 		
-		this~>SuperName->Print()
+		this->SuperName->Print()
 	}
 }
 
@@ -239,7 +242,7 @@ i8 AML_STORE_OPERATION := 0x70
 
 struct AMLStoreOperation {
 	AMLTermArg* Source
-	AMLSuperName Destination
+	AMLSuperName* Destination
 }
 
 i8 AML_DD_AND := 0 ; 0x90
@@ -248,8 +251,8 @@ i8 AML_DD_NE  := 2 ; 0x92 0x93
 i8 AML_DD_LE  := 3 ; 0x92 0x94
 i8 AML_DD_GE  := 4 ; 0x92 0x95
 i8 AML_DD_E   := 5 ; 0x93
-i8 AML_DD_G   := 6 ; 0x94
-i8 AML_DD_L   := 7 ; 0x95
+i8 AML_DD_L   := 6 ; 0x95
+i8 AML_DD_G   := 7 ; 0x94
 
 struct AMLDataDataOperation {
 	AMLTermArg* Left
@@ -262,7 +265,7 @@ struct AMLDataDataOperation {
 		}
 		
 		PrintTermArg(this->Left)
-		Print(" %s ", Operators[((this->Operation As i32) & 0xFF)])
+		Print(" %s ", Operators[this->Operation])
 		PrintTermArg(this->Right)
 	}
 }
@@ -281,6 +284,8 @@ struct AMLDataOperation {
 		else if (this->Operation = AML_DATA_OP_LNOT) {
 			Print("!")
 		}
+		
+		PrintTermArg(this->Operand)
 	}
 }
 
@@ -293,36 +298,38 @@ i8 AML_EXPRESSION_DATA := 9
 
 struct AMLExpressionOpcode {
 	union {
-		AMLDataTargetOperation DataTarget
-		AMLDataDataTargetOperation DataDataTarget
-		AMLSuperNameOperation SuperNameOperation
-		AMLStoreOperation StoreOperation
-		AMLDataDataOperation DataData
-		AMLDataOperation DataOperation
+		AMLDataTargetOperation* DataTarget
+		AMLDataDataTargetOperation* DataDataTarget
+		AMLSuperNameOperation* SuperNameOperation
+		AMLStoreOperation* StoreOperation
+		AMLDataDataOperation* DataData
+		AMLDataOperation* DataOperation
 	}
 	
 	i8 Kind
 	
 	define void Print() {
+		i8 dummy := this->Kind
+		
 		if (this->Kind = AML_EXPRESSION_DATA_TARGET) {
-			this~>DataTarget->Print()
+			this->DataTarget->Print()
 		}
 		else if (this->Kind = AML_EXPRESSION_DATA_DATA_TARGET) {
-			this~>DataDataTarget->Print()
+			this->DataDataTarget->Print()
 		}
 		else if (this->Kind = AML_EXPRESSION_SUPER_NAME_OPERATION) {
-			this~>SuperNameOperation->Print()
+			this->SuperNameOperation->Print()
 		}
 		else if (this->Kind = AML_EXPRESSION_DATA_DATA) {
-			this~>DataData->Print()
+			this->DataData->Print()
 		}
 		else if (this->Kind = AML_EXPRESSION_DATA) {
-			this~>DataOperation->Print()
+			this->DataOperation->Print()
 		}
 		else if (this->Kind = AML_EXPRESSION_STORE_OPERATION) {
-			this~>StoreOperation~>Destination->Print()
+			this->StoreOperation->Destination->Print()
 			Print(" := ")
-			PrintTermArg(this~>StoreOperation->Source)
+			PrintTermArg(this->StoreOperation->Source)
 		}
 	}
 }
@@ -336,18 +343,18 @@ struct AMLTermArg {
 	i8 Kind
 	
 	union {
-		AMLExpressionOpcode Expression
-		AMLDataObject DataObject
+		AMLExpressionOpcode* Expression
+		AMLDataObject* DataObject
 		i32 LocalNumber
 		i32 ArgNumber
 	}
 	
 	define void Print() {
 		if (this->Kind = AML_TERM_ARG_EXPRESSION) {
-			this~>Expression->Print()
+			this->Expression->Print()
 		}
 		else if (this->Kind = AML_TERM_ARG_DATA_OBJECT) {
-			this~>DataObject->Print()
+			this->DataObject->Print()
 		}
 		else if (this->Kind = AML_TERM_ARG_LOCAL_OBJECT) {
 			Print("Local%i", this->ArgNumber)
@@ -366,13 +373,13 @@ i8 AML_WHILE_OP := 0xA2 As i8
 
 struct AMLWhileLoop {
 	i32 Length
-	AMLTermArg Condition
+	AMLTermArg* Condition
 	i32 Count
-	AMLTerm* Body
+	AMLTerm** Body
 	
 	define void Print() {
 		Print("While (")
-		this~>Condition->Print()
+		this->Condition->Print()
 		Print(") {\n")
 		
 		for (i32 Index := 0, Index < this->Count, Index++) {
@@ -387,32 +394,32 @@ struct AMLWhileLoop {
 
 struct AMLStatementOpcode {
 	union {
-		AMLWhileLoop WhileLoop
+		AMLWhileLoop* WhileLoop
 	}
 	
 	i8 Kind
 	
 	define void Print() {
 		if (this->Kind = AML_WHILE_OP) {
-			this~>WhileLoop->Print()
+			this->WhileLoop->Print()
 		}
 	}
 }
 
 
 struct AMLDefineRegion {
-	AMLNameString Name
+	AMLNameString* Name
 	i8 AddressSpace
-	AMLTermArg Offset
-	AMLTermArg Length
+	AMLTermArg* Offset
+	AMLTermArg* Length
 	
 	define void Print() {
 		Print("AMLDefineRegion ")
-		this~>Name->Print()
+		this->Name->Print()
 		Print(" %x { ", this->AddressSpace)
-		this~>Offset->Print()
+		this->Offset->Print()
 		Print(", ")
-		this~>Length->Print()
+		this->Length->Print()
 		Print(" }\n")
 	}
 }
@@ -424,11 +431,11 @@ i8 AML_FIELD_EXT_ACCESS := 3
 i8 AML_FIELD_CONNECT := 4
 
 struct AMLNamedField {
-	AMLNameString Name
+	AMLNameString* Name
 	i32 Length
 	
 	define void Print() {
-		this~>Name->Print()
+		this->Name->Print()
 		Print(": %x", this->Length)
 	}
 }
@@ -437,24 +444,24 @@ struct AMLField {
 	i8 Kind
 	
 	union {
-		AMLNamedField Named
+		AMLNamedField* Named
 	}
 	
 	define void Print() {
-		this~>Named->Print()
+		this->Named->Print()
 	}
 }
 
 struct AMLDefineField {
 	i32 Length
-	AMLNameString Name
+	AMLNameString* Name
 	i8 Flags
 	i32 Count
-	AMLField* Fields
+	AMLField** Fields
 	
 	define void Print() {
 		Print("AMLDefineField ")
-		this~>Name->Print()
+		this->Name->Print()
 		Print(" %x {\n", this->Flags)
 		
 		for (i32 Index := 0, Index < this->Count, Index++) {
@@ -469,13 +476,13 @@ struct AMLDefineField {
 
 struct AMLDefineScope {
 	i32 Length
-	AMLNameString Name
+	AMLNameString* Name
 	i32 Count
-	AMLTerm* Terms
+	AMLTerm** Terms
 	
 	define void Print() {
 		Print("AMLScope ")
-		this~>Name->Print()
+		this->Name->Print()
 		Print(" {\n")
 		
 		for (i32 Index := 0, Index < this->Count, Index++) {
@@ -490,14 +497,14 @@ struct AMLDefineScope {
 
 struct AMLDefineMethod {
 	i32 Length
-	AMLNameString Name
+	AMLNameString* Name
 	i8 Flags
 	i32 Count
-	AMLTerm* Terms
+	AMLTerm** Terms
 	
 	define void Print() {
 		Print("AMLDefineMethod ")
-		this~>Name->Print()
+		this->Name->Print()
 		Print(" %x {\n", this->Flags)
 		
 		for (i32 Index := 0, Index < this->Count, Index++) {
@@ -523,34 +530,34 @@ i8 AML_STATEMENT_OP := 0x97 As i8
 
 struct AMLTerm {
 	union {
-		AMLDefineRegion Region
-		AMLDefineField Field
-		AMLDefineScope Scope
-		AMLDefineMethod Method
-		AMLExpressionOpcode Expression
-		AMLStatementOpcode Statement
+		AMLDefineRegion* Region
+		AMLDefineField* Field
+		AMLDefineScope* Scope
+		AMLDefineMethod* Method
+		AMLExpressionOpcode* Expression
+		AMLStatementOpcode* Statement
 	}
 	
 	i8 Kind
 	
 	define void Print() {
 		if (this->Kind = AML_SCOPE_OP) {
-			this~>Scope->Print()
+			this->Scope->Print()
 		}
 		else if (this->Kind = AML_METHOD_OP) {
-			this~>Method->Print()
+			this->Method->Print()
 		}
 		else if (this->Kind = AML_EXPRESSION_OP) {
-			this~>Expression->Print()
+			this->Expression->Print()
 		}
 		else if (this->Kind = AML_STATEMENT_OP) {
-			this~>Statement->Print()
+			this->Statement->Print()
 		}
 		else if (this->Kind = AML_EXT_REGION_OP) {
-			this~>Region->Print()
+			this->Region->Print()
 		}
 		else if (this->Kind = AML_EXT_FIELD_OP) {
-			this~>Field->Print()
+			this->Field->Print()
 		}
 	}
 }
@@ -687,7 +694,9 @@ struct AMLParser {
 		}
 	}
 	
-	define void ParseNameString(AMLNameString* Result) {
+	define AMLNameString* ParseNameString() {
+		AMLNameString* Result := Alloc(#AMLNameString)
+		
 		i8 MaybeRootCharacter := this->Peek()
 		
 		if (this->NextMatches('\') || this->NextMatches('^')) {
@@ -695,20 +704,8 @@ struct AMLParser {
 		}
 		
 		this->ParseNamePath(Result)
-	}
-	
-	define void ParseScope() {
-		i32 Length := this->ParsePackageLength()
 		
-		
-	}
-	
-	define void ParseObject() {
-		if (this->NextMatches(AML_SCOPE_OP)) {
-			
-		}
-		
-		
+		return Result
 	}
 	
 	define i64 ReadByte() {
@@ -724,7 +721,9 @@ struct AMLParser {
 		return this->ReadDoubleWord() | (this->ReadDoubleWord() << 32)
 	}
 	
-	define void ParseDataObject(AMLDataObject* Result) {
+	define AMLDataObject* ParseDataObject() {
+		AMLDataObject* Result := Alloc(#AMLDataObject)
+		
 		i8 Next := this->Next()
 		
 		Result->Kind := Next
@@ -755,6 +754,8 @@ struct AMLParser {
 		else if (Next = AML_DATA_OBJECT_CONST_ONES_OP) {
 			Result->QuadWordValue := -1
 		}
+		
+		return Result
 	}
 	
 	define i8 NextIsDataObject() {
@@ -782,7 +783,9 @@ struct AMLParser {
 		
 		return 0x68 <= Next && Next <= 0x6E
 	}
-	define void ParseSuperName(AMLSuperName* Result) {
+	define AMLSuperName* ParseSuperName() {
+		AMLSuperName* Result := Alloc(#AMLSuperName)
+		
 		if (this->NextIsLocalObject()) {
 			Result->Kind := AML_SUPERNAME_LOCAL
 			Result->LocalNumber := this->Next() - 0x60
@@ -793,31 +796,41 @@ struct AMLParser {
 		}
 		else {
 			Result->Kind := AML_SUPERNAME_NAME
-			this->ParseNameString(Result~>Name)
+			Result->Name := this->ParseNameString()
 		}
+		
+		return Result
 	}
-	define void ParseTarget(AMLTarget* Result) {
-		Result->Kind := AML_TARGET_SUPERNAME
-		this->ParseSuperName(Result~>SuperName)
+	define AMLTarget* ParseTarget() {
+		AMLTarget* Result := Alloc(#AMLTarget)
+		
+		if (this->NextMatches(0)) {
+			Result->Kind := AML_TARGET_NULL
+		}
+		else {
+			Result->Kind := AML_TARGET_SUPERNAME
+			Result->SuperName := this->ParseSuperName()
+		}
+		
+		return Result
 	}
 	
-	declare void ParseTermArg(AMLTermArg*)
+	declare AMLTermArg* ParseTermArg()
 	
 	define i8 NextIsDataTarget() {
 		i32 Next := (this->Peek() As i32) & 0xFF
 		
 		return 0x96 <= Next && Next <= 0x99
 	}
-	define void ParseDataTarget(AMLDataTargetOperation* Result) {
+	define AMLDataTargetOperation* ParseDataTarget() {
+		AMLDataTargetOperation* Result := Alloc(#AMLDataTargetOperation)
+		
 		Result->Operation := this->Next()
 		
-		Result->Data := Alloc(#AMLTermArg)
+		Result->Data := this->ParseTermArg()
+		Result->Target := this->ParseTarget()
 		
-		this->ParseTermArg(Result->Data)
-		this->ParseTarget(Result~>Target)
-		
-		Result->Print()
-		Print("\n")
+		return Result
 	}
 	
 	define i8 NextIsDataDataTarget() {
@@ -835,7 +848,9 @@ struct AMLParser {
 		
 		return false
 	}
-	define void ParseDataDataTarget(AMLDataDataTargetOperation* Result) {
+	define AMLDataDataTargetOperation* ParseDataDataTarget() {
+		AMLDataDataTargetOperation* Result := Alloc(#AMLDataDataTargetOperation)
+		
 		i32 Next := (this->Next() As i32) & 0xFF
 		
 		if (0x72 <= Next && Next <= 0x74) {
@@ -851,12 +866,11 @@ struct AMLParser {
 			Result->Operation := 13
 		}
 		
-		Result->Left := Alloc(#AMLTermArg)
-		Result->Right := Alloc(#AMLTermArg)
+		Result->Left := this->ParseTermArg()
+		Result->Right := this->ParseTermArg()
+		Result->Target := this->ParseTarget()
 		
-		this->ParseTermArg(Result->Left)
-		this->ParseTermArg(Result->Right)
-		this->ParseTarget(Result~>Target)
+		return Result
 	}
 	
 	define i8 NextIsSuperNameOperation() {
@@ -870,9 +884,13 @@ struct AMLParser {
 		
 		return false
 	}
-	define void ParseSuperNameOperation(AMLSuperNameOperation* Result) {
+	define AMLSuperNameOperation* ParseSuperNameOperation() {
+		AMLSuperNameOperation* Result := Alloc(#AMLSuperNameOperation)
+		
 		Result->Kind := this->Next()
-		this->ParseSuperName(Result~>SuperName)
+		Result->SuperName := this->ParseSuperName()
+		
+		return Result
 	}
 	
 	define i8 NextIsDataData() {
@@ -890,18 +908,25 @@ struct AMLParser {
 		
 		return false
 	}
-	define void ParseDataData(AMLDataDataOperation* Result) {
-		Result->Left := Alloc(#AMLTermArg)
-		Result->Right := Alloc(#AMLTermArg)
+	define AMLDataDataOperation* ParseDataData() {
+		AMLDataDataOperation* Result := Alloc(#AMLDataDataOperation)
 		
-		Result->Operation := this->Next()
+		i8 Operation := this->Next()
 		
-		if (Result->Operation = 0x92) {
-			Result->Operation := this->Next()
+		if (Operation = 0x92) {
+			Result->Operation := (this->Next() - 0x91) As i8
+		}
+		else if (Operation >= 0x93) {
+			Result->Operation := ((Operation - 0x90) + 2) As i8
+		}
+		else {
+			Result->Operation := (Operation - 0x90) As i8
 		}
 		
-		this->ParseTermArg(Result->Left)
-		this->ParseTermArg(Result->Right)
+		Result->Left := this->ParseTermArg()
+		Result->Right := this->ParseTermArg()
+		
+		return Result
 	}
 	
 	define i8 NextIsDataOperation() {
@@ -909,11 +934,13 @@ struct AMLParser {
 		
 		return Next = AML_DATA_OP_DEREF || Next = AML_DATA_OP_LNOT
 	}
-	define void ParseDataOperation(AMLDataOperation* Result) {
-		Result->Operation := this->Next()
+	define AMLDataOperation* ParseDataOperation() {
+		AMLDataOperation* Result := Alloc(#AMLDataOperation)
 		
-		Result->Operand := Alloc(#AMLTermArg)
-		this->ParseTermArg(Result->Operand)
+		Result->Operation := this->Next()
+		Result->Operand := this->ParseTermArg()
+		
+		return Result
 	}
 	
 	define i8 NextIsExpression() {
@@ -928,40 +955,46 @@ struct AMLParser {
 		|| this->NextIsDataOperation()
 	}
 	
-	define void ParseExpression(AMLExpressionOpcode* Result) {
+	define AMLExpressionOpcode* ParseExpression() {
+		AMLExpressionOpcode* Result := Alloc(#AMLExpressionOpcode)
+		
 		if (this->NextIsDataTarget()) {
 			Result->Kind := AML_EXPRESSION_DATA_TARGET
-			this->ParseDataTarget(Result~>DataTarget)
+			Result->DataTarget := this->ParseDataTarget()
 		}
 		else if (this->NextIsDataDataTarget()) {
 			Result->Kind := AML_EXPRESSION_DATA_DATA_TARGET
-			this->ParseDataDataTarget(Result~>DataDataTarget)
+			Result->DataDataTarget := this->ParseDataDataTarget()
 		}
 		else if (this->NextIsDataData()) {
 			Result->Kind := AML_EXPRESSION_DATA_DATA
-			this->ParseDataData(Result~>DataData)
+			Result->DataData := this->ParseDataData()
 		}
 		else if (this->NextIsDataOperation()) {
 			Result->Kind := AML_EXPRESSION_DATA
-			this->ParseDataOperation(Result~>DataOperation)
+			Result->DataOperation := this->ParseDataOperation()
 		}
 		else if (this->NextIsSuperNameOperation()) {
 			Result->Kind := AML_EXPRESSION_SUPER_NAME_OPERATION
-			this->ParseSuperNameOperation(Result~>SuperNameOperation)
+			Result->SuperNameOperation := this->ParseSuperNameOperation()
 		}
 		else if (this->NextMatches(AML_STORE_OPERATION)) {
 			Result->Kind := AML_EXPRESSION_STORE_OPERATION
 			
-			Result~>StoreOperation->Source := Alloc(#AMLTermArg)
-			this->ParseTermArg(Result~>StoreOperation->Source)
-			this->ParseSuperName(Result~>StoreOperation~>Destination)
+			Result->StoreOperation := Alloc(#AMLStoreOperation)
+			Result->StoreOperation->Source := this->ParseTermArg()
+			Result->StoreOperation->Destination := this->ParseSuperName()
 		}
+		
+		return Result
 	}
 	
-	define void ParseTermArg(AMLTermArg* Result) {
+	define AMLTermArg* ParseTermArg() {
+		AMLTermArg* Result := Alloc(#AMLTermArg)
+		
 		if (this->NextIsDataObject()) {
 			Result->Kind := AML_TERM_ARG_DATA_OBJECT
-			this->ParseDataObject(Result~>DataObject)
+			Result->DataObject := this->ParseDataObject()
 		}
 		else if (this->NextIsLocalObject()) {
 			Result->Kind := AML_TERM_ARG_LOCAL_OBJECT
@@ -973,22 +1006,28 @@ struct AMLParser {
 		}
 		else if (this->NextIsExpression()) {
 			Result->Kind := AML_TERM_ARG_EXPRESSION
-			this->ParseExpression(Result~>Expression)
+			Result->Expression := this->ParseExpression()
 		}
 		else {
 			this->Fail("Unimplemented term-arg", this->Peek())
 		}
+		
+		return Result
 	}
 	
-	declare void ParseTermList(i32, i32*, AMLTerm**)
+	declare AMLTerm** ParseTermList(i32, i32*)
 	
-	define void ParseWhile(AMLWhileLoop* Result) {
+	define AMLWhileLoop* ParseWhile() {
+		AMLWhileLoop* Result := Alloc(#AMLWhileLoop)
+		
 		i32 Start := this->Index
 		Result->Length := this->ParsePackageLength()
-		this->ParseTermArg(Result~>Condition)
+		Result->Condition := this->ParseTermArg()
 		i32 End := Start + Result->Length
 		
-		this->ParseTermList(End, Result~>Count, Result~>Body)
+		Result->Body := this->ParseTermList(End, Result~>Count)
+		
+		return Result
 	}
 	
 	define i8 NextIsStatement() {
@@ -1000,101 +1039,126 @@ struct AMLParser {
 		
 		return false
 	}
-	define void ParseStatement(AMLStatementOpcode* Result) {
-		i8 Operation := this->Peek()
+	define AMLStatementOpcode* ParseStatement() {
+		AMLStatementOpcode* Result := Alloc(#AMLStatementOpcode)
 		
-		Result->Kind := Operation
+		Result->Kind := this->Peek()
 		
 		if (this->NextMatches(AML_WHILE_OP)) {
-			this->ParseWhile(Result~>WhileLoop)
+			Result->WhileLoop := this->ParseWhile()
 		}
-	}
-	
-	define void ParseDefineRegion(AMLDefineRegion* Result) {
-		this->ParseNameString(Result~>Name)
-		Result->AddressSpace := this->Next()
-		this->ParseTermArg(Result~>Offset)
-		this->ParseTermArg(Result~>Length)
-	}
-	
-	define void ParseNamedField(AMLNamedField* Result) {
-		this->ParseNameString(Result~>Name)
-		Result->Length := this->ParsePackageLength()
-	}
-	
-	define void ParseField(AMLField* Result) {
-		Result->Kind := AML_FIELD_NAMED
-		this->ParseNamedField(Result~>Named)
-	}
-	
-	define void ParseDefineField(AMLDefineField* Result) {
-		i32 Start := this->Index
 		
+		return Result
+	}
+	
+	define AMLDefineRegion* ParseDefineRegion() {
+		AMLDefineRegion* Result := Alloc(#AMLDefineRegion)
+		
+		Result->Name := this->ParseNameString()
+		Result->AddressSpace := this->Next()
+		Result->Offset := this->ParseTermArg()
+		Result->Length := this->ParseTermArg()
+		
+		return Result
+	}
+	
+	define AMLNamedField* ParseNamedField() {
+		AMLNamedField* Result := Alloc(#AMLNamedField)
+		
+		Result->Name := this->ParseNameString()
 		Result->Length := this->ParsePackageLength()
-		this->ParseNameString(Result~>Name)
+		
+		return Result
+	}
+	
+	define AMLField* ParseField() {
+		AMLField* Result := Alloc(#AMLField)
+		
+		Result->Kind := AML_FIELD_NAMED
+		Result->Named := this->ParseNamedField()
+		
+		return Result
+	}
+	
+	define AMLDefineField* ParseDefineField() {
+		AMLDefineField* Result := Alloc(#AMLDefineField)
+		
+		i32 Start := this->Index
+		Result->Length := this->ParsePackageLength()
+		Result->Name := this->ParseNameString()
 		Result->Flags := this->Next()
+		i32 End := Start + Result->Length
 		
 		i32 FieldCountGuess := (Result->Length - 6) / 4
+		Result->Fields := Alloc(FieldCountGuess * #AMLField*)
 		
-		Result->Fields := Alloc(FieldCountGuess * #AMLField)
-		
-		i32 End := Start + Result->Length
 		i32 Index := 0
 		
 		while (this->Index < End) {
-			this->ParseField(Result->Fields[Index++])
+			Result->Fields[Index++] := this->ParseField()
 		}
 		
 		Result->Count := Index
+		
+		return Result
 	}
 	
-	define void ParseDefineScope(AMLDefineScope* Result) {
+	define AMLDefineScope* ParseDefineScope() {
+		AMLDefineScope* Result := Alloc(#AMLDefineScope)
+		
 		i32 Start := this->Index
 		Result->Length := this->ParsePackageLength()
-		this->ParseNameString(Result~>Name)
+		Result->Name := this->ParseNameString()
 		i32 End := Start + Result->Length
 		
-		this->ParseTermList(End, Result~>Count, Result~>Terms)
+		Result->Terms := this->ParseTermList(End, Result~>Count)
+		
+		return Result
 	}
 	
-	define void ParseDefineMethod(AMLDefineMethod* Result) {
+	define AMLDefineMethod* ParseDefineMethod() {
+		AMLDefineMethod* Result := Alloc(#AMLDefineMethod)
+		
 		i32 Start := this->Index
 		Result->Length := this->ParsePackageLength()
-		this->ParseNameString(Result~>Name)
+		Result->Name := this->ParseNameString()
 		Result->Flags := this->Next()
-		
 		i32 End := Start + Result->Length
 		
-		this->ParseTermList(End, Result~>Count, Result~>Terms)
+		Result->Terms := this->ParseTermList(End, Result~>Count)
+		
+		return Result
 	}
 	
-	define void ParseTerm(AMLTerm* Result) {
+	define AMLTerm* ParseTerm() {
+		AMLTerm* Result := Alloc(#AMLTerm)
+		
 		Result->Kind := 0
 		
 		if (this->NextMatches(AML_SCOPE_OP)) {
 			Result->Kind := AML_SCOPE_OP
-			this->ParseDefineScope(Result~>Scope)
+			Result->Scope := this->ParseDefineScope()
 		}
 		else if (this->NextMatches(AML_METHOD_OP)) {
 			Result->Kind := AML_METHOD_OP
-			this->ParseDefineMethod(Result~>Method)
+			Result->Method := this->ParseDefineMethod()
 		}
 		else if (this->NextIsExpression()) {
 			Result->Kind := AML_EXPRESSION_OP
-			this->ParseExpression(Result~>Expression)
+			Result->Expression := this->ParseExpression()
 		}
 		else if (this->NextIsStatement()) {
 			Result->Kind := AML_STATEMENT_OP
-			this->ParseStatement(Result~>Statement)
+			Result->Statement := this->ParseStatement()
 		}
 		else if (this->NextMatches('[')) {
 			if (this->NextMatches(AML_EXT_REGION_OP)) {
 				Result->Kind := AML_EXT_REGION_OP
-				this->ParseDefineRegion(Result~>Region)
+				Result->Region := this->ParseDefineRegion()
 			}
 			else if (this->NextMatches(AML_EXT_FIELD_OP)) {
 				Result->Kind := AML_EXT_FIELD_OP
-				this->ParseDefineField(Result~>Field)
+				Result->Field := this->ParseDefineField()
 			}
 			
 		}
@@ -1103,27 +1167,34 @@ struct AMLParser {
 			this->Fail("Unimplemented term", this->Peek())
 		}
 		
+		return Result
 	}
 	
-	define void ParseTermList(i32 End, i32* OutCount, AMLTerm** OutTerms) {
+	define AMLTerm** ParseTermList(i32 End, i32* OutCount) {
 		i32 Length := End - this->Index
-		i32 TermCountGuess := Length / 8
-		AMLTerm* Terms := Alloc(TermCountGuess * #AMLTerm)
+		i32 TermCountGuess := Length / 4
+		AMLTerm** Terms := Alloc(TermCountGuess * #AMLTerm*)
 		
 		i32 Index := 0
 		
 		while (this->Index < End) {
-			this->ParseTerm(Terms[Index++])
+			Terms[Index++] := this->ParseTerm()
+			
+			if (Index >= TermCountGuess) {
+				this->Fail("Bad term count guess", 0)
+			}
 		}
 		
 		*OutCount := Index
-		*OutTerms := Terms
+		
+		return Terms
 	}
 	
 }
 
 define void Main() {
 	Print("%x %x\n", #AMLTerm, #AMLTermArg)
+	Print("%x\n", (null As AMLTerm*)~>Statement~>WhileLoop~>Body)
 
 	i64 F := FileOpen("example.aml", FILE_READ)
 	
@@ -1137,9 +1208,9 @@ define void Main() {
 	P->Buffer := AML
 	P->Length := Size
 	
-	AMLTerm* Root := Alloc(#AMLTerm)
-	
-	P->ParseTerm(Root)
+	AMLTerm* Root := P->ParseTerm()
 	
 	Root->Print()
 }
+
+; https://uefi.org/sites/default/files/resources/ACPI_6_2.pdf
