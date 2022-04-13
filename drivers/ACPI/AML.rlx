@@ -169,6 +169,11 @@ i8 AML_DDT_OR          := 8  ; 0x7D
 i8 AML_DDT_NOR         := 9  ; 0x7E
 i8 AML_DDT_XOR         := 10 ; 0x7F
 
+i8 AML_DDT_CONCAT_RES  := 11
+i8 AML_DDT_MOD         := 12
+
+i8 AML_DDT_INDEX       := 13
+
 struct AMLDataDataTargetOperation {
 	AMLTermArg* Left
 	AMLTermArg* Right
@@ -176,15 +181,26 @@ struct AMLDataDataTargetOperation {
 	i8 Operation
 	
 	define void Print() {
-		i8*[11] Names {
-			"+", ".", "-", "<<", ">>", "&", "NAND", "|", "NOR", "^"
+		i8*[14] Names {
+			"+", ".", "-", "<<", ">>", "&", "NAND", "|", "NOR", "^", "..", "%", "["
 		}
 		
 		this~>Target->Print()
 		Print(" := ")
 		PrintTermArg(this->Left)
-		Print(" %s ", Names[this->Operation])
+		
+		if (this->Operation = AML_DDT_INDEX) {
+			Print("[")
+		}
+		else {
+			Print(" %s ", Names[this->Operation])
+		}
+		
 		PrintTermArg(this->Right)
+		
+		if (this->Operation = AML_DDT_INDEX) {
+			Print("]")
+		}
 	}
 }
 
@@ -226,10 +242,54 @@ struct AMLStoreOperation {
 	AMLSuperName Destination
 }
 
+i8 AML_DD_AND := 0 ; 0x90
+i8 AML_DD_OR  := 1 ; 0x91
+i8 AML_DD_NE  := 2 ; 0x92 0x93
+i8 AML_DD_LE  := 3 ; 0x92 0x94
+i8 AML_DD_GE  := 4 ; 0x92 0x95
+i8 AML_DD_E   := 5 ; 0x93
+i8 AML_DD_G   := 6 ; 0x94
+i8 AML_DD_L   := 7 ; 0x95
+
+struct AMLDataDataOperation {
+	AMLTermArg* Left
+	AMLTermArg* Right
+	i8 Operation
+	
+	define void Print() {
+		i8*[8] Operators {
+			"&&", "||", "!=", "<=", ">=", "==", ">", "<"
+		}
+		
+		PrintTermArg(this->Left)
+		Print(" %s ", Operators[((this->Operation As i32) & 0xFF)])
+		PrintTermArg(this->Right)
+	}
+}
+
+i8 AML_DATA_OP_DEREF := 0x83 As i8
+i8 AML_DATA_OP_LNOT  := 0x92 As i8
+
+struct AMLDataOperation {
+	AMLTermArg* Operand
+	i8 Operation
+	
+	define void Print() {
+		if (this->Operation = AML_DATA_OP_DEREF) {
+			Print("*")
+		}
+		else if (this->Operation = AML_DATA_OP_LNOT) {
+			Print("!")
+		}
+	}
+}
+
 i8 AML_EXPRESSION_DATA_TARGET := 2
 i8 AML_EXPRESSION_DATA_DATA_TARGET := 3
 i8 AML_EXPRESSION_SUPER_NAME_OPERATION := 6
 i8 AML_EXPRESSION_STORE_OPERATION := 7
+i8 AML_EXPRESSION_DATA_DATA := 8
+i8 AML_EXPRESSION_DATA := 9
 
 struct AMLExpressionOpcode {
 	union {
@@ -237,6 +297,8 @@ struct AMLExpressionOpcode {
 		AMLDataDataTargetOperation DataDataTarget
 		AMLSuperNameOperation SuperNameOperation
 		AMLStoreOperation StoreOperation
+		AMLDataDataOperation DataData
+		AMLDataOperation DataOperation
 	}
 	
 	i8 Kind
@@ -250,6 +312,12 @@ struct AMLExpressionOpcode {
 		}
 		else if (this->Kind = AML_EXPRESSION_SUPER_NAME_OPERATION) {
 			this~>SuperNameOperation->Print()
+		}
+		else if (this->Kind = AML_EXPRESSION_DATA_DATA) {
+			this~>DataData->Print()
+		}
+		else if (this->Kind = AML_EXPRESSION_DATA) {
+			this~>DataOperation->Print()
 		}
 		else if (this->Kind = AML_EXPRESSION_STORE_OPERATION) {
 			this~>StoreOperation~>Destination->Print()
@@ -293,6 +361,44 @@ struct AMLTermArg {
 define void PrintTermArg(AMLTermArg* TermArg) {
 	TermArg->Print()
 }
+
+i8 AML_WHILE_OP := 0xA2 As i8
+
+struct AMLWhileLoop {
+	i32 Length
+	AMLTermArg Condition
+	i32 Count
+	AMLTerm* Body
+	
+	define void Print() {
+		Print("While (")
+		this~>Condition->Print()
+		Print(") {\n")
+		
+		for (i32 Index := 0, Index < this->Count, Index++) {
+			Print("\t")
+			PrintTerm(this->Body[Index])
+			Print("\n")
+		}
+		
+		Print("}\n")
+	}
+}
+
+struct AMLStatementOpcode {
+	union {
+		AMLWhileLoop WhileLoop
+	}
+	
+	i8 Kind
+	
+	define void Print() {
+		if (this->Kind = AML_WHILE_OP) {
+			this~>WhileLoop->Print()
+		}
+	}
+}
+
 
 struct AMLDefineRegion {
 	AMLNameString Name
@@ -413,27 +519,32 @@ i8 AML_EXT_REGION_OP := 0x80 As i8
 i8 AML_EXT_FIELD_OP := 0x81 As i8
 
 i8 AML_EXPRESSION_OP := 0x96 As i8
+i8 AML_STATEMENT_OP := 0x97 As i8
 
 struct AMLTerm {
-	i8 Kind
-	
 	union {
 		AMLDefineRegion Region
 		AMLDefineField Field
 		AMLDefineScope Scope
 		AMLDefineMethod Method
 		AMLExpressionOpcode Expression
+		AMLStatementOpcode Statement
 	}
+	
+	i8 Kind
 	
 	define void Print() {
 		if (this->Kind = AML_SCOPE_OP) {
 			this~>Scope->Print()
 		}
-		else if (this~>Kind = AML_METHOD_OP) {
+		else if (this->Kind = AML_METHOD_OP) {
 			this~>Method->Print()
 		}
-		else if (this~>Kind = AML_EXPRESSION_OP) {
+		else if (this->Kind = AML_EXPRESSION_OP) {
 			this~>Expression->Print()
+		}
+		else if (this->Kind = AML_STATEMENT_OP) {
+			this~>Statement->Print()
 		}
 		else if (this->Kind = AML_EXT_REGION_OP) {
 			this~>Region->Print()
@@ -685,9 +796,12 @@ struct AMLParser {
 			this->ParseNameString(Result~>Name)
 		}
 	}
+	define void ParseTarget(AMLTarget* Result) {
+		Result->Kind := AML_TARGET_SUPERNAME
+		this->ParseSuperName(Result~>SuperName)
+	}
 	
 	declare void ParseTermArg(AMLTermArg*)
-	declare void ParseTarget(AMLTarget*)
 	
 	define i8 NextIsDataTarget() {
 		i32 Next := (this->Peek() As i32) & 0xFF
@@ -701,6 +815,9 @@ struct AMLParser {
 		
 		this->ParseTermArg(Result->Data)
 		this->ParseTarget(Result~>Target)
+		
+		Result->Print()
+		Print("\n")
 	}
 	
 	define i8 NextIsDataDataTarget() {
@@ -710,6 +827,9 @@ struct AMLParser {
 			return true
 		}
 		else if (0x77 <= Next && Next <= 0x7F && Next != 0x78) {
+			return true
+		}
+		else if (Next = 0x84 || Next = 0x85 || Next = 0x88) {
 			return true
 		}
 		
@@ -724,6 +844,12 @@ struct AMLParser {
 		else if (0x77 <= Next && Next <= 0x7F) {
 			Result->Operation := (2 + (Next - 0x77)) As i8
 		}
+		else if (Next = 0x84 || Next = 0x85) {
+			Result->Operation := (11 + (Next = 0x85)) As i8
+		}
+		else if (Next = 0x88) {
+			Result->Operation := 13
+		}
 		
 		Result->Left := Alloc(#AMLTermArg)
 		Result->Right := Alloc(#AMLTermArg)
@@ -731,8 +857,6 @@ struct AMLParser {
 		this->ParseTermArg(Result->Left)
 		this->ParseTermArg(Result->Right)
 		this->ParseTarget(Result~>Target)
-		
-		Result->Print()
 	}
 	
 	define i8 NextIsSuperNameOperation() {
@@ -746,10 +870,50 @@ struct AMLParser {
 		
 		return false
 	}
-	
 	define void ParseSuperNameOperation(AMLSuperNameOperation* Result) {
 		Result->Kind := this->Next()
 		this->ParseSuperName(Result~>SuperName)
+	}
+	
+	define i8 NextIsDataData() {
+		i32 Next := (this->Peek() As i32) & 0xFF
+		
+		if (0x90 <= Next && Next <= 0x95) {
+			if (Next = 0x92) {
+				i8 Peek := this->Buffer[this->Index + 2]
+				
+				return 0x93 <= Peek && Peek <= 0x95
+			}
+			
+			return true
+		}
+		
+		return false
+	}
+	define void ParseDataData(AMLDataDataOperation* Result) {
+		Result->Left := Alloc(#AMLTermArg)
+		Result->Right := Alloc(#AMLTermArg)
+		
+		Result->Operation := this->Next()
+		
+		if (Result->Operation = 0x92) {
+			Result->Operation := this->Next()
+		}
+		
+		this->ParseTermArg(Result->Left)
+		this->ParseTermArg(Result->Right)
+	}
+	
+	define i8 NextIsDataOperation() {
+		i8 Next := this->Peek()
+		
+		return Next = AML_DATA_OP_DEREF || Next = AML_DATA_OP_LNOT
+	}
+	define void ParseDataOperation(AMLDataOperation* Result) {
+		Result->Operation := this->Next()
+		
+		Result->Operand := Alloc(#AMLTermArg)
+		this->ParseTermArg(Result->Operand)
 	}
 	
 	define i8 NextIsExpression() {
@@ -759,7 +923,9 @@ struct AMLParser {
 			return true
 		}
 		
-		return this->NextIsDataTarget() || this->NextIsDataDataTarget() || this->NextIsSuperNameOperation()
+		return this->NextIsDataTarget() || this->NextIsDataDataTarget()
+		|| this->NextIsSuperNameOperation() || this->NextIsDataData()
+		|| this->NextIsDataOperation()
 	}
 	
 	define void ParseExpression(AMLExpressionOpcode* Result) {
@@ -770,6 +936,14 @@ struct AMLParser {
 		else if (this->NextIsDataDataTarget()) {
 			Result->Kind := AML_EXPRESSION_DATA_DATA_TARGET
 			this->ParseDataDataTarget(Result~>DataDataTarget)
+		}
+		else if (this->NextIsDataData()) {
+			Result->Kind := AML_EXPRESSION_DATA_DATA
+			this->ParseDataData(Result~>DataData)
+		}
+		else if (this->NextIsDataOperation()) {
+			Result->Kind := AML_EXPRESSION_DATA
+			this->ParseDataOperation(Result~>DataOperation)
 		}
 		else if (this->NextIsSuperNameOperation()) {
 			Result->Kind := AML_EXPRESSION_SUPER_NAME_OPERATION
@@ -806,9 +980,34 @@ struct AMLParser {
 		}
 	}
 	
-	define void ParseTarget(AMLTarget* Result) {
-		Result->Kind := AML_TARGET_SUPERNAME
-		this->ParseSuperName(Result~>SuperName)
+	declare void ParseTermList(i32, i32*, AMLTerm**)
+	
+	define void ParseWhile(AMLWhileLoop* Result) {
+		i32 Start := this->Index
+		Result->Length := this->ParsePackageLength()
+		this->ParseTermArg(Result~>Condition)
+		i32 End := Start + Result->Length
+		
+		this->ParseTermList(End, Result~>Count, Result~>Body)
+	}
+	
+	define i8 NextIsStatement() {
+		i8 Next := this->Peek()
+		
+		if (Next = AML_WHILE_OP) {
+			return true
+		}
+		
+		return false
+	}
+	define void ParseStatement(AMLStatementOpcode* Result) {
+		i8 Operation := this->Peek()
+		
+		Result->Kind := Operation
+		
+		if (this->NextMatches(AML_WHILE_OP)) {
+			this->ParseWhile(Result~>WhileLoop)
+		}
 	}
 	
 	define void ParseDefineRegion(AMLDefineRegion* Result) {
@@ -849,13 +1048,10 @@ struct AMLParser {
 		Result->Count := Index
 	}
 	
-	declare void ParseTermList(i32, i32*, AMLTerm**)
-	
 	define void ParseDefineScope(AMLDefineScope* Result) {
 		i32 Start := this->Index
 		Result->Length := this->ParsePackageLength()
 		this->ParseNameString(Result~>Name)
-		
 		i32 End := Start + Result->Length
 		
 		this->ParseTermList(End, Result~>Count, Result~>Terms)
@@ -886,6 +1082,10 @@ struct AMLParser {
 		else if (this->NextIsExpression()) {
 			Result->Kind := AML_EXPRESSION_OP
 			this->ParseExpression(Result~>Expression)
+		}
+		else if (this->NextIsStatement()) {
+			Result->Kind := AML_STATEMENT_OP
+			this->ParseStatement(Result~>Statement)
 		}
 		else if (this->NextMatches('[')) {
 			if (this->NextMatches(AML_EXT_REGION_OP)) {
@@ -923,7 +1123,9 @@ struct AMLParser {
 }
 
 define void Main() {
-	i64 F := FileOpen("/home/connor/Desktop/nasm-2.14.02-win64/example.aml", FILE_READ)
+	Print("%x %x\n", #AMLTerm, #AMLTermArg)
+
+	i64 F := FileOpen("example.aml", FILE_READ)
 	
 	i32 Size := FileGetSize(F)
 	void* AML := FileReadAll(F)
