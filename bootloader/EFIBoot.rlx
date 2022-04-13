@@ -4,10 +4,13 @@ i8 DEBUG_EXT2_OPTIMIZATION := false
 
 #Require "./src/drivers/block-device/BlockDevice.rlx"
 #Require "./src/drivers/block-device/EFIBlockDevice.rlx"
+
 #Require "./src/drivers/FAT32.rlx"
 #Require "./src/drivers/Ext2.rlx"
 #Require "./src/drivers/GPT.rlx"
 #Require "./src/utility/ELF.rlx"
+
+#Require "./src/utility/PrintHelpers.rlx"
 
 #Require "./src/bootloader/BootInfo.rlx"
 
@@ -105,9 +108,11 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	for (i32 Index := 0, Index < XSDT~>Header->EntryCount(), Index++) {
 		ACPI_TABLE* NextACPITable := XSDT->EntryPhysicalAddresses[Index] As void*
 		
-		;Print("Table %i: %l\n", Index, NextACPITable~>Header->Signature)
+		i32 Signature := NextACPITable~>Header->Signature
 		
-		if (NextACPITable~>Header->Signature = ACPI_TABEL_SIGNATURE_MULTIPLE_APIC_DESCRIPTION) {
+		Print("Table %i: %l\n", Index, Signature)
+		
+		if (Signature = ACPI_TABEL_SIGNATURE_MULTIPLE_APIC_DESCRIPTION) {
 			;Print("APIC {\n")
 			
 			ACPI_APIC_TABLE* APIC := NextACPITable->Data()
@@ -177,7 +182,16 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 			
 			;Print("}\n")
 		}
+		else if (Signature = ACPI_TABEL_SIGNATURE_FIXED_ACPI_DESCRIPTION) {
+			ACPI_FADT* FADT := NextACPITable->Data()
+			ACPI_DSDT* DSDT := FADT->ExtendedDSDT As void*
+			
+			Print("%hexdump\n", DSDT, DSDT~>Header->Length)
+		}
 	}
+	
+	SystemTable->ConsoleInput->Reset()
+	SystemTable->BootServices->WaitForEvent(SystemTable->ConsoleInput->WaitForKey)
 	
 	if !(IOAPICBase) {
 		Print("Couldn't find IO-APIC, bailing out\n")

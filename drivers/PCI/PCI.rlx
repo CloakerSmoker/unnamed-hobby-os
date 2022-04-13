@@ -285,6 +285,8 @@ struct PCIDevice {
 	define i32 FindCapability(i32 ID) {
 		i32 Status := this->Read(PCI_HEADER_STATUS)
 		
+		Print("StatusCommand %x\n", this->Read(PCI_HEADER_COMMAND_OFFSET, 4))
+		
 		if !(Status & PCI_STATUS_REGISTER_HAS_CAPABILITIES) {
 			return -1
 		}
@@ -302,5 +304,18 @@ struct PCIDevice {
 		}
 		
 		return -1
+	}
+	
+	define void DumpConfigurationSpace() {
+		for (i32 Index := 0, Index < 16, Index++) {
+			i32 Value := this->Read(Index * 4, 4)
+			
+			i32 HH := (Value >> 24) & 0xFF
+			i32 HL := (Value >> 16) & 0xFF
+			i32 LH := (Value >> 8) & 0xFF
+			i32 LL := Value & 0xFF
+			
+			Info("%B %B %B %B | %B\n", HH, HL, LH, LL, Index * 4)
+		}
 	}
 }

@@ -50,6 +50,107 @@ struct ACPI_TABLE {
 	}
 }
 
+i8 ACPI_ADDRESS_SPACE_MEMORY := 0
+i8 ACPI_ADDRESS_SPACE_IO := 1
+i8 ACPI_ADDRESS_SPACE_PCI := 2
+
+struct ACPI_GENERIC_ADDRESS unaligned {
+	i8 AddressSpaceID
+	i8 BitWidth
+	i8 BitOffset
+	i8 AccessSize
+	i64 Address
+}
+
+i8 ACPI_FADT_POWER_PROFILE_NONE := 0
+i8 ACPI_FADT_POWER_PROFILE_DESKTOP := 1
+i8 ACPI_FADT_POWER_PROFILE_MOBILE := 2
+i8 ACPI_FADT_POWER_PROFILE_WORKSTATION := 3
+i8 ACPI_FADT_POWER_PROFILE_SERVER := 4
+
+struct ACPI_FADT unaligned {
+	ACPI_DESCRIPTION_HEADER Header
+	
+	i32 FIRMWARE_CONTROL
+	i32 DSDT
+	i8 Reserved
+	i8 PowerManagementProfile
+	i16 SCIInterrupt
+	i32 SMICommand
+	i8 ACPIEnable
+	i8 ACPIDisable
+	i8 EnterBIOS
+	i8 EnterPState
+	
+	i32 PM1AEventBlock
+	i32 PM1BEventBlock
+	i32 PM1ACountBlock
+	i32 PM1BCountBlock
+	
+	i32 PM2CountBlock
+	i32 PMTimerBlock
+	
+	i32 GPE0Block
+	i32 GPE1Block
+	
+	i8 PM1EventLength
+	i8 PM1CountLength
+	i8 PM2CountLength
+	i8 PMTimerLength
+	
+	i8 GPE0BlockLength
+	i8 GPE1BlockLength
+	i8 GPE1Base
+	
+	i8 CStateEnable
+	
+	i16 WorstCaseC2Transition
+	i16 WorstCaseC3Transition
+	
+	i16 FlushSize
+	i16 FlushStride
+	
+	i8 DutyOffset
+	i8 DutyWidth
+	
+	i8 DayAlarm
+	i8 MonthAlarm
+	i8 Century
+	
+	i16 IAPCBootFlags
+	i8 Reserved2
+	
+	i32 Flags
+	
+	ACPI_GENERIC_ADDRESS ResetRegister
+	i8 ResetValue
+	
+	i16 ARMBootFlags
+	
+	i8 MinorVersion
+	
+	i64 ExtendedFACS
+	i64 ExtendedDSDT
+	
+	ACPI_GENERIC_ADDRESS ExtendedPM1AEventBlock
+	ACPI_GENERIC_ADDRESS ExtendedPM1BEventBlock
+	ACPI_GENERIC_ADDRESS ExtendedPM1ACountBlock
+	ACPI_GENERIC_ADDRESS ExtendedPM1BCountBlock
+	ACPI_GENERIC_ADDRESS ExtendedPM2CountBlock
+	ACPI_GENERIC_ADDRESS ExtendedPMTimerBlock
+	ACPI_GENERIC_ADDRESS ExtendedGPE0Block
+	ACPI_GENERIC_ADDRESS ExtendedGPE1Block
+	
+	ACPI_GENERIC_ADDRESS SleepControlRegister
+	ACPI_GENERIC_ADDRESS SleepStatusRegister
+}
+
+struct ACPI_DSDT {
+	ACPI_DESCRIPTION_HEADER Header
+	
+	i8[0] AML
+}
+
 i8 ACPI_APIC_ENTRY_TYPE_LOCAL_APIC := 0
 i8 ACPI_APIC_ENTRY_TYPE_IO_APIC := 1
 i8 ACPI_APIC_ENTRY_TYPE_INTERRUPT_OVERRIDE_SOURCE := 2

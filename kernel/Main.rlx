@@ -245,7 +245,9 @@ define void VisitPCIFunction(i32 Bus, i32 Slot, i32 Function) {
 		i32 Vendor := NetworkDevice.Read(PCI_HEADER_VENDOR_ID)
 		i32 Device := NetworkDevice.Read(PCI_HEADER_DEVICE_ID)
 		
-		Print("MSI: %x\n", NetworkDevice.FindCapability(5))
+		NetworkDevice.DumpConfigurationSpace()
+		
+		;Print("MSI: %x\n", NetworkDevice.FindCapability(5))
 		
 		Print("Network interface %x:%x\n", Vendor, Device)
 		
