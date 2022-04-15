@@ -85,11 +85,10 @@ where `N` is a partition number either 0 or 1 (EFI system/OS root).
 
 All configuration lives in `./src/kernel/Config.rlx`.
 
-* `USE_BOCHS_PORT_HACK` - print debug info to the Bochs console via a magic instruction.
 * `USE_SERIAL_OUTPUT`/`SERIAL_OUTPUT_PORT` - print debug info over a serial port, assuming serial port `N` exists.
 * `TERMINAL_FOREGROUND`/`TERMINAL_BACKGROUND` - default terminal foreground/background colors. You'll want to change these since I prefer a black on white look.
 * `BOOT_FONT_FON` - a `.fon` file for the default terminal font, must be a version 2/3 bitmap `FON` file.
-* `DEBUG_XXXX` - debug flags, will print lots of info to the debug port (either Bochs or serial, or none if neither are enabled). Not recommended, especially since printing to a serial port can be very slow and some debug events fire every 10ms (or on every system call).
+* `DEBUG_XXXX` - debug flags, will print lots of info to the debug port (either serial, or none if serial port is not enabled). Not recommended, especially since printing to a serial port can be very slow and some debug events fire every 10ms (or on every system call).
 
 ## Other
 

@@ -1,5 +1,4 @@
 #Require "./src/drivers/Serial.rlx"
-#Require "./src/drivers/Bochs.rlx"
 #Require "./src/utility/Print.rlx"
 
 SerialPort RawOutputPort
@@ -26,10 +25,6 @@ define void InitializeOutputPort() {
 void EarlyInitializeOutputPort := InitializeOutputPort()
 
 define void RawInfo(i8* Format, void* Args) {
-	if (USE_BOCHS_PORT_HACK) {
-		BochsRawPrint(Format, Args)
-	}
-	
 	if (USE_SERIAL_OUTPUT) {
 		if !(OutputPort->PortBase) {
 			InitializeOutputPort()

@@ -50,7 +50,6 @@ struct KernelInfo {
 	i32 PageCount
 	
 	void* InterruptStack
-	void* SystemCallStack
 	
 	i64 FrameBufferPages
 	
@@ -308,22 +307,8 @@ define void MainContinuation() {
 	
 	void* InterruptStackTop    := ADDRESS_OF_KERNEL_STACK + (10 * PAGE_SIZE)
 	void* InterruptStackBottom := ADDRESS_OF_KERNEL_STACK
-	
-	void* SystemCallStackTop    := ADDRESS_OF_KERNEL_STACK + (20 * PAGE_SIZE)
-	void* SystemCallStackBottom := ADDRESS_OF_KERNEL_STACK + (11 * PAGE_SIZE)
-	
-	KernelAddressSpace->UnmapRange(InterruptStackBottom , 1)
-	KernelAddressSpace->UnmapRange(SystemCallStackBottom, 1)
-	
-	Kernel->InterruptStack  := InterruptStackTop
-	Kernel->SystemCallStack := SystemCallStackTop
-	
-	Print("Kernel {\n")
-	Print("\tInterruptStack  Top   : %x,\n", InterruptStackTop)
-	Print("\tInterruptStack  Guard : %x,\n", InterruptStackBottom)
-	Print("\tSystemCallStack Top   : %x,\n", SystemCallStackTop)
-	Print("\tSystemCallStack Guard : %x\n" , SystemCallStackBottom)
-	Print("}\n")
+	KernelAddressSpace->UnmapRange(InterruptStackBottom, 1)
+	Kernel->InterruptStack := InterruptStackTop
 	
 	SetupGDT()
 	

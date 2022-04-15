@@ -110,7 +110,7 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 		
 		i32 Signature := NextACPITable~>Header->Signature
 		
-		Print("Table %i: %l\n", Index, Signature)
+		;Print("Table %i: %l\n", Index, Signature)
 		
 		if (Signature = ACPI_TABEL_SIGNATURE_MULTIPLE_APIC_DESCRIPTION) {
 			;Print("APIC {\n")
@@ -186,19 +186,19 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 			ACPI_FADT* FADT := NextACPITable->Data()
 			ACPI_DSDT* DSDT := FADT->ExtendedDSDT As void*
 			
-			Print("%hexdump\n", DSDT, DSDT~>Header->Length)
+			;Print("%hexdump\n", DSDT, DSDT~>Header->Length)
 		}
 	}
 	
-	SystemTable->ConsoleInput->Reset()
-	SystemTable->BootServices->WaitForEvent(SystemTable->ConsoleInput->WaitForKey)
+	;SystemTable->ConsoleInput->Reset()
+	;SystemTable->BootServices->WaitForEvent(SystemTable->ConsoleInput->WaitForKey)
 	
 	if !(IOAPICBase) {
 		Print("Couldn't find IO-APIC, bailing out\n")
 		return 0
 	}
 	
-	Print("IO-APIC: %x\n", IOAPICBase)
+	Print("IOAPIC: %x\n", IOAPICBase)
 	
 	Print("IRQ Mappings: ")
 	
@@ -341,7 +341,7 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	Ext2Handle* KernelHandle := FS->Open("/kernel.elf")
 	
 	if (KernelHandle = null) {
-		SystemTable->ConsoleError->OutputString("Could not find `kernel.elf`"w)
+		Print("Could not find `kernel.elf`")
 		return -1
 	}
 	
