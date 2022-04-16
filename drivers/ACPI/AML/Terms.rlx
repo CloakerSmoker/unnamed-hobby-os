@@ -1,0 +1,303 @@
+i8 AML_WHILE_OP := 0xA2 As i8
+
+struct AMLWhileLoop {
+	i32 Length
+	AMLTermArg* Condition
+	i32 Count
+	AMLTerm** Body
+	
+	define void Print() {
+		Print("While (")
+		this->Condition->Print()
+		Print(") {\n")
+		
+		for (i32 Index := 0, Index < this->Count, Index++) {
+			Print("\t")
+			PrintTerm(this->Body[Index])
+			Print("\n")
+		}
+		
+		Print("}\n")
+	}
+}
+
+i8 AML_IF_OP := 0xA0 As i8
+
+struct AMLIfStatement {
+	i32 Length
+	AMLTermArg* Condition
+	i32 Count
+	AMLTerm** Body
+	
+	define void Print() {
+		Print("If (")
+		this->Condition->Print()
+		Print(") {\n")
+		
+		for (i32 Index := 0, Index < this->Count, Index++) {
+			Print("\t")
+			PrintTerm(this->Body[Index])
+			Print("\n")
+		}
+		
+		Print("}\n")
+	}
+}
+
+i8 AML_ELSE_OP := 0xA1 As i8
+
+struct AMLElseStatement {
+	i32 Length
+	i32 Count
+	AMLTerm** Body
+	
+	define void Print() {
+		Print("Else {\n")
+		
+		for (i32 Index := 0, Index < this->Count, Index++) {
+			Print("\t")
+			PrintTerm(this->Body[Index])
+			Print("\n")
+		}
+		
+		Print("}\n")
+	}
+}
+
+i8 AML_RETURN_OP := 0xA4 As i8
+
+struct AMLReturnStatement {
+	AMLTermArg* Value
+	
+	define void Print() {
+		Print("Return ")
+		this->Value->Print()
+	}
+}
+
+struct AMLStatementOpcode {
+	union {
+		AMLIfStatement* IfStatement
+		AMLElseStatement* ElseStatement
+		AMLWhileLoop* WhileLoop
+		AMLReturnStatement* ReturnStatement
+	}
+	
+	i8 Kind
+	
+	define void Print() {
+		if (this->Kind = AML_IF_OP) {
+			this->IfStatement->Print()
+		}
+		else if (this->Kind = AML_ELSE_OP) {
+			this->ElseStatement->Print()
+		}
+		else if (this->Kind = AML_WHILE_OP) {
+			this->WhileLoop->Print()
+		}
+		else if (this->Kind = AML_RETURN_OP) {
+			this->ReturnStatement->Print()
+		}
+	}
+}
+
+
+struct AMLDefineRegion {
+	AMLNameString* Name
+	i8 AddressSpace
+	AMLTermArg* Offset
+	AMLTermArg* Length
+	
+	define void Print() {
+		Print("AMLDefineRegion ")
+		this->Name->Print()
+		Print(" %x { ", this->AddressSpace)
+		this->Offset->Print()
+		Print(", ")
+		this->Length->Print()
+		Print(" }\n")
+	}
+}
+
+i8 AML_FIELD_NAMED := 0
+i8 AML_FIELD_RESERVED := 1
+i8 AML_FIELD_ACCESS := 2
+i8 AML_FIELD_EXT_ACCESS := 3
+i8 AML_FIELD_CONNECT := 4
+
+struct AMLNamedField {
+	AMLNameString* Name
+	i32 Length
+	
+	define void Print() {
+		this->Name->Print()
+		Print(": %x", this->Length)
+	}
+}
+
+struct AMLField {
+	i8 Kind
+	
+	union {
+		AMLNamedField* Named
+	}
+	
+	define void Print() {
+		this->Named->Print()
+	}
+}
+
+struct AMLDefineField {
+	i32 Length
+	AMLNameString* Name
+	i8 Flags
+	i32 Count
+	AMLField** Fields
+	
+	define void Print() {
+		Print("AMLDefineField ")
+		this->Name->Print()
+		Print(" %x {\n", this->Flags)
+		
+		for (i32 Index := 0, Index < this->Count, Index++) {
+			Print("\t")
+			this->Fields[Index]->Print()
+			Print("\n")
+		}
+		
+		Print("}\n")
+	}
+}
+
+struct AMLDefineScope {
+	i32 Length
+	AMLNameString* Name
+	i32 Count
+	AMLTerm** Terms
+	
+	define void Print() {
+		Print("AMLScope ")
+		this->Name->Print()
+		Print(" {\n")
+		
+		for (i32 Index := 0, Index < this->Count, Index++) {
+			Print("\t")
+			PrintTerm(this->Terms[Index])
+			Print("\n")
+		}
+		
+		Print("}\n")
+	}
+}
+
+struct AMLDefineMethod {
+	i32 Length
+	AMLNameString* Name
+	i8 Flags
+	i32 Count
+	AMLTerm** Terms
+	
+	define void Print() {
+		Print("AMLDefineMethod ")
+		this->Name->Print()
+		Print(" %x {\n", this->Flags)
+		
+		for (i32 Index := 0, Index < this->Count, Index++) {
+			Print("\t")
+			PrintTerm(this->Terms[Index])
+			Print("\n")
+		}
+		
+		Print("}\n")
+	}
+}
+
+struct AMLDefineDevice {
+	i32 Length
+	AMLNameString* Name
+	i32 Count
+	AMLTerm** Terms
+	
+	define void Print() {
+		Print("AMLDefineDevice ")
+		this->Name->Print()
+		Print(" {\n")
+		
+		for (i32 Index := 0, Index < this->Count, Index++) {
+			Print("\t")
+			PrintTerm(this->Terms[Index])
+			Print("\n")
+		}
+		
+		Print("}\n")
+	}
+}
+
+struct AMLDefineName {
+	AMLNameString* Name
+	AMLDataObject* Data
+	
+	define void Print() {
+		this->Name->Print()
+		Print(": ")
+		this->Data->Print()
+	}
+}
+
+i8 AML_ALIAS_OP := 0x6
+i8 AML_NAME_OP := 0x8
+i8 AML_SCOPE_OP := 0x10
+i8 AML_METHOD_OP := 0x14
+
+i8 AML_EXT_REGION_OP := 0x80 As i8
+i8 AML_EXT_FIELD_OP := 0x81 As i8
+i8 AML_EXT_DEVICE_OP := 0x82 As i8
+
+i8 AML_EXPRESSION_OP := 0x96 As i8
+i8 AML_STATEMENT_OP := 0x97 As i8
+
+struct AMLTerm {
+	union {
+		AMLDefineRegion* Region
+		AMLDefineField* Field
+		AMLDefineScope* Scope
+		AMLDefineMethod* Method
+		AMLExpressionOpcode* Expression
+		AMLStatementOpcode* Statement
+		AMLDefineDevice* Device
+		AMLDefineName* Name
+	}
+	
+	i8 Kind
+	
+	define void Print() {
+		if (this->Kind = AML_NAME_OP) {
+			this->Name->Print()
+		}
+		else if (this->Kind = AML_SCOPE_OP) {
+			this->Scope->Print()
+		}
+		else if (this->Kind = AML_METHOD_OP) {
+			this->Method->Print()
+		}
+		else if (this->Kind = AML_EXPRESSION_OP) {
+			this->Expression->Print()
+		}
+		else if (this->Kind = AML_STATEMENT_OP) {
+			this->Statement->Print()
+		}
+		else if (this->Kind = AML_EXT_REGION_OP) {
+			this->Region->Print()
+		}
+		else if (this->Kind = AML_EXT_FIELD_OP) {
+			this->Field->Print()
+		}
+		else if (this->Kind = AML_EXT_DEVICE_OP) {
+			this->Device->Print()
+		}
+	}
+}
+
+define void PrintTerm(AMLTerm* Term) {
+	Term->Print()
+}

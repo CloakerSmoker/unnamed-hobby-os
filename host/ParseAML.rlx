@@ -1,0 +1,31 @@
+#Require "$/Memory.rlx"
+#Require "$/File.rlx"
+#Require "$/Console.rlx"
+#Require "$/Exception.rlx"
+#Require "$/Debug.rlx"
+
+#Require "./src/drivers/ACPI/AML/Parser.rlx"
+
+define void Main() {
+	Print("%x %x\n", #AMLTerm, #AMLTermArg)
+	Print("%x\n", (null As AMLTerm*)~>Statement~>WhileLoop~>Body)
+
+	i64 F := FileOpen("example.aml", FILE_READ)
+	
+	i32 Size := FileGetSize(F)
+	void* AML := FileReadAll(F)
+	
+	FileClose(F)
+	
+	AMLParser* P := Alloc(#AMLParser)
+	
+	P->Buffer := AML
+	P->Length := Size
+	
+	i32 Count := 0
+	AMLTerm** Terms := P->ParseTermList(Size, &Count)
+	
+	for (i32 Index := 0, Index < Count, Index++) {
+		Terms[Index]->Print()
+	}
+}
