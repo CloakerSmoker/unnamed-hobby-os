@@ -13,6 +13,8 @@ struct AMLParser {
 	i32 Index
 	i32 Length
 	
+	AMLDefineScope* CurrentScope
+	
 	define i8 IsAtEnd() {
 		return this->Index >= this->Length
 	}
@@ -68,10 +70,18 @@ struct AMLParser {
 		return Value
 	}
 	
+	define i8 IsLeadNameCharacter(i8 Next) {
+		if (('A' <= Next && Next <= 'Z') || Next = '_') {
+			return true
+		}
+		
+		return false
+	}
+	
 	define i8 ParseLeadNameCharacter() {
 		i8 Next := this->Next()
 		
-		if (('A' <= Next && Next <= 'Z') || Next = '_') {
+		if (this->IsLeadNameCharacter(Next)) {
 			return Next
 		}
 		
@@ -140,6 +150,10 @@ struct AMLParser {
 		
 		this->ParseNamePath(Result)
 		
+		;Print("MadeNameStringHash ")
+		;Result->Print()
+		;Print(" = %x\n", Result->Hash())
+		
 		return Result
 	}
 	
@@ -168,6 +182,26 @@ struct AMLParser {
 		i32 End := Start + Result->Length
 		
 		this->Index := End
+		
+		return Result
+	}
+	
+	declare AMLDataObject* ParseDataObject()
+	
+	define AMLPackage* ParsePackage() {
+		AMLPackage* Result := Alloc(#AMLPackage)
+		
+		i32 Start := this->Index
+		Result->Length := this->ParsePackageLength()
+		Result->ElementCount := this->Next()
+		i32 End := Start + Result->Length
+		
+		Result->Elements := Alloc(Result->ElementCount * #AMLDataObject*)
+		i32 Index := 0
+		
+		while (this->Index < End) {
+			Result->Elements[Index++] := this->ParseDataObject()
+		}
 		
 		return Result
 	}
@@ -205,6 +239,9 @@ struct AMLParser {
 		}
 		else if (this->NextMatches(AML_BUFFER_OPERATION)) {
 			Result->Buffer := this->ParseBuffer()
+		}
+		else if (this->NextMatches(AML_PACKAGE_OPERATION)) {
+			Result->Package := this->ParsePackage()
 		}
 		else {
 			Result->Kind := AML_DATA_OBJECT_NAME
@@ -403,10 +440,48 @@ struct AMLParser {
 		if (Next = AML_STORE_OPERATION || Next = AML_BUFFER_OPERATION) {
 			return true
 		}
+		else if (this->CurrentScope && this->IsLeadNameCharacter(Next)) {
+			i32 Before := this->Index
+			
+			AMLNameString MaybeMethodName
+			this->ParseNamePath(&MaybeMethodName)
+			AMLDefineMethod* Method := this->CurrentScope->FindMethod(&MaybeMethodName)
+			
+			this->Index := Before
+			
+			if (Method) {
+				MaybeMethodName.Free()
+				return true
+			}
+		}
 		
 		return this->NextIsDataTarget() || this->NextIsDataDataTarget()
 		|| this->NextIsSuperNameOperation() || this->NextIsDataData()
 		|| this->NextIsDataOperation()
+	}
+	
+	define AMLMethodInvoke* ParseMethodInvoke(AMLDefineMethod* Method) {
+		AMLMethodInvoke* Result := Alloc(#AMLMethodInvoke)
+		
+		Result->Name := Method->Name
+		Result->Count := Method->ParameterCount()
+		
+		Print("Method %x\n", Method)
+		Print(" %i params\n", Method->ParameterCount())
+		
+		for (i32 Index := 0, Index < this->CurrentScope~>Methods->Count(), Index++) {
+			AVLTreeNode* Node := this->CurrentScope~>Methods->NodeAt(Index)
+		
+			Print("%i : %x, %x\n", Index, Node->Key, Node->Value)
+		}
+		
+		Result->Parameters := Alloc(Result->Count * #AMLTermArg*)
+		
+		for (i32 Index := 0, Index < Result->Count, Index++) {
+			Result->Parameters[Index] := this->ParseTermArg()
+		}
+		
+		return Result
 	}
 	
 	define AMLExpressionOpcode* ParseExpression() {
@@ -442,6 +517,13 @@ struct AMLParser {
 		else if (this->NextMatches(AML_BUFFER_OPERATION)) {
 			Result->Kind := AML_EXPRESSION_BUFFER
 			Result->Buffer := this->ParseBuffer()
+		}
+		else if (this->CurrentScope) {
+			AMLNameString* MethodName := this->ParseNameString()
+			AMLDefineMethod* Method := this->CurrentScope->FindMethod(MethodName)
+			
+			Result->Kind := AML_EXPRESSION_METHOD_INVOKE
+			Result->MethodInvoke := this->ParseMethodInvoke(Method)
 		}
 		
 		return Result
@@ -608,12 +690,16 @@ struct AMLParser {
 	define AMLDefineScope* ParseDefineScope() {
 		AMLDefineScope* Result := Alloc(#AMLDefineScope)
 		
+		Result->Initialize()
+		
 		i32 Start := this->Index
 		Result->Length := this->ParsePackageLength()
 		Result->Name := this->ParseNameString()
 		i32 End := Start + Result->Length
 		
+		this->CurrentScope := Result
 		Result->Terms := this->ParseTermList(End, Result~>Count)
+		this->CurrentScope := null
 		
 		return Result
 	}
@@ -626,6 +712,10 @@ struct AMLParser {
 		Result->Name := this->ParseNameString()
 		Result->Flags := this->Next()
 		i32 End := Start + Result->Length
+		
+		if (this->CurrentScope) {
+			this->CurrentScope->AddMethod(Result)
+		}
 		
 		Result->Terms := this->ParseTermList(End, Result~>Count)
 		
@@ -680,7 +770,30 @@ struct AMLParser {
 			Result->Statement := this->ParseStatement()
 		}
 		else if (this->NextMatches('[')) {
-			if (this->NextMatches(AML_EXT_REGION_OP)) {
+			if (this->NextMatches(AML_EXT_MUTEX_OP)) {
+				Result->Kind := AML_EXT_MUTEX_OP
+				
+				AMLDefineMutex* Mutex := Result->Mutex := Alloc(#AMLDefineMutex)
+				
+				Mutex->Name := this->ParseNameString()
+				Mutex->Info := this->Next()
+			}
+			else if (this->NextMatches(AML_EXT_ACQUIRE_OP)) {
+				Result->Kind := AML_EXT_ACQUIRE_OP
+				
+				AMLAcquireMutex* Acquire := Result->Acquire := Alloc(#AMLAcquireMutex)
+				
+				Acquire->Name := this->ParseSuperName()
+				Acquire->Info := this->ReadWord() As i16
+			}
+			else if (this->NextMatches(AML_EXT_RELEASE_OP)) {
+				Result->Kind := AML_EXT_RELEASE_OP
+				
+				AMLReleaseMutex* Release := Result->Release := Alloc(#AMLReleaseMutex)
+				
+				Release->Name := this->ParseSuperName()
+			}
+			else if (this->NextMatches(AML_EXT_REGION_OP)) {
 				Result->Kind := AML_EXT_REGION_OP
 				Result->Region := this->ParseDefineRegion()
 			}

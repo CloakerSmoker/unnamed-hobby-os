@@ -1,5 +1,6 @@
 declare void PrintTerm(AMLTerm*)
 declare void PrintTermArg(AMLTermArg*)
+declare void PrintDataObject(AMLDataObject*)
 
 i8 AML_DUAL_NAME_PREFIX := 0x2E
 i8 AML_MULTI_NAME_PREFIX := 0x2F
@@ -42,6 +43,42 @@ struct AMLNameString {
 			}
 		}
 	}
+	
+	define i64 HashSegment(i64 State, i32 Segment) {
+		i8* Data := &Segment As void*
+		
+		for (i32 Index := 0, Index < 4, Index++) {
+			State ^= Data[Index]
+			State *= 16777619
+		}
+		
+		return State
+	}
+	
+	define i64 Hash() {
+		i64 H := 2166136261
+		
+		if (this->Kind = AML_NAME_STRING_SINGLE) {
+			H := this->HashSegment(H, this->DirectNameSegments[0])
+		}
+		else if (this->Kind = AML_NAME_STRING_DUAL) {
+			H := this->HashSegment(H, this->DirectNameSegments[0])
+			H := this->HashSegment(H, this->DirectNameSegments[1])
+		}
+		else if (this->Kind = AML_NAME_STRING_MULTI) {
+			for (i32 Index := 0, Index < this->IndirectSegmentCount, Index++) {
+				H := this->HashSegment(H, this->IndirectNameSegments[Index])
+			}
+		}
+		
+		return H
+	}
+	
+	define void Free() {
+		if (this->Kind = AML_NAME_STRING_MULTI) {
+			Free(this->IndirectNameSegments)
+		}
+	}
 }
 
 i8 AML_BUFFER_OPERATION := 0x11
@@ -68,6 +105,28 @@ struct AMLBuffer {
 	}
 }
 
+i8 AML_PACKAGE_OPERATION := 0x12
+
+struct AMLPackage {
+	i32 Length
+	i32 ElementCount
+	AMLDataObject** Elements
+	
+	define void Print() {
+		Print("AMLPackage {")
+		
+		for (i32 Index := 0, Index < this->ElementCount, Index++) {
+			PrintDataObject(this->Elements[Index])
+			
+			if (Index + 1 != this->ElementCount) {
+				Print(", ")
+			}
+		}
+		
+		Print("}")
+	}
+}
+
 i8 AML_DATA_OBJECT_BYTE_PREFIX := 0xA
 i8 AML_DATA_OBJECT_WORD_PREFIX := 0xB
 i8 AML_DATA_OBJECT_DWORD_PREFIX := 0xC
@@ -90,6 +149,7 @@ struct AMLDataObject {
 		i64 QuadWordValue
 		AMLNameString* Name
 		AMLBuffer* Buffer
+		AMLPackage* Package
 	}
 	
 	define void Print() {
@@ -111,10 +171,17 @@ struct AMLDataObject {
 		else if (this->Kind = AML_BUFFER_OPERATION) {
 			this->Buffer->Print()
 		}
+		else if (this->Kind = AML_PACKAGE_OPERATION) {
+			this->Package->Print()
+		}
 		else {
 			Print("%x", this->QuadWordValue)
 		}
 	}
+}
+
+define void PrintDataObject(AMLDataObject* Target) {
+	Target->Print()
 }
 
 i8 AML_SUPERNAME_LOCAL := 0
@@ -314,6 +381,29 @@ struct AMLDataOperation {
 	}
 }
 
+struct AMLMethodInvoke {
+	AMLNameString* Name
+	i32 Count
+	AMLTermArg** Parameters
+	
+	AMLDefineMethod* Method
+	
+	define void Print() {
+		this->Name->Print()
+		Print("(")
+		
+		for (i32 Index := 0, Index < this->Count, Index++) {
+			PrintTermArg(this->Parameters[Index])
+			
+			if (Index + 1 != this->Count) {
+				Print(", ")
+			}
+		}
+		
+		Print(")")
+	}
+}
+
 i8 AML_EXPRESSION_DATA_TARGET := 2
 i8 AML_EXPRESSION_DATA_DATA_TARGET := 3
 i8 AML_EXPRESSION_SUPER_NAME_OPERATION := 6
@@ -321,6 +411,7 @@ i8 AML_EXPRESSION_STORE_OPERATION := 7
 i8 AML_EXPRESSION_DATA_DATA := 8
 i8 AML_EXPRESSION_DATA := 9
 i8 AML_EXPRESSION_BUFFER := 10
+i8 AML_EXPRESSION_METHOD_INVOKE := 11
 
 struct AMLExpressionOpcode {
 	union {
@@ -331,6 +422,7 @@ struct AMLExpressionOpcode {
 		AMLDataDataOperation* DataData
 		AMLDataOperation* DataOperation
 		AMLBuffer* Buffer
+		AMLMethodInvoke* MethodInvoke
 	}
 	
 	i8 Kind
@@ -355,6 +447,9 @@ struct AMLExpressionOpcode {
 		}
 		else if (this->Kind = AML_EXPRESSION_BUFFER) {
 			this->Buffer->Print()
+		}
+		else if (this->Kind = AML_EXPRESSION_METHOD_INVOKE) {
+			this->MethodInvoke->Print()
 		}
 		else if (this->Kind = AML_EXPRESSION_STORE_OPERATION) {
 			this->StoreOperation->Destination->Print()

@@ -1,3 +1,6 @@
+
+#Require "./src/utility/AVLTree.rlx"
+
 i8 AML_WHILE_OP := 0xA2 As i8
 
 struct AMLWhileLoop {
@@ -119,6 +122,35 @@ struct AMLDefineRegion {
 	}
 }
 
+
+i8 AML_DEFINE_METHOD_COUNT_MASK := 0b0000_0_111
+
+struct AMLDefineMethod {
+	i32 Length
+	AMLNameString* Name
+	i8 Flags
+	i32 Count
+	AMLTerm** Terms
+	
+	define void Print() {
+		Print("AMLDefineMethod ")
+		this->Name->Print()
+		Print(" %x {\n", this->Flags)
+		
+		for (i32 Index := 0, Index < this->Count, Index++) {
+			Print("\t")
+			PrintTerm(this->Terms[Index])
+			Print("\n")
+		}
+		
+		Print("}\n")
+	}
+	
+	define i32 ParameterCount() {
+		return this->Flags & 0b0000_0_111
+	}
+}
+
 i8 AML_FIELD_NAMED := 0
 i8 AML_FIELD_RESERVED := 1
 i8 AML_FIELD_ACCESS := 2
@@ -175,32 +207,35 @@ struct AMLDefineScope {
 	i32 Count
 	AMLTerm** Terms
 	
+	AVLTree Methods
+	AVLTree Fields
+	
+	define void Initialize() {
+		this~>Methods->ValueSize := 8
+		this~>Fields->ValueSize := 8
+	}
+	
+	define void AddMethod(AMLDefineMethod* Method) {
+		AMLNameString* Name := Method->Name
+		
+		this~>Methods->Insert(Name->Hash(), Method)
+		
+		this->Name->Print()
+		Print(".AddMethod ")
+		Name->Print()
+		Print(" %x\n", Method)
+	}
+	define i8 IsMethod(AMLNameString* Name) {
+		return this~>Methods->Has(Name->Hash())
+	}
+	define AMLDefineMethod* FindMethod(AMLNameString* Name) {
+		return this~>Methods->Get(Name->Hash())
+	}
+	
 	define void Print() {
 		Print("AMLScope ")
 		this->Name->Print()
 		Print(" {\n")
-		
-		for (i32 Index := 0, Index < this->Count, Index++) {
-			Print("\t")
-			PrintTerm(this->Terms[Index])
-			Print("\n")
-		}
-		
-		Print("}\n")
-	}
-}
-
-struct AMLDefineMethod {
-	i32 Length
-	AMLNameString* Name
-	i8 Flags
-	i32 Count
-	AMLTerm** Terms
-	
-	define void Print() {
-		Print("AMLDefineMethod ")
-		this->Name->Print()
-		Print(" %x {\n", this->Flags)
 		
 		for (i32 Index := 0, Index < this->Count, Index++) {
 			Print("\t")
@@ -244,6 +279,44 @@ struct AMLDefineName {
 	}
 }
 
+i8 AML_EXT_MUTEX_OP := 0x01
+
+struct AMLDefineMutex {
+	AMLNameString* Name
+	i8 Info
+	
+	define void Print() {
+		Print("Mutex(")
+		this->Name->Print()
+		Print(", %x)", this->Info)
+	}
+}
+
+i8 AML_EXT_ACQUIRE_OP := 0x23
+
+struct AMLAcquireMutex {
+	AMLSuperName* Name
+	i16 Info
+	
+	define void Print() {
+		Print("Acquire(")
+		this->Name->Print()
+		Print(", %x)", this->Info)
+	}
+}
+
+i8 AML_EXT_RELEASE_OP := 0x27
+
+struct AMLReleaseMutex {
+	AMLSuperName* Name
+	
+	define void Print() {
+		Print("Release(")
+		this->Name->Print()
+		Print(")")
+	}
+}
+
 i8 AML_ALIAS_OP := 0x6
 i8 AML_NAME_OP := 0x8
 i8 AML_SCOPE_OP := 0x10
@@ -266,6 +339,9 @@ struct AMLTerm {
 		AMLStatementOpcode* Statement
 		AMLDefineDevice* Device
 		AMLDefineName* Name
+		AMLDefineMutex* Mutex
+		AMLAcquireMutex* Acquire
+		AMLReleaseMutex* Release
 	}
 	
 	i8 Kind
@@ -285,6 +361,15 @@ struct AMLTerm {
 		}
 		else if (this->Kind = AML_STATEMENT_OP) {
 			this->Statement->Print()
+		}
+		else if (this->Kind = AML_EXT_MUTEX_OP) {
+			this->Mutex->Print()
+		}
+		else if (this->Kind = AML_EXT_ACQUIRE_OP) {
+			this->Acquire->Print()
+		}
+		else if (this->Kind = AML_EXT_RELEASE_OP) {
+			this->Release->Print()
 		}
 		else if (this->Kind = AML_EXT_REGION_OP) {
 			this->Region->Print()
