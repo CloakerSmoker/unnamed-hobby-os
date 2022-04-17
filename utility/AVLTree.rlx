@@ -12,6 +12,14 @@ struct AVLTreeNode {
 	i32 ValueSize
 	
 	void[0] Value
+	
+	define void* ValueAsPointer() {
+		if (this) {
+			return *(this->Value As void**)
+		}
+		
+		return null
+	}
 
 	define i32 GetHeight() {
 		if (this != null) {
@@ -42,7 +50,7 @@ struct AVLTreeNode {
 	declare i32 Count()
 
 	define AVLTreeNode* RightRotate() {
-		Print("RR\n")
+		;Print("RR\n")
 
 		AVLTreeNode* NewRoot := this->Left
 		AVLTreeNode* OldRight := NewRoot->Right
@@ -57,7 +65,7 @@ struct AVLTreeNode {
 	}
 
 	define AVLTreeNode* LeftRotate() {
-		Print("LR\n")
+		;Print("LR\n")
 
 		AVLTreeNode* NewRoot := this->Right
 		AVLTreeNode* OldLeft := NewRoot->Left
@@ -87,7 +95,7 @@ struct AVLTreeNode {
 		i32 Balance := this->GetBalance()
 
 		if (Balance < -1) {
-			if (this->Left->GetBalance() >= 0) {
+			if (this->Left->GetBalance() < 0) {
 				return this->RightRotate()
 			}
 			else {
@@ -95,7 +103,7 @@ struct AVLTreeNode {
 			}
 		}
 		else if (Balance > 1) {
-			if (this->Right->GetBalance() >= 0) {
+			if (this->Right->GetBalance() < 0) {
 				return this->LeftRotate()
 			}
 			else {
@@ -280,7 +288,7 @@ struct AVLTreeNode {
 			Print("nil\n")
 		}
 		else {
-			Print("%l %c (%i, %i) [%i]:\n", this->Key, *(this->Value As i8*), this->GetBalance(), this->GetHeight(), this->LeftSize)
+			Print("%x %x (%i, %i) [%i]:\n", this->Key, *(this->Value As void**), this->GetBalance(), this->GetHeight(), this->LeftSize)
 
 			this->Left->Print(Depth + 1)
 			this->Right->Print(Depth + 1)
@@ -358,6 +366,10 @@ struct AVLTree {
 	}
 	define void Set(i64 Key) {
 		this->Set(Key, null)
+	}
+	
+	define AVLTreeNode* GetNode(i64 Key) {
+		return this->Root->Get(Key)
 	}
 	
 	define void* Get(i64 Key) {

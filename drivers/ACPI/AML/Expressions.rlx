@@ -330,13 +330,6 @@ struct AMLSuperNameOperation {
 	}
 }
 
-i8 AML_STORE_OPERATION := 0x70
-
-struct AMLStoreOperation {
-	AMLTermArg* Source
-	AMLSuperName* Destination
-}
-
 i8 AML_DD_AND := 0 ; 0x90
 i8 AML_DD_OR  := 1 ; 0x91
 i8 AML_DD_NE  := 2 ; 0x92 0x93
@@ -404,6 +397,19 @@ struct AMLMethodInvoke {
 	}
 }
 
+i8 AML_STORE_OPERATION := 0x70
+
+struct AMLStoreOperation {
+	AMLTermArg* Source
+	AMLTermArg* Destination
+	
+	define void Print() {
+		PrintTermArg(this->Destination)
+		Print(" := ")
+		PrintTermArg(this->Source)
+	}
+}
+
 i8 AML_EXPRESSION_DATA_TARGET := 2
 i8 AML_EXPRESSION_DATA_DATA_TARGET := 3
 i8 AML_EXPRESSION_SUPER_NAME_OPERATION := 6
@@ -452,9 +458,7 @@ struct AMLExpressionOpcode {
 			this->MethodInvoke->Print()
 		}
 		else if (this->Kind = AML_EXPRESSION_STORE_OPERATION) {
-			this->StoreOperation->Destination->Print()
-			Print(" := ")
-			PrintTermArg(this->StoreOperation->Source)
+			this->StoreOperation->Print()
 		}
 	}
 }

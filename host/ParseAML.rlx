@@ -10,7 +10,7 @@ define void Main() {
 	Print("%x %x\n", #AMLTerm, #AMLTermArg)
 	Print("%x\n", (null As AMLTerm*)~>Statement~>WhileLoop~>Body)
 
-	i64 F := FileOpen("example.aml", FILE_READ)
+	i64 F := FileOpen("/home/connor/Desktop/nasm-2.14.02-win64/example.aml", FILE_READ)
 	
 	i32 Size := FileGetSize(F)
 	void* AML := FileReadAll(F)

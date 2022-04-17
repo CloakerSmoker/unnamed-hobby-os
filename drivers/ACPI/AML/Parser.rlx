@@ -13,8 +13,6 @@ struct AMLParser {
 	i32 Index
 	i32 Length
 	
-	AMLDefineScope* CurrentScope
-	
 	define i8 IsAtEnd() {
 		return this->Index >= this->Length
 	}
@@ -37,7 +35,15 @@ struct AMLParser {
 		return false
 	}
 	
+	AMLScope* CurrentScope
+	
 	define void Fail() {
+		if (this->CurrentScope) {
+			Print("In scope ")
+			this->CurrentScope->Name->Print()
+			Print("\n")
+		}
+		
 		Print("At byte %x\n", this->Index)
 		
 		for (i32 Index := this->Index - 10, Index < this->Index + 10, Index++) {
@@ -50,6 +56,19 @@ struct AMLParser {
 		Print("%s\n", Reason)
 		Print("%x '%c'\n", Unknown, Unknown)
 		this->Fail()
+	}
+	
+	define void EnterScope(AMLScope* New, AMLNameString* Name) {
+		New->Initialize(Name)
+		
+		if (this->CurrentScope) {
+			this->CurrentScope->AddChild(New)
+		}
+		
+		this->CurrentScope := New
+	}
+	define void ExitScope() {
+		this->CurrentScope := this->CurrentScope->Parent
 	}
 	
 	define i32 ParsePackageLength() {
@@ -463,18 +482,12 @@ struct AMLParser {
 	define AMLMethodInvoke* ParseMethodInvoke(AMLDefineMethod* Method) {
 		AMLMethodInvoke* Result := Alloc(#AMLMethodInvoke)
 		
+		Print("ParseMethodInvoke(")
+		Method->Name->Print()
+		Print(", %i)\n", Method->ParameterCount())
+		
 		Result->Name := Method->Name
 		Result->Count := Method->ParameterCount()
-		
-		Print("Method %x\n", Method)
-		Print(" %i params\n", Method->ParameterCount())
-		
-		for (i32 Index := 0, Index < this->CurrentScope~>Methods->Count(), Index++) {
-			AVLTreeNode* Node := this->CurrentScope~>Methods->NodeAt(Index)
-		
-			Print("%i : %x, %x\n", Index, Node->Key, Node->Value)
-		}
-		
 		Result->Parameters := Alloc(Result->Count * #AMLTermArg*)
 		
 		for (i32 Index := 0, Index < Result->Count, Index++) {
@@ -512,7 +525,7 @@ struct AMLParser {
 			
 			Result->StoreOperation := Alloc(#AMLStoreOperation)
 			Result->StoreOperation->Source := this->ParseTermArg()
-			Result->StoreOperation->Destination := this->ParseSuperName()
+			Result->StoreOperation->Destination := this->ParseTermArg()
 		}
 		else if (this->NextMatches(AML_BUFFER_OPERATION)) {
 			Result->Kind := AML_EXPRESSION_BUFFER
@@ -690,16 +703,16 @@ struct AMLParser {
 	define AMLDefineScope* ParseDefineScope() {
 		AMLDefineScope* Result := Alloc(#AMLDefineScope)
 		
-		Result->Initialize()
-		
 		i32 Start := this->Index
 		Result->Length := this->ParsePackageLength()
 		Result->Name := this->ParseNameString()
 		i32 End := Start + Result->Length
 		
-		this->CurrentScope := Result
+		this->EnterScope(Result~>Scope, Result->Name)
+		
 		Result->Terms := this->ParseTermList(End, Result~>Count)
-		this->CurrentScope := null
+		
+		this->ExitScope()
 		
 		return Result
 	}
@@ -730,7 +743,11 @@ struct AMLParser {
 		Result->Name := this->ParseNameString()
 		i32 End := Start + Result->Length
 		
+		this->EnterScope(Result~>Scope, Result->Name)
+		
 		Result->Terms := this->ParseTermList(End, Result~>Count)
+		
+		this->ExitScope()
 		
 		return Result
 	}
@@ -740,6 +757,22 @@ struct AMLParser {
 		
 		Result->Name := this->ParseNameString()
 		Result->Data := this->ParseDataObject()
+		
+		return Result
+	}
+	
+	define i8 NextIsCreateField() {
+		i8 Next := this->Peek()
+		
+		return Next = AML_CREATE_BYTE_FIELD_OP || Next = AML_CREATE_DOUBLE_WORD_FIELD_OP
+	}
+	define AMLCreateField* ParseCreateField() {
+		AMLCreateField* Result := Alloc(#AMLCreateField)
+		
+		Result->Kind := this->Next()
+		Result->Buffer := this->ParseTermArg()
+		Result->Offset := this->ParseTermArg()
+		Result->Name := this->ParseNameString()
 		
 		return Result
 	}
@@ -768,6 +801,16 @@ struct AMLParser {
 		else if (this->NextIsStatement()) {
 			Result->Kind := AML_STATEMENT_OP
 			Result->Statement := this->ParseStatement()
+		}
+		else if (this->NextIsCreateField()) {
+			Result->Kind := AML_FIELD_OP
+			Result->CreateField := this->ParseCreateField()
+		}
+		else if (this->NextMatches(AML_NOTIFY_OP)) {
+			Result->Kind := AML_NOTIFY_OP
+			Result->Notify := Alloc(#AMLNotify)
+			Result->Notify->Name := this->ParseSuperName()
+			Result->Notify->Argument := this->ParseTermArg()
 		}
 		else if (this->NextMatches('[')) {
 			if (this->NextMatches(AML_EXT_MUTEX_OP)) {

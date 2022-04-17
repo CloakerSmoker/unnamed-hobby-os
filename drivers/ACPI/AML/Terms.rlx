@@ -201,36 +201,85 @@ struct AMLDefineField {
 	}
 }
 
-struct AMLDefineScope {
-	i32 Length
+struct AMLScope {
+	AMLScope* Parent
+	AVLTree Children
+	
 	AMLNameString* Name
-	i32 Count
-	AMLTerm** Terms
 	
 	AVLTree Methods
 	AVLTree Fields
 	
-	define void Initialize() {
+	define void Initialize(AMLNameString* Name) {
+		this->Name := Name
+		
 		this~>Methods->ValueSize := 8
 		this~>Fields->ValueSize := 8
+		this~>Children->ValueSize := 0
+	}
+	
+	define void AddChild(AMLScope* Child) {
+		Child->Parent := this
+		;this~>Children->Insert(Child As i64)
 	}
 	
 	define void AddMethod(AMLDefineMethod* Method) {
 		AMLNameString* Name := Method->Name
 		
-		this~>Methods->Insert(Name->Hash(), Method)
+		;this->Name->Print()
+		;Print(".AddMethod(")
+		;Name->Print()
+		;Print(", %x, %x)\n", Name->Hash(), Method)
+		;
+		;this~>Methods->Print()
 		
-		this->Name->Print()
-		Print(".AddMethod ")
-		Name->Print()
-		Print(" %x\n", Method)
+		this~>Methods->Insert(Name->Hash(), &Method)
 	}
-	define i8 IsMethod(AMLNameString* Name) {
+	define i8 IsOwnMethod(AMLNameString* Name) {
 		return this~>Methods->Has(Name->Hash())
 	}
-	define AMLDefineMethod* FindMethod(AMLNameString* Name) {
-		return this~>Methods->Get(Name->Hash())
+	define AMLDefineMethod* FindOwnMethod(AMLNameString* Name) {
+		return this~>Methods->GetNode(Name->Hash())->ValueAsPointer()
 	}
+	
+	define i8 IsMethod(AMLNameString* Name) {
+		AMLScope* Current := this
+		
+		while (Current) {
+			if (Current->IsOwnMethod(Name)) {
+				return true
+			}
+			
+			Current := Current->Parent
+		}
+		
+		return false
+	}
+	
+	define AMLDefineMethod* FindMethod(AMLNameString* Name) {
+		AMLScope* Current := this
+		
+		while (Current) {
+			AMLDefineMethod* Result := Current->FindOwnMethod(Name)
+			
+			if (Result) {
+				return Result
+			}
+			
+			Current := Current->Parent
+		}
+		
+		return null
+	}
+}
+
+struct AMLDefineScope {
+	AMLScope Scope
+	
+	i32 Length
+	AMLNameString* Name
+	i32 Count
+	AMLTerm** Terms
 	
 	define void Print() {
 		Print("AMLScope ")
@@ -248,6 +297,8 @@ struct AMLDefineScope {
 }
 
 struct AMLDefineDevice {
+	AMLScope Scope
+	
 	i32 Length
 	AMLNameString* Name
 	i32 Count
@@ -317,6 +368,51 @@ struct AMLReleaseMutex {
 	}
 }
 
+i8 AML_CREATE_DOUBLE_WORD_FIELD_OP := 0x8A As i8
+i8 AML_CREATE_BYTE_FIELD_OP := 0x8C As i8
+
+struct AMLCreateField {
+	AMLTermArg* Buffer
+	AMLTermArg* Offset
+	AMLNameString* Name
+	
+	i8 Kind
+	
+	define void Print() {
+		Print("Create")
+		
+		if (this->Kind = AML_CREATE_BYTE_FIELD_OP) {
+			Print("Byte")
+		}
+		else if (this->Kind = AML_CREATE_DOUBLE_WORD_FIELD_OP) {
+			Print("DWord")
+		}
+		
+		Print("Field(")
+		PrintTermArg(this->Buffer)
+		Print(", ")
+		PrintTermArg(this->Offset)
+		Print(", ")
+		this->Name->Print()
+		Print(")")
+	}
+}
+
+i8 AML_NOTIFY_OP := 0x86 As i8
+
+struct AMLNotify {
+	AMLSuperName* Name
+	AMLTermArg* Argument
+	
+	define void Print() {
+		Print("Notify(")
+		this->Name->Print()
+		Print(", ")
+		this->Argument->Print()
+		Print(")")
+	}
+}
+
 i8 AML_ALIAS_OP := 0x6
 i8 AML_NAME_OP := 0x8
 i8 AML_SCOPE_OP := 0x10
@@ -328,6 +424,7 @@ i8 AML_EXT_DEVICE_OP := 0x82 As i8
 
 i8 AML_EXPRESSION_OP := 0x96 As i8
 i8 AML_STATEMENT_OP := 0x97 As i8
+i8 AML_FIELD_OP := 0x98 As i8
 
 struct AMLTerm {
 	union {
@@ -342,6 +439,8 @@ struct AMLTerm {
 		AMLDefineMutex* Mutex
 		AMLAcquireMutex* Acquire
 		AMLReleaseMutex* Release
+		AMLCreateField* CreateField
+		AMLNotify* Notify
 	}
 	
 	i8 Kind
@@ -361,6 +460,12 @@ struct AMLTerm {
 		}
 		else if (this->Kind = AML_STATEMENT_OP) {
 			this->Statement->Print()
+		}
+		else if (this->Kind = AML_FIELD_OP) {
+			this->CreateField->Print()
+		}
+		else if (this->Kind = AML_NOTIFY_OP) {
+			this->Notify->Print()
 		}
 		else if (this->Kind = AML_EXT_MUTEX_OP) {
 			this->Mutex->Print()
