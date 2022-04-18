@@ -34,12 +34,16 @@ struct AMLNameString {
 			Print("%l", this->DirectNameSegments[0])
 		}
 		else if (this->Kind = AML_NAME_STRING_DUAL) {
-			Print("%l", this->DirectNameSegments[0])
+			Print("%l.", this->DirectNameSegments[0])
 			Print("%l", this->DirectNameSegments[1])
 		}
 		else if (this->Kind = AML_NAME_STRING_MULTI) {
 			for (i32 Index := 0, Index < this->IndirectSegmentCount, Index++) {
 				Print("%l", this->IndirectNameSegments[Index])
+
+				if (Index + 1 != this->IndirectSegmentCount) {
+					Print(".")
+				}
 			}
 		}
 	}
@@ -127,66 +131,12 @@ struct AMLPackage {
 	}
 }
 
-i8 AML_DATA_OBJECT_BYTE_PREFIX := 0xA
-i8 AML_DATA_OBJECT_WORD_PREFIX := 0xB
-i8 AML_DATA_OBJECT_DWORD_PREFIX := 0xC
-i8 AML_DATA_OBJECT_STRING_PREFIX := 0xD
-i8 AML_DATA_OBJECT_QWORD_PREFIX := 0xE
-i8 AML_DATA_OBJECT_CONST_ZERO_OP := 0x0
-i8 AML_DATA_OBJECT_CONST_ONE_OP := 0x1
-i8 AML_DATA_OBJECT_CONST_ONES_OP := 0xFF As i8
-i8 AML_DATA_OBJECT_NAME := 0x80 As i8
-
-struct AMLDataObject {
-	i8 Kind
-	
-	union {
-		i8* StringValue
-		
-		i8 ByteValue
-		i16 WordValue
-		i32 DoubleWordValue
-		i64 QuadWordValue
-		AMLNameString* Name
-		AMLBuffer* Buffer
-		AMLPackage* Package
-	}
-	
-	define void Print() {
-		if (this->Kind = AML_DATA_OBJECT_STRING_PREFIX) {
-			Print("%s", this->StringValue)
-		}
-		else if (this->Kind = AML_DATA_OBJECT_BYTE_PREFIX) {
-			Print("%x", this->ByteValue)
-		}
-		else if (this->Kind = AML_DATA_OBJECT_WORD_PREFIX) {
-			Print("%x", this->WordValue)
-		}
-		else if (this->Kind = AML_DATA_OBJECT_DWORD_PREFIX) {
-			Print("%x", this->DoubleWordValue)
-		}
-		else if (this->Kind = AML_DATA_OBJECT_NAME) {
-			this->Name->Print()
-		}
-		else if (this->Kind = AML_BUFFER_OPERATION) {
-			this->Buffer->Print()
-		}
-		else if (this->Kind = AML_PACKAGE_OPERATION) {
-			this->Package->Print()
-		}
-		else {
-			Print("%x", this->QuadWordValue)
-		}
-	}
-}
-
-define void PrintDataObject(AMLDataObject* Target) {
-	Target->Print()
-}
+i8 AML_EXT_DEBUG_OP := 0x31
 
 i8 AML_SUPERNAME_LOCAL := 0
 i8 AML_SUPERNAME_ARG := 1
 i8 AML_SUPERNAME_NAME := 2
+i8 AML_SUPERNAME_DEBUG := 3
 
 struct AMLSuperName {
 	union {
@@ -207,7 +157,67 @@ struct AMLSuperName {
 		else if (this->Kind = AML_SUPERNAME_ARG) {
 			Print("Arg%i", this->ArgNumber)
 		}
+		else if (this->Kind = AML_SUPERNAME_DEBUG) {
+			Print("Debug")
+		}
 	}
+}
+
+i8 AML_DATA_OBJECT_BYTE_PREFIX := 0xA
+i8 AML_DATA_OBJECT_WORD_PREFIX := 0xB
+i8 AML_DATA_OBJECT_DWORD_PREFIX := 0xC
+i8 AML_DATA_OBJECT_STRING_PREFIX := 0xD
+i8 AML_DATA_OBJECT_QWORD_PREFIX := 0xE
+i8 AML_DATA_OBJECT_CONST_ZERO_OP := 0x0
+i8 AML_DATA_OBJECT_CONST_ONE_OP := 0x1
+i8 AML_DATA_OBJECT_CONST_ONES_OP := 0xFF As i8
+i8 AML_DATA_OBJECT_SUPERNAME := 0x80 As i8
+
+struct AMLDataObject {
+	i8 Kind
+	
+	union {
+		i8* StringValue
+		
+		i8 ByteValue
+		i16 WordValue
+		i32 DoubleWordValue
+		i64 QuadWordValue
+		AMLSuperName* Name
+		AMLBuffer* Buffer
+		AMLPackage* Package
+	}
+	
+	define void Print() {
+		if (this->Kind = AML_DATA_OBJECT_STRING_PREFIX) {
+			Print("%s", this->StringValue)
+		}
+		else if (this->Kind = AML_DATA_OBJECT_BYTE_PREFIX) {
+			Print("%x", this->ByteValue)
+		}
+		else if (this->Kind = AML_DATA_OBJECT_WORD_PREFIX) {
+			Print("%x", this->WordValue)
+		}
+		else if (this->Kind = AML_DATA_OBJECT_DWORD_PREFIX) {
+			Print("%x", this->DoubleWordValue)
+		}
+		else if (this->Kind = AML_DATA_OBJECT_SUPERNAME) {
+			this->Name->Print()
+		}
+		else if (this->Kind = AML_BUFFER_OPERATION) {
+			this->Buffer->Print()
+		}
+		else if (this->Kind = AML_PACKAGE_OPERATION) {
+			this->Package->Print()
+		}
+		else {
+			Print("%x", this->QuadWordValue)
+		}
+	}
+}
+
+define void PrintDataObject(AMLDataObject* Target) {
+	Target->Print()
 }
 
 i8 AML_TARGET_SUPERNAME := 0

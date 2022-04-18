@@ -54,7 +54,7 @@ struct AMLParser {
 	}
 	define void Fail(i8* Reason, i8 Unknown) {
 		Print("%s\n", Reason)
-		Print("%x '%c'\n", Unknown, Unknown)
+		Print("%x '%c'\n", (Unknown As i32) & 0xFF, Unknown)
 		this->Fail()
 	}
 	
@@ -225,6 +225,38 @@ struct AMLParser {
 		return Result
 	}
 	
+	define i8 NextIsLocalObject() {
+		i8 Next := this->Peek()
+		
+		return 0x60 <= Next && Next <= 0x67
+	}
+	define i8 NextIsArgObject() {
+		i8 Next := this->Peek()
+		
+		return 0x68 <= Next && Next <= 0x6E
+	}
+	define AMLSuperName* ParseSuperName() {
+		AMLSuperName* Result := Alloc(#AMLSuperName)
+		
+		if (this->NextIsLocalObject()) {
+			Result->Kind := AML_SUPERNAME_LOCAL
+			Result->LocalNumber := this->Next() - 0x60
+		}
+		else if (this->NextIsArgObject()) {
+			Result->Kind := AML_SUPERNAME_ARG
+			Result->ArgNumber := this->Next() - 0x68
+		}
+		else if (this->NextMatches('[') && this->NextMatches(AML_EXT_DEBUG_OP)) {
+			Result->Kind := AML_SUPERNAME_DEBUG
+		}
+		else {
+			Result->Kind := AML_SUPERNAME_NAME
+			Result->Name := this->ParseNameString()
+		}
+		
+		return Result
+	}
+	
 	define AMLDataObject* ParseDataObject() {
 		AMLDataObject* Result := Alloc(#AMLDataObject)
 		
@@ -263,8 +295,8 @@ struct AMLParser {
 			Result->Package := this->ParsePackage()
 		}
 		else {
-			Result->Kind := AML_DATA_OBJECT_NAME
-			Result->Name := this->ParseNameString()
+			Result->Kind := AML_DATA_OBJECT_SUPERNAME
+			Result->Name := this->ParseSuperName()
 		}
 		
 		return Result
@@ -285,34 +317,7 @@ struct AMLParser {
 		
 		return false
 	}
-	define i8 NextIsLocalObject() {
-		i8 Next := this->Peek()
-		
-		return 0x60 <= Next && Next <= 0x67
-	}
-	define i8 NextIsArgObject() {
-		i8 Next := this->Peek()
-		
-		return 0x68 <= Next && Next <= 0x6E
-	}
-	define AMLSuperName* ParseSuperName() {
-		AMLSuperName* Result := Alloc(#AMLSuperName)
-		
-		if (this->NextIsLocalObject()) {
-			Result->Kind := AML_SUPERNAME_LOCAL
-			Result->LocalNumber := this->Next() - 0x60
-		}
-		else if (this->NextIsArgObject()) {
-			Result->Kind := AML_SUPERNAME_ARG
-			Result->ArgNumber := this->Next() - 0x68
-		}
-		else {
-			Result->Kind := AML_SUPERNAME_NAME
-			Result->Name := this->ParseNameString()
-		}
-		
-		return Result
-	}
+	
 	define AMLTarget* ParseTarget() {
 		AMLTarget* Result := Alloc(#AMLTarget)
 		
@@ -812,43 +817,43 @@ struct AMLParser {
 			Result->Notify->Name := this->ParseSuperName()
 			Result->Notify->Argument := this->ParseTermArg()
 		}
+		else if (this->NextMatches(AML_CONTINUE_OP) || this->NextMatches(AML_BREAK_OP) || this->NextMatches(AML_NO_OP)) {
+			Result->Kind := this->Buffer[this->Index - 1]
+		}
 		else if (this->NextMatches('[')) {
+			Result->Kind := this->Peek()
+			
 			if (this->NextMatches(AML_EXT_MUTEX_OP)) {
-				Result->Kind := AML_EXT_MUTEX_OP
-				
 				AMLDefineMutex* Mutex := Result->Mutex := Alloc(#AMLDefineMutex)
 				
 				Mutex->Name := this->ParseNameString()
 				Mutex->Info := this->Next()
 			}
 			else if (this->NextMatches(AML_EXT_ACQUIRE_OP)) {
-				Result->Kind := AML_EXT_ACQUIRE_OP
-				
 				AMLAcquireMutex* Acquire := Result->Acquire := Alloc(#AMLAcquireMutex)
 				
 				Acquire->Name := this->ParseSuperName()
 				Acquire->Info := this->ReadWord() As i16
 			}
 			else if (this->NextMatches(AML_EXT_RELEASE_OP)) {
-				Result->Kind := AML_EXT_RELEASE_OP
-				
 				AMLReleaseMutex* Release := Result->Release := Alloc(#AMLReleaseMutex)
 				
 				Release->Name := this->ParseSuperName()
 			}
 			else if (this->NextMatches(AML_EXT_REGION_OP)) {
-				Result->Kind := AML_EXT_REGION_OP
 				Result->Region := this->ParseDefineRegion()
 			}
 			else if (this->NextMatches(AML_EXT_FIELD_OP)) {
-				Result->Kind := AML_EXT_FIELD_OP
 				Result->Field := this->ParseDefineField()
 			}
 			else if (this->NextMatches(AML_EXT_DEVICE_OP)) {
-				Result->Kind := AML_EXT_DEVICE_OP
 				Result->Device := this->ParseDefineDevice()
 			}
-			
+			else {
+				;this->Index--
+				
+				this->Fail("Unimplement ex-term", this->Peek())
+			}
 		}
 		
 		if (Result->Kind = 0) {
@@ -859,6 +864,10 @@ struct AMLParser {
 	}
 	
 	define AMLTerm** ParseTermList(i32 End, i32* OutCount) {
+		i32 i := this->Index
+	
+		;Print("ParseTermList(%x - %x, %i)\n", this->Index, End, End - this->Index)
+	
 		i32 Length := End - this->Index
 		i32 TermCountGuess := Length
 		AMLTerm** Terms := Alloc(TermCountGuess * #AMLTerm*)
@@ -866,11 +875,13 @@ struct AMLParser {
 		i32 Index := 0
 		
 		while (this->Index < End) {
-			Terms[Index++] := this->ParseTerm()
+			;Print("%x +1, %i\n", i, Index)
 			
-			if (Index >= TermCountGuess) {
-				this->Fail("Bad term count guess", 0)
-			}
+			Terms[Index++] := this->ParseTerm()
+		}
+
+		if (Index > TermCountGuess) {
+			this->Fail("Bad term count guess", 0)
 		}
 		
 		*OutCount := Index
