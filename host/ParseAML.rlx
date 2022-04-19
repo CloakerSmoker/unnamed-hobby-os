@@ -24,7 +24,14 @@ define void Main() {
 	P->Length := Size
 	
 	i32 Count := 0
-	AMLTerm** Terms := P->ParseTermList(Size, &Count)
+	AMLTerm** Terms := null
+	P->ParseTopLevelBlock(Size, &Count, &Terms)
+	
+	for (i32 Index := 0, Index < Count, Index++) {
+		Terms[Index]->Print()
+	}
+	
+	P->ParseBodyBlocks()
 	
 	for (i32 Index := 0, Index < Count, Index++) {
 		Terms[Index]->Print()

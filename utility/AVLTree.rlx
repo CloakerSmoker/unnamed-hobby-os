@@ -103,7 +103,7 @@ struct AVLTreeNode {
 			}
 		}
 		else if (Balance > 1) {
-			if (this->Right->GetBalance() < 0) {
+			if (this->Right->GetBalance() >= 0) {
 				return this->LeftRotate()
 			}
 			else {

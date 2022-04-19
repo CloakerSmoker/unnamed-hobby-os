@@ -3,6 +3,28 @@
 
 i64 AML_INVALID_SYNTAX := 'AML_USUK'
 
+; AML doesn't have any way to declare a function. You can only define a function.
+; AML allows calls to functions that aren't defined yet.
+; AML function calls can't be parsed unless you know the number of parameters the target expects.
+; Someone needs their computer taken away. If I have to deal with much more of this, it'll be me.
+
+; Looks like I'll being doing an extra pass
+
+enum AMLParsePass {
+	ScopeOnly,
+	Blocks
+}
+
+struct AMLBodyBlock {
+	AMLBodyBlock* Next
+	
+	AMLScope* CurrentScope
+	i32 Start
+	i32 End
+	i32* OutCount
+	AMLTerm*** OutTerms
+}
+
 struct AMLParser {
 	
 	union {
@@ -41,7 +63,7 @@ struct AMLParser {
 	define AMLScope* FindOrAddScope(i8 RootCharacter, i32* NameSegments, i32 NameSegmentCount) {
 		AMLScope* Root := this->CurrentScope
 		
-		if (RootCharacter = '/') {
+		if (RootCharacter = '\') {
 			Root := this->RootScope
 		}
 		
@@ -65,7 +87,7 @@ struct AMLParser {
 	define AMLScope* FindScope(i8 RootCharacter, i32* NameSegments, i32 NameSegmentCount) {
 		AMLScope* Root := this->CurrentScope
 		
-		if (RootCharacter = '/') {
+		if (RootCharacter = '\') {
 			Root := this->RootScope
 		}
 		
@@ -85,7 +107,14 @@ struct AMLParser {
 	define AMLScope* EnterScope(AMLNameString* Name) {
 		AMLScope* Last := this->CurrentScope
 		
+		;Print("EnterScope(")
+		;Name->Print()
+		;Print(") = ")
+		
 		this->CurrentScope := this->FindOrAddScope(Name)
+		
+		;this->CurrentScope->Print()
+		;Print("\n")
 		
 		return Last
 	}
@@ -98,26 +127,39 @@ struct AMLParser {
 		i32 NameSegmentCount := 0
 		i8 RootCharacter := Name->Unpack(&NameSegments, &NameSegmentCount)
 		
+		Print("FindMethod(")
+		Name->Print()
+		Print(") = ")
+		
 		AMLScope* Container := this->FindScope(RootCharacter, NameSegments, NameSegmentCount - 1)
 		
 		if !(Container) {
+			Print("No container\n")
 			return null
 		}
 		
-		return Container->FindMethod(NameSegments[NameSegmentCount - 1])
+		AMLDefineMethod* Result := Container->FindMethod(NameSegments[NameSegmentCount - 1])
+		
+		Container->Print()
+		Print(".%l\n", NameSegments[NameSegmentCount - 1])
+		
+		return Result
 	}
 	define void AddMethod(AMLNameString* Name, AMLDefineMethod* Method) {
 		Print("AddMethod (")
 		this->CurrentScope->Print()
 		Print("): ")
 		Name->Print()
-		Print("(%i)\n", Method->ParameterCount())
+		Print("(%i) = ", Method->ParameterCount())
 		
 		i32* NameSegments := null
 		i32 NameSegmentCount := 0
 		i8 RootCharacter := Name->Unpack(&NameSegments, &NameSegmentCount)
 		
 		AMLScope* Container := this->FindOrAddScope(RootCharacter, NameSegments, NameSegmentCount - 1)
+		
+		Container->Print()
+		Print(".%l\n", NameSegments[NameSegmentCount - 1])
 		
 		Container->AddMethod(NameSegments[NameSegmentCount - 1], Method)
 	}
@@ -143,9 +185,13 @@ struct AMLParser {
 		this->Fail()
 	}
 	
+	AMLParsePass Pass
+	
 	define void Initialize() {
 		this->RootScope := AMLScope:New()
 		this->CurrentScope := this->RootScope
+		
+		this->Pass := AMLParsePass:ScopeOnly
 	}
 	
 	define i32 ParsePackageLength() {
@@ -160,7 +206,7 @@ struct AMLParser {
 		for (i32 Index := 0, Index < Length, Index++) {
 			i8 Shift := ((Index * 8) + 4) As i8
 			
-			Value |= this->Next() << Shift
+			Value |= ((this->Next() As i32) & 0xFF) << Shift
 		}
 		
 		return Value
@@ -652,7 +698,14 @@ struct AMLParser {
 		return Result
 	}
 	
-	declare AMLTerm** ParseTermList(i32, i32*)
+	declare void ParseTermList(i8, i32, i32*, AMLTerm***)
+	
+	define void ParseTopLevelBlock(i32 End, i32* OutCount, AMLTerm*** OutTerms) {
+		this->ParseTermList(false, End, OutCount, OutTerms)
+	}
+	define void ParseBody(i32 End, i32* OutCount, AMLTerm*** OutTerms) {
+		this->ParseTermList(true, End, OutCount, OutTerms)
+	}
 	
 	define AMLIfStatement* ParseIf() {
 		AMLIfStatement* Result := Alloc(#AMLIfStatement)
@@ -662,7 +715,7 @@ struct AMLParser {
 		Result->Condition := this->ParseTermArg()
 		i32 End := Start + Result->Length
 		
-		Result->Body := this->ParseTermList(End, Result~>Count)
+		this->ParseBody(End, Result~>Count, Result~>Body)
 		
 		return Result
 	}
@@ -674,7 +727,7 @@ struct AMLParser {
 		Result->Length := this->ParsePackageLength()
 		i32 End := Start + Result->Length
 		
-		Result->Body := this->ParseTermList(End, Result~>Count)
+		this->ParseBody(End, Result~>Count, Result~>Body)
 		
 		return Result
 	}
@@ -687,7 +740,7 @@ struct AMLParser {
 		Result->Condition := this->ParseTermArg()
 		i32 End := Start + Result->Length
 		
-		Result->Body := this->ParseTermList(End, Result~>Count)
+		this->ParseBody(End, Result~>Count, Result~>Body)
 		
 		return Result
 	}
@@ -791,9 +844,7 @@ struct AMLParser {
 		i32 End := Start + Result->Length
 		
 		AMLScope* Last := this->EnterScope(Result->Name)
-		
-		Result->Terms := this->ParseTermList(End, Result~>Count)
-		
+		this->ParseTopLevelBlock(End, Result~>Count, Result~>Terms)
 		this->ExitScope(Last)
 		
 		return Result
@@ -809,7 +860,7 @@ struct AMLParser {
 		i32 End := Start + Result->Length
 		
 		this->AddMethod(Result->Name, Result)
-		Result->Terms := this->ParseTermList(End, Result~>Count)
+		this->ParseBody(End, Result~>Count, Result~>Terms)
 		
 		return Result
 	}
@@ -823,9 +874,7 @@ struct AMLParser {
 		i32 End := Start + Result->Length
 		
 		AMLScope* Last := this->EnterScope(Result->Name)
-		
-		Result->Terms := this->ParseTermList(End, Result~>Count)
-		
+		this->ParseTopLevelBlock(End, Result~>Count, Result~>Terms)
 		this->ExitScope(Last)
 		
 		return Result
@@ -868,9 +917,7 @@ struct AMLParser {
 		i32 End := Start + Result->Length
 		
 		AMLScope* Last := this->EnterScope(Result->Name)
-		
-		Result->Terms := this->ParseTermList(End, Result~>Count)
-		
+		this->ParseTopLevelBlock(End, Result~>Count, Result~>Terms)
 		this->ExitScope(Last)
 		
 		return Result
@@ -892,10 +939,6 @@ struct AMLParser {
 		else if (this->NextMatches(AML_METHOD_OP)) {
 			Result->Kind := AML_METHOD_OP
 			Result->Method := this->ParseDefineMethod()
-		}
-		else if (this->NextIsExpression()) {
-			Result->Kind := AML_EXPRESSION_OP
-			Result->Expression := this->ParseExpression()
 		}
 		else if (this->NextIsStatement()) {
 			Result->Kind := AML_STATEMENT_OP
@@ -952,6 +995,10 @@ struct AMLParser {
 				this->Fail("Unimplement ex-term", this->Peek())
 			}
 		}
+		else {
+			Result->Expression := this->ParseExpression()
+			Result->Kind := AML_EXPRESSION_OP
+		}
 		
 		if (Result->Kind = 0) {
 			this->Fail("Unimplemented term", this->Peek())
@@ -960,10 +1007,38 @@ struct AMLParser {
 		return Result
 	}
 	
-	define AMLTerm** ParseTermList(i32 End, i32* OutCount) {
+	AMLBodyBlock* FirstBody
+	
+	define void RegisterBodyBlock(i32 Start, i32 End, i32* OutCount, AMLTerm*** OutTerms) {
+		AMLBodyBlock* Result := Alloc(#AMLBodyBlock)
+		
+		Result->CurrentScope := this->CurrentScope
+		Result->Start := Start
+		Result->End := End
+		Result->OutCount := OutCount
+		Result->OutTerms := OutTerms
+		
+		if (this->FirstBody) {
+			Result->Next := this->FirstBody->Next
+			this->FirstBody->Next := Result
+		}
+		else {
+			this->FirstBody := Result
+		}
+	}
+	
+	define void ParseTermList(i8 IsBody, i32 End, i32* OutCount, AMLTerm*** OutTerms) {
+		if (this->Pass = AMLParsePass:ScopeOnly && IsBody) {
+			this->RegisterBodyBlock(this->Index, End, OutCount, OutTerms)
+			
+			this->Index := End
+			
+			return
+		}
+		
 		i32 i := this->Index
 	
-		;Print("ParseTermList(%x - %x, %i)\n", this->Index, End, End - this->Index)
+		Print("ParseTermList(%x - %x, %i)\n", this->Index, End, End - this->Index)
 	
 		i32 Length := End - this->Index
 		i32 TermCountGuess := Length
@@ -982,10 +1057,23 @@ struct AMLParser {
 		}
 		
 		*OutCount := Index
-		
-		return Terms
+		*OutTerms := Terms
 	}
 	
+	define void ParseBodyBlocks() {
+		this->Pass := AMLParsePass:Blocks
+		
+		AMLBodyBlock* Current := this->FirstBody
+		
+		while (Current) {
+			this->CurrentScope := Current->CurrentScope
+			this->Index := Current->Start
+			
+			this->ParseBody(Current->End, Current->OutCount, Current->OutTerms)
+			
+			Current := Current->Next
+		}
+	}
 }
 
 ; https://uefi.org/sites/default/files/resources/ACPI_6_2.pdf

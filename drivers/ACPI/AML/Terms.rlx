@@ -319,8 +319,6 @@ struct AMLScope {
 }
 
 struct AMLDefineScope {
-	AMLScope Scope
-	
 	i32 Length
 	AMLNameString* Name
 	i32 Count
@@ -342,8 +340,6 @@ struct AMLDefineScope {
 }
 
 struct AMLDefineDevice {
-	AMLScope Scope
-	
 	i32 Length
 	AMLNameString* Name
 	i32 Count
@@ -461,8 +457,6 @@ struct AMLNotify {
 i8 AML_EXT_PROCESSOR_OP := 0x83 As i8
 
 struct AMLDefineProcessor {
-	AMLScope Scope
-	
 	i32 Length
 	AMLNameString* Name
 	i8 ProcessorID
@@ -489,6 +483,8 @@ struct AMLDefineProcessor {
 i8 AML_CONTINUE_OP := 0x9F As i8
 i8 AML_NO_OP := 0xA3 As i8
 i8 AML_BREAK_OP := 0xA5 As i8
+
+i8 AML_MAGIC_REPARSE_OP := 0x1
 
 i8 AML_ALIAS_OP := 0x6
 i8 AML_NAME_OP := 0x8
