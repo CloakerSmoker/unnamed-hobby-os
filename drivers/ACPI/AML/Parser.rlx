@@ -35,12 +35,97 @@ struct AMLParser {
 		return false
 	}
 	
+	AMLScope* RootScope
 	AMLScope* CurrentScope
+	
+	define AMLScope* FindOrAddScope(i8 RootCharacter, i32* NameSegments, i32 NameSegmentCount) {
+		AMLScope* Root := this->CurrentScope
+		
+		if (RootCharacter = '/') {
+			Root := this->RootScope
+		}
+		
+		AMLScope* Current := Root
+		
+		for (i32 Index := 0, Index < NameSegmentCount, Index++) {
+			Current := Current->FindOrAddChild(NameSegments[Index])
+		}
+		
+		return Current
+	}
+	
+	define AMLScope* FindOrAddScope(AMLNameString* Name) {
+		i32* NameSegments := null
+		i32 NameSegmentCount := 0
+		i8 RootCharacter := Name->Unpack(&NameSegments, &NameSegmentCount)
+		
+		return this->FindOrAddScope(RootCharacter, NameSegments, NameSegmentCount)
+	}
+	
+	define AMLScope* FindScope(i8 RootCharacter, i32* NameSegments, i32 NameSegmentCount) {
+		AMLScope* Root := this->CurrentScope
+		
+		if (RootCharacter = '/') {
+			Root := this->RootScope
+		}
+		
+		AMLScope* Current := Root
+		
+		for (i32 Index := 0, Index < NameSegmentCount, Index++) {
+			Current := Current->FindChild(NameSegments[Index])
+			
+			if !(Current) {
+				return null
+			}
+		}
+		
+		return Current
+	}
+	
+	define AMLScope* EnterScope(AMLNameString* Name) {
+		AMLScope* Last := this->CurrentScope
+		
+		this->CurrentScope := this->FindOrAddScope(Name)
+		
+		return Last
+	}
+	define void ExitScope(AMLScope* Old) {
+		this->CurrentScope := Old
+	}
+	
+	define AMLDefineMethod* FindMethod(AMLNameString* Name) {
+		i32* NameSegments := null
+		i32 NameSegmentCount := 0
+		i8 RootCharacter := Name->Unpack(&NameSegments, &NameSegmentCount)
+		
+		AMLScope* Container := this->FindScope(RootCharacter, NameSegments, NameSegmentCount - 1)
+		
+		if !(Container) {
+			return null
+		}
+		
+		return Container->FindMethod(NameSegments[NameSegmentCount - 1])
+	}
+	define void AddMethod(AMLNameString* Name, AMLDefineMethod* Method) {
+		Print("AddMethod (")
+		this->CurrentScope->Print()
+		Print("): ")
+		Name->Print()
+		Print("(%i)\n", Method->ParameterCount())
+		
+		i32* NameSegments := null
+		i32 NameSegmentCount := 0
+		i8 RootCharacter := Name->Unpack(&NameSegments, &NameSegmentCount)
+		
+		AMLScope* Container := this->FindOrAddScope(RootCharacter, NameSegments, NameSegmentCount - 1)
+		
+		Container->AddMethod(NameSegments[NameSegmentCount - 1], Method)
+	}
 	
 	define void Fail() {
 		if (this->CurrentScope) {
 			Print("In scope ")
-			this->CurrentScope->Name->Print()
+			this->CurrentScope->Print()
 			Print("\n")
 		}
 		
@@ -58,17 +143,9 @@ struct AMLParser {
 		this->Fail()
 	}
 	
-	define void EnterScope(AMLScope* New, AMLNameString* Name) {
-		New->Initialize(Name)
-		
-		if (this->CurrentScope) {
-			this->CurrentScope->AddChild(New)
-		}
-		
-		this->CurrentScope := New
-	}
-	define void ExitScope() {
-		this->CurrentScope := this->CurrentScope->Parent
+	define void Initialize() {
+		this->RootScope := AMLScope:New()
+		this->CurrentScope := this->RootScope
 	}
 	
 	define i32 ParsePackageLength() {
@@ -469,7 +546,7 @@ struct AMLParser {
 			
 			AMLNameString MaybeMethodName
 			this->ParseNamePath(&MaybeMethodName)
-			AMLDefineMethod* Method := this->CurrentScope->FindMethod(&MaybeMethodName)
+			AMLDefineMethod* Method := this->FindMethod(&MaybeMethodName)
 			
 			this->Index := Before
 			
@@ -536,9 +613,9 @@ struct AMLParser {
 			Result->Kind := AML_EXPRESSION_BUFFER
 			Result->Buffer := this->ParseBuffer()
 		}
-		else if (this->CurrentScope) {
+		else {
 			AMLNameString* MethodName := this->ParseNameString()
-			AMLDefineMethod* Method := this->CurrentScope->FindMethod(MethodName)
+			AMLDefineMethod* Method := this->FindMethod(MethodName)
 			
 			Result->Kind := AML_EXPRESSION_METHOD_INVOKE
 			Result->MethodInvoke := this->ParseMethodInvoke(Method)
@@ -713,11 +790,11 @@ struct AMLParser {
 		Result->Name := this->ParseNameString()
 		i32 End := Start + Result->Length
 		
-		this->EnterScope(Result~>Scope, Result->Name)
+		AMLScope* Last := this->EnterScope(Result->Name)
 		
 		Result->Terms := this->ParseTermList(End, Result~>Count)
 		
-		this->ExitScope()
+		this->ExitScope(Last)
 		
 		return Result
 	}
@@ -731,10 +808,7 @@ struct AMLParser {
 		Result->Flags := this->Next()
 		i32 End := Start + Result->Length
 		
-		if (this->CurrentScope) {
-			this->CurrentScope->AddMethod(Result)
-		}
-		
+		this->AddMethod(Result->Name, Result)
 		Result->Terms := this->ParseTermList(End, Result~>Count)
 		
 		return Result
@@ -748,11 +822,11 @@ struct AMLParser {
 		Result->Name := this->ParseNameString()
 		i32 End := Start + Result->Length
 		
-		this->EnterScope(Result~>Scope, Result->Name)
+		AMLScope* Last := this->EnterScope(Result->Name)
 		
 		Result->Terms := this->ParseTermList(End, Result~>Count)
 		
-		this->ExitScope()
+		this->ExitScope(Last)
 		
 		return Result
 	}
@@ -793,11 +867,11 @@ struct AMLParser {
 		Result->BlockLength := this->Next()
 		i32 End := Start + Result->Length
 		
-		this->EnterScope(Result~>Scope, Result->Name)
+		AMLScope* Last := this->EnterScope(Result->Name)
 		
 		Result->Terms := this->ParseTermList(End, Result~>Count)
 		
-		this->ExitScope()
+		this->ExitScope(Last)
 		
 		return Result
 	}

@@ -18,6 +18,7 @@ define void Main() {
 	FileClose(F)
 	
 	AMLParser* P := Alloc(#AMLParser)
+	P->Initialize()
 	
 	P->Buffer := AML
 	P->Length := Size

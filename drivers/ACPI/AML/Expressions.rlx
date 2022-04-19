@@ -48,6 +48,23 @@ struct AMLNameString {
 		}
 	}
 	
+	define i8 Unpack(i32** OutNameSegments, i32* OutNameSegmentCount) {
+		if (this->Kind = AML_NAME_STRING_SINGLE) {
+			*OutNameSegments := this->DirectNameSegments
+			*OutNameSegmentCount := 1
+		}
+		else if (this->Kind = AML_NAME_STRING_DUAL) {
+			*OutNameSegments := this->DirectNameSegments
+			*OutNameSegmentCount := 2
+		}
+		else if (this->Kind = AML_NAME_STRING_MULTI) {
+			*OutNameSegments := this->IndirectNameSegments
+			*OutNameSegmentCount := this->IndirectSegmentCount
+		}
+		
+		return this->RootCharacter
+	}
+	
 	define i64 HashSegment(i64 State, i32 Segment) {
 		i8* Data := &Segment As void*
 		

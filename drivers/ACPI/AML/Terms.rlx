@@ -205,27 +205,72 @@ struct AMLScope {
 	AMLScope* Parent
 	AVLTree Children
 	
-	AMLNameString* Name
+	i8 IsRoot
+	i32 NameSegment
 	
 	AVLTree Methods
 	AVLTree Fields
 	
-	define void Initialize(AMLNameString* Name) {
-		this->Name := Name
+	define void Initialize(i8 IsRoot, i32 NameSegment) {
+		this->IsRoot := IsRoot
+		this->NameSegment := NameSegment
 		
 		this~>Methods->ValueSize := 8
 		this~>Fields->ValueSize := 8
-		this~>Children->ValueSize := 0
+		this~>Children->ValueSize := 8
 	}
 	
 	define void AddChild(AMLScope* Child) {
 		Child->Parent := this
-		;this~>Children->Insert(Child As i64)
+		this~>Children->Insert(Child->NameSegment, &Child)
 	}
 	
-	define void AddMethod(AMLDefineMethod* Method) {
-		AMLNameString* Name := Method->Name
+	static AMLScope* New() {
+		AMLScope* this := Alloc(#AMLScope)
 		
+		this->Initialize(true, 0)
+		
+		return this
+	}
+	
+	static AMLScope* New(AMLScope* Parent, i32 NameSegment) {
+		AMLScope* this := Alloc(#AMLScope)
+		
+		this->Initialize(false, NameSegment)
+		
+		Parent->AddChild(this)
+		
+		return this
+	}
+	
+	define AMLScope* FindChild(i32 NameSegment) {
+		return this~>Children->GetNode(NameSegment)->ValueAsPointer()
+	}
+	
+	define AMLScope* FindOrAddChild(i32 NameSegment) {
+		AMLScope* Result := this->FindChild(NameSegment)
+		
+		if !(Result) {
+			Result := AMLScope:New(this, NameSegment)
+		}
+		
+		return Result
+	}
+	
+	define void Print() {
+		if (this->Parent) {
+			this->Parent->Print()
+			Print(".")
+		}
+		
+		if (this->IsRoot) {
+			Print("\\")
+		}
+		
+		Print("%l", this->NameSegment)
+	}
+	
+	define void AddMethod(i32 NameSegment, AMLDefineMethod* Method) {
 		;this->Name->Print()
 		;Print(".AddMethod(")
 		;Name->Print()
@@ -233,20 +278,20 @@ struct AMLScope {
 		;
 		;this~>Methods->Print()
 		
-		this~>Methods->Insert(Name->Hash(), &Method)
+		this~>Methods->Insert(NameSegment, &Method)
 	}
-	define i8 IsOwnMethod(AMLNameString* Name) {
-		return this~>Methods->Has(Name->Hash())
+	define i8 IsOwnMethod(i32 NameSegment) {
+		return this~>Methods->Has(NameSegment)
 	}
-	define AMLDefineMethod* FindOwnMethod(AMLNameString* Name) {
-		return this~>Methods->GetNode(Name->Hash())->ValueAsPointer()
+	define AMLDefineMethod* FindOwnMethod(i32 NameSegment) {
+		return this~>Methods->GetNode(NameSegment)->ValueAsPointer()
 	}
 	
-	define i8 IsMethod(AMLNameString* Name) {
+	define i8 IsMethod(i32 NameSegment) {
 		AMLScope* Current := this
 		
 		while (Current) {
-			if (Current->IsOwnMethod(Name)) {
+			if (Current->IsOwnMethod(NameSegment)) {
 				return true
 			}
 			
@@ -256,11 +301,11 @@ struct AMLScope {
 		return false
 	}
 	
-	define AMLDefineMethod* FindMethod(AMLNameString* Name) {
+	define AMLDefineMethod* FindMethod(i32 NameSegment) {
 		AMLScope* Current := this
 		
 		while (Current) {
-			AMLDefineMethod* Result := Current->FindOwnMethod(Name)
+			AMLDefineMethod* Result := Current->FindOwnMethod(NameSegment)
 			
 			if (Result) {
 				return Result
