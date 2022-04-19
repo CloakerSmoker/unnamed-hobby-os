@@ -413,6 +413,34 @@ struct AMLNotify {
 	}
 }
 
+i8 AML_EXT_PROCESSOR_OP := 0x83 As i8
+
+struct AMLDefineProcessor {
+	AMLScope Scope
+	
+	i32 Length
+	AMLNameString* Name
+	i8 ProcessorID
+	i32 BlockAddress
+	i8 BlockLength
+	
+	i32 Count
+	AMLTerm** Terms
+	
+	define void Print() {
+		Print("AMLDefineProcessor ")
+		this->Name->Print()
+		Print("(%x, %x, %x) {\n", this->ProcessorID, this->BlockAddress, this->BlockLength)
+		
+		for (i32 Index := 0, Index < this->Count, Index++) {
+			PrintTerm(this->Terms[Index])
+		}
+		
+		Print("}\n")
+	}
+	
+}
+
 i8 AML_CONTINUE_OP := 0x9F As i8
 i8 AML_NO_OP := 0xA3 As i8
 i8 AML_BREAK_OP := 0xA5 As i8
@@ -445,6 +473,7 @@ struct AMLTerm {
 		AMLReleaseMutex* Release
 		AMLCreateField* CreateField
 		AMLNotify* Notify
+		AMLDefineProcessor* Processor
 	}
 	
 	i8 Kind
@@ -497,6 +526,9 @@ struct AMLTerm {
 		}
 		else if (this->Kind = AML_EXT_DEVICE_OP) {
 			this->Device->Print()
+		}
+		else if (this->Kind = AML_EXT_PROCESSOR_OP) {
+			this->Processor->Print()
 		}
 	}
 }

@@ -782,6 +782,26 @@ struct AMLParser {
 		return Result
 	}
 	
+	define AMLDefineProcessor* ParseProcessor() {
+		AMLDefineProcessor* Result := Alloc(#AMLDefineProcessor)
+		
+		i32 Start := this->Index
+		Result->Length := this->ParsePackageLength()
+		Result->Name := this->ParseNameString()
+		Result->ProcessorID := this->Next()
+		Result->BlockAddress := this->ReadDoubleWord() As i32
+		Result->BlockLength := this->Next()
+		i32 End := Start + Result->Length
+		
+		this->EnterScope(Result~>Scope, Result->Name)
+		
+		Result->Terms := this->ParseTermList(End, Result~>Count)
+		
+		this->ExitScope()
+		
+		return Result
+	}
+	
 	define AMLTerm* ParseTerm() {
 		AMLTerm* Result := Alloc(#AMLTerm)
 		
@@ -848,6 +868,9 @@ struct AMLParser {
 			}
 			else if (this->NextMatches(AML_EXT_DEVICE_OP)) {
 				Result->Device := this->ParseDefineDevice()
+			}
+			else if (this->NextMatches(AML_EXT_PROCESSOR_OP)) {
+				Result->Processor := this->ParseProcessor()
 			}
 			else {
 				;this->Index--
