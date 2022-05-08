@@ -365,6 +365,42 @@ define void OnCommand(i8* CommandLine) {
 			Print("%s\n", PWD)
 		}
 	}
+	else if (StringEquals(Command, "capture")) {
+		i8* Path := CommandParameters[1]
+		
+		Ext2Handle* OutputFile := FS->Open(CWD, Path, EXT2_OPEN_CREATE)
+		
+		if !(OutputFile) {
+			Print("Could not open '%s'\n", Path)
+			Prompt()
+			return
+		}
+		
+		void* ChunkBuffer := KernelPageAllocator->AllocateVirtual(1)
+		
+		PixelBufferCapture Capture
+		Capture.Initialize(NativeScreen->Canvas)
+		i32 tot := 0
+		
+		loop {
+			i32 ChunkSize := Capture.NextChunkSize()
+			
+			tot += ChunkSize
+			
+			if (ChunkSize = 0) {
+				break
+			}
+			
+			Capture.ReadChunk(ChunkBuffer)
+			FS->Write(OutputFile, ChunkBuffer, ChunkSize)
+		}
+		
+		Print("Wrote %x bytes\n", tot)
+		
+		FS->Close(OutputFile)
+		
+		KernelPageAllocator->FreeVirtual(ChunkBuffer, 1)
+	}
 	else {
 		Print(" Unknown command '%s'\n", Command)
 	}

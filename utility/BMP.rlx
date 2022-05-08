@@ -1,0 +1,78 @@
+struct BMPInfoHeader {
+	i32 HeaderSize
+	
+	i32 Width
+	i32 Height
+	
+	i16 ColorPlanes
+	i16 BitsPerPixel
+	
+	i32 CompressionMethod
+	i32 ImageSize
+	
+	i32 HorizontalPixelsPerMeter
+	i32 VerticlePixelsPerMeter
+	
+	i32 ColorPaletteSize
+	i32 ImportantColors
+}
+
+struct BMPFileHeader unaligned {
+	i16 Magic
+	i32 FileSize
+	i32 Reserved
+	i32 PixelBufferOffset
+	
+	BMPInfoHeader DIB
+	
+	define void Initialize(i32 Width, i32 Height) {
+		this->Magic := 'BM'
+		this->PixelBufferOffset := #BMPFileHeader
+		
+		this~>DIB->HeaderSize := #BMPInfoHeader
+		this~>DIB->Width := Width
+		this~>DIB->Height := Height
+		this~>DIB->ColorPlanes := 1
+		this~>DIB->BitsPerPixel := 32
+		this~>DIB->HorizontalPixelsPerMeter := 3780
+		this~>DIB->VerticlePixelsPerMeter := 3780		
+		
+		this->FileSize := (Width * Height * 4) + #BMPFileHeader
+	}
+}
+
+struct BMPBuilder {
+	union {
+		void* Buffer
+		BMPFileHeader* Header
+	}
+	
+	i32* PixelBuffer
+	
+	i32 BufferSize
+	
+	define void Initialize(i32 Width, i32 Height, void* Buffer) {
+		this->Buffer := Buffer
+		this->Header->Initialize(Width, Height)
+		
+		this->PixelBuffer := this->Buffer + this->Header->PixelBufferOffset
+		
+	}
+	
+	define void SetPixel(i32 Index, i32 Color) {
+		this->PixelBuffer[Index] := Color
+	}
+	define void SetPixel(i32 X, i32 Y, i32 Color) {
+		i32 Index := X + (Y * this->Header~>DIB->Width)
+		
+		this->SetPixel(Index, Color)
+	}
+	
+	define void DrawRectangle(i32 X, i32 Y, i32 Width, i32 Height, i32 Color) {
+		for (i32 RowIndex := 0, RowIndex < Height, RowIndex += 1) {
+			for (i32 ColumnIndex := 0, ColumnIndex < Width, ColumnIndex += 1) {
+				this->SetPixel(X + ColumnIndex, Y + RowIndex, Color)
+			}
+		}
+	}
+}

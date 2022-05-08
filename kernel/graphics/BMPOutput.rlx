@@ -1,0 +1,73 @@
+
+#Require "./src/utility/BMP.rlx"
+
+i32 STRIP_PAGES := 1
+i32 MAX_STRIP_LENGTH := (STRIP_PAGES * PAGE_SIZE) / 4
+
+struct PixelBufferCapture {
+	PixelBuffer* Source
+	PixelBuffer Adapter
+	
+	i8 SentHeader
+	i32 X
+	i32 Y
+	
+	define void Initialize(PixelBuffer* Source) {
+		this->Source := Source
+		this~>Adapter->Initialize(null, RGB32, MAX_STRIP_LENGTH, 1)
+		
+		this->SentHeader := false
+		this->X := 0
+		this->Y := 0
+	}
+	
+	define i32 CalculateStripLength() {
+		if (this->X + 1 >= this->Source->Width()) {
+			this->X := 0
+			this->Y += 1
+			
+			if (this->Y >= this->Source->Height()) {
+				return 0
+			}
+		}
+		
+		i32 StripLength := this->Source->Width() - this->X
+		
+		if (StripLength > MAX_STRIP_LENGTH) {
+			StripLength := MAX_STRIP_LENGTH
+		}
+		
+		return StripLength
+	}
+	
+	define i32 NextChunkSize() {
+		if !(this->SentHeader) {
+			return #BMPFileHeader
+		}
+		else {
+			return this->CalculateStripLength() * RGB32->Size
+		}
+	}
+	
+	define void ReadChunk(void* Buffer) {
+		if !(this->SentHeader) {
+			BMPFileHeader* Header := Buffer
+			
+			Header->Initialize(this->Source->Width(), this->Source->Height())
+			
+			this->SentHeader := true
+		}
+		else {
+			i32 StripLength := this->CalculateStripLength()
+			
+			this~>Adapter->Buffer(Buffer)
+			
+			i32 Y := this->Source->Height() - 1 - this->Y
+			
+			this~>Adapter->BlockTransfer(0, 0, StripLength, 1, this->Source, this->X, Y)
+			
+			this->X += StripLength
+		}
+	}
+	
+}

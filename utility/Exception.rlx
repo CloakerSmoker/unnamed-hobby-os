@@ -6,6 +6,8 @@ define void TerminateAfterUnhandledException(i64 Code) {
 	PrintStackDump(3)
 	Print("Aborting...\n")
 	Print("----------------------\n\n\n")
+	
+	loop {}
 }
 
 #Require "$/ExceptionBase.rlx"

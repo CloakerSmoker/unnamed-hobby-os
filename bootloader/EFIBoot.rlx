@@ -186,12 +186,12 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 			ACPI_FADT* FADT := NextACPITable->Data()
 			ACPI_DSDT* DSDT := FADT->ExtendedDSDT As void*
 			
-			Print("%hexdump\n", DSDT, DSDT~>Header->Length)
+			;Print("%hexdump\n", DSDT, DSDT~>Header->Length)
 		}
 	}
 	
-	SystemTable->ConsoleInput->Reset()
-	SystemTable->BootServices->WaitForEvent(SystemTable->ConsoleInput->WaitForKey)
+	;SystemTable->ConsoleInput->Reset()
+	;SystemTable->BootServices->WaitForEvent(SystemTable->ConsoleInput->WaitForKey)
 	
 	if !(IOAPICBase) {
 		Print("Couldn't find IO-APIC, bailing out\n")

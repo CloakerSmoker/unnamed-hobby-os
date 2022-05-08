@@ -37,7 +37,7 @@ define Font* LoadFON(Font* Result, void* Data, i32 Size) {
 		void* Render := Renders + (Index * BytesPerRender)
 		
 		Next->Render := Render
-		Result->GlyphBuffer->Buffer := Render
+		Result->GlyphBuffer->Buffer(Render)
 		
 		i8* GlyphData := FNT->GetCharacterData(Index)
 		

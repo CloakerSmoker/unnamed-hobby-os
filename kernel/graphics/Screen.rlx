@@ -26,15 +26,15 @@ struct Screen {
 	}
 	
 	define void Clear(i32 Color) {
-		this->DrawRectangle(0, 0, this->Canvas->Width, this->Canvas->Height, Color)
+		this->DrawRectangle(0, 0, this->Canvas->Width(), this->Canvas->Height(), Color)
 	}
 	define void Clear() {
 		this->Clear(this->FillColor)
 	}
 	
 	define void VerticalScroll(i32 Offset) {
-		i32 RowSize := this->Canvas->Width * this->Canvas->Format->Size
-		void* Buffer := this->Canvas->Buffer
+		i32 RowSize := this->Canvas->Width() * this->Canvas->PixelSize()
+		void* Buffer := this->Canvas->Buffer()
 		
 		i32 GapSize := Offset * RowSize
 		
@@ -51,11 +51,11 @@ struct Screen {
 			NewTopRow := Buffer
 			TopRow := NewTopRow + GapSize
 			
-			Y := this->Canvas->Height - Offset
+			Y := this->Canvas->Height() - Offset
 		}
 		
-		FastMoveMemory(NewTopRow, TopRow, this->Canvas->Size - GapSize)
-		this->DrawRectangle(0, Y, this->Canvas->Width, Offset, this->FillColor)
+		FastMoveMemory(NewTopRow, TopRow, this->Canvas->Size() - GapSize)
+		this->DrawRectangle(0, Y, this->Canvas->Width(), Offset, this->FillColor)
 	}
 }
 

@@ -31,6 +31,6 @@ BlockDevicePrototype EFIBlockDevicePrototype {
 	Initialize: &EFIBlockDeviceInstance.Initialize,
 	
 	Name: "EFI"
-} 
+}
 
 i32 EFI_BLOCK_DEVICE_PROTOTYPE_ID := RegisterBlockDevicePrototype(&EFIBlockDevicePrototype)

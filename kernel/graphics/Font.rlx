@@ -48,7 +48,7 @@ struct Font {
 		
 		Glyph* CharacterGlyph := this->Glyphs[Character]
 		
-		this->GlyphBuffer->Buffer := CharacterGlyph->Render
+		this->GlyphBuffer->Buffer(CharacterGlyph->Render)
 		
 		i8 ForegroundMatches := Foreground = CharacterGlyph->RenderForegroundColor
 		i8 BackgroundMatches := Background = CharacterGlyph->RenderBackgroundColor
