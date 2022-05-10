@@ -2,7 +2,7 @@
 #Require "./src/utility/BMP.rlx"
 
 i32 STRIP_PAGES := 1
-i32 MAX_STRIP_LENGTH := (STRIP_PAGES * PAGE_SIZE) / 4
+i32 MAX_STRIP_LENGTH := (STRIP_PAGES * 4096) / 4
 
 struct PixelBufferCapture {
 	PixelBuffer* Source
