@@ -12,6 +12,7 @@ struct PixelBufferInstance {
 struct PixelFormat {
 	void(PixelFormat*, void*, i32) SetColor
 	i32(PixelFormat*, void*) GetColor
+	void(PixelFormat*, PixelBufferInstance*, i32, i32, i32, i32) DrawStrip
 	void*(PixelFormat*, PixelBufferInstance*, i32, i32) GetPixelAddress
 	
 	i32 Size
@@ -73,6 +74,16 @@ struct PixelFormat {
 		
 		ret
 	}
+	define void DrawStrip_32_R8_G8_B8(PixelBufferInstance* Dimensions, i32 X, i32 Y, i32 Width, i32 Color) asm {
+		call, @PixelFormat.GetPixelAddress_32_R8_G8_B8
+		
+		mov, rcx, p5  ; rcx = count
+		mov, rdi, rax ; rdi = pixel
+		mov, rax, p6  ; rax = color
+		rep stosd
+		
+		ret
+	}
 }
 
 PixelFormat _RGB24 {
@@ -108,7 +119,8 @@ PixelFormat _RGB32 {
 	
 	SetColor: &PixelFormat.SetColor_32_R8_G8_B8,
 	GetColor: &PixelFormat.GetColor_32_R8_G8_B8,
-	GetPixelAddress: &PixelFormat.GetPixelAddress_32_R8_G8_B8
+	GetPixelAddress: &PixelFormat.GetPixelAddress_32_R8_G8_B8,
+	DrawStrip: &PixelFormat.DrawStrip_32_R8_G8_B8
 }
 
 PixelFormat* RGB32 := &_RGB32
@@ -147,6 +159,17 @@ struct PixelBuffer {
 					this->SetPixelColor(MyX + Column, MyY + Row, OtherColor)
 				}
 			}
+		}
+	}
+	
+	define void DrawStrip(i32 X, i32 Y, i32 Width, i32 Color) {
+		if !(this->Format->DrawStrip) {
+			for (i32 Index := 0, Index < Width, Index++) {
+				this->SetPixelColor(X + Index, Y, Color)
+			}
+		}
+		else {
+			this->Format->DrawStrip(this~>Instance, X, Y, Width, Color)
 		}
 	}
 	

@@ -70,6 +70,21 @@ struct CharacterDevice {
 		return Result
 	}
 	
+	define i8 DefaultReadSingle() {
+		i8 Result := 0
+		
+		if (this~>Link->Prototype->Read(this, &Result, 1) != 1) {
+			Throw(CHARACTER_DEVICE_READ_FAIL)
+		}
+		
+		return Result
+	}
+	define void DefaultWriteSingle(i8 Value) {
+		if (this~>Link->Prototype->Write(this, &Value, 1) != 1) {
+			Throw(CHARACTER_DEVICE_WRITE_FAIL)
+		}
+	}
+	
 	define i32 Read(void* Buffer, i32 Size) {
 		return this~>Link->Prototype->Read(this, Buffer, Size)
 	}
@@ -79,20 +94,20 @@ struct CharacterDevice {
 }
 
 define i32 RegisterCharacterDevicePrototype(CharacterDevicePrototype* Prototype) {
-	if !(Prototype->Read) {
+	if (Prototype->Read = null && Prototype->ReadSingle != null) {
 		Prototype->Read := &CharacterDevice.DefaultRead
 	}
 	
-	if !(Prototype->Write) {
+	if (Prototype->Write = null && Prototype->WriteSingle != null) {
 		Prototype->Write := &CharacterDevice.DefaultWrite
 	}
 	
-	if !(Prototype->ReadSingle) {
-		Prototype->ReadSingle := &CharacterDevice.FailRead
+	if (Prototype->Read != null && Prototype->ReadSingle = null) {
+		Prototype->ReadSingle := &CharacterDevice.DefaultReadSingle
 	}
 	
-	if !(Prototype->WriteSingle) {
-		Prototype->WriteSingle := &CharacterDevice.FailWrite
+	if (Prototype->Write != null && Prototype->WriteSingle = null) {
+		Prototype->WriteSingle := &CharacterDevice.DefaultWriteSingle
 	}
 	
 	return 0
