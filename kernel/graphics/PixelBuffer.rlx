@@ -11,6 +11,7 @@ struct PixelBufferInstance {
 
 struct PixelFormat {
 	void(PixelFormat*, void*, i32) SetColor
+	i32(PixelFormat*, void*) GetColor
 	void*(PixelFormat*, PixelBufferInstance*, i32, i32) GetPixelAddress
 	
 	i32 Size
@@ -27,6 +28,11 @@ struct PixelFormat {
 		mov, r8b, {p2 + 3} As i8*
 		mov, {p2} As i32*, p3d
 		mov, {p2 + 3} As i8*, r8b
+		ret
+	}
+	define i32 GetColor_24_R8_G8_B8(void* Pixel) asm {
+		mov, eax, {p2} As i32*
+		and, eax, 0xFF_FF_FF
 		ret
 	}
 	define void* GetPixelAddress_24_R8_G8_B8(PixelBufferInstance* Dimensions, i32 X, i32 Y) asm {
@@ -46,6 +52,10 @@ struct PixelFormat {
 		mov, {p2} As i32*, edx
 		ret
 	}
+	define i32 GetColor_32_R8_G8_B8(void* Pixel) asm {
+		mov, eax, {p2} As i32*
+		ret
+	}
 	define void* GetPixelAddress_32_R8_G8_B8(PixelBufferInstance* Dimensions, i32 X, i32 Y) asm {
 		mov, rax, {p2 + PixelBufferInstance.Buffer} As i64*   ; RAX = Base
 		mov, ebx, {p2 + PixelBufferInstance.Width} As i32*   ; RBX = Width
@@ -63,13 +73,6 @@ struct PixelFormat {
 		
 		ret
 	}
-	
-	define void SetColor_Generic(void* Pixel, i32 Color) {
-		return
-	}
-	define void* GetPixelAddress_Generic(i32 X, i32 Y) {
-		return null
-	}
 }
 
 PixelFormat _RGB24 {
@@ -84,8 +87,9 @@ PixelFormat _RGB24 {
 	
 	Size: 3,
 	
-	GetPixelAddress: &PixelFormat.GetPixelAddress_24_R8_G8_B8,
-	SetColor: &PixelFormat.SetColor_24_R8_G8_B8
+	SetColor: &PixelFormat.SetColor_24_R8_G8_B8,
+	GetColor: &PixelFormat.GetColor_24_R8_G8_B8,
+	GetPixelAddress: &PixelFormat.GetPixelAddress_24_R8_G8_B8
 }
 
 PixelFormat* RGB24 := &_RGB24
@@ -102,8 +106,9 @@ PixelFormat _RGB32 {
 	
 	Size: 4,
 	
-	GetPixelAddress: &PixelFormat.GetPixelAddress_32_R8_G8_B8,
-	SetColor: &PixelFormat.SetColor_32_R8_G8_B8
+	SetColor: &PixelFormat.SetColor_32_R8_G8_B8,
+	GetColor: &PixelFormat.GetColor_32_R8_G8_B8,
+	GetPixelAddress: &PixelFormat.GetPixelAddress_32_R8_G8_B8
 }
 
 PixelFormat* RGB32 := &_RGB32
@@ -120,7 +125,9 @@ struct PixelBuffer {
 	}
 	
 	define i32 GetPixelColor(i32 X, i32 Y) {
-		return *(this->Format->GetPixelAddress(this~>Instance, X, Y) As i32*)
+		void* Pixel := this->Format->GetPixelAddress(this~>Instance, X, Y)
+		
+		return this->Format->GetColor(Pixel)
 	}
 	
 	define void BlockTransfer(i32 MyX, i32 MyY, i32 Width, i32 Height, PixelBuffer* Other, i32 OtherX, i32 OtherY) {
