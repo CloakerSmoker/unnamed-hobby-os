@@ -2,9 +2,17 @@
 
 ## Screenshots
 
-Post-boot screen:
+### Note: 
 
-![](README-assets/boot.png)
+The first screenshot is a capture of the framebuffer converted to BMP and dumped to disk from inside the VM.
+
+The rest are all captures from the host, purely because they are from before I implemented capturing the framebuffer, and I am too lazy to go back and create + capture them again.
+
+---
+
+Post-boot screen (with a Sixel image displayed):
+
+![](README-assets/sixel.png)
 
 A few simple builtin commands:
 
@@ -28,6 +36,7 @@ Compiling and running a program:
 * Has a custom font (which isn't used anymore, because I'm not very good at drawing characters)
 * Support for nearly any Windows 2.0/3.1 bit-mapped font. What's not to love about fonts for 16 bit machines on a 64 bit one?
 * Can multitask. Hopefully. I haven't tested it beyond flashing the cursor.
+* Can display Sixel images in the terminal
 
 ## Boring stuff
 
