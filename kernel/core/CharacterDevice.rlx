@@ -13,6 +13,29 @@ struct CharacterDevicePrototype {
 	
 	i8(void*) ReadSingle
 	void(void*, i8) WriteSingle
+}
+
+struct CharacterDeviceLink {
+	#Include "./src/kernel/core/CharacterDeviceInstance.rlx"
+}
+
+struct CharacterDevice {
+	CharacterDeviceLink Link
+	
+	define i8 ReadSingle() {
+		return this~>Link->Prototype->ReadSingle(this)
+	}
+	define void WriteSingle(i8 Next) {
+		this~>Link->Prototype->WriteSingle(this, Next)
+	}
+	define i8 FailRead() {
+		Throw(CHARACTER_DEVICE_READ_FAIL)
+		
+		return 0
+	}
+	define void FailWrite(i8 Character) {
+		Throw(CHARACTER_DEVICE_WRITE_FAIL)
+	}
 	
 	define i32 DefaultRead(void* RawBuffer, i32 Size) {
 		i8* Buffer := RawBuffer
@@ -47,56 +70,41 @@ struct CharacterDevicePrototype {
 		return Result
 	}
 	
-	define i8 FailRead() {
-		Throw(CHARACTER_DEVICE_READ_FAIL)
-		
-		return 0
-	}
-	define void FailWrite(i8 Character) {
-		Throw(CHARACTER_DEVICE_WRITE_FAIL)
-	}
-}
-
-define i32 RegisterCharacterDevicePrototype(CharacterDevicePrototype* Prototype) {
-	if !(Prototype->Read) {
-		Prototype->Read := &CharacterDevicePrototype.DefaultRead
-	}
-	
-	if !(Prototype->Write) {
-		Prototype->Write := &CharacterDevicePrototype.DefaultWrite
-	}
-	
-	if !(Prototype->ReadSingle) {
-		Prototype->ReadSingle := &CharacterDevicePrototype.FailRead
-	}
-	
-	if !(Prototype->WriteSingle) {
-		Prototype->WriteSingle := &CharacterDevicePrototype.FailWrite
-	}
-	
-	return 0
-}
-
-struct CharacterDeviceLink {
-	#Include "./src/kernel/core/CharacterDeviceInstance.rlx"
-}
-
-struct CharacterDevice {
-	CharacterDeviceLink Link
-	
 	define i32 Read(void* Buffer, i32 Size) {
 		return this~>Link->Prototype->Read(this, Buffer, Size)
 	}
 	define i32 Write(void* Buffer, i32 Size) {
 		return this~>Link->Prototype->Write(this, Buffer, Size)
 	}
+}
+
+define i32 RegisterCharacterDevicePrototype(CharacterDevicePrototype* Prototype) {
+	if !(Prototype->Read) {
+		Prototype->Read := &CharacterDevice.DefaultRead
+	}
 	
-	define i8 ReadSingle() {
-		return this~>Link->Prototype->ReadSingle(this)
+	if !(Prototype->Write) {
+		Prototype->Write := &CharacterDevice.DefaultWrite
 	}
-	define void WriteSingle(i8 Next) {
-		this~>Link->Prototype->WriteSingle(this, Next)
+	
+	if !(Prototype->ReadSingle) {
+		Prototype->ReadSingle := &CharacterDevice.FailRead
 	}
+	
+	if !(Prototype->WriteSingle) {
+		Prototype->WriteSingle := &CharacterDevice.FailWrite
+	}
+	
+	return 0
+}
+
+define void InitializeCharacterDevice(CharacterDevice* Result, CharacterDevicePrototype* Prototype, ... RawOptions) {
+	i32 OptionCount := (RawOptions As i32*)[0]
+	void** Options := (RawOptions As void**) + 0x8
+
+	Result~>Link->Prototype := Prototype
+	
+	Prototype->Initialize(Result, Options, OptionCount)
 }
 
 define CharacterDevice* NewCharacterDevice(CharacterDevicePrototype* Prototype, ... RawOptions) {

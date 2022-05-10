@@ -405,7 +405,6 @@ define void MainContinuation() {
 	KernelTerminal->SetCursorTimer()
 	
 	SetupShell()
-	NativeScreen->DrawRectangle(400, 400, 200, 200, 0xFF_AA_50)
 	
 	StartScheduler()
 	

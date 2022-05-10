@@ -1,4 +1,5 @@
 #Require "./src/kernel/graphics/PixelBuffer.rlx"
+#Require "./src/kernel/core/CharacterDevice.rlx"
 
 enum SixelBackgroundMode {
 	Fill,
@@ -10,7 +11,8 @@ enum SixelWriteState {
 	Normal,
 	Attributes,
 	Repeat,
-	ColorMap
+	ColorMap,
+	Done
 }
 
 i32 SIXEL_COLOR_SPACE_HSV := 1
@@ -62,21 +64,47 @@ struct SixelStreamInstance {
 		this->Palette[Index] :=  (R << 16) | (G << 8) | B
 	}
 	
-	define void Initialize(void** Parameters, i32 ParameterCount) {
-		this->Display := Parameters[0]
-		
+	define void ClearPalette() {
 		for (i32 Index := 0, Index < 16, Index++) {
 			i8* Color := &DefaultSixelPalette[Index * 3]
 			
 			this->SetPalette(Index, Color[0], Color[1], Color[3])
 		}
+		
+		for (i32 Index := 16, Index < 256, Index++) {
+			this->Palette[Index] := 0
+		}
 	}
+	
+	define void Initialize(void** Parameters, i32 ParameterCount) {
+		this->Display := Parameters[0]
+		this->ClearPalette()
+	}
+	
+	SixelWriteState State
+	i8 GatheringParameters
 	
 	i32 ColorIndex
 	i32 Row
 	i32 Column
 	
+	define void Reset(i32 X, i32 Y) {
+		this->State := SixelWriteState:Enter
+		this->GatheringParameters := false
+		
+		this->ColorIndex := 0
+		this->ClearPalette()
+		
+		this->Row := X
+		this->Column := Y
+	}
+	
 	define void PushSixel(i32 Value) {
+		if (Value = 0) {
+			this->Row++
+			return
+		}
+		
 		if (this->Row >= this->Display->Width()) {
 			return
 		}
@@ -93,9 +121,6 @@ struct SixelStreamInstance {
 		
 		this->Row++
 	}
-	
-	SixelWriteState State
-	i8 GatheringParameters
 	
 	i32[7] Parameters
 	i32 ParameterIndex
@@ -143,6 +168,11 @@ struct SixelStreamInstance {
 				;Print("Enter\n")
 				this->StartGatherParameters(SixelWriteState:Enter)
 			}
+		}
+		else if (Next = 0x1B || this->State = SixelWriteState:Done) {
+			this->State := SixelWriteState:Done
+			
+			Throw(CHARACTER_DEVICE_WRITE_FAIL)
 		}
 		else if (this->State = SixelWriteState:Normal) {
 			if ('?' <= Next && Next <= '~') {

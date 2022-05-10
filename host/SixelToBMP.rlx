@@ -68,7 +68,7 @@ define void Main(i64 ArgC, i8** ArgV) {
 			SixelDevice->WriteSingle(Next)
 		}
 		catch (i64 E) {
-			Print("Got exception %x\n", E)
+			Print("Got exception %l\n", E)
 			break
 		}
 	}

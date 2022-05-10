@@ -1,9 +1,15 @@
 #Require "./src/kernel/graphics/Screen.rlx"
 #Require "./src/kernel/graphics/Font.rlx"
+#Require "./src/kernel/graphics/Sixel.rlx"
 
 i32 TAB_SIZE := 4
 
 declare void ShellPleaseSendForMe(i8*, i32)
+
+enum TerminalMode {
+	Normal,
+	Sixel
+}
 
 struct Terminal {
 	Screen* Screen
@@ -27,6 +33,11 @@ struct Terminal {
 	
 	i32 MaxColumn
 	i32 MaxRow
+	
+	TerminalMode Mode
+	
+	SixelStreamInstance SixelDevice
+	CharacterDevice* Sixel
 	
 	define void Clear() {
 		this->Screen->Clear(this->BackgroundColor)
@@ -57,6 +68,9 @@ struct Terminal {
 		this->EscapeIndex := 0
 		
 		this->CalculateBounds()
+		
+		this->Sixel := this~>SixelDevice->AsCharacterDevice()
+		InitializeCharacterDevice(this->Sixel, &SixelStreamPrototype, this->Screen->Canvas)
 	}
 	
 	define void SetColors(i32 ForegroundColor, i32 BackgroundColor) {
@@ -474,8 +488,19 @@ struct Terminal {
 				this->EscapeIndex := 1
 			}
 			else if (this->EscapeIndex) {
-				if (this->EscapeIndex = 1 && Next != '[') {
-					this->EscapeIndex := 0
+				if (this->EscapeIndex = 1) {
+					if (Next = 'P') {
+						this->Mode := TerminalMode:Sixel
+						
+						this~>SixelDevice->Reset(ScreenX, ScreenY)
+						this->Sixel->WriteSingle(ASCII_ESCAPE As i8)
+						this->Sixel->WriteSingle('P')
+						
+						this->IgnoreCursorTicks := -1
+					}
+					else if (Next != '[') {
+						this->EscapeIndex := 0
+					}
 				}
 				else {
 					this~>EscapeBuffer[this->EscapeIndex++] := Next
@@ -499,39 +524,58 @@ struct Terminal {
 			this->HideCursor()
 		}
 		
-		this->IgnoreCursorTicks := -1
-		
-		i32 LastLineStart := 0
-		
-		for (i32 Index := 0, Index < TextLength, Index += 1) {
-			i8 NextCharacter := Text[Index]
+		if (this->Mode = TerminalMode:Sixel) {
+			i32 Written := this->Sixel->Write(Text, TextLength)
 			
-			if (NextCharacter = 0x0A || NextCharacter = 0x0D) {
-				if (NextCharacter = 0x0A) {
-					this->NewLine()
-					this->X := 0 ; TODO: Make this only apply when a dumb linux program is running
-				}
-				else if (NextCharacter = 0x0D) {
-					this->X := 0
-				}
+			if (Written != TextLength) {
+				i32 NewScreenY := this~>SixelDevice->Column
 				
-				i32 LastLineLength := Index - LastLineStart
+				i32 NewY := NewScreenY / this->Font->Height
 				
-				if (LastLineLength) {
-					this->PrintMarkedUpLine(&Text[LastLineStart], LastLineLength)
+				if (NewScreenY % this->Font->Height) {
+					NewY += 1
 				}
 				
-				LastLineStart := Index + 1
+				this->Y := NewY
+				
+				this->Mode := TerminalMode:Normal
+				this->IgnoreCursorTicks := 0
 			}
 		}
-		
-		if (LastLineStart < TextLength) {
-			this->PrintMarkedUpLine(&Text[LastLineStart], TextLength - LastLineStart)
+		else {
+			this->IgnoreCursorTicks := -1
+			
+			i32 LastLineStart := 0
+			
+			for (i32 Index := 0, Index < TextLength, Index += 1) {
+				i8 NextCharacter := Text[Index]
+				
+				if (NextCharacter = 0x0A || NextCharacter = 0x0D) {
+					if (NextCharacter = 0x0A) {
+						this->NewLine()
+						this->X := 0 ; TODO: Make this only apply when a dumb linux program is running
+					}
+					else if (NextCharacter = 0x0D) {
+						this->X := 0
+					}
+					
+					i32 LastLineLength := Index - LastLineStart
+					
+					if (LastLineLength) {
+						this->PrintMarkedUpLine(&Text[LastLineStart], LastLineLength)
+					}
+					
+					LastLineStart := Index + 1
+				}
+			}
+			
+			if (LastLineStart < TextLength) {
+				this->PrintMarkedUpLine(&Text[LastLineStart], TextLength - LastLineStart)
+			}
+			
+			this->IgnoreCursorTicks := 1
+			this->ShowCursor()
 		}
-		
-		this->IgnoreCursorTicks := 1
-		
-		this->ShowCursor()
 	}
 	
 	define void Print(i8* Text) {
