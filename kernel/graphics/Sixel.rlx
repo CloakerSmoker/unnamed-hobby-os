@@ -1,0 +1,228 @@
+#Require "./src/kernel/graphics/PixelBuffer.rlx"
+
+enum SixelBackgroundMode {
+	Fill,
+	Transparent
+}
+
+enum SixelWriteState {
+	Enter,
+	Normal,
+	Attributes,
+	Repeat,
+	ColorMap
+}
+
+i32 SIXEL_COLOR_SPACE_HSV := 1
+i32 SIXEL_COLOR_SPACE_RGB := 2
+
+define i32 ScaleSixelColor(i32 In) {
+	i32 InFraction := (In * 1000) / 100
+	i32 Temp := InFraction * 255
+	
+	i32 OutWhole := Temp / 1000
+	i32 OutFraction := Temp % 1000
+	
+	if (OutFraction >= 500) {
+		OutWhole++
+	}
+	
+	return OutWhole
+}
+
+i8* DefaultSixelPalette := i8[
+	0 , 0 , 0 ,
+	20, 20, 80,
+	80, 13, 13,
+	20, 80, 20,
+	80, 20, 20,
+	80, 80, 20,
+	53, 53, 53,
+	26, 26, 26,
+	33, 33, 90,
+	60, 26, 26,
+	33, 60, 33,
+	60, 33, 60,
+	33, 60, 60,
+	60, 60, 33,
+	80, 80, 80
+]
+
+struct SixelStreamInstance {
+	#Include "./src/kernel/core/CharacterDeviceInstance.rlx"
+
+	PixelBuffer* Display
+	i32[256] Palette
+	
+	define void SetPalette(i32 Index, i32 R, i32 G, i32 B) {
+		R := ScaleSixelColor(R)
+		G := ScaleSixelColor(G)
+		B := ScaleSixelColor(B)
+		
+		this->Palette[Index] :=  (R << 16) | (G << 8) | B
+	}
+	
+	define void Initialize(void** Parameters, i32 ParameterCount) {
+		this->Display := Parameters[0]
+		
+		for (i32 Index := 0, Index < 16, Index++) {
+			i8* Color := &DefaultSixelPalette[Index * 3]
+			
+			this->SetPalette(Index, Color[0], Color[1], Color[3])
+		}
+	}
+	
+	i32 ColorIndex
+	i32 Row
+	i32 Column
+	
+	define void PushSixel(i32 Value) {
+		if (this->Row >= this->Display->Width()) {
+			return
+		}
+		
+		i32 Color := this->Palette[this->ColorIndex]
+		
+		for (i8 Index := 0, Index < 6, Index++) {
+			i32 Mask := 1 << Index
+			
+			if (Value & Mask) {
+				this->Display->SetPixelColor(this->Row, this->Column + Index, Color)
+			}
+		}
+		
+		this->Row++
+	}
+	
+	SixelWriteState State
+	i8 GatheringParameters
+	
+	i32[7] Parameters
+	i32 ParameterIndex
+	i32 ParameterCount
+	
+	define void GatherNumberCharacter(i8 Next) {
+		this->Parameters[this->ParameterIndex] *= 10
+		this->Parameters[this->ParameterIndex] += Next - '0'
+	}
+	
+	define i8 GatherParameterCharacter(i8 Next) {
+		if ('0' <= Next && Next <= '9') {
+			this->GatherNumberCharacter(Next)
+		}
+		else if (Next = ';') {
+			this->ParameterIndex++
+		}
+		else {
+			this->ParameterCount := this->ParameterIndex + 1
+			
+			return true
+		}
+		
+		return false
+	}
+	
+	define void StartGatherParameters(SixelWriteState NewState) {
+		this->State := NewState
+		this->GatheringParameters := true
+		
+		this->ParameterIndex := 0
+		this->ParameterCount := 0
+		
+		for (i32 Index := 0, Index < 7, Index++) {
+			this->Parameters[Index] := 0
+		}
+	}
+	
+	define void Write(i8 Next) {
+		if (this->State = SixelWriteState:Enter && !this->GatheringParameters) {
+			if (Next = 0x1B) {
+				;Print("Enter sixel mode\n")
+			}
+			else if (Next = 'P') {
+				;Print("Enter\n")
+				this->StartGatherParameters(SixelWriteState:Enter)
+			}
+		}
+		else if (this->State = SixelWriteState:Normal) {
+			if ('?' <= Next && Next <= '~') {
+				this->PushSixel(Next - '?')
+			}
+			else if (Next = '!') {
+				;Print("Enter repeat mode\n")
+				this->StartGatherParameters(SixelWriteState:Repeat)
+			}
+			else if (Next = '#') {
+				;Print("Enter color map mode\n")
+				this->StartGatherParameters(SixelWriteState:ColorMap)
+			}
+			else if (Next = '"') {
+				;Print("Enter attributes mode\n")
+				this->StartGatherParameters(SixelWriteState:Attributes)
+			}
+			else if (Next = '-') {
+				this->Row := 0
+				this->Column += 6
+			}
+			else if (Next = '$') {
+				this->Row := 0
+			}
+		}
+		else if (this->GatheringParameters) {
+			if (this->GatherParameterCharacter(Next)) {
+				if (this->State = SixelWriteState:ColorMap) {
+					if (this->ParameterCount >= 1) {
+						this->ColorIndex := this->Parameters[0]
+						;Print("Switch to color %i\n", this->ColorIndex)
+					}
+					
+					if (this->ParameterCount = 5) {
+						if (this->Parameters[1] = SIXEL_COLOR_SPACE_HSV) {
+							Throw('SIXELHSV')
+						}
+						else if (this->Parameters[1] = SIXEL_COLOR_SPACE_RGB) {
+							this->SetPalette(this->ColorIndex, this->Parameters[2], this->Parameters[3], this->Parameters[4])
+						}
+					}
+				}
+				else if (this->State = SixelWriteState:Repeat) {
+					i32 RepeatCount := this->Parameters[0]
+					i8 RepeatCharacter := Next
+					
+					;Print("Repeat %c %i times\n", Next, RepeatCount)
+					
+					for (i32 Index := 1, Index < RepeatCount, Index++) {
+						this->PushSixel(RepeatCharacter - '?')
+					}
+				}
+				else if (this->State = SixelWriteState:Enter) {
+					if (Next != 'q') {
+						;Print("Sixel: Enter not terminated with 'q'\n")
+					}
+					
+					;Print("Exited enter\n")
+					
+					this->State := SixelWriteState:Normal
+					this->GatheringParameters := false
+					return
+				}
+				
+				this->State := SixelWriteState:Normal
+				this->GatheringParameters := false
+				
+				this->Write(Next)
+			}
+		}
+		
+	}
+	
+}
+
+CharacterDevicePrototype SixelStreamPrototype {
+	DataSize: #SixelStreamInstance,
+	Initialize: &SixelStreamInstance.Initialize,
+	
+	WriteSingle: &SixelStreamInstance.Write
+}
+
+i32 SIXEL_STREAM_PROTOTYPE_ID := RegisterCharacterDevicePrototype(&SixelStreamPrototype)

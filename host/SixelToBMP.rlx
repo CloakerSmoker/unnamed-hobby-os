@@ -1,0 +1,102 @@
+#Require "$/File.rlx"
+#Require "$/Console.rlx"
+#Require "$/Exception.rlx"
+
+#Require "./src/kernel/core/CharacterDevice.rlx"
+#Require "./src/kernel/graphics/Sixel.rlx"
+#Require "./src/kernel/graphics/BMPOutput.rlx"
+
+struct MemoryStreamInstance {
+	#Include "./src/kernel/core/CharacterDeviceInstance.rlx"
+	
+	union {
+		void* RawBuffer
+		i8* CharacterBuffer
+	}
+	
+	i32 Size
+	
+	define void Initialize(void** Options, i32 OptionCount) {
+		if (OptionCount != 2) {
+			Throw(CHARACTER_DEVICE_INIT_FAIL)
+		}
+		
+		this->RawBuffer := Options[0]
+		this->Size := Options[1] As i32
+	}
+	
+	i32 Index
+	
+	define i8 ReadSingle() {
+		if (this->Index >= this->Size) {
+			Throw(CHARACTER_DEVICE_READ_FAIL)
+		}
+		
+		return this->CharacterBuffer[this->Index++]
+	}
+}
+
+CharacterDevicePrototype MemoryStreamPrototype {
+	DataSize: #MemoryStreamInstance,
+	Initialize: &MemoryStreamInstance.Initialize,
+	
+	ReadSingle: &MemoryStreamInstance.ReadSingle
+}
+
+i32 MEMORY_STREAM_PROTOTYPE_ID := RegisterCharacterDevicePrototype(&MemoryStreamPrototype)
+
+define void Main(i64 ArgC, i8** ArgV) {
+	i8* Input := ArgV[1]
+	i8* Output := ArgV[2]
+	
+	i64 F := FileOpen(Input, FILE_READ)
+	i32 Size := FileGetSize(F)
+	void* Data := FileReadAll(F)
+	FileClose(F)
+	
+	PixelBuffer* RenderOutput := Alloc(#PixelBuffer)
+	RenderOutput->Initialize(Alloc(600 * 450 * 4), RGB32, 600, 450)
+	
+	Print("%x bytes of input\n", Size)
+	
+	CharacterDevice* MemoryDevice := NewCharacterDevice(&MemoryStreamPrototype, Data, Size)
+	CharacterDevice* SixelDevice := NewCharacterDevice(&SixelStreamPrototype, RenderOutput)
+	
+	loop {
+		try {
+			i8 Next := MemoryDevice->ReadSingle()
+			SixelDevice->WriteSingle(Next)
+		}
+		catch (i64 E) {
+			Print("Got exception %x\n", E)
+			break
+		}
+	}
+	
+	Print("Wrote all input to sixel device\n")
+	
+	i64 F := FileOpen(Output, FILE_WRITE | FILE_CREATE_NEW)
+	
+	PixelBufferCapture* Capture := Alloc(#PixelBufferCapture)
+	Capture->Initialize(RenderOutput)
+	
+	Print("Capturing output as BMP\n")
+	
+	void* CaptureBuffer := Alloc(4096)
+	
+	loop {
+		i32 Size := Capture->NextChunkSize()
+		
+		if (Size = 0) {
+			break
+		}
+		
+		Capture->ReadChunk(CaptureBuffer)
+		
+		FileWrite(F, CaptureBuffer, Size)
+	}
+	
+	Print("Done!")
+	
+	FileClose(F)
+}
