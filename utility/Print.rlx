@@ -84,18 +84,24 @@ define i32 AddPrintFormat(PrintFormatPrototype* Prototype) {
 
 struct PrintOutputAdapterPrototype {
 	void(PrintOutputAdapterPrototype*, i8) PrintCharacter
+	void(PrintOutputAdapterPrototype*, i8*, i32) PrintCharacters
 	
 	i32 Index  ; Scratch space for PrintCharacter implementations
 	i32 Length ; TODO: Come up with something smarter than this
 	i8* Buffer
 	
-	define void PrintCharacters(i8* Characters, i32 Length) {
-		for (i32 Index := 0, Index < Length, Index++) {
-			this->PrintCharacter(Characters[Index])
+	define void DoPrintCharacters(i8* Characters, i32 Length) {
+		if (this->PrintCharacters) {
+			this->PrintCharacters(Characters, Length)
+		}
+		else {
+			for (i32 Index := 0, Index < Length, Index++) {
+				this->PrintCharacter(Characters[Index])
+			}
 		}
 	}
 	define void PrintString(i8* String) {
-		this->PrintCharacters(String, StringLength(String))
+		this->DoPrintCharacters(String, StringLength(String))
 	}
 	
 	define void PrintIntegerBase(i64 Number, i64 Base) {
@@ -103,7 +109,7 @@ struct PrintOutputAdapterPrototype {
 		
 		i32 Length := IntegerToString(Number, Base, Buffer)
 		
-		this->PrintCharacters(Buffer, Length)
+		this->DoPrintCharacters(Buffer, Length)
 	}
 	define void PrintInteger(i64 Number) {
 		this->PrintIntegerBase(Number, 10)
@@ -136,7 +142,7 @@ struct PrintOutputAdapterPrototype {
 		
 		for (i32 Length := 0, (Length < 8) && (Characters[Length] != 0), Length += 1) {}
 		
-		this->PrintCharacters(Characters, Length)
+		this->DoPrintCharacters(Characters, Length)
 	}
 	
 	declare void Print(i8*, ...)
@@ -210,31 +216,45 @@ struct PrintOutputAdapterPrototype {
 				i8 First := Format[++Index]
 				
 				if (First = 'E') {
-					this->Print(ESC)
+					*(null As i32*) := 123
 				}
-				else if (First = 'R') {
-					this->Print("^E0m")
+				
+				if (First = 'R') {
+					this->Print("\e[0m")
 				}
 				else if (First = 'S') {
 					i8 Fore := GetCharacterValue(Format[++Index])
 					
-					this->Print("^E%im", TranslateColorToANSI(Fore))
+					this->Print("\e[%im", TranslateColorToANSI(Fore))
 				}
 				else if (First = 'H') {
 					i8 Back := GetCharacterValue(Format[++Index])
 					
-					this->Print("^E%im", TranslateColorToANSI(Back) + 10)
+					this->Print("\e[%im", TranslateColorToANSI(Back) + 10)
 				}
 				else {
 					Fore := GetCharacterValue(First)
 					Back := GetCharacterValue(Format[++Index])
 					
-					this->Print("^E%im", TranslateColorToANSI(Fore))
-					this->Print("^E%im", TranslateColorToANSI(Back) + 10)
+					this->Print("\e[%im", TranslateColorToANSI(Fore))
+					this->Print("\e[%im", TranslateColorToANSI(Back) + 10)
 				}
 			}
 			else {
-				this->PrintCharacter(Next)
+				i32 Start := Index
+				
+				loop {
+					Next := Format[++Index]
+					
+					if (Next = '%' || Next = '^') {
+						this->DoPrintCharacters(&Format[Start], Index-- - Start)
+						break
+					}
+					else if (Index >= Length) {
+						this->DoPrintCharacters(&Format[Start], Index - Start)
+						break
+					}
+				}
 			}
 		}
 	}

@@ -12,6 +12,7 @@ enum SixelWriteState {
 	Attributes,
 	Repeat,
 	ColorMap,
+	Escape,
 	Done
 }
 
@@ -177,9 +178,15 @@ struct SixelStreamInstance {
 					this->StartGatherParameters(SixelWriteState:Enter)
 				}
 			}
-			else if (Next = 0x1B || this->State = SixelWriteState:Done) {
-				this->State := SixelWriteState:Done
-				return 0
+			else if (Next = 0x1B) {
+				this->State := SixelWriteState:Escape
+			}
+			else if (this->State = SixelWriteState:Escape) {
+				if (Next = '\') {
+					return Index + 1
+				}
+				
+				return Index
 			}
 			else if (this->State = SixelWriteState:Normal) {
 				if ('?' <= Next && Next <= '~') {

@@ -8,7 +8,15 @@ declare void ShellPleaseSendForMe(i8*, i32)
 
 enum TerminalMode {
 	Normal,
+	Escape,
 	Sixel
+}
+
+enum TerminalEscapeState {
+	ControlCode,
+	CSI,
+	GatherParameters,
+	Command
 }
 
 struct Terminal {
@@ -199,70 +207,40 @@ struct Terminal {
 		return TAB_SIZE - (AtIndex % TAB_SIZE)
 	}
 	
-	define void DoEscape() {
+	i8 EscapePrefix
+	i32[7] EscapeParameters
+	i32 EscapeParameterIndex
+	i32 EscapeParameterCount
+	
+	define void StartEscape() {
+		this->EscapePrefix := 0
+		this->EscapeParameterIndex := 0
+		this->EscapeParameterCount := 0
+		
+		for (i32 Index := 0, Index < 7, Index++) {
+			this->EscapeParameters[Index] := 0
+		}
+	}
+	
+	define void DoEscape(i8 Prefix, i8 Command, i32* Parameters, i32 ParameterCount) {
 		if (DEBUG_TERMINAL_ESCAPES) {
-			Info("DoEscape ")
+			Info("ESC [")
 			
-			for (i32 DumpIndex := 0, DumpIndex < this->EscapeIndex, DumpIndex++) {
-				if (DumpIndex >= 2) {
-					Info("%c", this~>EscapeBuffer[DumpIndex] & 0xFF)
-				}
-				else {
-					Info("%B ", this~>EscapeBuffer[DumpIndex] & 0xFF)
-				}
+			if (Prefix) {
+				Info(" %c", Prefix)
 			}
 			
-			Info("\n")
-		}
-		
-		i8* Escape := this~>EscapeBuffer
-		i32 Length := this->EscapeIndex
-		
-		if (Escape[1] != '[' || Length < 3) {
-			return
-		}
-		
-		i8 Prefix := 0
-		
-		if (Escape[2] = '?') {
-			Prefix := '?'
-			Escape += 1
-			Length -= 1
-		}
-		
-		i8 Command := Escape[--Length]
-		
-		Escape += 2
-		Length -= 2
-		
-		i32 ParameterCount := 0
-		i32 LastParameterStart := 0
-		
-		i8*[4] Parameters
-		i32[4] ParameterLengths
-		
-		for (i32 Index := 0, Index < Length, Index++) {
-			i8 Next := Escape[Index]
-			
-			if (Next = ';') {
-				if (ParameterCount < 4) {
-					ParameterLengths[ParameterCount] := Index - LastParameterStart - 1
-					Parameters[ParameterCount++] := &Escape[LastParameterStart]
-					
-					LastParameterStart := Index + 1
-				}
+			for (i32 Index := 0, Index < ParameterCount, Index++) {
+				Info(" %i", Parameters[Index])
 			}
+			
+			Info("%c\n", Command)
 		}
 		
-		if (LastParameterStart != Length && ParameterCount < 4) {
-			ParameterLengths[ParameterCount] := Index - LastParameterStart
-			Parameters[ParameterCount++] := &Escape[LastParameterStart]
-		}
-		
-		if (Command = 'n' && Parameters[0][0] = '6') {
+		if (Command = 'n' && Parameters[0] = 6) {
 			i8[40] CursorPositionEscape
 			
-			i32 FormatLength := FormatString(CursorPositionEscape, 40, "^E%i;%iR", this->Y + 1, this->X + 1)
+			i32 FormatLength := FormatString(CursorPositionEscape, 40, "\e[%i;%iR", this->Y + 1, this->X + 1)
 			
 			;Info("Formatted '%s' %x\n", CursorPositionEscape, FormatLength)
 			
@@ -271,17 +249,9 @@ struct Terminal {
 		else if (Command = 'm') {
 			if (ParameterCount != 1) { return }
 			
-			i32 StyleLength := ParameterLengths[0]
-			i8* StyleText := Parameters[0]
-			
 			;BochsPrint("'%s', len %i\n", StyleText, StyleLength)
 			
-			i32 Style := 0
-			
-			for (i32 StyleIndex := 0, StyleIndex < StyleLength, StyleIndex++) {
-				Style *= 10
-				Style += StyleText[StyleIndex] - '0'
-			}
+			i32 Style := Parameters[0]
 			
 			;BochsPrint("Switch to style %i\n", Style)
 			
@@ -310,6 +280,7 @@ struct Terminal {
 				this->BackgroundColor := BrightColors[Style]				
 			}
 			else if (Style = 0) {
+				Info("Style reset\n")
 				this->ForegroundColor := this->DefaultForegroundColor
 				this->BackgroundColor := this->DefaultBackgroundColor
 			}
@@ -318,34 +289,19 @@ struct Terminal {
 			this->Clear()
 		}
 		else if (Command = 'S') {
-			i32 ScrollDistance := 0
+			i32 ScrollDistance := 1
 			
 			if (ParameterCount != 0) {
-				i32 ScrollDistanceLength := ParameterLengths[0]
-				i8* ScrollDistanceText := Parameters[0]
-			
-				for (i32 ScrollDistanceIndex := 0, ScrollDistanceIndex < ScrollDistanceLength, ScrollDistanceIndex++) {
-					ScrollDistance *= 10
-					ScrollDistance += ScrollDistanceText[ScrollDistanceIndex] - '0'
-				}
-			}
-			else {
-				ScrollDistance := 1
+				ScrollDistance := Parameters[0]
 			}
 			
 			this->ScrollUp(ScrollDistance)
 		}
 		else if ('A' <= Command && Command <= 'D') {
-			i32 CursorDistance := 0
+			i32 CursorDistance := 1
 			
 			if (ParameterCount != 0) {
-				i32 CursorDistanceLength := ParameterLengths[0]
-				i8* CursorDistanceText := Parameters[0]
-			
-				for (i32 CursorDistanceIndex := 0, CursorDistanceIndex < CursorDistanceLength, CursorDistanceIndex++) {
-					CursorDistance *= 10
-					CursorDistance += CursorDistanceText[CursorDistanceIndex] - '0'
-				}
+				CursorDistance := Parameters[0]
 			}
 			else {
 				CursorDistance := 1
@@ -398,10 +354,10 @@ struct Terminal {
 		}
 		else if (Command = 'H') {
 			if (ParameterCount >= 1) {
-				this->Y := (AToI(Parameters[0]) - 1) As i32
+				this->Y := Parameters[0] - 1
 				
 				if (ParameterCount >= 2) {
-					this->X := (AToI(Parameters[1]) - 1) As i32
+					this->X := Parameters[1] - 1
 				}
 				else {
 					this->X := 0
@@ -413,7 +369,7 @@ struct Terminal {
 			}
 		}
 		else if (Command = 'J') {
-			if (ParameterCount = 0 || Parameters[0] = '0') {
+			if (ParameterCount = 0) {
 				this->ClearToScreenEnd(this->X, this->Y)
 			}
 			else if (ParameterCount = 1) {
@@ -421,25 +377,13 @@ struct Terminal {
 			}
 		}
 		else if (Command = 'K') {
-			if (ParameterCount = 0 || Parameters[0] = '0') {
+			if (ParameterCount = 0 || Parameters[0] = 0) {
 				this->ClearToLineEnd(this->X, this->Y)
 			}
 			else {
 				this->ClearLine(this->Y)
 			}
 		}
-	}
-	
-	define i8 IsEscapeCharacter(i8 Character) {
-		if ('0' <= Character && Character <= '9') {
-			return true
-		}
-		else if (Character = '[') { return true }
-		else if (Character = '-') { return true }
-		else if (Character = ';') { return true }
-		else if (Character = '?') { return true }
-		
-		return false
 	}
 	
 	define void RawPrintCharacter(i32* ScreenX, i32* ScreenY, i8 Character) {		
@@ -456,14 +400,103 @@ struct Terminal {
 		this->ConvertToScreenCoords(this->X, this->Y, ScreenX, ScreenY)
 	}
 	
-	define void PrintMarkedUpLine(i8* Line, i32 LineLength) {
+	declare i32 Print(i8*, i32)
+	
+	define i32 SixelPrint(i8* Characters, i32 Count) {
+		i32 Written := this->Sixel->Write(Characters, Count)
+		
+		;Info("Sixel.Write(%i) = %i\n", Count, Written)
+			
+		if (Written != Count) {
+			;Info("Sixel done\n")
+			
+			i32 NewScreenY := this~>SixelDevice->Y
+			
+			i32 NewY := NewScreenY / this->Font->Height
+			
+			if (NewScreenY % this->Font->Height) {
+				NewY += 1
+			}
+			
+			this->Y := NewY
+			this->IgnoreCursorTicks := 0
+			
+			this->Mode := TerminalMode:Normal
+		}
+		
+		return Written
+	}
+	
+	TerminalEscapeState EscapeState
+	
+	define i32 EscapePrint(i8* Characters, i32 Count) {
+		for (i32 Index := 0, Index < Count, Index++) {
+			i8 Next := Characters[Index]
+			
+			if (this->EscapeState = TerminalEscapeState:ControlCode) {
+				if (Next = '[') {
+					this->EscapeState := TerminalEscapeState:CSI
+				}
+				else if (Next = 'P') {
+					i32 ScreenX := 0
+					i32 ScreenY := 0
+					this->ConvertToScreenCoords(this->X, this->Y, &ScreenX, &ScreenY)
+					
+					this->Mode := TerminalMode:Sixel
+					this~>SixelDevice->Reset(ScreenX, ScreenY)
+					
+					i8* SixelIntro := i8[0x1B, 'P']
+					
+					this->SixelPrint(SixelIntro, 2)
+					return Index + 1
+				}
+			}
+			else if (this->EscapeState = TerminalEscapeState:CSI) {
+				if (Next = '?') {
+					this->EscapePrefix := '?'
+				}
+				else {
+					Index--
+				}
+				
+				this->EscapeState := TerminalEscapeState:GatherParameters
+			}
+			else if (this->EscapeState = TerminalEscapeState:GatherParameters) {
+				if (Next = ';') {
+					this->EscapeParameterIndex++
+					this->EscapeParameterCount++
+				}
+				else if ('0' <= Next && Next <= '9') {
+					if (this->EscapeParameterCount = 0) {
+						this->EscapeParameterCount := 1
+					}
+					
+					this->EscapeParameters[this->EscapeParameterIndex] *= 10
+					this->EscapeParameters[this->EscapeParameterIndex] += Next - '0'
+				}
+				else {
+					this->EscapeState := TerminalEscapeState:Command
+					Index--
+				}
+			}
+			else if (this->EscapeState = TerminalEscapeState:Command) {
+				this->DoEscape(this->EscapePrefix, Next, this->EscapeParameters, this->EscapeParameterCount)
+				this->Mode := TerminalMode:Normal
+				return Index + 1
+			}
+		}
+		
+		return Count
+	}
+	
+	define void PrintChunk(i8* Chunk, i32 Length) {
 		i32 ScreenX := 0
 		i32 ScreenY := 0
 		
 		this->ConvertToScreenCoords(this->X, this->Y, &ScreenX, &ScreenY)
 		
-		for (i32 Index := 0, Index < LineLength, Index++) {
-			i8 Next := Line[Index]
+		for (i32 Index := 0, Index < Length, Index++) {
+			i8 Next := Chunk[Index]
 			
 			if (Next = ASCII_TAB) {
 				i32 TabLength := this->GetTabLength(this->X + Index)
@@ -480,101 +513,78 @@ struct Terminal {
 					;this->Font->Draw(this->Screen->Canvas, this->ForegroundColor, this->BackgroundColor, ScreenX, ScreenY, ' ')
 				}
 			}
-			;else if (Next = ASCII_DEL) {
-			;	
-			;}
-			else if (Next = ASCII_ESCAPE) {
-				this~>EscapeBuffer[0] := 0x1B
-				this->EscapeIndex := 1
-			}
-			else if (this->EscapeIndex) {
-				if (this->EscapeIndex = 1) {
-					if (Next = 'P') {
-						this->Mode := TerminalMode:Sixel
-						
-						this~>SixelDevice->Reset(ScreenX, ScreenY)
-						this->Sixel->WriteSingle(ASCII_ESCAPE As i8)
-						this->Sixel->WriteSingle('P')
-						
-						this->IgnoreCursorTicks := -1
-					}
-					else if (Next != '[') {
-						this->EscapeIndex := 0
-					}
-				}
-				else {
-					this~>EscapeBuffer[this->EscapeIndex++] := Next
-					
-					i8 NextIsEscape := this->IsEscapeCharacter(Next)
-					
-					if !(NextIsEscape) {
-						this->DoEscape()
-						this->EscapeIndex := 0
-					}
-				}
-			}
 			else {
-				this->RawPrintCharacter(&ScreenX, &ScreenY, Line[Index])
+				this->RawPrintCharacter(&ScreenX, &ScreenY, Chunk[Index])
 			}
 		}
 	}
 	
-	define void Print(i8* Text, i32 TextLength) {
+	define i32 TextPrint(i8* Characters, i32 Count) {
+		; Text is split into chunks delimited by control characters and escapes
+		
 		if (this->CursorShown) {
 			this->HideCursor()
 		}
 		
-		if (this->Mode = TerminalMode:Sixel) {
-			i32 Written := this->Sixel->Write(Text, TextLength)
+		this->IgnoreCursorTicks := -1
+		
+		i32 LastChunkStart := 0
 			
-			if (Written != TextLength) {
-				i32 NewScreenY := this~>SixelDevice->Column
+		for (i32 Index := 0, Index < Count, Index += 1) {
+			i8 NextCharacter := Characters[Index]
+			
+			if (NextCharacter = 0x0A || NextCharacter = 0x0D || NextCharacter = 0x1B) {
+				i32 LastChunkLength := Index - LastChunkStart
 				
-				i32 NewY := NewScreenY / this->Font->Height
-				
-				if (NewScreenY % this->Font->Height) {
-					NewY += 1
+				if (LastChunkLength) {
+					this->PrintChunk(&Characters[LastChunkStart], LastChunkLength)
 				}
 				
-				this->Y := NewY
+				if (NextCharacter = 0x0A) {
+					this->NewLine()
+					this->X := 0 ; TODO: Make this only apply when a dumb linux program is running
+				}
+				else if (NextCharacter = 0x0D) {
+					this->X := 0
+				}
+				else if (NextCharacter = 0x1B) {
+					this->Mode := TerminalMode:Escape
+					this->EscapeState := TerminalEscapeState:ControlCode
+					this->StartEscape()
+					
+					return Index + 1
+				}
 				
-				this->Mode := TerminalMode:Normal
-				this->IgnoreCursorTicks := 0
+				LastChunkStart := Index + 1
 			}
 		}
-		else {
-			this->IgnoreCursorTicks := -1
+		
+		if (LastChunkStart < Count) {
+			this->PrintChunk(&Characters[LastChunkStart], Count - LastChunkStart)
+		}
+		
+		this->IgnoreCursorTicks := 1
+		this->ShowCursor()
+		
+		return Count
+	}
+	
+	define void Print(i8* AllCharacters, i32 TotalCount) {
+		i32 Written := 0
+		
+		while (Written != TotalCount) {
+			i8* Characters := &AllCharacters[Written]
+			i32 Count := TotalCount - Written
 			
-			i32 LastLineStart := 0
-			
-			for (i32 Index := 0, Index < TextLength, Index += 1) {
-				i8 NextCharacter := Text[Index]
-				
-				if (NextCharacter = 0x0A || NextCharacter = 0x0D) {
-					if (NextCharacter = 0x0A) {
-						this->NewLine()
-						this->X := 0 ; TODO: Make this only apply when a dumb linux program is running
-					}
-					else if (NextCharacter = 0x0D) {
-						this->X := 0
-					}
-					
-					i32 LastLineLength := Index - LastLineStart
-					
-					if (LastLineLength) {
-						this->PrintMarkedUpLine(&Text[LastLineStart], LastLineLength)
-					}
-					
-					LastLineStart := Index + 1
-				}
+			if (this->Mode = TerminalMode:Sixel) {
+				Written += this->SixelPrint(Characters, Count)
 			}
-			
-			if (LastLineStart < TextLength) {
-				this->PrintMarkedUpLine(&Text[LastLineStart], TextLength - LastLineStart)
+			else if (this->Mode = TerminalMode:Escape) {
+				Written += this->EscapePrint(Characters, Count)
 			}
-			
-			this->IgnoreCursorTicks := 1
-			this->ShowCursor()
+			else {
+				Written += this->TextPrint(Characters, Count)
+			}
 		}
 	}
 	

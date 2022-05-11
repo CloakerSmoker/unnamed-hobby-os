@@ -88,7 +88,23 @@ declare void SchedulerYield()
 #Require "./src/kernel/graphics/BMPOutput.rlx"
 
 define void PrintCharacter(i8 Character) {
+	; Pre-terminal print function
+}
+
+#Require "./src/utility/Print.rlx"
+
+; Terminal print functions
+
+define void KernelPrintCharacter(PrintOutputAdapterPrototype* this, i8 Character) {
 	KernelTerminal->Print(&Character, 1)
+}
+define void KernelPrintCharacters(PrintOutputAdapterPrototype* this, i8* Characters, i32 Count) {
+	KernelTerminal->Print(Characters, Count)
+}
+
+PrintOutputAdapterPrototype KernelPrinter {
+	PrintCharacter: &KernelPrintCharacter,
+	PrintCharacters: &KernelPrintCharacters
 }
 
 #Require "./src/drivers/block-device/BlockDevice.rlx"
@@ -293,6 +309,8 @@ define void MainContinuation() {
 	
 	KernelTerminal->Adopt(NativeScreen, BootFont, TERMINAL_FOREGROUND, TERMINAL_BACKGROUND)
 	KernelTerminal->Clear()
+	
+	Printer := &KernelPrinter
 	
 	KernelTerminal->PrintLine("BOOT: Screen *probably* works")
 	
