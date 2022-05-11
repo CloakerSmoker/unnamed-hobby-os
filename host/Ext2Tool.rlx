@@ -6,6 +6,13 @@
 #Require "./src/drivers/block-device/BlockDevice.rlx"
 #Require "./src/drivers/block-device/FileBlockDevice.rlx"
 #Require "./src/drivers/block-device/GPTBlockDevice.rlx"
+
+i8 DEBUG_EXT2_OPTIMIZATION := false
+
+define void Info(i8* Format, ... Args) {
+	
+}
+
 #Require "./src/drivers/Ext2.rlx"
 
 #Require "$/Debug.rlx"
@@ -43,9 +50,9 @@ define void PrintBlockGroupDescriptor(Ext2BlockGroupDescriptor* this) {
 	Print("	UnallocatedINodes: %i\n", this->UnallocatedINodes)
 	Print("}\n")
 }
-define void PrintINode(INode* this) {
+define void PrintINode(Ext2INode* this) {
 	Print("INode {\n")
-	Print("\tPermissions: %x\n", this->Permissions)
+	Print("\tPermissions: %x\n", this->GetPermissions())
 	Print("\tUserID: %i\n", this->UserID)
 	Print("\tFileSizeLow: %i\n", this->FileSizeLow)
 	Print("\tLastAccessTime: %i\n", this->LastAccessTime)
@@ -96,7 +103,7 @@ define void Tabs(i32 Count) {
 	}
 }
 
-define void DirectoryTree(Ext2* FS, INode* Root, i32 TabCount) {
+define void DirectoryTree(Ext2* FS, Ext2INode* Root, i32 TabCount) {
 	i32 State := FS->StartWalkDirectory(Root)
 	
 	loop {
@@ -106,7 +113,7 @@ define void DirectoryTree(Ext2* FS, INode* Root, i32 TabCount) {
 			break
 		}
 		
-		INode* NextNode := FS->ReadINode(NextEntry->INode)
+		Ext2INode* NextNode := FS->ReadINode(NextEntry->INode)
 		
 		if (NextEntry->NameLength != 0) {
 			Tabs(TabCount)
@@ -114,7 +121,7 @@ define void DirectoryTree(Ext2* FS, INode* Root, i32 TabCount) {
 		}
 		
 		if (NextNode->GetType() = 0x4 && NextEntry~>Name[0] != '.') {
-			INode* NextDirectory := CloneMemory(NextNode, #INode)
+			Ext2INode* NextDirectory := CloneMemory(NextNode, #Ext2INode)
 			
 			DirectoryTree(FS, NextDirectory, TabCount + 1)
 			
@@ -145,7 +152,7 @@ define i32 ParseScale(i8* ScaleString) {
 
 define void Prompt(Ext2* FS) {
 	if (FS->SuperBlock->SuperBlockNumber) {
-		INode* RootINode := CloneMemory(FS->ReadINode(2), #INode)
+		Ext2INode* RootINode := CloneMemory(FS->ReadINode(2), #Ext2INode)
 	}
 	
 	loop {
@@ -169,7 +176,7 @@ define void Prompt(Ext2* FS) {
 					break
 				}
 				
-				INode* NextNode := FS->ReadINode(NextEntry->INode)
+				Ext2INode* NextNode := FS->ReadINode(NextEntry->INode)
 				
 				if (NextNode->IsDirectory()) {
 					Print(" ^20D^F0 ")
@@ -191,7 +198,7 @@ define void Prompt(Ext2* FS) {
 				Print(" CD to '^A0%s^F0', INode ^A0%x^F0\n", Path, NewRootEntry->INode)
 				
 				Free(RootINode)
-				RootINode := CloneMemory(FS->ReadINode(NewRootEntry->INode), #INode)
+				RootINode := CloneMemory(FS->ReadINode(NewRootEntry->INode), #Ext2INode)
 			}
 		}
 		else if (StringEquals(Command, "bi")) {
@@ -201,7 +208,7 @@ define void Prompt(Ext2* FS) {
 				Print(" Could not find file/directory '^C0%s^F0'\n", Path)
 			}
 			else {
-				INode* FoundNode := CloneMemory(FS->ReadINode(FoundNodeEntry->INode), #INode)
+				Ext2INode* FoundNode := CloneMemory(FS->ReadINode(FoundNodeEntry->INode), #Ext2INode)
 				
 				i32 BlockCount := FoundNode->FileSizeLow / 1024
 				
@@ -234,7 +241,7 @@ define void Prompt(Ext2* FS) {
 				Print(" Could not find file '^C0%s^F0'\n", Path)
 			}
 			else {
-				INode* FoundFileNode := CloneMemory(FS->ReadINode(FoundFileEntry->INode), #INode)
+				Ext2INode* FoundFileNode := CloneMemory(FS->ReadINode(FoundFileEntry->INode), #Ext2INode)
 				
 				i32 FileBlockCount := FoundFileNode->FileSizeLow / 1024
 				
@@ -374,7 +381,7 @@ define void Prompt(Ext2* FS) {
 			
 			Print(" +------------------------------\n")
 			
-			RootINode := CloneMemory(FS->ReadINode(2), #INode)
+			RootINode := CloneMemory(FS->ReadINode(2), #Ext2INode)
 		}
 		else if (StringEquals(Command, "sb")) {
 			PrintSuperBlock(FS->SuperBlock)
@@ -399,7 +406,7 @@ define void Prompt(Ext2* FS) {
 			
 			i32 NewNodeNumber := FS->AllocateINode()
 			
-			INode* NewNode := FS->ReadINode(NewNodeNumber)
+			Ext2INode* NewNode := FS->ReadINode(NewNodeNumber)
 			NewNode->SetFieldDefaults()
 			FS->WriteINode(NewNode)
 			
@@ -434,7 +441,7 @@ define void Prompt(Ext2* FS) {
 				continue
 			}
 			
-			INode* OutputNode := CloneMemory(FS->ReadINode(OutputEntry->INode), #INode)
+			Ext2INode* OutputNode := CloneMemory(FS->ReadINode(OutputEntry->INode), #Ext2INode)
 			
 			i32 OutputBlockCount := OutputNode->FileSizeLow / 0x400
 			i32 OutputRemainder := OutputNode->FileSizeLow % 0x400
@@ -466,7 +473,7 @@ define void Prompt(Ext2* FS) {
 			
 			Print("Dumping INode %i\n", DumpINodeNumber)
 			
-			INode* DumpINode := FS->ReadINode(DumpINodeNumber)
+			Ext2INode* DumpINode := FS->ReadINode(DumpINodeNumber)
 			
 			PrintINode(DumpINode)
 		}
@@ -496,7 +503,7 @@ define void Prompt(Ext2* FS) {
 			i32 InputSize := FileGetSize(InputFile)
 			void* InputData := FileReadAll(InputFile)
 			
-			INode* ToNode := FS->ReadINode(ToNodeNumber)
+			Ext2INode* ToNode := FS->ReadINode(ToNodeNumber)
 			ToNode->SetFieldDefaults()
 			ToNode->MakeFile()
 			FS->WriteINode(ToNode)
@@ -567,6 +574,14 @@ define i32 Main(i64 ArgC, i8** ArgV) {
 	
 	BlockDevice* Device := InstantiateBlockDeviceChainFromPath(ArgV[1])
 	
+	i8 NoCatch := false
+	
+	if (ArgC = 3) {
+		if (StringEquals(ArgV[2], "--no-catch")) {
+			NoCatch := true
+		}
+	}
+	
 	Print("Device = %x\n", Device)
 	
 	Ext2* FS := Alloc(#Ext2)
@@ -585,11 +600,16 @@ define i32 Main(i64 ArgC, i8** ArgV) {
 	
 	PrintSuperBlock(FS->SuperBlock)
 	
-	try {
+	if (NoCatch) {
 		Prompt(FS)
 	}
-	catch (i64 Exception) {
-		Print("Ext2 Exception: %s\n", Ext2ExceptionToString(Exception))
+	else {
+		try {
+			Prompt(FS)
+		}
+		catch (i64 Exception) {
+			Print("Ext2 Exception: %s\n", Ext2ExceptionToString(Exception))
+		}
 	}
 	
 	return 0

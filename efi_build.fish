@@ -42,6 +42,8 @@ format 32 m
 import ./build/kernel.elf kernel.elf
 import TestFile.txt test.txt
 import Test.rlx test.rlx
+import dum.six dum.six
+import graphic_design_is_my_passion.six logo.six
 mkdir bin
 cd bin
 import ./build/TestProgram.elf test.elf
@@ -52,7 +54,6 @@ import busybox_ED linux_ed
 import busybox_VI linux_vi
 import new_compiler.elf compiler
 import Signaler.elf signaler.elf
-import dum.six dum.six
 quit
 " | ./Ext2Tool.elf 'File(EFIBoot.img,512)>GPT(1)'
 

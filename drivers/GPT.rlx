@@ -128,11 +128,8 @@ struct GPTDevice {
 		i32 OffsetInSector := (Index % PartitionEntriesPerSector) * this->Header->PartitionEntrySize
 		
 		this->Device->Read(this->Header->PartitionEntryArrayLBA + SectorIndex, 1, this->TempSector)
-
 		MoveMemory(this->TempSector + OffsetInSector, Entry, #GPTPartitionEntry)
-		
 		this->Device->Write(this->Header->PartitionEntryArrayLBA + SectorIndex, 1, this->TempSector)
-		
 		
 		i32 PartitionEntryArrayChecksum := this->CalculatePartitionEntryArrayCRC()
 		

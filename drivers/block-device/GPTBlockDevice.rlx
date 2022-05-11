@@ -10,9 +10,17 @@ struct GPTPartitionBlockDeviceInstance {
 	GPTDevice* GPTParent
 	
 	define void Read(i64 FirstBlock, i64 BlockCount, void* Buffer) {
+		if (FirstBlock + BlockCount >= this~>Entry->EndingLBA) {
+			Throw(BLOCK_DEVICE_READ_PAST_END)
+		}
+		
 		this->Parent->Read(this~>Entry->StartingLBA + FirstBlock, BlockCount, Buffer)
 	}
 	define void Write(i64 FirstBlock, i64 BlockCount, void* Buffer) {
+		if (FirstBlock + BlockCount >= this~>Entry->EndingLBA) {
+			Throw(BLOCK_DEVICE_WRITE_PAST_END)
+		}
+		
 		this->Parent->Write(this~>Entry->StartingLBA + FirstBlock, BlockCount, Buffer)
 	}
 	define i64 GetBytesPerBlock() {

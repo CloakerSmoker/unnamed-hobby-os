@@ -351,6 +351,12 @@ define i8* Ext2ExceptionToString(i64 Exception) {
 	else if (Exception = EXT2_EXCEPTION_FORMAT_BAD_INODE_COUNT) {
 		return "The format parameters do not specify enougn INodes for the 11 reserved INodes"
 	}
+	else if (Exception = BLOCK_DEVICE_READ_PAST_END) {
+		return "The ext2 driver tired to read past the end of the underlying storage device"
+	}
+	else if (Exception = BLOCK_DEVICE_WRITE_PAST_END) {
+		return "The ext2 driver tired to write past the end of the underlying storage device"
+	}
 	else {
 		return "Unknown error"
 	}
@@ -785,7 +791,7 @@ struct Ext2 {
 			
 			if (GetBlock) {
 				if (BGD->UnallocatedBlocks <= 0) {
-					break
+					continue
 				}
 				
 				BitmapBlock := BGD->BlockBitmap
@@ -794,8 +800,8 @@ struct Ext2 {
 				this->SuperBlock->UnallocatedBlocks -= 1
 			}
 			else {
-				if (BGD->UnallocatedBlocks <= 0) {
-					break
+				if (BGD->UnallocatedINodes <= 0) {
+					continue
 				}
 			
 				BGD->UnallocatedINodes -= 1
@@ -810,7 +816,7 @@ struct Ext2 {
 			i8* Bitmap := this->ReadBitmap(BitmapBlock)
 			
 			try {
-				i32 Result := this->AllocateInBitmap(Bitmap, MaxPerGroup)
+				i32 Result := (BlockGroupIndex * MaxPerGroup) + this->AllocateInBitmap(Bitmap, MaxPerGroup)
 			}
 			catch (i64 Exception) {
 				if (Exception = EXT2_EXCEPTION_BAD_PARAMETER) {

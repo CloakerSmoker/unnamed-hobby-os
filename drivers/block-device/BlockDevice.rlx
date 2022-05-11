@@ -3,6 +3,9 @@
 
 ; ATA(0)>Remap(512)>GPT('Dog')>Remap(1024)
 
+i64 BLOCK_DEVICE_READ_PAST_END := 'BDEV_RPE'
+i64 BLOCK_DEVICE_WRITE_PAST_END := 'BDEV_WPE'
+
 struct BlockDevicePrototype {
 	void(void*, i64, i64, void*) Read
 	void(void*, i64, i64, void*) Write

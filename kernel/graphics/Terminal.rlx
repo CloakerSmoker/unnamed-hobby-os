@@ -222,6 +222,9 @@ struct Terminal {
 		}
 	}
 	
+	i32 SavedX
+	i32 SavedY
+	
 	define void DoEscape(i8 Prefix, i8 Command, i32* Parameters, i32 ParameterCount) {
 		if (DEBUG_TERMINAL_ESCAPES) {
 			Info("ESC [")
@@ -383,6 +386,14 @@ struct Terminal {
 			else {
 				this->ClearLine(this->Y)
 			}
+		}
+		else if (Command = 's') {
+			this->SavedX := this->X
+			this->SavedY := this->Y
+		}
+		else if (Command = 'u') {
+			this->X := this->SavedX
+			this->Y := this->SavedY
 		}
 	}
 	
