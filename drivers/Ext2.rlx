@@ -1472,19 +1472,24 @@ struct Ext2 {
 		;	BytesRead += 1024
 		;}
 		
-		i32 Index := 0
+		i32 Index := FirstBlock
+		i32 LastBlock := FirstBlock + BlockCount
+		i32 MiddleRead := 0
 		
-		while (Index < BlockCount) {
+		while (MiddleRead < BlockCount) {
 			Ext2Extent NextExtent
 			
 			this->FindINodeDataExtent(Node, Index, &NextExtent)
+			
+			i32 Start := NextExtent.First
+			i32 End := Start + NextExtent.Count
 			
 			if (DEBUG_EXT2_OPTIMIZATION) {
 				Info("[EXT2] Read inode %i extent %x-%x ", Node->INodeNumber, NextExtent.First, NextExtent.First + NextExtent.Count)
 			}
 			
-			if (Index + NextExtent.Count > BlockCount) {
-				NextExtent.Count := BlockCount - Index
+			if (Index + NextExtent.Count > LastBlock) {
+				NextExtent.Count := LastBlock - Index
 				
 				if (DEBUG_EXT2_OPTIMIZATION) {
 					Info(" (truncated extent to %x)", NextExtent.First + NextExtent.Count)
@@ -1499,6 +1504,9 @@ struct Ext2 {
 			
 			Buffer += NextExtent.Count * 1024
 			Index += NextExtent.Count
+			
+			MiddleRead += NextExtent.Count
+			BytesRead += NextExtent.Count * 1024
 		}
 		
 		if (Size % 1024) {

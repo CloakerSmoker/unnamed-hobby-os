@@ -189,9 +189,7 @@ define void OnCommand(i8* CommandLine) {
 			void* FileData := KernelPageAllocator->AllocateVirtual(1)
 			
 			loop {
-				i32 BytesRead := FS->Read(Handle, FileData, 1023)
-				
-				Info("%x bytes read\n", BytesRead)
+				i32 BytesRead := FS->Read(Handle, FileData, PAGE_SIZE)
 				
 				if (BytesRead = 0) {
 					FS->Close(Handle)
