@@ -2,6 +2,8 @@
 #Require "$/MemoryBase.rlx"
 #Require "./src/utility/x64.rlx"
 
+#Require "./src/kernel/file-system/FileSystem.rlx"
+
 i16 EXT2_SUPER_MAGIC := 0xEF53 As i16
 
 i16 EXT2_VALID_FS := 1
@@ -266,30 +268,6 @@ struct Ext2CreationParameters {
 struct Ext2Extent {
 	i32 First
 	i32 Count
-}
-
-struct Ext2Handle {
-	Ext2INode Node
-	
-	void* CurrentExtentBuffer
-	Ext2Extent CurrentExtent
-	
-	i32 Offset
-	i8 CachedExtentIsValid
-}
-
-struct Ext2Status {
-	i32 INodeNumber
-	i32 Size
-	i8 IsFile
-	i8 IsDirectory
-	i16 Permissions
-}
-
-struct Ext2StaticDirectoryEntry {
-	i32 INodeNumber
-	i32 NameLength
-	i8[120] Name
 }
 
 i8 EXT2_OPEN_IF_EXISTS := 0
@@ -1353,92 +1331,9 @@ struct Ext2 {
 	
 	; ==============================
 	
-	define Ext2Handle* MakeHandle(Ext2INode* Node) {
-		Ext2Handle* Result := Alloc(#Ext2Handle)
-		
-		MoveMemory(Result~>Node, Node, #Ext2INode)
-		
-		return Result
-	}
-	
-	Ext2INode RootINode
-	Ext2Handle* RootHandle
-	
-	define void SetupInterface() {
-		MoveMemory(this~>RootINode, this->ReadINode(2), #Ext2INode)
-		
-		this->RootHandle := this->MakeHandle(this~>RootINode)
-	}
-	
-	define Ext2Handle* MakeHandle(i32 INodeNumber) {
-		return this->MakeHandle(this->ReadINode(INodeNumber))
-	}
-	
-	define Ext2Handle* Open(Ext2Handle* At, i8* Path, i8 Flags) {
-		if (Path[0] = '/') {
-			Path++
-			At := this->RootHandle
-		}
-		
-		if (Path[0] = 0) {
-			Path := "."
-		}
-		
-		Ext2DirectoryEntry* Entry := this->FindDirectoryEntryByPath(At~>Node, Path)
-		
-		if (Entry) {
-			return this->MakeHandle(Entry->INode)
-		}
-		else {
-			i32 CreatedNodeNumber := -1
-			
-			if (Flags & EXT2_OPEN_CREATE) {
-				CreatedNodeNumber := this->MakeFile(At~>Node, Path)
-			}
-			else if (Flags & EXT2_OPEN_CREATE_DIRECTORY) {
-				CreatedNodeNumber := this->MakeDirectory(At~>Node, Path)
-			}
-			else {
-				return null
-			}
-			
-			return this->MakeHandle(CreatedNodeNumber)
-		}
-	}
-	define Ext2Handle* Open(Ext2Handle* At, i8* Path) {
-		return this->Open(At, Path, EXT2_OPEN_IF_EXISTS)
-	}
-	define Ext2Handle* Open(i8* Path, i8 Flags) {
-		return this->Open(this->RootHandle, Path, Flags)
-	}
-	define Ext2Handle* Open(i8* Path) {
-		return this->Open(this->RootHandle, Path, EXT2_OPEN_IF_EXISTS)
-	}
-	
-	define i32 Seek(Ext2Handle* Handle, i32 Offset, i8 Mode) {
-		if (Mode = EXT2_SEEK_SET) {
-			Handle->Offset := Offset
-		}
-		else if (Mode = EXT2_SEEK_RELATIVE) {
-			Handle->Offset += Offset
-		}
-		else if (Mode = EXT2_SEEK_RELATIVE_END) {
-			Handle->Offset := Handle~>Node->FileSizeLow
-		}
-		
-		Handle->CachedExtentIsValid := false
-		
-		return Handle->Offset
-	}
-	
-	define i32 Tell(Ext2Handle* Handle) {
-		return Handle->Offset
-	}
-	
-	define i32 Read(Ext2Handle* Handle, void* Buffer, i32 Size) {
+	define i32 Read(Ext2INode* Node, i32* OutOffset, void* Buffer, i32 Size) {
 		i32 BytesRead := 0
-		Ext2INode* Node := Handle~>Node
-		i32 Offset := Handle->Offset
+		i32 Offset := *OutOffset
 		
 		if (Offset + Size >= Node->FileSizeLow) {
 			Size := Node->FileSizeLow - Offset
@@ -1527,19 +1422,17 @@ struct Ext2 {
 			BytesRead += Size % 1024
 		}
 		
-		Handle->Offset += BytesRead
+		*OutOffset += BytesRead
 		
 		return BytesRead
 	}
 	
-	define void Write(Ext2Handle* Handle, void* Data, i32 Size) {
-		Ext2INode* Node := Handle~>Node
-		
-		i32 BlockCount := Size / 1024
-		
-		i32 NextBlock := Handle->Offset / 1024
-		
-		i32 FirstBlockExistingData := Handle->Offset % 1024
+	define void Write(Ext2INode* Node, i32* OutOffset, void* Data, i32 Size) {
+		i32 Offset := *OutOffset
+	
+		i32 BlockCount := Size / 1024	
+		i32 NextBlock := Offset / 1024
+		i32 FirstBlockExistingData := Offset % 1024
 		
 		if (FirstBlockExistingData && Node->FileSizeLow > 0) {
 			; Writing data which starts in the middle of a block, which means that we need to read the old data
@@ -1565,7 +1458,7 @@ struct Ext2 {
 			
 			;Print("[wrote %x bytes to offset %x of first block]", FirstBlockWriteSize, NewFirstBlockSize)
 			
-			Handle->Offset += FirstBlockWriteSize
+			Offset += FirstBlockWriteSize
 			Data += FirstBlockWriteSize
 			Size -= FirstBlockWriteSize
 			
@@ -1596,37 +1489,133 @@ struct Ext2 {
 			this->WriteINodeBlock(Node, LastBlock, this->TempBlock)
 		}
 		
-		Handle->Offset += Size
+		*OutOffset += Size
 		
-		Node->FileSizeLow := Handle->Offset
+		Node->FileSizeLow := *OutOffset
 		this->WriteINode(Node)
 	}
 	
-	define void Status(Ext2Handle* Handle, Ext2Status* Out) {
-		Ext2INode* Node := Handle~>Node
-
-		Out->INodeNumber := Node->INodeNumber
-		Out->IsFile := Node->IsFile()
-		Out->IsDirectory := Node->IsDirectory()
-		Out->Permissions := Node->GetPermissions()
+	define void Status(Ext2INode* Node, FileStatus* Out) {
 		Out->Size := Node->FileSizeLow
-	}
-	
-	define i32 ReadDirectoryEntries(Ext2Handle* Handle, Ext2StaticDirectoryEntry* Out, i32 Count) {
-		i32 EntriesRead := 0
-		Ext2INode* Node := Handle~>Node
+		Out->BlockSize := 512
+		Out->BlockCount := (Node->FileSizeLow / 512) + 1
 		
-		if (!Node->IsDirectory()) {
-			return -3
+		Out->Mode := 0
+		
+		if (Node->IsFile()) {
+			Out->Mode |= FILE_STATUS_MODE_IS_FILE
+		}
+		else if (Node->IsDirectory()) {
+			Out->Mode |= FILE_STATUS_MODE_IS_DIRECTORY
 		}
 		
-		i32 WalkHandle := Handle->Offset
+		Out->Mode |= 0o777
+	}
+}
+
+declare FileHandle* Ext2OpenINode(Ext2*, Ext2INode*)
+declare FileHandle* Ext2OpenINodeNumber(Ext2*, i32)
+
+struct Ext2GenericInstance {
+	#Include "./src/kernel/file-system/HandleInstance.rlx"
+	
+	Ext2* FS
+	Ext2INode Node
+	
+	define void Initialize(void** Options, i32 OptionCount) {
+		this->FS := Options[0]
+		
+		MoveMemory(this~>Node, Options[1], #Ext2INode)
+	}
+}
+
+struct Ext2FileInstance {
+	#Include "./src/kernel/file-system/HandleInstance.rlx"
+	
+	Ext2* FS
+	Ext2INode Node
+	i32 NextByteOffset
+	
+	define void Status(FileStatus* Out) {
+		this->FS->Status(this~>Node, Out)
+	}
+	define i32 Read(void* Buffer, i32 Size) {
+		return this->FS->Read(this~>Node, this~>NextByteOffset, Buffer, Size)
+	}
+	define i32 Write(void* Buffer, i32 Size) {
+		this->FS->Write(this~>Node, this~>NextByteOffset, Buffer, Size)
+		
+		return Size
+	}
+	define void Seek(i32 Destination, SeekMode Mode) {
+		if (Mode = SeekMode:Set) {
+			this->NextByteOffset := Destination
+		}
+		else if (Mode = SeekMode:Offset) {
+			this->NextByteOffset += Destination
+		}
+		else if (Mode = SeekMode:End) {
+			this->NextByteOffset := this~>Node->FileSizeLow + Destination
+		}
+		
+		if (this->NextByteOffset < 0) {
+			this->NextByteOffset := 0
+			
+			Throw(HANDLE_ERROR_BAD_PARAMETER)
+		}
+	}
+	define i32 Tell() {
+		return this->NextByteOffset
+	}
+}
+FileHandlePrototype Ext2FilePrototype {
+	DataSize: #Ext2FileInstance,
+	Initialize: &Ext2GenericInstance.Initialize,
+	
+	Status: &Ext2FileInstance.Status,
+	Read: &Ext2FileInstance.Read,
+	Write: &Ext2FileInstance.Write,
+	Seek: &Ext2FileInstance.Seek,
+	Tell: &Ext2FileInstance.Tell
+}
+
+struct Ext2DirectoryInstance {
+	#Include "./src/kernel/file-system/HandleInstance.rlx"
+	
+	Ext2* FS
+	Ext2INode Node
+	i32 NextEntryIndex
+	
+	define void Status(FileStatus* Out) {
+		this->FS->Status(this~>Node, Out)
+	}
+	define void Seek(i32 Destination, SeekMode Mode) {
+		if (Mode = SeekMode:Set) {
+			this->NextEntryIndex := Destination
+		}
+		else if (Mode = SeekMode:Offset) {
+			this->NextEntryIndex += Destination
+		}
+		
+		if (Mode = SeekMode:End || this->NextEntryIndex < 0) {
+			this->NextEntryIndex := 0
+			
+			Throw(HANDLE_ERROR_BAD_PARAMETER)
+		}
+	}
+	define i32 Tell() {
+		return this->NextEntryIndex
+	}
+	
+	define i32 Read(DirectoryEntry* Out, i32 Count) {
+		i32 EntriesRead := 0
+		i32 WalkHandle := this->NextEntryIndex
 		
 		for (i32 Index := 0, Index < Count, Index++) {
-			Ext2DirectoryEntry* Next := this->WalkDirectoryNext(Node, &WalkHandle)
+			Ext2DirectoryEntry* Next := this->FS->WalkDirectoryNext(this~>Node, &WalkHandle)
 			
 			if (Next = null) {
-				return -3
+				return EntriesRead
 			}
 			
 			EntriesRead += 1
@@ -1638,15 +1627,66 @@ struct Ext2 {
 			
 			Out~>Name[Next->NameLength] := 0
 			
-			Out += #Ext2DirectoryEntry
+			Out += #DirectoryEntry
 		}
 		
-		Handle->Offset := WalkHandle
+		this->NextEntryIndex := WalkHandle
 		
 		return EntriesRead
 	}
 	
-	define void Close(Ext2Handle* Handle) {
-		Free(Handle)
+	define FileHandle* OpenOrCreate(i8* Path, i8 Flags) {
+		Ext2DirectoryEntry* Entry := this->FS->FindDirectoryEntryByPath(this~>Node, Path)
+		
+		if (Entry) {
+			return Ext2OpenINodeNumber(this->FS, Entry->INode)
+		}
+		else {
+			i32 CreatedNodeNumber := -1
+			
+			if (Flags & EXT2_OPEN_CREATE) {
+				CreatedNodeNumber := this->FS->MakeFile(this~>Node, Path)
+			}
+			else if (Flags & EXT2_OPEN_CREATE_DIRECTORY) {
+				CreatedNodeNumber := this->FS->MakeDirectory(this~>Node, Path)
+			}
+			else {
+				return null
+			}
+			
+			return Ext2OpenINodeNumber(this->FS, CreatedNodeNumber)
+		}
 	}
+	define FileHandle* Open(i8* Path) {
+		return this->OpenOrCreate(Path, EXT2_OPEN_IF_EXISTS)
+	}
+}
+
+
+FileHandlePrototype Ext2DirectoryPrototype {
+	DataSize: #Ext2DirectoryInstance,
+	Initialize: &Ext2GenericInstance.Initialize,
+	
+	Status: &Ext2DirectoryInstance.Status,
+	Seek: &Ext2DirectoryInstance.Seek,
+	Tell: &Ext2DirectoryInstance.Tell,
+	
+	ReadDirectoryEntries: &Ext2DirectoryInstance.Read,
+	OpenOrCreate: &Ext2DirectoryInstance.OpenOrCreate,
+	Open: &Ext2DirectoryInstance.Open
+}
+
+define FileHandle* Ext2OpenINode(Ext2* FS, Ext2INode* Node) {
+	if (Node->IsFile()) {
+		return NewHandle(&Ext2FilePrototype, FS, Node)
+	}
+	else if (Node->IsDirectory()) {
+		return NewHandle(&Ext2DirectoryPrototype, FS, Node)
+	}
+	else {
+		return null
+	}
+}
+define FileHandle* Ext2OpenINodeNumber(Ext2* FS, i32 NodeNumber) {
+	return Ext2OpenINode(FS, FS->ReadINode(NodeNumber))
 }

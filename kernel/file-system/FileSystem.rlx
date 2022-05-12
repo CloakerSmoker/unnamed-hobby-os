@@ -1,0 +1,50 @@
+; Magically compatible with Linux, don't change unless replacing with something that translates back to
+;  LinuxFileStatus
+
+i32 FILE_STATUS_MODE_IS_DIRECTORY := 0o04_0000
+i32 FILE_STATUS_MODE_IS_FILE      := 0o10_0000
+
+struct FileStatus {
+	i64 Device
+	i64 INodeNumber
+	i64 LinkCount
+	
+	i32 Mode
+	
+	i32 UserID
+	i32 GroupID
+	
+	i32 Padding1
+	i64 RepresentedDevice
+	
+	i64 Size
+	i64 BlockSize
+	i64 BlockCount
+	
+	i64 AccessedTime
+	i64 AccessedTimeNanoseconds
+	
+	i64 ModifiedTime
+	i64 ModifiedTimeNanoseconds
+	
+	i64 CreatedTime
+	i64 CreatedTimeNanoseconds
+	
+	i64[3] Unused
+}
+
+; Not compatible with Linux. TODO: That.
+
+struct DirectoryEntry {
+	i64 INodeNumber
+	i32 NameLength
+	i8[64] Name
+}
+
+enum SeekMode {
+	Set,
+	Offset,
+	End
+}
+
+#Require "./src/kernel/file-system/Handle.rlx"

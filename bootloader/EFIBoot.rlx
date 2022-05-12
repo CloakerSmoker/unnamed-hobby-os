@@ -336,19 +336,20 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	
 	void* Temp := SystemTable->BootServices->AllocatePages(2)
 	FS->Initialize(Temp, Temp + 0x800, Temp + 0xC00, Temp + 0x1000, Temp + 0x1400)
-	FS->SetupInterface()
 	
-	Ext2Handle* KernelHandle := FS->Open("/kernel.elf")
+	FileHandle* RootDirectory := Ext2OpenINodeNumber(FS, 2)
+	
+	FileHandle* KernelHandle := RootDirectory->Open("kernel.elf")
 	
 	if (KernelHandle = null) {
 		Print("Could not find `kernel.elf`")
 		return -1
 	}
 	
-	Ext2Status KernelStatus
-	FS->Status(KernelHandle, &KernelStatus)
+	FileStatus KernelStatus
+	KernelHandle->Status(&KernelStatus)
 	
-	i32 KernelSize := KernelStatus.Size
+	i32 KernelSize := KernelStatus.Size As i32
 	i32 KernelPageCount := KernelSize / 0x1000
 	
 	if (KernelSize % 0x1000) {
@@ -359,11 +360,11 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	
 	Print("Reading kernel...\n")
 	
-	FS->Read(KernelHandle, KernelFile, KernelSize)
+	KernelHandle->Read(KernelFile, KernelSize)
 	
 	Print("\nDone\n")
 	
-	FS->Close(KernelHandle)
+	KernelHandle->Close()
 	
 	ELFHeader* KernelELF := KernelFile
 	

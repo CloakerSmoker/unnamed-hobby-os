@@ -1,0 +1,75 @@
+
+
+i64 HANDLE_ERROR_BAD_PARAMETER := 1
+i64 HANDLE_ERROR_NOT_SUPPORTED := 2
+i64 HANDLE_ERROR_NOT_IMPLEMENTED := 3
+
+struct FileHandlePrototype {
+	i32 DataSize
+	void(void*, void**, i32) Initialize
+	
+	void(void*, FileStatus*) Status
+	
+	i32(void*, void*, i32) Read
+	i32(void*, void*, i32) Write
+	void(void*, i32, SeekMode) Seek
+	i32(void*) Tell
+	
+	i32(void*, i32, void*) DeviceControl
+	
+	i32(void*, void*, i32) ReadDirectoryEntries
+	FileHandle*(void*, i8*, i8) OpenOrCreate
+	FileHandle*(void*, i8*) Open
+}
+
+struct FileHandle {
+	#Include "./src/kernel/file-system/HandleInstance.rlx"
+	
+	define void Status(FileStatus* Out) {
+		this->Prototype->Status(this, Out)
+	}
+	define i32 Read(void* Buffer, i32 Size) {
+		return this->Prototype->Read(this, Buffer, Size)
+	}
+	define i32 Write(void* Buffer, i32 Size) {
+		return this->Prototype->Write(this, Buffer, Size)
+	}
+	define void Seek(i32 Where, SeekMode Mode) {
+		this->Prototype->Seek(this, Where, Mode)
+	}
+	define i32 Tell() {
+		return this->Prototype->Tell()
+	}
+	
+	define i32 DeviceControl(i32 Function, void* Parameter) {
+		return this->Prototype->DeviceControl(this, Function, Parameter)
+	}
+	
+	define i32 ReadDirectoryEntries(DirectoryEntry* Buffer, i32 Count) {
+		return this->Prototype->ReadDirectoryEntries(this, Buffer, Count)
+	}
+	
+	define FileHandle* Open(i8* Path, i8 Flags) {
+		return this->Prototype->OpenOrCreate(this, Path, Flags)
+	}
+	define FileHandle* Open(i8* Path) {
+		return this->Prototype->Open(this, Path)
+	}
+	
+	define void Close() {
+		Free(this)
+	}
+}
+
+define FileHandle* NewHandle(FileHandlePrototype* Prototype, ... RawOptions) {
+	FileHandle* Result := Alloc(Prototype->DataSize)
+	
+	Result->Prototype := Prototype
+	
+	i32 OptionCount := *(RawOptions As i32*)
+	void** Options := (&RawOptions[1]) As void**
+	
+	Prototype->Initialize(Result, Options, OptionCount)
+	
+	return Result
+}
