@@ -666,7 +666,7 @@ struct Ext2 {
 		
 		return null
 	}
-	define Ext2DirectoryEntry* FindDirectoryEntryBySplitPath(Ext2INode* RootDirectory, i8** SplitPath, i32 SplitCount) {
+	define Ext2DirectoryEntry* FindDirectoryEntryBySplitPath(Ext2INode* At, i8** SplitPath, i32 SplitCount) {
 		;Print("Looking up ")
 		;
 		;for (i32 I := 0, I < SplitCount, I += 1) {
@@ -679,10 +679,10 @@ struct Ext2 {
 		
 		SplitCount -= 1
 		
-		;Print("\nGot root directory, size = %x\n", RootDirectory->FileSizeLow)
+		;Print("\nGot root directory, size = %x\n", At->FileSizeLow)
 		
 		for (i32 Depth := 0, Depth <= SplitCount, Depth += 1) {
-			Ext2DirectoryEntry* Next := this->FindDirectoryEntryByName(RootDirectory, SplitPath[Depth])
+			Ext2DirectoryEntry* Next := this->FindDirectoryEntryByName(At, SplitPath[Depth])
 			
 			if (Next = null) {
 				return null
@@ -695,12 +695,12 @@ struct Ext2 {
 				;Print("Found at wrong depth/names, %i and %i, '%s' and '%s'\n", Depth, SplitCount, Next~>Name, SplitPath[SplitCount])
 			;}
 			
-			RootDirectory := this->ReadINode(Next->INode)
+			At := this->ReadINode(Next->INode)
 		}
 		
 		return null
 	}
-	define Ext2DirectoryEntry* FindDirectoryEntryByPath(Ext2INode* RootDirectory, i8* Path) {
+	define Ext2DirectoryEntry* FindDirectoryEntryByPath(Ext2INode* At, i8* Path) {
 		i32 Length := StringLength(Path)
 		
 		loop {
@@ -715,7 +715,7 @@ struct Ext2 {
 			
 			Length -= Index
 			
-			Ext2DirectoryEntry* Next := this->FindDirectoryEntryByName(RootDirectory, Path)
+			Ext2DirectoryEntry* Next := this->FindDirectoryEntryByName(At, Path)
 			
 			if (Next = null) {
 				return null
@@ -726,7 +726,7 @@ struct Ext2 {
 			
 			Path[Index] := '/'
 			Path += Index + 1
-			RootDirectory := this->ReadINode(Next->INode)
+			At := this->ReadINode(Next->INode)
 		}
 		
 		return null
@@ -1062,11 +1062,11 @@ struct Ext2 {
 		return TailIndex
 	}
 	
-	define i32 MakeFile(Ext2INode* RootDirectory, i8* Path, i8 EntryType, Ext2INode** OutNode, i32* OutContainingNodeNumber) {
+	define i32 MakeFile(Ext2INode* At, i8* Path, i8 EntryType, Ext2INode** OutNode, i32* OutContainingNodeNumber) {
 		i32 NameIndex := this->GetPathTail(Path)
 		i8* FileName := &Path[NameIndex]
 		
-		Ext2INode* ContainingNode := RootDirectory
+		Ext2INode* ContainingNode := At
 		
 		if (NameIndex != 0) {
 			i8* PathHead := Path
@@ -1075,7 +1075,7 @@ struct Ext2 {
 			
 			PathHead[NameIndex] := 0
 			
-			Ext2DirectoryEntry* ContainingEntry := this->FindDirectoryEntryByPath(RootDirectory, PathHead)
+			Ext2DirectoryEntry* ContainingEntry := this->FindDirectoryEntryByPath(At, PathHead)
 			ContainingNode := this->ReadINode(ContainingEntry->INode)
 			
 			PathHead[NameIndex] := OldPathHeadEnd
@@ -1116,15 +1116,15 @@ struct Ext2 {
 		return NewFileNodeNumber
 	}
 	
-	define i32 MakeFile(Ext2INode* RootDirectory, i8* Path) {
-		return this->MakeFile(RootDirectory, Path, DIRECTORY_ENTRY_FILE, 0 As Ext2INode**, null)
+	define i32 MakeFile(Ext2INode* At, i8* Path) {
+		return this->MakeFile(At, Path, DIRECTORY_ENTRY_FILE, 0 As Ext2INode**, null)
 	}
 	
-	define i32 MakeDirectory(Ext2INode* RootDirectory, i8* Path) {
+	define i32 MakeDirectory(Ext2INode* At, i8* Path) {
 		Ext2INode* NewNode := null
 		i32 ContainingNodeNumber := 0
 		
-		i32 NewNodeNumber := this->MakeFile(RootDirectory, Path, DIRECTORY_ENTRY_DIRECTORY, &NewNode, &ContainingNodeNumber)
+		i32 NewNodeNumber := this->MakeFile(At, Path, DIRECTORY_ENTRY_DIRECTORY, &NewNode, &ContainingNodeNumber)
 		
 		this->DirectoryAppendEntry(NewNode, ".", NewNodeNumber, DIRECTORY_ENTRY_DIRECTORY)
 		this->DirectoryAppendEntry(NewNode, "..", ContainingNodeNumber, DIRECTORY_ENTRY_DIRECTORY)
@@ -1510,6 +1510,8 @@ struct Ext2 {
 		}
 		
 		Out->Mode |= 0o777
+		
+		Out->INodeNumber := Node->INodeNumber
 	}
 }
 

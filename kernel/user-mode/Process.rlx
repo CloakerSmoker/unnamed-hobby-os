@@ -248,8 +248,10 @@ struct UserThread {
 }
 
 struct Process {
-	Ext2Handle*[10] FileDescriptorsToHandles
+	FileHandle*[10] FileDescriptorsToHandles
 	i32 FileDescriptorCount
+	
+	FileHandle* WorkingDirectory
 	
 	ELFHeader* ELF
 	MemoryMappingGroup* Mappings
@@ -346,8 +348,6 @@ struct Process {
 			this~>MainThread->AbortSystemCall()
 		}
 	}
-	
-	INode* WorkingDirectory
 	
 	define void Free() {
 		this~>MainThread->Free()

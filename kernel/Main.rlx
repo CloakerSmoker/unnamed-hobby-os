@@ -410,15 +410,13 @@ define void MainContinuation() {
 	
 	;BlockDevice* FSDevice := InstantiateBlockDeviceChainFromPath("ATAPIO(0)>GPT(1)")
 	
-	Print("Device = %x\n", OSPatition)
-	
 	void* Ext2Scratch := KernelPageAllocator->AllocateVirtual(2)
 	
 	FS := KernelHeapAllocate('RootFS', #Ext2)
 	FS->Device := OSPatition
 	
 	FS->Initialize(Ext2Scratch, Ext2Scratch + 0x800, Ext2Scratch + 0xC00, Ext2Scratch + 0x1000, Ext2Scratch + 0x1400)
-	FS->SetupInterface()
+	RootDirectory := Ext2OpenINodeNumber(FS, 2)
 	
 	KernelTerminal->SetCursorTimer()
 	

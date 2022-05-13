@@ -27,7 +27,7 @@ define EventState OnChildKilled(Process* Child, Event* Fired) {
 	return EventState:CallNextListener
 }
 
-Ext2Handle* CWD := null
+FileHandle* CWD := null
 i8[40] PWD
 
 define void OnCommand(i8* CommandLine) {
@@ -72,85 +72,61 @@ define void OnCommand(i8* CommandLine) {
 	else if (StringEquals(Command, "crash")) {
 		breakpoint:()
 	}
-	else if (StringEquals(Command, "ls")) {
-		i32 NextEntryOffset := FS->StartWalkDirectory(CWD~>Node)
-		
-		loop {
-			Ext2DirectoryEntry* NextEntry := FS->WalkDirectoryNext(CWD~>Node, &NextEntryOffset)
-			
-			if (NextEntry = null) {
-				break
-			}
-			
-			Ext2INode* NextNode := FS->ReadINode(NextEntry->INode)
-			
-			if (NextNode->IsDirectory()) {
-				Print(" D ")
-			}
-			else {
-				Print(" F ")
-			}
-			
-			Print("%x 	%x 	%s\n", NextEntry->INode, NextNode->FileSizeLow, NextEntry~>Name)
-		}
-	}
 	else if (StringEquals(Command, "mkfile")) {
 		i8* Path := CommandParameters[1]
 		
-		FS->Close(FS->Open(CWD, Path, EXT2_OPEN_CREATE))
+		CWD->Open(Path, EXT2_OPEN_CREATE)->Close()
 	}
 	else if (StringEquals(Command, "mkdirectory")) {
 		i8* Path := CommandParameters[1]
 		
-		FS->Close(FS->Open(CWD, Path, EXT2_OPEN_CREATE_DIRECTORY))
+		CWD->Open(Path, EXT2_OPEN_CREATE_DIRECTORY)->Close()
 	}
-	else if (StringEquals(Command, "nls")) {
+	else if (StringEquals(Command, "ls")) {
 		i8* Path := CommandParameters[1]
 		
-		Ext2Handle* Handle := FS->Open(CWD, Path)
+		FileHandle* Handle := CWD->Open(Path)
 		
 		if (Handle) {
-			Ext2StaticDirectoryEntry Entry
+			DirectoryEntry Entry
 			
 			loop {
-				i32 EntriesRead := FS->ReadDirectoryEntries(Handle, &Entry, 1)
+				i32 EntriesRead := Handle->ReadDirectoryEntries(&Entry, 1)
 				
 				if (EntriesRead != 1) {
 					break
 				}
 				
-				Ext2Handle* EntryHandle := FS->Open(Handle, Entry~>Name)
+				FileHandle* EntryHandle := CWD->Open(Entry~>Name)
 				
 				if (EntryHandle < 0) {
 					Print("%s doesn't exist???\n", Entry~>Name)
 				}
 				else {
-					Ext2Status EntryInfo
+					FileStatus EntryInfo
 					
-					FS->Status(EntryHandle, &EntryInfo)
+					EntryHandle->Status(&EntryInfo)
 					
-					if (EntryInfo.IsFile) {
+					if (EntryInfo.IsFile()) {
 						Print("F\t")
 					}
 					else {
 						Print("D\t")
 					}
 					
-					Print("%s\n", Entry~>Name)
+					Print("\t%x\t%s\n", EntryInfo.Size, Entry~>Name)
 					
-					FS->Close(EntryHandle)
+					EntryHandle->Close()
 				}
 			}
 			
-			FS->Close(Handle)
-			
+			Handle->Close()
 		}
-		
 	}
 	else if (StringEquals(Command, "hex")) {
 		i8* Path := CommandParameters[1]
 		
-		Ext2Handle* Handle := FS->Open(CWD, Path)
+		FileHandle* Handle := CWD->Open(Path)
 		
 		if (Handle = null) {
 			Print(" Could not find file '^%s'\n", Path)
@@ -159,10 +135,10 @@ define void OnCommand(i8* CommandLine) {
 			i8[16] HexBuffer
 			
 			loop {
-				i32 BytesRead := FS->Read(Handle, HexBuffer, 16)
+				i32 BytesRead := Handle->Read(HexBuffer, 16)
 				
 				if (BytesRead = 0) {
-					FS->Close(Handle)
+					Handle->Close()
 					
 					break
 				}
@@ -180,7 +156,7 @@ define void OnCommand(i8* CommandLine) {
 	else if (StringEquals(Command, "cat")) {
 		i8* Path := CommandParameters[1]
 		
-		Ext2Handle* Handle := FS->Open(CWD, Path)
+		FileHandle* Handle := CWD->Open(Path)
 		
 		if (Handle = null) {
 			Print(" Could not find file '^S1%s^R'\n", Path)
@@ -189,10 +165,10 @@ define void OnCommand(i8* CommandLine) {
 			void* FileData := KernelPageAllocator->AllocateVirtual(1)
 			
 			loop {
-				i32 BytesRead := FS->Read(Handle, FileData, PAGE_SIZE)
+				i32 BytesRead := Handle->Read(FileData, PAGE_SIZE)
 				
 				if (BytesRead = 0) {
-					FS->Close(Handle)
+					Handle->Close()
 					
 					break
 				}
@@ -286,7 +262,7 @@ define void OnCommand(i8* CommandLine) {
 	else if (StringEquals(Command, "exec")) {
 		i8* Path := CommandParameters[1]
 		
-		Ext2Handle* File := FS->Open(CWD, Path)
+		FileHandle* File := CWD->Open(Path)
 		
 		if !(File) {
 			Print(" Could not find file '%s'\n", Path)
@@ -294,12 +270,12 @@ define void OnCommand(i8* CommandLine) {
 		else {
 			RunningProgram := true
 			
-			Ext2Status FileStatus
-			FS->Status(File, &FileStatus)
+			FileStatus Status
+			File->Status(&Status)
 			
-			i32 FileBlockCount := FileStatus.Size / 1024
+			i32 FileBlockCount := Status.Size / 1024
 			
-			if (FileStatus.Size % 1024) {
+			if (Status.Size % 1024) {
 				FileBlockCount += 1
 			}
 			
@@ -307,8 +283,8 @@ define void OnCommand(i8* CommandLine) {
 			
 			void* FileData := KernelPageAllocator->AllocateVirtual(FilePages)
 			
-			FS->Read(File, FileData, FileStatus.Size)
-			FS->Close(File)
+			File->Read(FileData, Status.Size)
+			File->Close()
 			
 			;Print("Loaded %x byte image @ %x\n", FoundFileNode.FileSizeLow, FileData)
 			
@@ -331,7 +307,7 @@ define void OnCommand(i8* CommandLine) {
 	else if (StringEquals(Command, "cd")) {
 		i8* Path := CommandParameters[1]
 		
-		Ext2Handle* NewCWD := FS->Open(CWD, Path)
+		FileHandle* NewCWD := CWD->Open(Path)
 		
 		if !(NewCWD) {
 			Print("Could not find '%s'\n", Path)
@@ -339,13 +315,14 @@ define void OnCommand(i8* CommandLine) {
 			return
 		}
 		
-		Ext2Status NewCWDStatus
-		FS->Status(NewCWD, &NewCWDStatus)
+		FileStatus NewCWDStatus
+		NewCWD->Status(&NewCWDStatus)
 		
-		if !(NewCWDStatus.IsDirectory) {
+		if !(NewCWDStatus.IsDirectory()) {
 			Print("'%s' is not a directory\n", Path)
 		}
 		else {
+			CWD->Close()
 			CWD := NewCWD
 			
 			i32 PWDLength := StringLength(PWD)
@@ -360,7 +337,13 @@ define void OnCommand(i8* CommandLine) {
 		}
 	}
 	else if (StringEquals(Command, "pwd")) {
-		if (CWD~>Node->INodeNumber = 2) {
+		FileStatus CWDStatus
+		CWD->Status(&CWDStatus)
+		
+		FileStatus RootStatus
+		RootDirectory->Status(&RootStatus)
+		
+		if (CWDStatus.INodeNumber = RootStatus.INodeNumber) {
 			Print("/\n")
 		}
 		else {
@@ -370,7 +353,7 @@ define void OnCommand(i8* CommandLine) {
 	else if (StringEquals(Command, "capture")) {
 		i8* Path := CommandParameters[1]
 		
-		Ext2Handle* OutputFile := FS->Open(CWD, Path, EXT2_OPEN_CREATE)
+		FileHandle* OutputFile := CWD->Open(Path, EXT2_OPEN_CREATE)
 		
 		if !(OutputFile) {
 			Print("Could not open '%s'\n", Path)
@@ -394,12 +377,12 @@ define void OnCommand(i8* CommandLine) {
 			}
 			
 			Capture.ReadChunk(ChunkBuffer)
-			FS->Write(OutputFile, ChunkBuffer, ChunkSize)
+			OutputFile->Write(ChunkBuffer, ChunkSize)
 		}
 		
 		Print("Wrote %x bytes\n", tot)
 		
-		FS->Close(OutputFile)
+		OutputFile->Close()
 		
 		KernelPageAllocator->FreeVirtual(ChunkBuffer, 1)
 	}
@@ -683,7 +666,7 @@ define void SetupShell() {
 	ShellConfig->ControlCharacters[LINUX_TERMIOS_CHARACTER_VEOL  ] := 0xD
 	ShellConfig->ControlCharacters[LINUX_TERMIOS_CHARACTER_VEOL2 ] := 0xA
 	
-	CWD := FS->RootHandle
+	CWD := RootDirectory
 	
 	Prompt()
 }

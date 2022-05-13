@@ -262,8 +262,9 @@ define i64 SystemCallRead(i64 FileDescriptor, i8* Buffer, i32 Size) {
 	}
 	
 	FileDescriptor -= 3
+	FileHandle* Handle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
 	
-	return FS->Read(CurrentProcess->FileDescriptorsToHandles[FileDescriptor], Buffer, Size)
+	return Handle->Read(Buffer, Size)
 }
 
 define i64 SystemCallWrite(i64 FileDescriptor, i8* Buffer, i32 Size) {
@@ -278,10 +279,9 @@ define i64 SystemCallWrite(i64 FileDescriptor, i8* Buffer, i32 Size) {
 	}
 	
 	FileDescriptor -= 3
+	FileHandle* Handle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
 	
-	FS->Write(CurrentProcess->FileDescriptorsToHandles[FileDescriptor], Buffer, Size)
-	
-	return Size
+	return Handle->Write(Buffer, Size)
 }
 
 define void SystemCallSendFile(i64 Out, i64 In, i64* Offset, i64 Count) {
@@ -446,8 +446,8 @@ define i64 SystemCallOpen(i8* Path, i32 Flags, i32 Mode) {
 	}
 	
 	i32 FileDescriptor := CurrentProcess->FileDescriptorCount++
-	
-	CurrentProcess->FileDescriptorsToHandles[FileDescriptor] := FS->Open(Path, Ext2Flags)
+	FileHandle* Result := CurrentProcess->WorkingDirectory->Open(Path, Ext2Flags)
+	CurrentProcess->FileDescriptorsToHandles[FileDescriptor] := Result
 	
 	return FileDescriptor + 3
 }
@@ -455,39 +455,16 @@ define i64 SystemCallOpen(i8* Path, i32 Flags, i32 Mode) {
 define i64 SystemCallClose(i64 FileDescriptor) {
 	FileDescriptor -= 3
 	
-	FS->Close(CurrentProcess->FileDescriptorsToHandles[FileDescriptor])
+	CurrentProcess->FileDescriptorsToHandles[FileDescriptor]->Close()
 	CurrentProcess->FileDescriptorsToHandles[FileDescriptor] := null
 	
 	return 0
 }
 
-define void DoFileStatus(Ext2Handle* Handle, LinuxFileStatus* Out) {
-	Ext2Status Temp
-	
-	FS->Status(Handle, &Temp)
-	
-	Out->Size := Temp.Size
-	Out->BlockSize := 512
-	Out->BlockCount := (Temp.Size / 512) + 1
-	
-	Out->Mode := 0
-	
-	if (Temp.IsFile) {
-		Out->Mode |= LINUX_FILE_STATUS_IS_FILE
-	}
-	else if (Temp.IsDirectory) {
-		Out->Mode |= LINUX_FILE_STATUS_IS_DIRECTORY
-	}
-	
-	Out->Mode |= 0o777
-}
-
 define i64 SystemCallFileStatus(i64 FileDescriptor, LinuxFileStatus* Out) {
 	FileDescriptor -= 3
 	
-	Ext2Handle* FileHandle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
-	
-	DoFileStatus(FileHandle, Out)
+	CurrentProcess->FileDescriptorsToHandles[FileDescriptor]->Status(Out As FileStatus*)
 	
 	return 0
 }
@@ -495,14 +472,14 @@ define i64 SystemCallFileStatus(i64 FileDescriptor, LinuxFileStatus* Out) {
 define i64 SystemCallPathStatus(i8* Path, LinuxFileStatus* Out) {
 	;Info("Stat(%s, %x)\n", Path, Out)
 	
-	Ext2Handle* FileHandle := FS->Open(Path)
+	FileHandle* Target := CurrentProcess->WorkingDirectory->Open(Path)
 	
-	if !(FileHandle) {
+	if !(Target) {
 		return -LINUX_ERROR_NOENT
 	}
 	
-	DoFileStatus(FileHandle, Out)
-	FS->Close(FileHandle)
+	Target->Status(Out As FileStatus*)
+	Target->Close()
 	
 	return 0
 }
@@ -514,7 +491,7 @@ define i64 SystemCallTruncate(i64 FileDescriptor, i32 Size) {
 define i64 SystemCallSeek(i64 FileDescriptor, i32 Offset, i8 Mode) {
 	FileDescriptor -= 3
 	
-	return FS->Seek(CurrentProcess->FileDescriptorsToHandles[FileDescriptor], Offset, Mode)
+	return CurrentProcess->FileDescriptorsToHandles[FileDescriptor]->Seek(Offset, Mode As SeekMode)
 }
 
 define i64 SystemCallSetWorkingDirectory(i8* Path) {

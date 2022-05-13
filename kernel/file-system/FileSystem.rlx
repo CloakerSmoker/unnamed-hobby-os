@@ -11,13 +11,24 @@ struct FileStatus {
 	
 	i32 Mode
 	
+	define i8 IsFile() {
+		return (this->Mode & FILE_STATUS_MODE_IS_FILE) != 0
+	}
+	define i8 IsDirectory() {
+		return (this->Mode & FILE_STATUS_MODE_IS_DIRECTORY) != 0
+	}
+	
 	i32 UserID
 	i32 GroupID
 	
 	i32 Padding1
 	i64 RepresentedDevice
 	
-	i64 Size
+	union {
+		i32 Size
+		i64 FullSize
+	}
+	
 	i64 BlockSize
 	i64 BlockCount
 	
@@ -48,3 +59,5 @@ enum SeekMode {
 }
 
 #Require "./src/kernel/file-system/Handle.rlx"
+
+FileHandle* RootDirectory := null
