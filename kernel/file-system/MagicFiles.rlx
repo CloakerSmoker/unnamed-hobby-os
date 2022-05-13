@@ -1,0 +1,52 @@
+
+#Require "./src/utility/AVLTree.rlx"
+
+struct MagicFilePrototype {
+	FileHandlePrototype* Prototype
+	i32 Major
+	i32 Minor
+	
+	MagicFilePrototype* Next
+	
+	define void Status(FileStatus* Out) {
+		Out->Mode := 0o777 | FILE_STATUS_MODE_IS_CHARACTER_DEVICE
+		
+		; TODO: this is a FileHandlePrototype and not a MagicFilePrototype so below won't work
+		;Out->Device := ((this->Major As i64) << 32) | this->Minor
+	}
+}
+
+MagicFilePrototype* FirstMagicPrototype := null
+
+define i32 RegisterMagicFile(MagicFilePrototype* Prototype) {
+	
+	FileHandlePrototype* File := Prototype->Prototype
+	
+	if (File->Status = null || File->Status = &FileHandlePrototype.DefaultStatus) {
+		File->Status := &MagicFilePrototype.Status
+	}
+	
+	if !(FirstMagicPrototype) {
+		FirstMagicPrototype := Prototype
+	}
+	else {
+		Prototype->Next := FirstMagicPrototype
+		FirstMagicPrototype := Prototype
+	}
+	
+	return 10
+}
+
+define FileHandlePrototype* GetMagicFilePrototype(i32 Major, i32 Minor) {
+	MagicFilePrototype* Current := FirstMagicPrototype
+	
+	while (Current) {
+		if (Current->Major = Major && Current->Minor = Minor) {
+			return Current->Prototype
+		}
+		
+		Current := Current->Next
+	}
+	
+	return null
+}

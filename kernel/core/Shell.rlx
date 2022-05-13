@@ -97,7 +97,7 @@ define void OnCommand(i8* CommandLine) {
 					break
 				}
 				
-				FileHandle* EntryHandle := CWD->Open(Entry~>Name)
+				FileHandle* EntryHandle := Handle->Open(Entry~>Name)
 				
 				if (EntryHandle < 0) {
 					Print("%s doesn't exist???\n", Entry~>Name)

@@ -95,11 +95,13 @@ define void PrintCharacter(i8 Character) {
 
 ; Terminal print functions
 
+FileHandle* KernelConsole := null
+
 define void KernelPrintCharacter(PrintOutputAdapterPrototype* this, i8 Character) {
-	KernelTerminal->Print(&Character, 1)
+	KernelConsole->Write(&Character, 1)
 }
 define void KernelPrintCharacters(PrintOutputAdapterPrototype* this, i8* Characters, i32 Count) {
-	KernelTerminal->Print(Characters, Count)
+	KernelConsole->Write(Characters, Count)
 }
 
 PrintOutputAdapterPrototype KernelPrinter {
@@ -310,19 +312,23 @@ define void MainContinuation() {
 	KernelTerminal->Adopt(NativeScreen, BootFont, TERMINAL_FOREGROUND, TERMINAL_BACKGROUND)
 	KernelTerminal->Clear()
 	
+	KernelHeap->Initialize(ADDRESS_OF_KERNEL_HEAP, BYTES_IN_2MB)
+	Info("Initialized heap\n")
+	
+	; Printer starts out hard-wired to COM1, but by now we've brought up enough of our runtime
+	;  to be able to switch over to KernelPrinter which will write output over the KernelConsole
+	;   handle. By default, it is just the terminal.
+	; Later on we replace KernelConsole with `/dev/console` from the filesystem.
+	KernelConsole := NewHandle(&TerminalFilePrototype)
 	Printer := &KernelPrinter
 	
-	KernelTerminal->PrintLine("BOOT: Screen *probably* works")
+	Print("BOOT: Screen *probably* works\n")
 	
 	KernelAddressSpace->Map(0 As void*, 0, PAGE_NOT_PRESENT)
 	
-	KernelTerminal->PrintLine("BOOT: Unmapped page 0")
+	Print("BOOT: Unmapped page 0\n")
 	
 	SetCR4(GetCR4() | CR4_ENABLE_FS_GS_BASE)
-	
-	KernelHeap->Initialize(ADDRESS_OF_KERNEL_HEAP, BYTES_IN_2MB)
-	
-	KernelTerminal->PrintLine("BOOT: Kernel Heap Initialized")
 	
 	void* InterruptStackTop    := ADDRESS_OF_KERNEL_STACK + (10 * PAGE_SIZE)
 	void* InterruptStackBottom := ADDRESS_OF_KERNEL_STACK
@@ -331,7 +337,7 @@ define void MainContinuation() {
 	
 	SetupGDT()
 	
-	KernelTerminal->PrintLine("BOOT: Setup GDT and TSS")
+	Print("BOOT: Setup GDT and TSS\n")
 	
 	SetupInterrupts()
 	
@@ -398,7 +404,7 @@ define void MainContinuation() {
 	;
 	;FirstE1000->Send(Packet, PacketSize)
 	
-	KernelTerminal->PrintLine("BOOT: Mounting disk")
+	Print("BOOT: Mounting disk\n")
 	
 	i8[2] DiskIndexString
 	
@@ -417,6 +423,17 @@ define void MainContinuation() {
 	
 	FS->Initialize(Ext2Scratch, Ext2Scratch + 0x800, Ext2Scratch + 0xC00, Ext2Scratch + 0x1000, Ext2Scratch + 0x1400)
 	RootDirectory := Ext2OpenINodeNumber(FS, 2)
+	
+	Print("BOOT: About to replace myself with /dev/console wish me luck\n")
+	
+	FileHandle* NewKernelConsole := RootDirectory->Open("dev/console")
+	
+	Print("NewKernelConsole = %x\n", NewKernelConsole)
+	
+	KernelConsole->Close()
+	KernelConsole := NewKernelConsole
+	
+	Print("Hello /dev/console!\n")
 	
 	KernelTerminal->SetCursorTimer()
 	

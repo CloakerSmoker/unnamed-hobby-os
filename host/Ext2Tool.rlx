@@ -178,14 +178,31 @@ define void Prompt(Ext2* FS) {
 				
 				Ext2INode* NextNode := FS->ReadINode(NextEntry->INode)
 				
+				i8 IsMagic := false
+				
 				if (NextNode->IsDirectory()) {
 					Print(" ^20D^F0 ")
 				}
-				else {
+				else if (NextNode->IsFile()) {
 					Print(" ^A0F^F0 ")
 				}
+				else if (NextNode->IsCharacterDevice()) {
+					IsMagic := true
+					
+					Print(" ^60C^F0 ")
+				}
+				else if (NextNode->IsBlockDevice()) {
+					IsMagic := true
+					
+					Print(" ^E0B^F0 ")
+				}
 				
-				Print("%x	%x	%s\n", NextEntry->INode, NextNode->FileSizeLow, NextEntry~>Name)
+				if (IsMagic) {
+					Print("%x\t%i:%i\t%s\n", NextEntry->INode, NextNode->GetMagicMajor(), NextNode->GetMagicMinor(), NextEntry~>Name)
+				}
+				else {
+					Print("%x\t%x\t%s\n", NextEntry->INode, NextNode->FileSizeLow, NextEntry~>Name)
+				}
 			}
 		}
 		else if (StringEquals(Command, "cd")) {
@@ -278,6 +295,28 @@ define void Prompt(Ext2* FS) {
 			else {
 				Print(" Created new directory at '^A0%s^F0', INode ^A0%i^F0\n", Path, CreatedDirectoryNodeNumber)
 			}
+		}
+		else if (StringEquals(Command, "mknod")) {
+			i8 KindCharacter := *ArgV[2]
+			i32 Major := AToI(ArgV[3]) As i32
+			i32 Minor := AToI(ArgV[4]) As i32
+			
+			i8 Kind := 0
+			
+			if (KindCharacter = 'c') {
+				Kind := DIRECTORY_ENTRY_CHARACTER_DEVICE
+			}
+			else if (KindCharacter = 'b') {
+				Kind := DIRECTORY_ENTRY_BLOCK_DEVICE
+			}
+			else {
+				Print("Unknown magic device type '%c'\n", KindCharacter)
+				continue
+			}
+			
+			i32 MagicFileINodeNumber := FS->MakeMagicFile(RootINode, Path, Kind, Major, Minor)
+			
+			Print(" Created new magic file %c:%i:%i at '^A0%s^F0', INode ^A0%i^F0\n", KindCharacter, Major, Minor, Path, MagicFileINodeNumber)
 		}
 		else if (StringEquals(Command, "bg")) {
 			i32 Index := AToI(Path) As i16

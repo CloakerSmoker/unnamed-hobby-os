@@ -617,6 +617,39 @@ struct Terminal {
 	}
 }
 
-
 Terminal RawKernelTerminal
 Terminal* KernelTerminal := &RawKernelTerminal
+
+#Require "./src/kernel/file-system/FileSystem.rlx"
+
+struct TerminalInstance {
+	#Include "./src/kernel/file-system/HandleInstance.rlx"
+	
+	define i32 Read(void* Buffer, i32 Size) {
+		
+		
+		return Size
+	}
+	define i32 Write(void* Buffer, i32 Size) {
+		KernelTerminal->Print(Buffer, Size)
+		
+		return Size
+	}
+}
+
+FileHandlePrototype TerminalFilePrototype {
+	DataSize: #TerminalInstance,
+	
+	Read: &TerminalInstance.Read,
+	Write: &TerminalInstance.Write
+}
+
+i32 TERMINAL_FILE_PROTOTYPE_ID := RegisterHandlePrototype(&TerminalFilePrototype)
+
+MagicFilePrototype TerminalMagicFilePrototype {
+	Prototype: &TerminalFilePrototype,
+	Major: 4,
+	Minor: 1
+}
+
+i32 TERMINAL_FILE_MAGIC_ID := RegisterMagicFile(&TerminalMagicFilePrototype)

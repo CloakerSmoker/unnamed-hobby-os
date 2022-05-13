@@ -84,8 +84,10 @@ struct Ext2BlockGroupDescriptor {
 	i8[14] Padding
 }
 
-i8 INODE_FILE := 0x8
+i8 INODE_CHARACTER_DEVICE := 0x2
 i8 INODE_DIRECTORY := 0x4
+i8 INODE_BLOCK_DEVICE := 0x6
+i8 INODE_FILE := 0x8
 
 struct Ext2INode {
 	union {
@@ -153,16 +155,33 @@ struct Ext2INode {
 	define void MakeFile() {
 		this->SetType(INODE_FILE)
 	}
+	define void MakeMagicFile(i8 Type) {
+		this->SetType(Type)
+	}
 	define i8 IsDirectory() {
 		return this->GetType() = INODE_DIRECTORY
 	}
 	define i8 IsFile() {
 		return this->GetType() = INODE_FILE
 	}
+	define i8 IsCharacterDevice() {
+		return this->GetType() = INODE_CHARACTER_DEVICE
+	}
+	define i8 IsBlockDevice() {
+		return this->GetType() = INODE_BLOCK_DEVICE
+	}
+	define i32 GetMagicMajor() {
+		return (this->DirectBlocks[0] >> 8) & 0xFF
+	}
+	define i32 GetMagicMinor() {
+		return this->DirectBlocks[0] & 0xFF
+	}
 }
 
 i8 DIRECTORY_ENTRY_FILE := 1
 i8 DIRECTORY_ENTRY_DIRECTORY := 2
+i8 DIRECTORY_ENTRY_CHARACTER_DEVICE := 3
+i8 DIRECTORY_ENTRY_BLOCK_DEVICE := 4
 
 struct Ext2DirectoryEntry {
 	i32 INode,
@@ -198,11 +217,21 @@ struct Ext2DirectoryEntry {
 	define i8 IsFile() {
 		return this->Flags = DIRECTORY_ENTRY_FILE
 	}
+	define i8 IsMagic() {
+		return this->Flags = DIRECTORY_ENTRY_CHARACTER_DEVICE || this->Flags = DIRECTORY_ENTRY_BLOCK_DEVICE
+	}
+	
 	define void MakeDirectory() {
 		this->Flags := DIRECTORY_ENTRY_DIRECTORY
 	}
 	define void MakeFile() {
 		this->Flags := DIRECTORY_ENTRY_FILE
+	}
+	define void MakeCharacterDevice() {
+		this->Flags := DIRECTORY_ENTRY_CHARACTER_DEVICE
+	}
+	define void MakeBlockDevice() {
+		this->Flags := DIRECTORY_ENTRY_BLOCK_DEVICE
 	}
 	
 	define i8 NameEquals(i8* OtherName) {
@@ -1103,14 +1132,20 @@ struct Ext2 {
 		if (EntryType = DIRECTORY_ENTRY_DIRECTORY) {
 			NewNode->MakeDirectory()
 		}
-		else {
+		else if (EntryType = DIRECTORY_ENTRY_FILE) {
 			NewNode->MakeFile()
+		}
+		else if (EntryType = DIRECTORY_ENTRY_CHARACTER_DEVICE) {
+			NewNode->MakeMagicFile(INODE_CHARACTER_DEVICE)
+		}
+		else if (EntryType = DIRECTORY_ENTRY_BLOCK_DEVICE) {
+			NewNode->MakeMagicFile(INODE_BLOCK_DEVICE)
 		}
 		
 		this->WriteINode(NewNode)
 		
 		if (OutNode != null) {
-			OutNode[0] := NewNode
+			*OutNode := NewNode
 		}
 		
 		return NewFileNodeNumber
@@ -1118,6 +1153,16 @@ struct Ext2 {
 	
 	define i32 MakeFile(Ext2INode* At, i8* Path) {
 		return this->MakeFile(At, Path, DIRECTORY_ENTRY_FILE, 0 As Ext2INode**, null)
+	}
+	
+	define i32 MakeMagicFile(Ext2INode* At, i8* Path, i8 EntryType, i32 Major, i32 Minor) {
+		Ext2INode* ResultNode := null
+		i32 Result := this->MakeFile(At, Path, EntryType, &ResultNode, null)
+		
+		ResultNode->DirectBlocks[0] := (Major << 8) | Minor
+		this->WriteINode(ResultNode)
+		
+		return Result
 	}
 	
 	define i32 MakeDirectory(Ext2INode* At, i8* Path) {
@@ -1581,6 +1626,8 @@ FileHandlePrototype Ext2FilePrototype {
 	Tell: &Ext2FileInstance.Tell
 }
 
+i32 EXT2_FILE_PROTOTYPE_ID := RegisterHandlePrototype(&Ext2FilePrototype)
+
 struct Ext2DirectoryInstance {
 	#Include "./src/kernel/file-system/HandleInstance.rlx"
 	
@@ -1678,12 +1725,27 @@ FileHandlePrototype Ext2DirectoryPrototype {
 	Open: &Ext2DirectoryInstance.Open
 }
 
+i32 EXT2_DIRECTORY_PROTOTYPE_ID := RegisterHandlePrototype(&Ext2DirectoryPrototype)
+
 define FileHandle* Ext2OpenINode(Ext2* FS, Ext2INode* Node) {
 	if (Node->IsFile()) {
 		return NewHandle(&Ext2FilePrototype, FS, Node)
 	}
 	else if (Node->IsDirectory()) {
 		return NewHandle(&Ext2DirectoryPrototype, FS, Node)
+	}
+	else if (Node->IsCharacterDevice()) {
+		i32 Major := Node->GetMagicMajor()
+		i32 Minor := Node->GetMagicMinor()
+		
+		FileHandlePrototype* MagicPrototype := GetMagicFilePrototype(Major, Minor)
+		
+		if !(MagicPrototype) {
+			Info("Attempt to open unimplemented character device %i:%i\n", Major, Minor)
+			Throw('NO_MAGIC') ; yeah I'm funny
+		}
+		
+		return NewHandle(MagicPrototype)
 	}
 	else {
 		return null
