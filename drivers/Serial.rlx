@@ -197,7 +197,7 @@ struct SerialPort {
 		this~>ReadBuffer->Write(&Next, 1)
 	}
 	define void ReadWake() {
-		if (this->CanRead()) {
+		while (this->CanRead()) {
 			this->ReadInterrupt()
 		}
 	}
@@ -210,40 +210,54 @@ struct SerialPort {
 		}
 	}
 	define void WriteWake() {
-		if (this->CanWrite()) {
+		while (this->CanWrite()) {
 			this->WriteInterrupt()
 		}
 	}
 	
-	define void Read(void* Buffer, i32 Count) {	
-		if (IsSchedulerActive()) {
-			i32 Read := 0
+	define i32 ReadBuffered(void* Out, i32 Count) {
+		i32 Available := this~>ReadBuffer->Available()
+		
+		if (Available > Count) {
+			Available := Count
+		}
+		
+		this~>ReadBuffer->Read(Out, Available)
+		
+		return Available
+	}
+	
+	define i32 Read(void* Buffer, i32 Count) {
+		; Needs to block until there is at least some data to return, but also might be called
+		;  without the scheduler enabled, so we need both a multitasking block and a monotasking block
+		
+		this->ReadWake()
+		i32 Available := this~>ReadBuffer->Available()
+		
+		if !(Available) {
+			; We need to block for more data
 			
-			while (Read != Count) {
-				this->ReadWake()
-				i32 Available := this~>ReadBuffer->Available()
+			if (IsSchedulerActive()) {
+				; Multitasking block, yields our time slice until the read interrupt fires and fills the buffer
 				
-				if (Available > Count) {
-					Available := Count
-				}
-				
-				this~>ReadBuffer->Read(Buffer, Available)
-				
-				Buffer += Available
-				Read += Available
-				
-				if (Read != Count) {
+				while !(Available) {
 					SchedulerYield()
+					
+					this->ReadWake()
+					Available := this~>ReadBuffer->Available()
+				}
+			}
+			else {
+				; Monotasking block, spins until we've got at least one byte
+				
+				while !(Available) {
+					this->ReadWake()
+					Available := this~>ReadBuffer->Available()
 				}
 			}
 		}
-		else {
-			i8* Characters := Buffer
-			
-			for (i32 Index := 0, Index < Count, Index++) {
-				Characters[Index] := this->ReadSingle()
-			}	
-		}
+		
+		return this->ReadBuffered(Buffer, Count)
 	}
 
 	define void Write(void* Buffer, i32 Count) {
@@ -349,10 +363,23 @@ struct SerialPortFileInstance {
 		
 		this->Port := Port
 	}
-	define i32 Read(void* Buffer, i32 Count) {
-		this->Port->Read(Buffer, Count)
+	define i32 Poll(i32 Mode) {
+		i32 Result := 0
 		
-		return Count
+		if (Mode & POLL_CAN_READ && this->Port~>ReadBuffer->Available() != 0) {
+			Result |= POLL_CAN_READ
+		}
+		
+		if (Mode & POLL_CAN_WRITE && this->Port~>WriteBuffer->Space() != 0) {
+			; TODO: bug, `->Space()` is dumb and doesn't properly wrap around
+			
+			Result |= POLL_CAN_WRITE
+		}
+		
+		return Result
+	}
+	define i32 Read(void* Buffer, i32 Count) {
+		return this->Port->Read(Buffer, Count)
 	}
 	define i32 Write(void* Buffer, i32 Count) {
 		this->Port->Write(Buffer, Count)
@@ -365,6 +392,7 @@ FileHandlePrototype SerialPortFilePrototype {
 	DataSize: #SerialPortFileInstance,
 	Initialize: &SerialPortFileInstance.Initialize,
 	
+	Poll: &SerialPortFileInstance.Poll,
 	Read: &SerialPortFileInstance.Read,
 	Write: &SerialPortFileInstance.Write
 }

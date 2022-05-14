@@ -48,7 +48,7 @@ mkdir dev
 cd dev
 mknod tty1 c 4 1
 mknod ttyS0 c 4 64
-hard-link console ttyS0
+hard-link console tty1
 cd ..
 mkdir bin
 cd bin

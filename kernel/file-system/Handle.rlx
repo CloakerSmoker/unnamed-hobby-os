@@ -5,6 +5,10 @@ i64 HANDLE_ERROR_BAD_PARAMETER := 1
 i64 HANDLE_ERROR_NOT_SUPPORTED := 2
 i64 HANDLE_ERROR_NOT_IMPLEMENTED := 3
 
+i32 POLL_CAN_READ  := 0b1
+i32 POLL_CAN_WRITE := 0b10
+i32 POLL_HAS_ERROR := 0b100
+
 struct FileHandlePrototype {
 	i32 DataSize
 	
@@ -19,9 +23,14 @@ struct FileHandlePrototype {
 		Throw(HANDLE_ERROR_NOT_SUPPORTED)
 	}
 	
+	i32(void*, i32) Poll
 	i32(void*, void*, i32) Read
 	i32(void*, void*, i32) Write
 	
+	define i32 DefaultPoll(i32 Mode) {
+		Throw(HANDLE_ERROR_NOT_SUPPORTED)
+		return 0
+	}
 	define i32 DefaultRead(void* Buffer, i32 Size) {
 		Throw(HANDLE_ERROR_NOT_SUPPORTED)
 		return 0
@@ -78,6 +87,9 @@ define i32 RegisterHandlePrototype(FileHandlePrototype* Prototype) {
 		Prototype->Status := &FileHandlePrototype.DefaultStatus
 	}
 	
+	if !(Prototype->Poll) {
+		Prototype->Poll := &FileHandlePrototype.DefaultPoll
+	}
 	if !(Prototype->Read) {
 		Prototype->Read := &FileHandlePrototype.DefaultRead
 	}
@@ -116,6 +128,9 @@ struct FileHandle {
 	
 	define void Status(FileStatus* Out) {
 		this->Prototype->Status(this, Out)
+	}
+	define i32 Poll(i32 Mode) {
+		return this->Prototype->Poll(this, Mode)
 	}
 	define i32 Read(void* Buffer, i32 Size) {
 		return this->Prototype->Read(this, Buffer, Size)
