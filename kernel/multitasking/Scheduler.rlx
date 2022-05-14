@@ -216,9 +216,13 @@ define void SchedulerRestart() {
 define void DoSchedulerDelay() {
 	loop {
 		; Nothing better to do
-		asm {emit, 0xF4}
+		asm {
+			emit, 0xF4
+		}
 	}
 }
+
+i8 SchedulerStarted := false
 
 define void StartScheduler() {
 	DisableInterrupts()
@@ -233,4 +237,8 @@ define void StartScheduler() {
 			emit, 0xF4
 		}
 	}
+}
+
+define i8 IsSchedulerActive() {
+	return InterrupsAreEnabled() && SchedulerStarted
 }

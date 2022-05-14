@@ -1,11 +1,20 @@
 
 #Require "./src/utility/AVLTree.rlx"
 
+struct MagicFileMinorRange {
+	i32 First
+	i32 Count
+}
+
 struct MagicFilePrototype {
 	FileHandlePrototype* Prototype
 	
 	i32 Major
-	i32 Minor
+	
+	union {
+		i32 Minor
+		MagicFileMinorRange MinorRange
+	}
 	
 	MagicFilePrototype* Next
 	
@@ -20,7 +29,6 @@ struct MagicFilePrototype {
 MagicFilePrototype* FirstMagicPrototype := null
 
 define i32 RegisterMagicFile(MagicFilePrototype* Prototype) {
-	
 	FileHandlePrototype* File := Prototype->Prototype
 	
 	if (File->Status = null || File->Status = &FileHandlePrototype.DefaultStatus) {
@@ -42,8 +50,13 @@ define FileHandlePrototype* GetMagicFilePrototype(i32 Major, i32 Minor) {
 	MagicFilePrototype* Current := FirstMagicPrototype
 	
 	while (Current) {
-		if (Current->Major = Major && Current->Minor = Minor) {
-			return Current->Prototype
+		if (Current->Major = Major) {
+			i32 Start := Current~>MinorRange->First
+			i32 End := Start + Current~>MinorRange->Count
+			
+			if (Start <= Minor && Minor <= End) {
+				return Current->Prototype
+			}
 		}
 		
 		Current := Current->Next

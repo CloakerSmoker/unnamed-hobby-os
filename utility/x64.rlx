@@ -393,3 +393,21 @@ define i32 ExtractByte(i64 Value, i8 ByteNumber) {
 }
 
 i64 X64_RFLAGS_IF := 0b10_0000_0000
+
+define void DisableInterrupts() asm {
+	cli
+	ret
+}
+define void EnableInterrupts() asm {
+	sti
+	ret
+}
+define i64 GetFlags() asm {
+	emit, 0x48
+	emit, 0x9C ; PUSHFQ
+	pop, rax
+	ret
+}
+define i8 InterrupsAreEnabled() {
+	return (GetFlags() & X64_RFLAGS_IF) != 0
+}

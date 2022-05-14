@@ -45,11 +45,19 @@ i8 COM_PARITY_EVEN  := 0b00_011_0_00
 i8 COM_PARITY_MARK  := 0b00_101_0_00
 i8 COM_PARITY_SPACE := 0b00_111_0_00
 
-i8 COM_INTERRUPT_MASK      := 0b0000_1111
-i8 COM_INTERRUPT_ON_DATA   := 0b0000_0001
-i8 COM_INTERRUPT_ON_EMPTY  := 0b0000_0010
-i8 COM_INTERRUPT_ON_BREAK  := 0b0000_0100
-i8 COM_INTERRUPT_ON_STATUS := 0b0000_1000
+i8 COM_INTERRUPT_ENABLE_MASK   := 0b0000_1111
+i8 COM_INTERRUPT_ENABLE_DATA   := 0b0000_0001
+i8 COM_INTERRUPT_ENABLE_EMPTY  := 0b0000_0010
+i8 COM_INTERRUPT_ENABLE_BREAK  := 0b0000_0100
+i8 COM_INTERRUPT_ENABLE_STATUS := 0b0000_1000
+
+i8 COM_INTERRUPT_ID_NOT_PENDING := 0b0000_000_1
+i8 COM_INTERRUPT_ID_CAUSE_MASK  := 0b0000_111_0
+i8 COM_INTERRUPT_ID_STATUS      := 0b0000_000_0
+i8 COM_INTERRUPT_ID_EMPTY       := 0b0000_001_0
+i8 COM_INTERRUPT_ID_DATA        := 0b0000_010_0
+i8 COM_INTERRUPT_ID_BREAK       := 0b0000_011_0
+i8 COM_INTERRUPT_ID_TIMEOUT     := 0b0000_110_0
 
 i8 COM_DATA_TERMINAL_READY_MASK := 0b000_00001
 i8 COM_REQUEST_TO_SEND_MASK     := 0b000_00010
@@ -64,11 +72,20 @@ i8 COM_STATUS_CAN_SEND      := 0b0010_0000
 ;i8 COM_STATUS_CAN_SEND_2 := 0b0100_0000
 i8 COM_STATUS_HAS_ERROR     := 0b1000_0000 As i8
 
-#Require "./src/kernel/file-system/FileSystem.rlx"
+i32 SERIAL_MAJOR := 4
+i32 SERIAL_MINOR := 64
+i32 SERIAL_COUNT := 4
 
-struct SerialPortFileInstance {
-	#Include "./src/kernel/file-system/HandleInstance.rlx"
-	
+SerialPort*[4] SerialPorts
+
+#Require "./src/utility/MemoryFIFO.rlx"
+
+declare i8 IsSchedulerActive()
+declare void SchedulerYield()
+
+#Require "./src/kernel/core/Interrupts.rlx"
+
+struct SerialPort {
 	i16 PortBase
 	
 	define void PortWrite(i16 Register, i8 Value) {
@@ -138,32 +155,207 @@ struct SerialPortFileInstance {
 		this->PortWrite(COM_REGISTER_DATA, Byte)
 	}
 	
+	i8[64] RawWriteBuffer
+	MemoryFIFO WriteBuffer
+	
+	i8[64] RawReadBuffer
+	MemoryFIFO ReadBuffer
+	
 	define void Initialize(i16 PortBase, i16 Divisor, i8 LineControl) {
 		this->PortBase := PortBase
 		
+		this~>WriteBuffer->Initialize(this~>RawWriteBuffer, 64)
+		this~>ReadBuffer->Initialize(this~>RawReadBuffer, 64)
+		
 		this->SetBuad(Divisor)
 		this->PortWrite(COM_REGISTER_LINE_CONTROL, LineControl)
-		this->SetInterruptMode(COM_INTERRUPT_ON_DATA | COM_INTERRUPT_ON_STATUS)
+		this->SetInterruptMode(COM_INTERRUPT_ENABLE_DATA | COM_INTERRUPT_ENABLE_EMPTY)
 		this->PortWrite(COM_REGISTER_MODEM_CONTROL, COM_REQUEST_TO_SEND_MASK)
 	}
 	
-	define void InitializeFile(void** Options, i32 OptionCount) {
-		; TODO: Parameterize this based on which ttySN was opened
-		
-		this->Initialize(COM_PORT_BASES[SERIAL_OUTPUT_PORT], COM_DIVISOR_115200, COM_DATA_BITS_8 | COM_PARITY_NONE | COM_STOP_BITS_1)
+	define i8 CanRead() {
+		return this->GetLineStatus() & COM_STATUS_DATA_READY
 	}
-
+	define i8 ReadSingle() {
+		while !(this->GetLineStatus() & COM_STATUS_DATA_READY) {}
+		
+		return this->ReadByte()
+	}
+	
+	define i8 CanWrite() {
+		return this->GetLineStatus() & COM_STATUS_CAN_SEND
+	}
 	define void WriteSingle(i8 Character) {
 		while !(this->GetLineStatus() & COM_STATUS_CAN_SEND) {}
 		
 		this->WriteByte(Character)
 	}
-	define i32 Write(void* Buffer, i32 Count) {
-		i8* Characters := Buffer
+	
+	define void ReadInterrupt() {
+		i8 Next := this->ReadSingle()
 		
-		for (i32 Index := 0, Index < Count, Index++) {
-			this->WriteSingle(Characters[Index])
+		this~>ReadBuffer->Write(&Next, 1)
+	}
+	define void ReadWake() {
+		if (this->CanRead()) {
+			this->ReadInterrupt()
 		}
+	}
+	define void WriteInterrupt() {
+		if (this~>WriteBuffer->Available()) {
+			i8 Next := 0
+			this~>WriteBuffer->Read(&Next, 1)
+			
+			this->WriteSingle(Next)
+		}
+	}
+	define void WriteWake() {
+		if (this->CanWrite()) {
+			this->WriteInterrupt()
+		}
+	}
+	
+	define void Read(void* Buffer, i32 Count) {	
+		if (IsSchedulerActive()) {
+			i32 Read := 0
+			
+			while (Read != Count) {
+				this->ReadWake()
+				i32 Available := this~>ReadBuffer->Available()
+				
+				if (Available > Count) {
+					Available := Count
+				}
+				
+				this~>ReadBuffer->Read(Buffer, Available)
+				
+				Buffer += Available
+				Read += Available
+				
+				if (Read != Count) {
+					SchedulerYield()
+				}
+			}
+		}
+		else {
+			i8* Characters := Buffer
+			
+			for (i32 Index := 0, Index < Count, Index++) {
+				Characters[Index] := this->ReadSingle()
+			}	
+		}
+	}
+
+	define void Write(void* Buffer, i32 Count) {
+		if (IsSchedulerActive()) {
+			i32 Written := 0
+			
+			while (Written != Count) {
+				i32 Space := this~>WriteBuffer->Space()
+				
+				if (Space > Count) {
+					Space := Count
+				}
+				
+				this~>WriteBuffer->Write(Buffer, Space)
+				this->WriteWake()
+				
+				Buffer += Space
+				Written += Space
+				
+				if (Written != Count) {
+					SchedulerYield()
+				}
+			}
+		}
+		else {
+			i8* Characters := Buffer
+			
+			for (i32 Index := 0, Index < Count, Index++) {
+				this->WriteSingle(Characters[Index])
+			}
+		}
+	}
+}
+
+define void SerialInterrupt(AMD64Context* Context) {
+	for (i32 Index := 0, Index < 4, Index++) {
+		SerialPort* Next := SerialPorts[Index]
+		
+		if (Next) {
+			i8 ISR := Next->PortRead(COM_REGISTER_INTERRUPT_ID)
+			
+			while !(ISR & COM_INTERRUPT_ID_NOT_PENDING) {
+				i8 Cause := ISR & COM_INTERRUPT_ID_CAUSE_MASK
+				
+				if (Cause = COM_INTERRUPT_ID_DATA || Cause = COM_INTERRUPT_ID_TIMEOUT) {
+					Next->ReadInterrupt()
+				}
+				else if (Cause = COM_INTERRUPT_ID_EMPTY) {
+					Next->WriteInterrupt()
+				}
+				else if (Cause = COM_INTERRUPT_ID_STATUS) {
+					Next->PortRead(COM_REGISTER_MODEM_STATUS)
+				}
+				else if (Cause = COM_INTERRUPT_ID_BREAK) {
+					Next->PortRead(COM_REGISTER_LINE_STATUS)
+				}
+				
+				ISR := Next->PortRead(COM_REGISTER_INTERRUPT_ID)
+			}
+		}
+	}
+	
+	SendEOI(0x3)
+}
+
+define void OnSerialInterrupt() asm {
+	call, @InterruptSetup
+	call, @SerialInterrupt
+	jmp, @InterruptReturn
+}
+
+define void RegisterSerialInterrupts() {
+	InsertIDTEntry(0x23, &OnSerialInterrupt, true)
+	EnablePICLine(0x3, true)
+	
+	InsertIDTEntry(0x24, &OnSerialInterrupt, true)
+	EnablePICLine(0x4, true)
+}
+
+#Require "./src/kernel/file-system/FileSystem.rlx"
+
+struct SerialPortFileInstance {
+	#Include "./src/kernel/file-system/HandleInstance.rlx"
+	
+	SerialPort* Port
+	
+	define void Initialize(void** Options, i32 OptionCount) {
+		i32 Major := Options[0] As i32
+		i32 Minor := Options[1] As i32
+		
+		i32 Number := Minor - SERIAL_MINOR
+		
+		SerialPort* Port := SerialPorts[Number]
+		
+		if !(Port) {
+			i16 PortNumber := COM_PORT_BASES[Number + 1]
+			
+			Port := Alloc(#SerialPort)
+			Port->Initialize(PortNumber, COM_DIVISOR_115200, COM_DATA_BITS_8 | COM_PARITY_NONE | COM_STOP_BITS_1)
+			
+			SerialPorts[Number] := Port
+		}
+		
+		this->Port := Port
+	}
+	define i32 Read(void* Buffer, i32 Count) {
+		this->Port->Read(Buffer, Count)
+		
+		return Count
+	}
+	define i32 Write(void* Buffer, i32 Count) {
+		this->Port->Write(Buffer, Count)
 		
 		return Count
 	}
@@ -171,8 +363,9 @@ struct SerialPortFileInstance {
 
 FileHandlePrototype SerialPortFilePrototype {
 	DataSize: #SerialPortFileInstance,
-	Initialize: &SerialPortFileInstance.InitializeFile,
+	Initialize: &SerialPortFileInstance.Initialize,
 	
+	Read: &SerialPortFileInstance.Read,
 	Write: &SerialPortFileInstance.Write
 }
 
@@ -181,7 +374,11 @@ i32 SERIAL_FILE_PROTOTYPE_ID := RegisterHandlePrototype(&SerialPortFilePrototype
 MagicFilePrototype SerialPortMagicFilePrototype {
 	Prototype: &SerialPortFilePrototype,
 	Major: 4,
-	Minor: 64
+	
+	MinorRange: {
+		First: 64,
+		Count: 4
+	}
 }
 
 i32 SERIAL_FILE_MAGIC_ID := RegisterMagicFile(&SerialPortMagicFilePrototype)

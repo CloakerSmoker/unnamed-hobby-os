@@ -1,15 +1,15 @@
 #Require "./src/drivers/Serial.rlx"
 #Require "./src/utility/Print.rlx"
 
-SerialPortFileInstance RawOutputPort
-SerialPortFileInstance* OutputPort := &RawOutputPort
+SerialPort RawOutputPort
+SerialPort* OutputPort := &RawOutputPort
 
-define void DebugSerialPrintCharacter(void* this, i8 Character) {
-	OutputPort->WriteSingle(Character)
+define void DebugSerialPrintCharacters(void* this, i8* Characters, i32 Count) {
+	OutputPort->Write(Characters, Count)
 }
 
 PrintOutputAdapterPrototype RawSerialPrinter {
-	PrintCharacter: &DebugSerialPrintCharacter
+	PrintCharacters: &DebugSerialPrintCharacters
 }
 
 PrintOutputAdapterPrototype* SerialPrinter := &RawSerialPrinter
@@ -19,6 +19,7 @@ define void InitializeOutputPort() {
 		i16 PortBase := COM_PORT_BASES[SERIAL_OUTPUT_PORT]
 		
 		OutputPort->Initialize(PortBase, COM_DIVISOR_115200, COM_DATA_BITS_8 | COM_PARITY_NONE | COM_STOP_BITS_1)
+		SerialPorts[SERIAL_OUTPUT_PORT - 1] := OutputPort
 	}
 }
 

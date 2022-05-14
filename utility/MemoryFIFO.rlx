@@ -7,6 +7,8 @@ struct MemoryFIFO {
 	i32 WriteOffset
 	i32 ReadOffset
 	
+	i8 HasData
+	
 	static MemoryFIFO* New() {
 		MemoryFIFO* this := Alloc(#MemoryFIFO)
 		
@@ -15,6 +17,10 @@ struct MemoryFIFO {
 		
 		return this
 	}
+	define void Initialize(void* Buffer, i32 Size) {
+		this->Buffer := Buffer
+		this->Size := Size
+	}
 	define void Free() {
 		Free(this->Buffer)
 		Free(this)
@@ -22,6 +28,9 @@ struct MemoryFIFO {
 	
 	define i32 Available() {
 		return this->WriteOffset - this->ReadOffset
+	}
+	define i32 Space() {
+		return this->Size - this->WriteOffset
 	}
 	
 	define void Clear() {

@@ -1,4 +1,5 @@
 #Require "./src/utility/x64.rlx"
+#Require "./src/kernel/core/Descriptors.rlx"
 
 declare AMD64Context* GetCurrentTaskContext()
 declare void SchedulerRestart()
@@ -129,22 +130,13 @@ declare void AddHandlerStubs()
 declare void AddKernelHandlers()
 declare void SetupDeviceInterrupts()
 
-define void DisableInterrupts() asm {
-	cli
-	ret
-}
-define void EnableInterrupts() asm {
-	sti
-	ret
-}
-
 #Require "./src/drivers/APIC.rlx"
 #Require "./src/drivers/PIC.rlx"
 
 define void SetupInterrupts() {
 	DescriptorTableHeader IDTHeader
 	
-	IDT := KernelHeap->Allocate('IDT', IDT_SIZE)
+	IDT := Alloc('IDT', IDT_SIZE)
 	
 	IDTHeader.Base := IDT
 	IDTHeader.Limit := IDT_SIZE As i16
@@ -167,16 +159,6 @@ define void SetupInterrupts() {
 	asm (rax := &IDTHeader) {
 		lidt, {rax} As i64*
 	}
-}
-
-define i64 GetFlags() asm {
-	emit, 0x48
-	emit, 0x9C ; PUSHFQ
-	pop, rax
-	ret
-}
-define i8 InterrupsAreEnabled() {
-	return (GetFlags() & X64_RFLAGS_IF) != 0
 }
 
 define i8* InterruptToName(i32 Index) {

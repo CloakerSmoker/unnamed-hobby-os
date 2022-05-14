@@ -12,34 +12,8 @@ declare void TerminateAfterUnhandledException(i64)
 #Require "./src/utility/x64.rlx"
 
 declare void PrintCharacter(i8)
-
-#Require "./src/utility/Memory.rlx"
-
-#Require "./src/utility/Print.rlx"
-#Require "./src/utility/PrintHelpers.rlx"
-#Require "./src/utility/DebugOutput.rlx"
-
-#Require "./src/kernel/graphics/Font.rlx"
-#Require "./src/kernel/graphics/Screen.rlx"
-
-#Require "./src/kernel/core/Paging.rlx"
-#Require "./src/kernel/core/PageHeap.rlx"
-#Require "./src/kernel/core/Heap.rlx"
-
-Heap RawKernelHeap
-Heap* KernelHeap := &RawKernelHeap
-
-PageHeap* KernelPageAllocator := null
-
-define void* KernelHeapAllocate(i64 Tag, i32 Size) {
-	return KernelHeap->Allocate(Tag, Size)
-}
-define void* KernelHeapExtendAllocation(void* Memory, i32 Size) {
-	return KernelHeap->Extend(Memory, Size)
-}
-define void KernelHeapFree(void* Memory) {
-	KernelHeap->Free(Memory)
-}
+declare void Info(i8*, ...)
+declare void Print(i8*, ...)
 
 struct KernelInfo {
 	i32 Size
@@ -64,6 +38,34 @@ KernelInfo* Kernel := &RawKernelInfo
 
 BootloaderInfo RawBootInfo
 BootloaderInfo* BootInfo := &RawBootInfo
+
+#Require "./src/kernel/core/Paging.rlx"
+#Require "./src/utility/Memory.rlx"
+
+#Require "./src/utility/Print.rlx"
+#Require "./src/utility/PrintHelpers.rlx"
+#Require "./src/utility/DebugOutput.rlx"
+
+#Require "./src/kernel/graphics/Font.rlx"
+#Require "./src/kernel/graphics/Screen.rlx"
+
+#Require "./src/kernel/core/PageHeap.rlx"
+#Require "./src/kernel/core/Heap.rlx"
+
+Heap RawKernelHeap
+Heap* KernelHeap := &RawKernelHeap
+
+PageHeap* KernelPageAllocator := null
+
+define void* KernelHeapAllocate(i64 Tag, i32 Size) {
+	return KernelHeap->Allocate(Tag, Size)
+}
+define void* KernelHeapExtendAllocation(void* Memory, i32 Size) {
+	return KernelHeap->Extend(Memory, Size)
+}
+define void KernelHeapFree(void* Memory) {
+	KernelHeap->Free(Memory)
+}
 
 #Require "./src/kernel/core/Descriptors.rlx"
 
@@ -339,8 +341,9 @@ define void MainContinuation() {
 	
 	SetPITMode(PIT_100HZ)
 	SetupTimers()
+	RegisterSerialInterrupts()
 	
-	Print("Set up PIT/timers\n")
+	Print("Set up PIT/timers/serial\n")
 	
 	EnableInterrupts()
 	
@@ -421,6 +424,7 @@ define void MainContinuation() {
 	RootDirectory := Ext2OpenINodeNumber(FS, 2)
 	
 	Print("BOOT: About to replace myself with /dev/console wish me luck\n")
+	Info("Test\n")
 	
 	FileHandle* NewKernelConsole := RootDirectory->Open("dev/console")
 	

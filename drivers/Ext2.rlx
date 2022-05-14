@@ -1753,7 +1753,7 @@ define FileHandle* Ext2OpenINode(Ext2* FS, Ext2INode* Node) {
 			Throw('NO_MAGIC') ; yeah I'm funny
 		}
 		
-		return NewHandle(MagicPrototype)
+		return NewHandle(MagicPrototype, Major, Minor)
 	}
 	else {
 		return null
