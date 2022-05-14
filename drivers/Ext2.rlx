@@ -1111,7 +1111,7 @@ struct Ext2 {
 		}
 		
 		if (OutContainingNodeNumber != null) {
-			OutContainingNodeNumber[0] := ContainingNode->INodeNumber
+			*OutContainingNodeNumber := ContainingNode->INodeNumber
 		}
 		
 		Ext2DirectoryEntry* ExistingEntry := this->FindDirectoryEntryByName(ContainingNode, FileName)
@@ -1175,6 +1175,14 @@ struct Ext2 {
 		this->DirectoryAppendEntry(NewNode, "..", ContainingNodeNumber, DIRECTORY_ENTRY_DIRECTORY)
 		
 		return NewNodeNumber
+	}
+	
+	define void MakeHardLink(Ext2INode* At, i8* Path, i8* TargetPath) {
+		Ext2DirectoryEntry* TargetEntry := this->FindDirectoryEntryByPath(At, TargetPath)
+		i8 TargetEntryType := TargetEntry->Flags
+		i32 TargetNodeNumber := TargetEntry->INode
+		
+		this->DirectoryAppendEntry(At, Path, TargetNodeNumber, TargetEntryType)
 	}
 	
 	define i8* StartReserveInBitmap(i32 BitmapBlock) {

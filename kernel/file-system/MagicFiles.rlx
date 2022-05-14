@@ -3,6 +3,7 @@
 
 struct MagicFilePrototype {
 	FileHandlePrototype* Prototype
+	
 	i32 Major
 	i32 Minor
 	

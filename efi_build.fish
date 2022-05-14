@@ -46,7 +46,9 @@ import dum.six dum.six
 import graphic_design_is_my_passion.six logo.six
 mkdir dev
 cd dev
-mknod console c 4 1
+mknod tty1 c 4 1
+mknod ttyS0 c 4 64
+hard-link console ttyS0
 cd ..
 mkdir bin
 cd bin

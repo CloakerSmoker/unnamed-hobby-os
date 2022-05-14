@@ -1,11 +1,11 @@
 #Require "./src/drivers/Serial.rlx"
 #Require "./src/utility/Print.rlx"
 
-SerialPort RawOutputPort
-SerialPort* OutputPort := &RawOutputPort
+SerialPortFileInstance RawOutputPort
+SerialPortFileInstance* OutputPort := &RawOutputPort
 
 define void DebugSerialPrintCharacter(void* this, i8 Character) {
-	OutputPort->PrintCharacter(Character)
+	OutputPort->WriteSingle(Character)
 }
 
 PrintOutputAdapterPrototype RawSerialPrinter {

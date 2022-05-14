@@ -596,6 +596,11 @@ define void Prompt(Ext2* FS) {
 			
 			Print("Linked entry '%s' to INode %i\n", Path, LinkToNodeNumber)
 		}
+		else if (StringEquals(Command, "hard-link")) {
+			FS->MakeHardLink(RootINode, ArgV[1], ArgV[2])
+			
+			Print("Linked '%s' -> '%s'\n", ArgV[1], ArgV[2])
+		}
 		else if (StringEquals(Command, "quit")) {
 			Free(ArgV)
 			break

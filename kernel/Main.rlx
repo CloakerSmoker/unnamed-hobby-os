@@ -13,17 +13,13 @@ declare void TerminateAfterUnhandledException(i64)
 
 declare void PrintCharacter(i8)
 
+#Require "./src/utility/Memory.rlx"
+
 #Require "./src/utility/Print.rlx"
 #Require "./src/utility/PrintHelpers.rlx"
-
 #Require "./src/utility/DebugOutput.rlx"
 
-declare void* KernelHeapAllocate(i64, i32)
-declare void* KernelHeapExtendAllocation(void*, i32)
-declare void KernelHeapFree(void*)
-
 #Require "./src/kernel/graphics/Font.rlx"
-
 #Require "./src/kernel/graphics/Screen.rlx"
 
 #Require "./src/kernel/core/Paging.rlx"

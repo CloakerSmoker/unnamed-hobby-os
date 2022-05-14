@@ -64,38 +64,34 @@ i8 COM_STATUS_CAN_SEND      := 0b0010_0000
 ;i8 COM_STATUS_CAN_SEND_2 := 0b0100_0000
 i8 COM_STATUS_HAS_ERROR     := 0b1000_0000 As i8
 
-i8[96] SerialPrintBuffer
+#Require "./src/kernel/file-system/FileSystem.rlx"
 
-define void ClearSerialPrintBuffer() {
-	for (i32 Index := 0, Index < 12, Index += 1) {
-		(SerialPrintBuffer As i64*)[Index] := 0
-	}
-}
-
-struct SerialPort {
+struct SerialPortFileInstance {
+	#Include "./src/kernel/file-system/HandleInstance.rlx"
+	
 	i16 PortBase
 	
-	define void Write(i16 Register, i8 Value) {
+	define void PortWrite(i16 Register, i8 Value) {
 		OutB(this->PortBase + Register, Value)
 	}
-	define i8 Read(i16 Register) {
+	define i8 PortRead(i16 Register) {
 		return InB(this->PortBase + Register)
 	}
 	
 	define void SetBuad(i16 Divisor) {
-		this->Write(COM_REGISTER_LINE_CONTROL, this->Read(COM_REGISTER_LINE_CONTROL) | COM_DLAB)
-		this->Write(COM_REGISTER_DIVISOR_LSB, (Divisor & 0xFF) As i8)
-		this->Write(COM_REGISTER_DIVISOR_MSB, ((Divisor >> 8) & 0xFF) As i8)
-		this->Write(COM_REGISTER_LINE_CONTROL, this->Read(COM_REGISTER_LINE_CONTROL) & ~COM_DLAB)
+		this->PortWrite(COM_REGISTER_LINE_CONTROL, this->PortRead(COM_REGISTER_LINE_CONTROL) | COM_DLAB)
+		this->PortWrite(COM_REGISTER_DIVISOR_LSB, (Divisor & 0xFF) As i8)
+		this->PortWrite(COM_REGISTER_DIVISOR_MSB, ((Divisor >> 8) & 0xFF) As i8)
+		this->PortWrite(COM_REGISTER_LINE_CONTROL, this->PortRead(COM_REGISTER_LINE_CONTROL) & ~COM_DLAB)
 	}
 	
 	define void SetLineControlField(i8 Mask, i8 NewValue) {
-		i8 Value := this->Read(COM_REGISTER_LINE_CONTROL)
+		i8 Value := this->PortRead(COM_REGISTER_LINE_CONTROL)
 		
 		Value &= ~Mask
 		Value |= NewValue
 		
-		this->Write(COM_REGISTER_LINE_CONTROL, Value)
+		this->PortWrite(COM_REGISTER_LINE_CONTROL, Value)
 	}
 	
 	define void SetDataBits(i8 Mode) {
@@ -109,16 +105,16 @@ struct SerialPort {
 	}
 	
 	define void SetInterruptMode(i8 Mode) {
-		this->Write(COM_REGISTER_INTERRUPT_ENABLE, Mode)
+		this->PortWrite(COM_REGISTER_INTERRUPT_ENABLE, Mode)
 	}
 	
 	define void SetModemControlField(i8 Mask, i8 NewValue) {
-		i8 Value := this->Read(COM_REGISTER_MODEM_CONTROL)
+		i8 Value := this->PortRead(COM_REGISTER_MODEM_CONTROL)
 		
 		Value &= ~Mask
 		Value |= NewValue
 		
-		this->Write(COM_REGISTER_MODEM_CONTROL, Value)
+		this->PortWrite(COM_REGISTER_MODEM_CONTROL, Value)
 	}
 	
 	define void SetDataTerminalReady(i8 Value) {
@@ -132,29 +128,60 @@ struct SerialPort {
 	}
 	
 	define i8 GetLineStatus() {
-		return this->Read(COM_REGISTER_LINE_STATUS)
+		return this->PortRead(COM_REGISTER_LINE_STATUS)
 	}
 	
 	define i8 ReadByte() {
-		return this->Read(COM_REGISTER_DATA)
+		return this->PortRead(COM_REGISTER_DATA)
 	}
 	define void WriteByte(i8 Byte) {
-		this->Write(COM_REGISTER_DATA, Byte)
+		this->PortWrite(COM_REGISTER_DATA, Byte)
 	}
 	
 	define void Initialize(i16 PortBase, i16 Divisor, i8 LineControl) {
 		this->PortBase := PortBase
 		
 		this->SetBuad(Divisor)
-		this->Write(COM_REGISTER_LINE_CONTROL, LineControl)
-		this->SetInterruptMode(COM_INTERRUPT_ON_DATA | COM_INTERRUPT_ON_DATA | COM_INTERRUPT_ON_STATUS)
-		this->Write(COM_REGISTER_MODEM_CONTROL, COM_REQUEST_TO_SEND_MASK)
+		this->PortWrite(COM_REGISTER_LINE_CONTROL, LineControl)
+		this->SetInterruptMode(COM_INTERRUPT_ON_DATA | COM_INTERRUPT_ON_STATUS)
+		this->PortWrite(COM_REGISTER_MODEM_CONTROL, COM_REQUEST_TO_SEND_MASK)
+	}
+	
+	define void InitializeFile(void** Options, i32 OptionCount) {
+		; TODO: Parameterize this based on which ttySN was opened
+		
+		this->Initialize(COM_PORT_BASES[SERIAL_OUTPUT_PORT], COM_DIVISOR_115200, COM_DATA_BITS_8 | COM_PARITY_NONE | COM_STOP_BITS_1)
 	}
 
-	define void PrintCharacter(i8 Character) {
+	define void WriteSingle(i8 Character) {
 		while !(this->GetLineStatus() & COM_STATUS_CAN_SEND) {}
 		
 		this->WriteByte(Character)
 	}
+	define i32 Write(void* Buffer, i32 Count) {
+		i8* Characters := Buffer
+		
+		for (i32 Index := 0, Index < Count, Index++) {
+			this->WriteSingle(Characters[Index])
+		}
+		
+		return Count
+	}
 }
 
+FileHandlePrototype SerialPortFilePrototype {
+	DataSize: #SerialPortFileInstance,
+	Initialize: &SerialPortFileInstance.InitializeFile,
+	
+	Write: &SerialPortFileInstance.Write
+}
+
+i32 SERIAL_FILE_PROTOTYPE_ID := RegisterHandlePrototype(&SerialPortFilePrototype)
+
+MagicFilePrototype SerialPortMagicFilePrototype {
+	Prototype: &SerialPortFilePrototype,
+	Major: 4,
+	Minor: 64
+}
+
+i32 SERIAL_FILE_MAGIC_ID := RegisterMagicFile(&SerialPortMagicFilePrototype)

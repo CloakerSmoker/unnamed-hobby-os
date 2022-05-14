@@ -1,4 +1,5 @@
 
+#Require "$/ExceptionBase.rlx"
 
 i64 HANDLE_ERROR_BAD_PARAMETER := 1
 i64 HANDLE_ERROR_NOT_SUPPORTED := 2
