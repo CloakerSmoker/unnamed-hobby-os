@@ -290,7 +290,7 @@ define void OnCommand(i8* CommandLine) {
 			
 			i8* User := "USER=root"
 			
-			Process* Child := Execute(FileData, ParameterCount, Parameters, 1, &User)
+			Process* Child := Execute(CWD, FileData, ParameterCount, Parameters, 1, &User)
 			
 			KernelPageAllocator->FreeVirtual(FileData, FilePages)
 			
@@ -604,7 +604,7 @@ define EventState ShellOnKey(KeyEventInfo* KeyEvent, Event* Fired) {
 				ShellInputLine[ShellInputIndex - 1] := 0x0A
 				ShellInputLine[ShellInputIndex] := 0
 				
-				InputBuffer->Write(ShellInputLine, ShellInputIndex - 1)
+				InputBuffer->Write(ShellInputLine, ShellInputIndex)
 				ShellInputIndex := 0
 			}
 			else {

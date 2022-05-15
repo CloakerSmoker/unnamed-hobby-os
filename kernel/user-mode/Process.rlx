@@ -279,9 +279,10 @@ struct Process {
 		return EventState:CallNextListener
 	}
 	
-	define void Initialize(ELFHeader* Header, MemoryMappingGroup* Mappings) {
+	define void Initialize(ELFHeader* Header, MemoryMappingGroup* Mappings, FileHandle* WorkingDirectory) {
 		this->ELF := Header
 		this->Mappings := Mappings
+		this->WorkingDirectory := WorkingDirectory
 		
 		i64 MaxAddress := 0
 	

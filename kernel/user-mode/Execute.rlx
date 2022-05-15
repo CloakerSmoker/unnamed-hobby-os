@@ -76,7 +76,7 @@ define i64* SetupExecuteStack(void* Stack, i32 ArgumentCount, i8** Arguments, i3
 i8** NULL_ARGUMENTS := null As i8**
 i8** NULL_ENVIRONMENT := null As i8**
 
-define Process* Execute(void* Buffer, i32 ArgumentCount, i8** Arguments, i32 EnvironmentCount, i8** Environment) {
+define Process* Execute(FileHandle* WorkingDirectory, void* Buffer, i32 ArgumentCount, i8** Arguments, i32 EnvironmentCount, i8** Environment) {
 	ELFHeader* ELFData := Buffer As ELFHeader*
 	
 	
@@ -105,7 +105,7 @@ define Process* Execute(void* Buffer, i32 ArgumentCount, i8** Arguments, i32 Env
 	Process* LastProcess := CurrentProcess
 	
 	CurrentProcess := KernelHeap->Allocate('PROC', #Process)
-	CurrentProcess->Initialize(ELFData, Mappings)
+	CurrentProcess->Initialize(ELFData, Mappings, WorkingDirectory)
 	
 	UserThread* Thread := CurrentProcess~>MainThread
 	Thread->Start(2, CurrentProcess~>Signals, RSP, ELFData->EntryPoint As void*)

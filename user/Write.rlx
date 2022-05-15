@@ -5,19 +5,11 @@ define void Main() {
 	Print("File name: ")
 	
 	i8[255] Name
-	i32 Index
+	i32 NameLength := FileRead(STDIN, Name, 255)
 	
-	for (i32 Index := 0, Index < 30, Index++) {
-		i8 Next := ReadCharacter()
-		
-		if (Next = 0xD && ReadCharacter() = 0xA) {
-			break
-		}
-		
-		Print("%c", Next)
-		
-		Name[Index] := Next
-	}
+	Name[NameLength - 1] := 0
+	
+	Print("Opening '%s'\n", Name)
 	
 	i64 File := FileOpen(Name, FILE_WRITE | FILE_CREATE_NEW)
 	
@@ -26,21 +18,23 @@ define void Main() {
 		return
 	}
 	
-	Print("\n[ Writing to '%s', | to stop ]\n", Name)
+	Print("\n[ Writing to '%s', empty line to stop ]\n", Name)
 	
-	for (i32 Index := 0, Index < 255, Index++) {
-		i8 Next := ReadCharacter()
+	i32 Total := 0
+	i8[100] Line
+	
+	loop {
+		i32 LineLength := FileRead(STDIN, Line, 100)
 		
-		Print("%c", Next)
-		
-		if (Next = '|') {
+		if (LineLength = 1) {
 			break
 		}
 		
-		FileWrite(File, &Next, 1)
+		Total += LineLength
+		FileWrite(File, Line, LineLength)
 	}
 	
 	FileClose(File)
 	
-	Print("\nDone, %i characters written\n", Index)
+	Print("\nDone, %i characters written\n", Total)
 }
