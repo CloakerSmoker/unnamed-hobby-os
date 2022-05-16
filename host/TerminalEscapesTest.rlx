@@ -1,0 +1,32 @@
+#Require "$/Memory.rlx"
+#Require "$/File.rlx"
+#Require "$/Console.rlx"
+#Require "$/Exception.rlx"
+#Require "$/Debug.rlx"
+
+#Require "./src/kernel/input/TerminalEscapes.rlx"
+
+define void OnKey(void* State, i8 Modifiers, i32 KeyCode) {
+	PrintModifiers(Modifiers)
+	PrintKeyName(KeyCode)
+	Print("\n")
+}
+
+define void Main() {
+	InputEscapeParser P {
+		State: null,
+		PushOutput: &OnKey
+	}
+	
+	P.Write("\e[1~", 4)
+	P.Write("A", 1)
+	P.Write("a", 1)
+	P.Write("\e[A", 3)
+	P.Write("\e[9p", 4)
+	P.Write("\e[8;8~", 6)
+	P.Write("\e[[", 3)
+	P.Write("[", 1)
+	
+	i8 Temp := 0x4
+	P.Write(&Temp, 1)
+}
