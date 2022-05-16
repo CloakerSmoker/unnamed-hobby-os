@@ -1,0 +1,125 @@
+
+#Require "./src/kernel/input/Keys.rlx"
+#Require "./src/kernel/file-system/FileSystem.rlx"
+
+struct InputToTerminalEscapesStream {
+	FileHandle* Output
+	
+	i8* EnterSequence
+	i32 EnterLength
+	
+	define void OutputXTerm(i8 Modifiers, i8 Character) {
+		i8[10] OutputBuffer
+		
+		if (Modifiers) {
+			Modifiers++
+			
+			; TODO: Switch back to this once host tools can use new Print()
+			;i32 Length := FormatString(OutputBuffer, 10, "\e[1;%i%c", Modifiers, Character)
+			;this->Output->Write(OutputBuffer, Length)
+			
+			this->Output->Write("\e[1;", 4)
+			
+			i8 Temp := NumberToCharacter(Modifiers)
+			this->Output->Write(&Temp, 1)
+			
+			this->Output->Write(&Character, 1)
+			
+		}
+		else {
+			this->Output->Write("\e[", 2)
+			this->Output->Write(&Character, 1)
+		}
+	}
+	
+	define void OutputVT(i8 Modifiers, i8 Code) {
+		i8[10] OutputBuffer
+		
+		if (Modifiers) {
+			Modifiers++
+			
+			; TODO: Same as above
+			;i32 Length := FormatString(OutputBuffer, 10, "\e[%c;%i~", Code, Modifiers)
+			;this->Output->Write(OutputBuffer, Length)
+			
+			this->Output->Write("\e[", 2)
+			this->Output->Write(&Code, 1)
+			this->Output->Write(";", 1)
+			
+			i8 Temp := NumberToCharacter(Modifiers)
+			this->Output->Write(&Temp, 1)
+			
+			this->Output->Write("~", 1)
+		}
+		else {
+			this->Output->Write("\e[", 2)
+			this->Output->Write(&Code, 1)
+			this->Output->Write("~", 1)
+		}
+	}
+	
+	define void OnInput(i8 Modifiers, i32 KeyCode) {
+		if (KEY_ASCII_BASE <= KeyCode && KeyCode <= KEY_ASCII_LAST) {
+			if (Modifiers & KEY_MODIFIER_SHIFT) {
+				; shift + lowercase_letter = uppercase_letter
+				
+				if ('a' <= KeyCode && KeyCode <= 'z') {
+					KeyCode ^= 0x20
+					Modifiers ^= KEY_MODIFIER_SHIFT
+				}
+			}
+			
+			if (Modifiers = 0) {
+				this->Output->Write(&KeyCode, 1)
+			}
+			else if (Modifiers & KEY_MODIFIER_ALT = Modifiers) {
+				this->Output->Write("\e[", 2)
+				this->Output->Write(&KeyCode, 1)
+			}
+			else {
+				Modifiers++
+				
+				; TODO: You know the drill
+				;i8[10] OutputBuffer
+				;i32 Length := FormatString(OutputBuffer, 10, "\e[%i%c", Modifiers, KeyCode)
+				;this->Output->Write(OutputBuffer, Length)
+				
+				this->Output->Write("\e[", 2)
+				
+				i8 Temp := NumberToCharacter(Modifiers)
+				this->Output->Write(&Temp, 1)
+				
+				this->Output->Write(&KeyCode, 1)
+			}
+		}
+		else {
+			if (KEY_UP <= KeyCode && KeyCode <= KEY_LEFT) {
+				i8 XTermArrow := ((KeyCode - KEY_UP) + 'A') As i8
+				
+				this->OutputXTerm(Modifiers, XTermArrow)
+			}
+			else if (KeyCode = KEY_ENTER) {
+				this->Output->Write(this->EnterSequence, this->EnterLength)
+			}
+			else if (KeyCode = KEY_END) {
+				this->OutputXTerm(Modifiers, 'F')
+			}
+			else if (KeyCode = KEY_HOME) {
+				this->OutputXTerm(Modifiers, 'H')
+			}
+			else if (KeyCode = KEY_INSERT) {
+				this->OutputVT(Modifiers, '2')
+			}
+			else if (KeyCode = KEY_DELETE) {
+				this->OutputVT(Modifiers, '3')
+			}
+			else if (KeyCode = KEY_PAGE_UP) {
+				this->OutputVT(Modifiers, '5')
+			}
+			else if (KeyCode = KEY_PAGE_DOWN) {
+				this->OutputVT(Modifiers, '6')
+			}
+		}
+	}
+	
+}

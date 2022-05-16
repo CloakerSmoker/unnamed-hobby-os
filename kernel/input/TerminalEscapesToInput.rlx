@@ -1,0 +1,177 @@
+
+#Require "./src/kernel/input/Keys.rlx"
+
+enum InputEscapeMode {
+	Normal,
+	Escape,
+	EscapeBracket,
+	EscapeBracketEither,
+	EscapeModifierCharacter,
+	EscapeKeycode,
+	EscapeKeycodeModifier,
+	EscapeKeycodeModifierEnd
+}
+
+i8 ASCII_ESCAPE := 0x1B
+
+struct InputEscapeParser {
+	void* State
+	void(void*, i8, i32) PushOutput
+	
+	define void OutputKey(i8 Modifiers, i32 KeyCode) {
+		this->PushOutput(this->State, Modifiers, KeyCode)
+	}
+	
+	define void OutputKey(i32 KeyCode) {
+		this->PushOutput(this->State, 0, KeyCode)
+	}
+	
+	define void OutputCharacter(i8 Modifiers, i8 Character) {
+		if ('A' <= Character && Character <= 'Z') {
+			this->OutputKey(Modifiers | KEY_MODIFIER_SHIFT, Character ^ 0x20)
+		}
+		else if (0 <= Character && Character <= 26) {
+			this->OutputKey(Modifiers | KEY_MODIFIER_CONTROL, Character + 'a')
+		}
+		else {
+			this->OutputKey(Modifiers, Character)
+		}
+	}
+	
+	define void OutputCharacter(i8 Character) {
+		this->OutputCharacter(0, Character)
+	}
+	
+	i8 ModifierOrKeycode
+	i8 CharacterOrModifier
+	
+	InputEscapeMode Mode
+	
+	define i32 TranslateKeycode(i8 Code) {
+		i32[23] Keys {
+			KEY_HOME, KEY_INSERT, KEY_DELETE, KEY_END, KEY_PAGE_UP, KEY_PAGE_DOWN,
+			KEY_HOME, KEY_END, 
+			0, 0,
+			KEY_F1, KEY_F2, KEY_F3, KEY_F4, KEY_F5, KEY_F6, KEY_F7, KEY_F8, KEY_F9, KEY_F10,
+			KEY_F11, KEY_F2
+		}
+		
+		Code -= '1'
+		
+		if (0 <= Code && Code <= 22) {
+			return Keys[Code]
+		}
+		
+		return 0
+	}
+	
+	define i32 TranslateXTerm(i8 Character) {
+		if (Character = 'A') {
+			return KEY_UP
+		}
+		else if (Character = 'B') {
+			return KEY_DOWN
+		}
+		else if (Character = 'C') {
+			return KEY_RIGHT
+		}
+		else if (Character = 'D') {
+			return KEY_LEFT
+		}
+		else if (Character = 'F') {
+			return KEY_END
+		}
+		else if (Character = 'H') {
+			return KEY_HOME
+		}
+		
+		return 0
+	}
+	
+	define void Write(i8* Characters, i32 Count) {
+		for (i32 Index := 0, Index < Count, Index++) {
+			i8 Next := Characters[Index]
+			
+			if (this->Mode = InputEscapeMode:Normal) {
+				if (Next = ASCII_ESCAPE) {
+					this->Mode := InputEscapeMode:Escape
+				}
+				else {
+					this->OutputCharacter(Next)
+				}
+			}
+			else if (this->Mode = InputEscapeMode:Escape) {
+				if (Next = '[') {
+					this->Mode := InputEscapeMode:EscapeBracket
+				}
+				else if (Next = ASCII_ESCAPE) {
+					this->OutputCharacter(ASCII_ESCAPE)
+					
+					this->Mode := InputEscapeMode:Normal
+				}
+				else {
+					this->OutputCharacter(KEY_MODIFIER_ALT, Next)
+					
+					this->Mode := InputEscapeMode:Normal
+				}
+			}
+			else if (this->Mode = InputEscapeMode:EscapeBracket) {
+				if ('A' <= Next && Next <= 'Z') {
+					this->OutputKey(this->TranslateXTerm(Next))
+					
+					this->Mode := InputEscapeMode:Normal
+				}
+				else if ('1' <= Next && Next <= '9') {
+					this->ModifierOrKeycode := Next
+					
+					this->Mode := InputEscapeMode:EscapeBracketEither
+				}
+				else {
+					this->OutputCharacter(KEY_MODIFIER_ALT, Next)
+					
+					this->Mode := InputEscapeMode:Normal
+				}
+			}
+			else if (this->Mode = InputEscapeMode:EscapeBracketEither) {
+				if (Next = ';') {
+					this->Mode := InputEscapeMode:EscapeKeycodeModifier
+				}
+				else if (Next = '~') {
+					; ModifierOrKeycode is a keycode
+					
+					this->OutputKey(this->TranslateKeycode(this->ModifierOrKeycode))
+					
+					this->Mode := InputEscapeMode:Normal
+				}
+				else {
+					; ModifierOrKeycode is a modifier, Next is a character
+					
+					i8 Value := (this->ModifierOrKeycode - '0' - 1) As i8
+					
+					this->OutputCharacter(Value, Next)
+					
+					this->Mode := InputEscapeMode:Normal
+				}
+			}
+			else if (this->Mode = InputEscapeMode:EscapeKeycodeModifier) {
+				this->CharacterOrModifier := Next
+				
+				this->Mode := InputEscapeMode:EscapeKeycodeModifierEnd
+			}
+			else if (this->Mode = InputEscapeMode:EscapeKeycodeModifierEnd) {
+				i8 Value := (this->CharacterOrModifier - '0' - 1) As i8
+				
+				if (Next = '~') {
+					this->OutputKey(Value, this->TranslateKeycode(this->ModifierOrKeycode))
+					
+					this->Mode := InputEscapeMode:Normal
+				}
+				else if (this->ModifierOrKeycode = '1' && 'A' <= Next && Next <= 'Z') {
+					this->OutputKey(Value, this->TranslateXTerm(Next))
+					
+					this->Mode := InputEscapeMode:Normal
+				}
+			}
+		}
+	}
+}
