@@ -1,0 +1,149 @@
+
+#Require "./src/kernel/input/Keys.rlx"
+
+i32 SCANCODE_ESCAPE    := 0x01
+i32 SCANCODE_CONTROL   := 0x1D
+i32 SCANCODE_ALT       := 0x38
+i32 SCANCODE_SHIFT     := 0x2A
+i32 SCANCODE_BACKSPACE := 0x0E
+i32 SCANCODE_ENTER     := 0x1C
+
+i32 SCANCODE_EXTENDED_UP_ARROW    := 0x48
+i32 SCANCODE_EXTENDED_LEFT_ARROW  := 0x4B
+i32 SCANCODE_EXTENDED_RIGHT_ARROW := 0x4D
+i32 SCANCODE_EXTENDED_DOWN_ARROW  := 0x50
+i32 SCANCODE_EXTENDED_HOME        := 0x47
+i32 SCANCODE_EXTENDED_END         := 0x4F
+i32 SCANCODE_EXTENDED_INSERT      := 0x52
+i32 SCANCODE_EXTENDED_DELETE      := 0x53
+
+i32 SCANCODE_MASK_DOWN      := 0x80
+i32 SCANCODE_PREFIX_EXTENDED := 0xE0
+
+enum ScanCodeParserMode {
+	Normal,
+	Extended,
+	FourLong,
+	JustPause
+}
+
+struct ScanCodeParser {
+	void* State
+	void(void*, i8, i32) PushOutput
+	
+	i8 Modifiers
+	
+	define void OutputKey(i32 KeyCode) {
+		this->PushOutput(this->State, this->Modifiers, KeyCode)
+	}
+	
+	ScanCodeParserMode Mode
+	
+	define i32 RemapNormal(i8 Code) {
+		i8* Map := "  1234567890-=  qwertyuiop[]  asdfghjkl;'` \\zxcvbnm,./    "
+		
+		if (Code = SCANCODE_ENTER) {
+			return KEY_ENTER
+		}
+		else if (Code = SCANCODE_BACKSPACE) {
+			return KEY_BACKSPACE
+		}
+		else if (0 <= Code && Code <= 58) {
+			return Map[Code]
+		}
+		
+		return 0
+	}
+	
+	define i32 RemapExtended(i8 Code) {
+		if (Code = SCANCODE_EXTENDED_UP_ARROW) {
+			return KEY_UP
+		}
+		else if (Code = SCANCODE_EXTENDED_LEFT_ARROW) {
+			return KEY_LEFT
+		}
+		else if (Code = SCANCODE_EXTENDED_RIGHT_ARROW) {
+			return KEY_RIGHT
+		}
+		else if (Code = SCANCODE_EXTENDED_DOWN_ARROW) {
+			return KEY_DOWN
+		}
+		else if (Code = SCANCODE_EXTENDED_HOME) {
+			return KEY_HOME
+		}
+		else if (Code = SCANCODE_EXTENDED_END) {
+			return KEY_END
+		}
+		else if (Code = SCANCODE_EXTENDED_INSERT) {
+			return KEY_INSERT
+		}
+		else if (Code = SCANCODE_EXTENDED_DELETE) {
+			return KEY_DELETE
+		}
+		
+		return 0
+	}
+	
+	define void Write(i8* ScanCodes, i32 Count) {
+		for (i32 Index := 0, Index < Count, Index++) {
+			i8 Next := ScanCodes[Index]
+			
+			if (this->Mode = ScanCodeParserMode:Normal) {
+				if (Next = SCANCODE_PREFIX_EXTENDED) {
+					this->Mode := ScanCodeParserMode:Extended
+					
+					continue
+				}
+				
+				i8 Down := false
+				
+				if (Next & SCANCODE_MASK_DOWN) {
+					Down := true
+				}
+				
+				Next &= 0x7F
+				
+				if (Down) {
+					if (Next = SCANCODE_SHIFT) {
+						this->Modifiers |= KEY_MODIFIER_SHIFT
+					}
+					else if (Next = SCANCODE_CONTROL) {
+						this->Modifiers |= KEY_MODIFIER_CONTROL
+					}
+					else if (Next = SCANCODE_ALT) {
+						this->Modifiers |= KEY_MODIFIER_ALT
+					}
+					else {
+						this->OutputKey(this->RemapNormal(Next))
+					}
+				}
+				else {
+					if (Next = SCANCODE_SHIFT) {
+						this->Modifiers &= ~KEY_MODIFIER_SHIFT
+					}
+					else if (Next = SCANCODE_CONTROL) {
+						this->Modifiers &= ~KEY_MODIFIER_CONTROL
+					}
+					else if (Next = SCANCODE_ALT) {
+						this->Modifiers &= ~KEY_MODIFIER_ALT
+					}
+				}
+			}
+			else if (this->Mode = ScanCodeParserMode:Extended) {
+				i8 Down := false
+				
+				if (Next & SCANCODE_MASK_DOWN) {
+					Down := true
+				}
+				
+				Next &= 0x7F
+				
+				if (Down) {
+					this->OutputKey(this->RemapExtended(Next))
+				}
+				
+				this->Mode := ScanCodeParserMode:Normal
+			}
+		}
+	}
+}

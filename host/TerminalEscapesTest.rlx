@@ -4,7 +4,7 @@
 #Require "$/Exception.rlx"
 #Require "$/Debug.rlx"
 
-#Require "./src/kernel/input/TerminalEscapes.rlx"
+#Require "./src/kernel/input/TerminalEscapesToInput.rlx"
 
 define void OnKey(void* State, i8 Modifiers, i32 KeyCode) {
 	PrintModifiers(Modifiers)
@@ -26,6 +26,10 @@ define void Main() {
 	P.Write("\e[8;8~", 6)
 	P.Write("\e[[", 3)
 	P.Write("[", 1)
+	P.Write("\e[1;2A", 6)
+	P.Write("\e[1;2B", 6)
+	P.Write("\e[1;2C", 6)
+	P.Write("\e[1;2D", 6)
 	
 	i8 Temp := 0x4
 	P.Write(&Temp, 1)
