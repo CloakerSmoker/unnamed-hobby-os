@@ -1,32 +1,3 @@
-struct TermiosWindowSize {
-	i16 Rows
-	i16 Columns
-	i16 CharacterWidth
-	i16 CharacterHeight
-}
-
-struct TermiosConfig {
-	i32 InputFlags
-	i32 OutputFlags
-	i32 ControlFlags
-	i32 LocalFlags
-	i8 LineDiscipline
-	
-	union {
-		i8 InterruptCharacter
-		i8[0] ControlCharacters
-	}
-	
-	i8 QuitCharacter
-	i8 EraseCharacter
-	i8 KillCharacter
-	i8 EOFCharacter
-	i8 Timeout
-	i8 MinimumReadSize
-	
-	i8[12] Other
-}
-
 i32 TERMIOS_GET_CONFIG := 0x5401
 i32 TERMIOS_SET_CONFIG := 0x5402
 i32 TERMIOS_DRAIN_SET_CONFIG := 0x5403
@@ -190,3 +161,47 @@ i32 LINUX_TERMIOS_TCIOFLUSH := 2
 i32 LINUX_TERMIOS_TCSANOW := 0
 i32 LINUX_TERMIOS_TCSADRAIN := 1
 i32 LINUX_TERMIOS_TCSAFLUSH := 2
+
+struct TermiosWindowSize {
+	i16 Rows
+	i16 Columns
+	i16 CharacterWidth
+	i16 CharacterHeight
+}
+
+struct TermiosConfig {
+	i32 InputFlags
+	i32 OutputFlags
+	i32 ControlFlags
+	i32 LocalFlags
+	i8 LineDiscipline
+	
+	union {
+		i8 InterruptCharacter
+		i8[0] ControlCharacters
+	}
+	
+	i8 QuitCharacter
+	i8 EraseCharacter
+	i8 KillCharacter
+	i8 EOFCharacter
+	i8 Timeout
+	i8 MinimumReadSize
+	
+	i8[12] Other
+	
+	define void SetDefaults() {
+		this->InputFlags := LINUX_TERMIOS_INPUT_FLAG_IGNBRK | LINUX_TERMIOS_INPUT_FLAG_IGNPAR
+		this->OutputFlags := LINUX_TERMIOS_OUTPUT_FLAG_OPOST | LINUX_TERMIOS_OUTPUT_FLAG_ONLCR
+		this->ControlFlags := LINUX_TERMIOS_CONTROL_FLAG_CS8 | LINUX_TERMIOS_CONTROL_FLAG_B9600 | LINUX_TERMIOS_CONTROL_FLAG_CLOCAL
+		this->LocalFlags := LINUX_TERMIOS_LOCAL_FLAG_ISIG | LINUX_TERMIOS_LOCAL_FLAG_ICANON | LINUX_TERMIOS_LOCAL_FLAG_ECHO
+		this->InterruptCharacter := 0xFE As i8
+		this->EOFCharacter := 0xFF As i8
+		this->Timeout := 0
+		this->MinimumReadSize := 1
+		
+		this->ControlCharacters[LINUX_TERMIOS_CHARACTER_VERASE] := 0x7F
+		this->ControlCharacters[LINUX_TERMIOS_CHARACTER_VEOL  ] := 0xD
+		this->ControlCharacters[LINUX_TERMIOS_CHARACTER_VEOL2 ] := 0xA
+	}
+}

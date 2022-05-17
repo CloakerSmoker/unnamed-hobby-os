@@ -1,12 +1,16 @@
 
 #Require "./src/kernel/input/Keys.rlx"
-#Require "./src/kernel/file-system/FileSystem.rlx"
 
 struct InputToTerminalEscapesStream {
-	FileHandle* Output
-	
 	i8* EnterSequence
 	i32 EnterLength
+	
+	void* State
+	void(void*, i8*, i32) WriteOutput
+	
+	define void Output(void* Characters, i32 Count) {
+		this->WriteOutput(this->State, Characters, Count)
+	}
 	
 	define void OutputXTerm(i8 Modifiers, i8 Character) {
 		i8[10] OutputBuffer
@@ -18,17 +22,17 @@ struct InputToTerminalEscapesStream {
 			;i32 Length := FormatString(OutputBuffer, 10, "\e[1;%i%c", Modifiers, Character)
 			;this->Output->Write(OutputBuffer, Length)
 			
-			this->Output->Write("\e[1;", 4)
+			this->Output("\e[1;", 4)
 			
 			i8 Temp := NumberToCharacter(Modifiers)
-			this->Output->Write(&Temp, 1)
+			this->Output(&Temp, 1)
 			
-			this->Output->Write(&Character, 1)
+			this->Output(&Character, 1)
 			
 		}
 		else {
-			this->Output->Write("\e[", 2)
-			this->Output->Write(&Character, 1)
+			this->Output("\e[", 2)
+			this->Output(&Character, 1)
 		}
 	}
 	
@@ -40,27 +44,27 @@ struct InputToTerminalEscapesStream {
 			
 			; TODO: Same as above
 			;i32 Length := FormatString(OutputBuffer, 10, "\e[%c;%i~", Code, Modifiers)
-			;this->Output->Write(OutputBuffer, Length)
+			;this->Output(OutputBuffer, Length)
 			
-			this->Output->Write("\e[", 2)
-			this->Output->Write(&Code, 1)
-			this->Output->Write(";", 1)
+			this->Output("\e[", 2)
+			this->Output(&Code, 1)
+			this->Output(";", 1)
 			
 			i8 Temp := NumberToCharacter(Modifiers)
-			this->Output->Write(&Temp, 1)
+			this->Output(&Temp, 1)
 			
-			this->Output->Write("~", 1)
+			this->Output("~", 1)
 		}
 		else {
-			this->Output->Write("\e[", 2)
-			this->Output->Write(&Code, 1)
-			this->Output->Write("~", 1)
+			this->Output("\e[", 2)
+			this->Output(&Code, 1)
+			this->Output("~", 1)
 		}
 	}
 	
 	define void OnInput(i8 Modifiers, i32 KeyCode) {
 		if (KEY_ASCII_BASE <= KeyCode && KeyCode <= KEY_ASCII_LAST) {
-			if (Modifiers & KEY_MODIFIER_SHIFT) {
+			if (Modifiers & KEY_MODIFIER_SHIFT = Modifiers) {
 				; shift + lowercase_letter = uppercase_letter
 				
 				if ('a' <= KeyCode && KeyCode <= 'z') {
@@ -70,11 +74,11 @@ struct InputToTerminalEscapesStream {
 			}
 			
 			if (Modifiers = 0) {
-				this->Output->Write(&KeyCode, 1)
+				this->Output(&KeyCode, 1)
 			}
 			else if (Modifiers & KEY_MODIFIER_ALT = Modifiers) {
-				this->Output->Write("\e[", 2)
-				this->Output->Write(&KeyCode, 1)
+				this->Output("\e[", 2)
+				this->Output(&KeyCode, 1)
 			}
 			else {
 				Modifiers++
@@ -82,14 +86,14 @@ struct InputToTerminalEscapesStream {
 				; TODO: You know the drill
 				;i8[10] OutputBuffer
 				;i32 Length := FormatString(OutputBuffer, 10, "\e[%i%c", Modifiers, KeyCode)
-				;this->Output->Write(OutputBuffer, Length)
+				;this->Output(OutputBuffer, Length)
 				
-				this->Output->Write("\e[", 2)
+				this->Output("\e[", 2)
 				
 				i8 Temp := NumberToCharacter(Modifiers)
-				this->Output->Write(&Temp, 1)
+				this->Output(&Temp, 1)
 				
-				this->Output->Write(&KeyCode, 1)
+				this->Output(&KeyCode, 1)
 			}
 		}
 		else {
@@ -99,7 +103,7 @@ struct InputToTerminalEscapesStream {
 				this->OutputXTerm(Modifiers, XTermArrow)
 			}
 			else if (KeyCode = KEY_ENTER) {
-				this->Output->Write(this->EnterSequence, this->EnterLength)
+				this->Output(this->EnterSequence, this->EnterLength)
 			}
 			else if (KeyCode = KEY_END) {
 				this->OutputXTerm(Modifiers, 'F')

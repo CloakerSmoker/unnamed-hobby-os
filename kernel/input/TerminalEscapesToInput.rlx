@@ -30,6 +30,9 @@ struct InputEscapeParser {
 		if ('A' <= Character && Character <= 'Z') {
 			this->OutputKey(Modifiers | KEY_MODIFIER_SHIFT, Character ^ 0x20)
 		}
+		else if (Character = 0xA) {
+			this->OutputKey(Modifiers, KEY_ENTER)
+		}
 		else if (0 <= Character && Character <= 26) {
 			this->OutputKey(Modifiers | KEY_MODIFIER_CONTROL, Character + 'a')
 		}

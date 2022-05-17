@@ -4,6 +4,14 @@
 #Require "$/Exception.rlx"
 #Require "$/Debug.rlx"
 
+define i8 IsSchedulerActive() {
+	return false
+}
+define void SchedulerYield() {
+	
+}
+
+#Require "./src/kernel/graphics/Terminal/Input.rlx"
 #Require "./src/kernel/input/TerminalEscapesToInput.rlx"
 
 define void OnKey(void* State, i8 Modifiers, i32 KeyCode) {
@@ -13,24 +21,56 @@ define void OnKey(void* State, i8 Modifiers, i32 KeyCode) {
 }
 
 define void Main() {
+	TerminalInputStreamInstance S
+	S.Initialize(null As void**, 0)
+	
 	InputEscapeParser P {
-		State: null,
-		PushOutput: &OnKey
+		State: &S,
+		PushOutput: &TerminalInputStreamInstance.OnInput
 	}
 	
-	P.Write("\e[1~", 4)
-	P.Write("A", 1)
-	P.Write("a", 1)
-	P.Write("\e[A", 3)
-	P.Write("\e[9p", 4)
-	P.Write("\e[8;8~", 6)
-	P.Write("\e[[", 3)
-	P.Write("[", 1)
-	P.Write("\e[1;2A", 6)
-	P.Write("\e[1;2B", 6)
-	P.Write("\e[1;2C", 6)
-	P.Write("\e[1;2D", 6)
+	;S~>Config->LocalFlags -= LINUX_TERMIOS_LOCAL_FLAG_ICANON
 	
-	i8 Temp := 0x4
-	P.Write(&Temp, 1)
+	P.Write("A", 1)
+	P.Write("\e[1~", 4)
+	P.Write("\n", 1)
+	
+	i32 PR := S.Poll(POLL_CAN_READ)
+	
+	Print("Poll = %x\n", PR)
+	
+	if (PR & POLL_CAN_READ) {
+		i8* Buffer := Alloc(100)
+		
+		i32 Count := S.Read(Buffer, 100)
+		
+		Print("Got:\n")
+		
+		for (i32 Index := 0, Index < Count, Index++) {
+			i8 Character := Buffer[Index]
+			
+			if (Character = 0x1B) {
+				Print("<esc>")
+			}
+			else {
+				Print("%c", Character)
+			}
+		}
+	}
+	
+	
+	;P.Write("\e[1~", 4)
+	;P.Write("a", 1)
+	;P.Write("\e[A", 3)
+	;P.Write("\e[9p", 4)
+	;P.Write("\e[8;8~", 6)
+	;P.Write("\e[[", 3)
+	;P.Write("[", 1)
+	;P.Write("\e[1;2A", 6)
+	;P.Write("\e[1;2B", 6)
+	;P.Write("\e[1;2C", 6)
+	;P.Write("\e[1;2D", 6)
+	;
+	;i8 Temp := 0x4
+	;P.Write(&Temp, 1)
 }

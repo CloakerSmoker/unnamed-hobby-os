@@ -1,0 +1,157 @@
+
+#Require "./src/linux/Termios.rlx"
+#Require "./src/utility/MemoryFIFO.rlx"
+#Require "./src/kernel/file-system/FileSystem.rlx"
+#Require "./src/kernel/input/InputToTerminalEscapes.rlx"
+
+struct TerminalInputStreamInstance {
+	#Include "./src/kernel/file-system/HandleInstance.rlx"
+	
+	TermiosConfig Config
+	
+	i8[64] RawLineBuffer
+	MemoryFIFO LineBuffer
+	
+	i8[64] RawInputBuffer
+	MemoryFIFO InputBuffer
+	
+	InputToTerminalEscapesStream Escaper
+	
+	define i8 LocalFlag(i32 Mask) {
+		return (this~>Config->LocalFlags & Mask) != 0
+	}
+	
+	define void Echo(i8* Characters, i32 Count) {
+		
+	}
+	define void Echo(i8 Character) {
+		this->Echo(&Character, 1)
+	}
+	
+	define void Input(void* Buffer, i32 Count) {
+		if (this->LocalFlag(LINUX_TERMIOS_LOCAL_FLAG_ICANON)) {
+			this~>LineBuffer->Write(Buffer, Count)
+		}
+		else {
+			this~>InputBuffer->Write(Buffer, Count)
+		}
+		
+		if (this->LocalFlag(LINUX_TERMIOS_LOCAL_FLAG_ECHO)) {
+			this->Echo(Buffer, Count)
+		}
+	}
+	
+	define void Input(i8 Next) {
+		this->Input(&Next, 1)
+	}
+	
+	define void Initialize(void** Options, i32 Count) {
+		this~>Escaper->State := this
+		this~>Escaper->WriteOutput := &TerminalInputStreamInstance.Input(void*, i32)
+		
+		this~>LineBuffer->Initialize(this~>RawLineBuffer, 64)
+		this~>InputBuffer->Initialize(this~>RawInputBuffer, 64)
+		
+		this~>Config->SetDefaults()
+	}
+	
+	define void OnInput(i8 Modifiers, i32 KeyCode) {
+		Print("Got ")
+		PrintModifiers(Modifiers)
+		PrintKeyName(KeyCode)
+		Print("\n")
+		
+		if (KeyCode = KEY_ENTER) {
+			;if !(RunningProgram) {
+			;	; TODO: figure out how to let a program tell us to do this or not
+			;	;  over termios
+			;	
+			;	i8 EOL := this~>Config->ControlCharacters[LINUX_TERMIOS_CHARACTER_VEOL]
+			;	
+			;	KeyboardBuffer->Write(&EOL, 1)
+			;}
+		
+			i8 EOL2 := this~>Config->ControlCharacters[LINUX_TERMIOS_CHARACTER_VEOL2]
+			
+			if (EOL2) {
+				this->Input(this~>Config->ControlCharacters[LINUX_TERMIOS_CHARACTER_VEOL2])
+			}
+			
+			if (this->LocalFlag(LINUX_TERMIOS_LOCAL_FLAG_ICANON)) {
+				this~>LineBuffer->MoveTo(this~>InputBuffer, this~>LineBuffer->Available())
+			}
+		}
+		else if (KeyCode = KEY_BACKSPACE) {	
+			if (this->LocalFlag(LINUX_TERMIOS_LOCAL_FLAG_ICANON)) {
+				i32 Offset := this~>InputBuffer->WriteOffset - 1
+				
+				if (Offset < 0) {
+					Offset := 0
+				}
+				
+				this~>InputBuffer->WriteOffset := Offset
+				
+				if (Offset != 0 && this->LocalFlag(LINUX_TERMIOS_LOCAL_FLAG_ECHO)) {
+					this->Echo(0x7F)
+				}
+			}
+			else {
+				this->Input(0x7F)
+			}
+		}
+		else {
+			this~>Escaper->OnInput(Modifiers, KeyCode)
+		}
+	}
+	
+	define i32 ReadBuffered(void* Out, i32 Count) {
+		i32 Available := this~>InputBuffer->Available()
+		
+		if (Available > Count) {
+			Available := Count
+		}
+		
+		this~>InputBuffer->Read(Out, Available)
+		
+		return Available
+	}
+	
+	define i32 Poll(i32 Mode) {
+		i32 Result := 0
+	
+		if (Mode & POLL_CAN_READ && this~>InputBuffer->Available() != 0) {
+			Result |= POLL_CAN_READ
+		}
+		
+		return Result
+	}
+	
+	define i32 Read(void* Out, i32 Count) {
+		i32 Available := this~>InputBuffer->Available()
+		
+		if !(Available) {
+			if (IsSchedulerActive()) {
+				while !(Available) {
+					SchedulerYield()
+					Available := this~>InputBuffer->Available()
+				}
+			}
+			else {
+				while !(Available) {
+					Available := this~>InputBuffer->Available()
+				}
+			}
+		}
+		
+		return this->ReadBuffered(Out, Count)
+	}
+}
+
+FileHandlePrototype TerminalInputStreamPrototype {
+	DataSize: #TerminalInputStreamInstance,
+	Initialize: &TerminalInputStreamInstance.Initialize,
+	
+	Poll: &TerminalInputStreamInstance.Poll,
+	Read: &TerminalInputStreamInstance.Read
+	
+}
