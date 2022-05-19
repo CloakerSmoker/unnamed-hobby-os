@@ -93,13 +93,19 @@ define void PrintCharacter(i8 Character) {
 
 ; Terminal print functions
 
-FileHandle* KernelConsole := null
+#Require "./src/kernel/graphics/terminal/Terminal.rlx"
+#Require "./src/kernel/graphics/terminal/Input.rlx"
+#Require "./src/kernel/graphics/terminal/Renderer.rlx"
+
+TerminalInstance _RawKernelTerminal
+TerminalInstance* RawKernelTerminal := &_RawKernelTerminal
+FileHandle* KernelTerminal := RawKernelTerminal->AsHandle()
 
 define void KernelPrintCharacter(PrintOutputAdapterPrototype* this, i8 Character) {
-	KernelConsole->Write(&Character, 1)
+	KernelTerminal->Write(&Character, 1)
 }
 define void KernelPrintCharacters(PrintOutputAdapterPrototype* this, i8* Characters, i32 Count) {
-	KernelConsole->Write(Characters, Count)
+	KernelTerminal->Write(Characters, Count)
 }
 
 PrintOutputAdapterPrototype KernelPrinter {
@@ -307,17 +313,17 @@ define void MainContinuation() {
 	
 	Info("Adopted screen\n")
 	
-	KernelTerminal->Adopt(NativeScreen, BootFont, TERMINAL_FOREGROUND, TERMINAL_BACKGROUND)
-	KernelTerminal->Clear()
-	
 	KernelHeap->Initialize(ADDRESS_OF_KERNEL_HEAP, BYTES_IN_2MB)
 	Info("Initialized heap\n")
 	
-	; Printer starts out hard-wired to COM1, but by now we've brought up enough of our runtime
-	;  to be able to switch over to KernelPrinter which will write output over the KernelConsole
-	;   handle. By default, it is just the terminal.
-	; Later on we replace KernelConsole with `/dev/console` from the filesystem.
-	KernelConsole := NewHandle(&TerminalFilePrototype)
+	DefaultTerminalInput := NewHandle(&TerminalInputStreamPrototype)
+	KernelTerminal->DeviceControl(TERMINAL_SET_INPUT, DefaultTerminalInput)
+	
+	DefaultTerminalOutput := NewHandle(&TerminalRendererPrototype, NativeScreen, BootFont, TERMINAL_FOREGROUND, TERMINAL_BACKGROUND)
+	KernelTerminal->DeviceControl(TERMINAL_SET_OUTPUT, DefaultTerminalOutput)
+	
+	KernelTerminal->DeviceControl(TERMINAL_INITIALIZE, null)
+	
 	Printer := &KernelPrinter
 	
 	Print("BOOT: Screen *probably* works\n")
@@ -430,12 +436,12 @@ define void MainContinuation() {
 	
 	Print("NewKernelConsole = %x\n", NewKernelConsole)
 	
-	KernelConsole->Close()
-	KernelConsole := NewKernelConsole
+	KernelTerminal->Close()
+	KernelTerminal := NewKernelConsole
 	
 	Print("Hello /dev/console!\n")
 	
-	KernelTerminal->SetCursorTimer()
+	KernelTerminal->DeviceControl(TERMINAL_RENDERER_START_CURSOR_TIMER, null)
 	
 	SetupShell()
 	

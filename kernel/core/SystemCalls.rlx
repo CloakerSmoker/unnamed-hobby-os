@@ -198,9 +198,6 @@ define void SystemCallExitGroup(i64 Code) {
 	CurrentProcess->ExitAll(Code As i32)
 }
 
-declare void ShellGatherInput(i8*, i32)
-declare void ShellPollForInput(i32)
-
 #Require "./src/linux/Poll.rlx"
 
 define i32 SystemCallPoll(LinuxPollTarget* Targets, i32 TargetCount, i32 Timeout) {
@@ -214,11 +211,11 @@ define i32 SystemCallPoll(LinuxPollTarget* Targets, i32 TargetCount, i32 Timeout
 		LinuxPollTarget* Target := Targets[Index]
 		
 		if (Target->FileDescriptor = 0 && Target->RequestedEvents & LINUX_POLL_EVENT_INPUT_READY) {
-			if (ShellPollForInput(Timeout)) {
-				Target->ReturnedEvents |= LINUX_POLL_EVENT_INPUT_READY
-				
-				CountWithReturnEvents++
-			}
+			;if (ShellPollForInput(Timeout)) {
+			;	Target->ReturnedEvents |= LINUX_POLL_EVENT_INPUT_READY
+			;	
+			;	CountWithReturnEvents++
+			;}
 		}
 	}
 	
@@ -258,7 +255,7 @@ define void SystemCallSetSignalMask(i32 Operation, i64* New, i64* Old) {
 
 define i64 SystemCallRead(i64 FileDescriptor, i8* Buffer, i32 Size) {
 	if (FileDescriptor = 0) {
-		return ShellGatherInput(Buffer, Size)
+		;return ShellGatherInput(Buffer, Size)
 	}
 	
 	FileDescriptor -= 3
@@ -313,34 +310,8 @@ define void* SystemCallProgramBreak(void* NewBreak) {
 	}
 }
 
-#Require "./src/linux/Termios.rlx"
-
-declare void ShellSetMode(TermiosConfig*)
-declare void ShellGetMode(TermiosConfig*)
-
 define i64 SystemCallDeviceControl(i64 FileDescriptor, i32 Command, void* Argument) {
-	if (FileDescriptor = 0 || FileDescriptor = 1) {
-		if (Command = TERMIOS_GET_WINDOW_SIZE) {
-			TermiosWindowSize* Window := Argument
-			
-			Window->Rows := KernelTerminal->Height As i16
-			Window->Columns := KernelTerminal->Width As i16
-			
-			return 0
-		}
-		else if (Command = TERMIOS_GET_CONFIG) {
-			TermiosConfig* Config := Argument
-			
-			ShellGetMode(Config)
-		}
-		else if (Command = TERMIOS_SET_CONFIG) {
-			TermiosConfig* Config := Argument
-			
-			ShellSetMode(Config)
-		}
-	}
-	
-	return 0
+	return CurrentProcess->FileDescriptorsToHandles[FileDescriptor]->DeviceControl(Command, Argument)
 }
 
 #Require "./src/linux/MultipleIO.rlx"

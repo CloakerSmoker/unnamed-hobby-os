@@ -4,6 +4,7 @@
 
 i32 TERMINAL_COMPONENT_SET_CONFIG := 'TCSC'
 i32 TERMINAL_COMPONENT_SET_OTHER  := 'TCSO'
+i32 TERMINAL_INITIALIZE := 'TINI'
 i32 TERMINAL_SET_INPUT  := 'TSIP'
 i32 TERMINAL_SET_OUTPUT := 'TSOP'
 
@@ -21,7 +22,10 @@ struct TerminalInstance {
 	FileHandle* Output
 	
 	define i32 DeviceControl(i32 Function, void* Parameter) {
-		if (Function = TERMINAL_SET_INPUT) {
+		if (Function = TERMINAL_INITIALIZE) {
+			this~>Config->SetDefaults()
+		}
+		else if (Function = TERMINAL_SET_INPUT) {
 			this->Input := Parameter
 			
 			this->Input->DeviceControl(TERMINAL_COMPONENT_SET_CONFIG, this~>Config)
@@ -40,6 +44,16 @@ struct TerminalInstance {
 			if (this->Input) {
 				this->Input->DeviceControl(TERMINAL_COMPONENT_SET_OTHER, this->Output)
 			}
+		}
+		else if (Function = TERMIOS_GET_CONFIG) {
+			TermiosConfig* Config := Parameter
+			
+			MoveMemory(Config, this~>Config, #TermiosConfig)
+		}
+		else if (Function = TERMIOS_SET_CONFIG) {
+			TermiosConfig* Config := Parameter
+			
+			MoveMemory(this~>Config, Config, #TermiosConfig)
 		}
 		else {
 			; Cascade to input, if input doesn't handle it, give to output
@@ -78,8 +92,13 @@ struct TerminalInstance {
 		i32 Minor := Options[1] As i32
 		
 		if (Major = TERMINAL_MAJOR && Minor = TERMINAL_MINOR) {
-			this->DeviceControl(TERMINAL_SET_INPUT, DefaultTerminalInput)
-			this->DeviceControl(TERMINAL_SET_OUTPUT, DefaultTerminalOutput)
+			; We are the default terminal, inform our descendents
+			
+			this->Input := DefaultTerminalInput
+			this->Output := DefaultTerminalOutput
+			
+			this->Input->DeviceControl(TERMINAL_INITIALIZE, null)
+			this->Output->DeviceControl(TERMINAL_INITIALIZE, null)
 		}
 	}
 }
@@ -87,7 +106,7 @@ struct TerminalInstance {
 FileHandlePrototype TerminalFilePrototype {
 	DataSize: #TerminalInstance,
 	
-	DeviceControl: &TerminalInstance.DeviceControl
+	DeviceControl: &TerminalInstance.DeviceControl,
 	
 	Poll: &TerminalInstance.Poll,
 	Read: &TerminalInstance.Read,

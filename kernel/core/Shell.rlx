@@ -393,28 +393,7 @@ define void OnCommand(i8* CommandLine) {
 	Prompt()
 }
 
-#Require "./src/linux/Termios.rlx"
-
-
-define void ShellSetMode(TermiosConfig* Config) {
-	MoveMemory(ShellConfig, Config, #TermiosConfig)
-}
-define void ShellGetMode(TermiosConfig* Out) {
-	MoveMemory(Out, ShellConfig, #TermiosConfig)
-}
-
-define void ShellPleaseSendForMe(i8* Data, i32 Size) {
-	;Info("%s", Data)
-	InputBuffer->Write(Data, Size)
-}
-
 define void SetupShell() {
-	OnKeyEvent->ListenFunction(&ShellOnKey)
-	
-	ShellConfig->ControlCharacters[LINUX_TERMIOS_CHARACTER_VERASE] := ASCII_BACK As i8
-	ShellConfig->ControlCharacters[LINUX_TERMIOS_CHARACTER_VEOL  ] := 0xD
-	ShellConfig->ControlCharacters[LINUX_TERMIOS_CHARACTER_VEOL2 ] := 0xA
-	
 	CWD := RootDirectory
 	
 	Prompt()

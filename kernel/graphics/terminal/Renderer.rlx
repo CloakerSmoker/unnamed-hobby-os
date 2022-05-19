@@ -208,7 +208,7 @@ struct TerminalRendererInstance {
 	}
 	
 	define void SetCursorTimer() {
-		Task* CursorTimerTask := Scheduler->AddLightTask(&Terminal.DoCursorTimerTick)
+		Task* CursorTimerTask := Scheduler->AddLightTask(&TerminalRendererInstance.DoCursorTimerTick)
 		
 		CursorTimerTask~>Context->RDI := this As i64
 		
@@ -259,7 +259,7 @@ struct TerminalRendererInstance {
 			
 			;Info("Formatted '%s' %x\n", CursorPositionEscape, FormatLength)
 			
-			ShellPleaseSendForMe(CursorPositionEscape, FormatLength)
+			this->Input->Write(CursorPositionEscape, FormatLength)
 		}
 		else if (Command = 'm') {
 			if (ParameterCount != 1) { return }
@@ -631,12 +631,18 @@ struct TerminalRendererInstance {
 	define i32 DeviceControl(i32 Function, void* Parameter) {
 		if (Function = TERMINAL_RENDERER_START_CURSOR_TIMER) {
 			this->SetCursorTimer()
+		}
+		else if (Function = TERMIOS_GET_WINDOW_SIZE) {
+			TermiosWindowSize* Window := Parameter
 			
-			return 0
+			Window->Rows := this->Height As i16
+			Window->Columns := this->Width As i16
 		}
 		else {
 			return this->ComponentDeviceControl(Function, Parameter)
 		}
+		
+		return 0
 	}
 	
 	define i32 Poll(i32 Mode) {

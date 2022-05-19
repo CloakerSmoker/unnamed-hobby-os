@@ -16,22 +16,22 @@ i16 PS2_WAIT_INPUT := 0x100
 
 declare void PS2Wait(i8, i8)
 
-struct PS2Callback {
-	void* State
-	void(void*, void*, i32) OnInput
-	
-	define void Call(i8 ScanCode) {
-		this->OnInput(this->State, &ScanCode, 1)
-	}
-}
+#Require "./src/kernel/input/ScanCodesToInput.rlx"
 
-PS2Callback* PS2KeySink := null
+ScanCodeParser _PS2ScanCodeParser
+ScanCodeParser* PS2ScanCodeParser := &_PS2ScanCodeParser
+
+define void SinkPS2Input(void* State, void(void*, i8, i32) Function) {
+	PS2ScanCodeParser->State := State
+	PS2ScanCodeParser->PushOutput := Function
+}
 
 define void OnPS2Event() {
 	; IRQ1 handler
 	
 	PS2Wait(0, 1)
-	PS2KeySink->Call(InB(PS2_PORT_DATA))
+	i8 ScanCode := InB(PS2_PORT_DATA)
+	PS2ScanCodeParser->Write(&ScanCode, 1)
 	SendEOI(1)
 }
 

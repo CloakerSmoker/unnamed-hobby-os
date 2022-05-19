@@ -1,3 +1,7 @@
 	FileHandlePrototype* Prototype
 	
 	void[0] PrivateData
+	
+	define FileHandle* AsHandle() {
+		return this As FileHandle*
+	}

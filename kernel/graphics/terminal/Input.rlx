@@ -51,8 +51,6 @@ struct TerminalInputStreamInstance {
 		
 		this~>LineBuffer->Initialize(this~>RawLineBuffer, 64)
 		this~>InputBuffer->Initialize(this~>RawInputBuffer, 64)
-		
-		this->Config->SetDefaults()
 	}
 	
 	define void OnInput(i8 Modifiers, i32 KeyCode) {
@@ -116,6 +114,19 @@ struct TerminalInputStreamInstance {
 		return Available
 	}
 	
+	define i32 DeviceControl(i32 Function, void* Parameter) {
+		if (Function = TERMINAL_INITIALIZE) {
+			; Master is letting us know we are the default terminal, take ownership of keyboard input
+			
+			SinkPS2Input(this~>Escaper, &InputToTerminalEscapesStream.OnInput)
+		}
+		else {
+			return this->ComponentDeviceControl(Function, Parameter)
+		}
+		
+		return 0
+	}
+	
 	define i32 Poll(i32 Mode) {
 		i32 Result := 0
 	
@@ -151,6 +162,8 @@ struct TerminalInputStreamInstance {
 	}
 	define i32 WriteToInputStream(void* Data, i32 Size) {
 		this~>InputBuffer->Write(Data, Size)
+		
+		return Size
 	}
 }
 
@@ -162,7 +175,7 @@ FileHandlePrototype TerminalInputStreamPrototype {
 	
 	Poll: &TerminalInputStreamInstance.Poll,
 	Read: &TerminalInputStreamInstance.Read,
-	Write: &TerminalInputStreamInstance.Write
+	Write: &TerminalInputStreamInstance.WriteToInputStream
 }
 
 i32 TERMINAL_KEY_INPUT_PROTOTYPE_ID := RegisterHandlePrototype(&TerminalInputStreamPrototype)

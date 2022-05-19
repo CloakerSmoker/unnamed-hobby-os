@@ -1,4 +1,4 @@
-#Require "./src/kernel/graphics/Screen.rlx"
+/*#Require "./src/kernel/graphics/Screen.rlx"
 #Require "./src/kernel/graphics/Font.rlx"
 #Require "./src/kernel/graphics/Sixel.rlx"
 
@@ -652,4 +652,4 @@ MagicFilePrototype TerminalMagicFilePrototype {
 	Minor: 1
 }
 
-i32 TERMINAL_FILE_MAGIC_ID := RegisterMagicFile(&TerminalMagicFilePrototype)
+i32 TERMINAL_FILE_MAGIC_ID := RegisterMagicFile(&TerminalMagicFilePrototype)*/
