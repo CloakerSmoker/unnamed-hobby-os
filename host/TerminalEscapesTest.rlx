@@ -29,7 +29,7 @@ define void Main() {
 		PushOutput: &TerminalInputStreamInstance.OnInput
 	}
 	
-	;S~>Config->LocalFlags -= LINUX_TERMIOS_LOCAL_FLAG_ICANON
+	S~>Config->LocalFlags -= LINUX_TERMIOS_LOCAL_FLAG_ICANON
 	
 	P.Write("A", 1)
 	P.Write("\e[1~", 4)

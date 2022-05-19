@@ -16,58 +16,23 @@ i16 PS2_WAIT_INPUT := 0x100
 
 declare void PS2Wait(i8, i8)
 
-i8 PS2_SHIFT_STATE := false
-
-i32 PS2Prefix := 0
-
-Event _OnKeyEvent {
-	Name: "PS2 Key Event"
+struct PS2Callback {
+	void* State
+	void(void*, void*, i32) OnInput
+	
+	define void Call(i8 ScanCode) {
+		this->OnInput(this->State, &ScanCode, 1)
+	}
 }
-Event* OnKeyEvent := &_OnKeyEvent
 
-struct KeyEventInfo {
-	i32 ScanCode
-	i32 ASCIICode
-	i32 Modifiers
-}
+PS2Callback* PS2KeySink := null
 
 define void OnPS2Event() {
 	; IRQ1 handler
 	
 	PS2Wait(0, 1)
-	i32 ScanCode := InB(PS2_PORT_DATA) As i32
+	PS2KeySink->Call(InB(PS2_PORT_DATA))
 	SendEOI(1)
-	
-	if (ScanCode = SCANCODE_PREFIX_EXTENDED) {
-		PS2Prefix := SCANCODE_PREFIX_EXTENDED
-		
-		return
-	}
-	
-	if (PS2Prefix) {
-		ScanCode |= PS2Prefix << 8
-		PS2Prefix := 0
-	}
-	
-	i8 ASCIICode := ScanCodeToASCII(PS2_SHIFT_STATE, ScanCode)
-	
-	if (ScanCode & SCANCODE_MASK_DOWN && ScanCode != SCANCODE_CONTROL_UP) {
-		if (ScanCode = SCANCODE_SHIFT_UP) {
-			PS2_SHIFT_STATE := false
-		}
-	}
-	else if (ScanCode = SCANCODE_SHIFT_DOWN) {
-		PS2_SHIFT_STATE := true
-	}
-	else {
-		KeyEventInfo KeyEvent {
-			ScanCode: ScanCode,
-			ASCIICode: ASCIICode,
-			Modifiers: PS2_SHIFT_STATE
-		}
-		
-		OnKeyEvent->Fire(&KeyEvent)
-	}
 }
 
 define void OnPS2Interrupt() asm {

@@ -1,0 +1,669 @@
+#Require "./src/linux/Termios.rlx"
+
+#Require "./src/kernel/graphics/Screen.rlx"
+#Require "./src/kernel/graphics/Font.rlx"
+#Require "./src/kernel/graphics/Sixel.rlx"
+
+i32 TAB_SIZE := 4
+
+enum TerminalMode {
+	Normal,
+	Escape,
+	Sixel
+}
+
+enum TerminalEscapeState {
+	ControlCode,
+	CSI,
+	GatherParameters,
+	Command
+}
+
+i32 TERMINAL_RENDERER_START_CURSOR_TIMER := 'TRSC'
+
+#Require "./src/kernel/file-system/FileSystem.rlx"
+
+struct TerminalRendererInstance {
+	#Include "./src/kernel/file-system/HandleInstance.rlx"
+	#Include "./src/kernel/graphics/terminal/InstanceComponent.rlx"
+	FileHandle* Input
+	
+	Screen* Screen
+	
+	i32 X
+	i32 Y
+	
+	i32 ForegroundColor
+	i32 BackgroundColor
+	
+	i32 DefaultForegroundColor
+	i32 DefaultBackgroundColor
+	
+	i8[20] EscapeBuffer
+	i32 EscapeIndex
+	
+	Font* Font
+	
+	i32 Width
+	i32 Height
+	
+	i32 MaxColumn
+	i32 MaxRow
+	
+	TerminalMode Mode
+	
+	SixelStreamInstance SixelDevice
+	CharacterDevice* Sixel
+	
+	define void Clear() {
+		this->Screen->Clear(this->BackgroundColor)
+	}
+	
+	define void CalculateBounds() {
+		this->X := 0
+		this->Y := 0
+		
+		this->Width  := this->Screen->Canvas->Width()  / this->Font->Width
+		this->Height := this->Screen->Canvas->Height() / this->Font->Height
+		this->MaxColumn := this->Width  - 1
+		this->MaxRow    := this->Height - 1
+		
+		this->Clear()
+	}
+	
+	define void Adopt(Screen* NewScreen, Font* NewFont, i32 Foreground, i32 Background) {
+		this->Screen := NewScreen
+		this->Font := NewFont
+		
+		this->DefaultForegroundColor := Foreground
+		this->DefaultBackgroundColor := Background
+		
+		this->ForegroundColor := Foreground
+		this->BackgroundColor := Background
+		
+		this->EscapeIndex := 0
+		
+		this->CalculateBounds()
+		
+		this->Sixel := this~>SixelDevice->AsCharacterDevice()
+		InitializeCharacterDevice(this->Sixel, &SixelStreamPrototype, this->Screen->Canvas)
+	}
+	
+	define void Initialize(void** Options, i32 Count) {
+		this->Adopt(Options[0], Options[1], Options[2] As i32, Options[3] As i32)
+	}
+	
+	define void SetColors(i32 ForegroundColor, i32 BackgroundColor) {
+		this->ForegroundColor := ForegroundColor
+		this->BackgroundColor := BackgroundColor
+	}
+	
+	define void ConvertToScreenCoords(i32 XIn, i32 YIn, i32* XOut, i32* YOut) {
+		*XOut := XIn * this->Font->Width
+		*YOut := YIn * this->Font->Height
+	}
+	
+	define void ClearToLineEnd(i32 X, i32 Y) {
+		i32 ScreenX := 0
+		i32 ScreenY := 0
+		
+		this->ConvertToScreenCoords(X, Y, &ScreenX, &ScreenY)
+		
+		i32 Width := (this->MaxColumn - X) * this->Font->Width
+		
+		;Info("(%i, %i) -> (%i, %i)\n", ScreenX, ScreenY, ScreenX + Width, ScreenY + this->Font->Height)
+		
+		this->Screen->DrawRectangle(ScreenX, ScreenY, Width, this->Font->Height, this->BackgroundColor)
+	}
+	define void ClearLine(i32 Y) {
+		this->ClearToLineEnd(0, Y)
+	}
+	define void ClearToScreenEnd(i32 X, i32 Y) {
+		this->ClearToLineEnd(X, Y)
+		
+		for (i32 Index := Y + 1, Index < this->MaxRow, Index++) {
+			this->ClearLine(Index)
+		}
+	}
+	
+	define void ScrollUp(i32 LineCount) {
+		i32 ScrollSize := this->Font->Height * LineCount
+		
+		this->Y -= LineCount
+		
+		this->Screen->VerticalScroll(-ScrollSize)
+	}
+	
+	define void NewLine() {
+		this->Y += 1
+		
+		i32 ScreenX := 0
+		i32 ScreenY := 0
+		
+		if (this->Y >= this->Height) {
+			this->ScrollUp(4)
+		}
+	}
+	
+	i8 CursorShown
+	
+	define void DrawCursor(i8 Enable) {
+		if (this->X = this->MaxColumn) {
+			return
+		}
+		
+		i32 ScreenX := 0
+		i32 ScreenY := 0
+		
+		this->ConvertToScreenCoords(this->X, this->Y, &ScreenX, &ScreenY)
+		
+		i32 Color := this->BackgroundColor
+		
+		if (Enable) {
+			Color := this->ForegroundColor
+		}
+		
+		;this->Font->Draw(this->Screen->Canvas, Color, this->BackgroundColor, ScreenX, ScreenY, '_')
+		
+		i32 Height := 1
+		i32 Right  := 0
+		i32 Width  := this->Font->Width - 0
+		i32 Down   := this->Font->Height - 1
+		
+		this->Screen->DrawRectangle(ScreenX + Right, ScreenY + Down, Width, Height, Color)
+		
+		this->CursorShown := Enable
+	}
+	define void ShowCursor() {
+		this->DrawCursor(true)
+	}
+	define void HideCursor() {
+		this->DrawCursor(false)
+	}
+	
+	i32 IgnoreCursorTicks
+	
+	define void ToggleCursor() {
+		if (this->IgnoreCursorTicks) {
+			this->IgnoreCursorTicks--
+		}
+		else {
+			if (this->CursorShown) {
+				this->HideCursor()
+			}
+			else {
+				this->ShowCursor()
+			}
+		}
+	}
+	
+	Timer* CursorTimer
+	
+	define void DoCursorTimerTick() {
+		loop {
+			this->ToggleCursor()
+			
+			SchedulerBlock()
+		}
+	}
+	
+	define void SetCursorTimer() {
+		Task* CursorTimerTask := Scheduler->AddLightTask(&Terminal.DoCursorTimerTick)
+		
+		CursorTimerTask~>Context->RDI := this As i64
+		
+		this->CursorTimer := SetTimer(500, CursorTimerTask)
+	}
+
+	define i32 GetTabLength(i32 AtIndex) {
+		return TAB_SIZE - (AtIndex % TAB_SIZE)
+	}
+	
+	i8 EscapePrefix
+	i32[7] EscapeParameters
+	i32 EscapeParameterIndex
+	i32 EscapeParameterCount
+	
+	define void StartEscape() {
+		this->EscapePrefix := 0
+		this->EscapeParameterIndex := 0
+		this->EscapeParameterCount := 0
+		
+		for (i32 Index := 0, Index < 7, Index++) {
+			this->EscapeParameters[Index] := 0
+		}
+	}
+	
+	i32 SavedX
+	i32 SavedY
+	
+	define void DoEscape(i8 Prefix, i8 Command, i32* Parameters, i32 ParameterCount) {
+		if (DEBUG_TERMINAL_ESCAPES) {
+			Info("ESC [")
+			
+			if (Prefix) {
+				Info(" %c", Prefix)
+			}
+			
+			for (i32 Index := 0, Index < ParameterCount, Index++) {
+				Info(" %i", Parameters[Index])
+			}
+			
+			Info("%c\n", Command)
+		}
+		
+		if (Command = 'n' && Parameters[0] = 6) {
+			i8[40] CursorPositionEscape
+			
+			i32 FormatLength := FormatString(CursorPositionEscape, 40, "\e[%i;%iR", this->Y + 1, this->X + 1)
+			
+			;Info("Formatted '%s' %x\n", CursorPositionEscape, FormatLength)
+			
+			ShellPleaseSendForMe(CursorPositionEscape, FormatLength)
+		}
+		else if (Command = 'm') {
+			if (ParameterCount != 1) { return }
+			
+			;BochsPrint("'%s', len %i\n", StyleText, StyleLength)
+			
+			i32 Style := Parameters[0]
+			
+			;BochsPrint("Switch to style %i\n", Style)
+			
+			;                        Black     Red       Green     Yellow    Blue      Magenta   Cyan      Grey
+			i32* DarkColors   := i32[0x000000, 0xAA0000, 0x00AA00, 0xFFC706, 0x00007F, 0x9C009C, 0x008080, 0xC0C0C0]
+			i32* BrightColors := i32[0x808080, 0xFF0000, 0x00FF00, 0xFFFF00, 0x0000FF, 0xFF00FF, 0x00FFFF, 0xFFFFFF]
+			
+			if (Style >= 30 && Style <= 37) {
+				Style -= 30
+				
+				this->ForegroundColor := DarkColors[Style]
+			}
+			else if (Style >= 40 && Style <= 47) {
+				Style -= 40
+				
+				this->BackgroundColor := DarkColors[Style]
+			}
+			else if (Style >= 90 && Style <= 97) {
+				Style -= 90
+				
+				this->ForegroundColor := BrightColors[Style]
+			}
+			else if (Style >= 100 && Style <= 107) {
+				Style -= 100
+				
+				this->BackgroundColor := BrightColors[Style]				
+			}
+			else if (Style = 0) {
+				Info("Style reset\n")
+				this->ForegroundColor := this->DefaultForegroundColor
+				this->BackgroundColor := this->DefaultBackgroundColor
+			}
+		}
+		else if (Command = 'c') {
+			this->Clear()
+		}
+		else if (Command = 'S') {
+			i32 ScrollDistance := 1
+			
+			if (ParameterCount != 0) {
+				ScrollDistance := Parameters[0]
+			}
+			
+			this->ScrollUp(ScrollDistance)
+		}
+		else if ('A' <= Command && Command <= 'D') {
+			i32 CursorDistance := 1
+			
+			if (ParameterCount != 0) {
+				CursorDistance := Parameters[0]
+			}
+			else {
+				CursorDistance := 1
+			}
+			
+			i32 NewX := this->X
+			i32 NewY := this->Y
+			
+			if (Command = 'A' || Command = 'B') {
+				if (Command = 'A') {
+					NewY -= CursorDistance
+				}
+				else {
+					NewY += CursorDistance
+				}
+			}
+			else if (Command = 'C' || Command = 'D') {
+				if (Command = 'C') {
+					NewX += CursorDistance
+				}
+				else {
+					NewX -= CursorDistance
+				}
+			}
+			
+			if (NewX <= 0) {
+				this->X := 0
+			}
+			else if (NewX >= this->MaxColumn) {
+				this->X := this->MaxColumn - 1
+			}
+			else {
+				this->X := NewX
+			}
+			
+			if (NewY <= 0) {
+				this->Y := 0
+			}
+			else if (NewY >= this->MaxRow) {
+				this->Y := this->MaxRow - 1
+			}
+			else {
+				this->Y := NewY
+			}
+			
+			;if      (Command = 'A' && this->Y != 0)              { this->Y -= 1 } ; Cursor Up
+			;else if (Command = 'C' && this->X != 0)              { this->X -= 1 } ; Cursor Down
+			;else if (Command = 'B' && this->Y < this->MaxRow)    { this->Y += 1 } ; Cursor Right
+			;else if (Command = 'D' && this->X < this->MaxColumn) { this->X += 1 } ; Cursor Left
+		}
+		else if (Command = 'H') {
+			if (ParameterCount >= 1) {
+				this->Y := Parameters[0] - 1
+				
+				if (ParameterCount >= 2) {
+					this->X := Parameters[1] - 1
+				}
+				else {
+					this->X := 0
+				}
+			}
+			else {
+				this->Y := 0
+				this->X := 0
+			}
+		}
+		else if (Command = 'J') {
+			if (ParameterCount = 0) {
+				this->ClearToScreenEnd(this->X, this->Y)
+			}
+			else if (ParameterCount = 1) {
+				this->Clear()
+			}
+		}
+		else if (Command = 'K') {
+			if (ParameterCount = 0 || Parameters[0] = 0) {
+				this->ClearToLineEnd(this->X, this->Y)
+			}
+			else {
+				this->ClearLine(this->Y)
+			}
+		}
+		else if (Command = 's') {
+			this->SavedX := this->X
+			this->SavedY := this->Y
+		}
+		else if (Command = 'u') {
+			this->X := this->SavedX
+			this->Y := this->SavedY
+		}
+	}
+	
+	define void RawPrintCharacter(i32* ScreenX, i32* ScreenY, i8 Character) {		
+		;this->Screen->DrawCharacter(*ScreenX, *ScreenY, Character, this->ForegroundColor, this->BackgroundColor)
+		this->Font->Draw(this->Screen->Canvas, this->ForegroundColor, this->BackgroundColor, *ScreenX, *ScreenY, Character)
+		
+		this->X += 1
+		
+		if (this->X >= this->Width) {
+			this->NewLine()
+			this->X := 0
+		}
+		
+		this->ConvertToScreenCoords(this->X, this->Y, ScreenX, ScreenY)
+	}
+	
+	declare i32 Print(i8*, i32)
+	
+	define i32 SixelPrint(i8* Characters, i32 Count) {
+		i32 Written := this->Sixel->Write(Characters, Count)
+		
+		;Info("Sixel.Write(%i) = %i\n", Count, Written)
+			
+		if (Written != Count) {
+			;Info("Sixel done\n")
+			
+			i32 NewScreenY := this~>SixelDevice->Y
+			
+			i32 NewY := NewScreenY / this->Font->Height
+			
+			if (NewScreenY % this->Font->Height) {
+				NewY += 1
+			}
+			
+			this->Y := NewY
+			this->IgnoreCursorTicks := 0
+			
+			this->Mode := TerminalMode:Normal
+		}
+		
+		return Written
+	}
+	
+	TerminalEscapeState EscapeState
+	
+	define i32 EscapePrint(i8* Characters, i32 Count) {
+		for (i32 Index := 0, Index < Count, Index++) {
+			i8 Next := Characters[Index]
+			
+			if (this->EscapeState = TerminalEscapeState:ControlCode) {
+				if (Next = '[') {
+					this->EscapeState := TerminalEscapeState:CSI
+				}
+				else if (Next = 'P') {
+					i32 ScreenX := 0
+					i32 ScreenY := 0
+					this->ConvertToScreenCoords(this->X, this->Y, &ScreenX, &ScreenY)
+					
+					this->Mode := TerminalMode:Sixel
+					this~>SixelDevice->Reset(ScreenX, ScreenY)
+					
+					i8* SixelIntro := i8[0x1B, 'P']
+					
+					this->SixelPrint(SixelIntro, 2)
+					return Index + 1
+				}
+			}
+			else if (this->EscapeState = TerminalEscapeState:CSI) {
+				if (Next = '?') {
+					this->EscapePrefix := '?'
+				}
+				else {
+					Index--
+				}
+				
+				this->EscapeState := TerminalEscapeState:GatherParameters
+			}
+			else if (this->EscapeState = TerminalEscapeState:GatherParameters) {
+				if (Next = ';') {
+					this->EscapeParameterIndex++
+					this->EscapeParameterCount++
+				}
+				else if ('0' <= Next && Next <= '9') {
+					if (this->EscapeParameterCount = 0) {
+						this->EscapeParameterCount := 1
+					}
+					
+					this->EscapeParameters[this->EscapeParameterIndex] *= 10
+					this->EscapeParameters[this->EscapeParameterIndex] += Next - '0'
+				}
+				else {
+					this->EscapeState := TerminalEscapeState:Command
+					Index--
+				}
+			}
+			else if (this->EscapeState = TerminalEscapeState:Command) {
+				this->DoEscape(this->EscapePrefix, Next, this->EscapeParameters, this->EscapeParameterCount)
+				this->Mode := TerminalMode:Normal
+				return Index + 1
+			}
+		}
+		
+		return Count
+	}
+	
+	define void PrintChunk(i8* Chunk, i32 Length) {
+		i32 ScreenX := 0
+		i32 ScreenY := 0
+		
+		this->ConvertToScreenCoords(this->X, this->Y, &ScreenX, &ScreenY)
+		
+		for (i32 Index := 0, Index < Length, Index++) {
+			i8 Next := Chunk[Index]
+			
+			if (Next = ASCII_TAB) {
+				i32 TabLength := this->GetTabLength(this->X + Index)
+				
+				for (i32 TabIndex := 0, TabIndex < TabLength, TabIndex++) {
+					this->RawPrintCharacter(&ScreenX, &ScreenY, ' ')
+				}
+			}
+			else if (Next = ASCII_BACK) {
+				if (this->X) {
+					this->X -= 1
+					
+					;this->ConvertToScreenCoords(this->X, this->Y, &ScreenX, &ScreenY)
+					;this->Font->Draw(this->Screen->Canvas, this->ForegroundColor, this->BackgroundColor, ScreenX, ScreenY, ' ')
+				}
+			}
+			else {
+				this->RawPrintCharacter(&ScreenX, &ScreenY, Chunk[Index])
+			}
+		}
+	}
+	
+	define i32 TextPrint(i8* Characters, i32 Count) {
+		; Text is split into chunks delimited by control characters and escapes
+		
+		if (this->CursorShown) {
+			this->HideCursor()
+		}
+		
+		this->IgnoreCursorTicks := -1
+		
+		i32 LastChunkStart := 0
+			
+		for (i32 Index := 0, Index < Count, Index += 1) {
+			i8 NextCharacter := Characters[Index]
+			
+			if (NextCharacter = 0x0A || NextCharacter = 0x0D || NextCharacter = 0x1B) {
+				i32 LastChunkLength := Index - LastChunkStart
+				
+				if (LastChunkLength) {
+					this->PrintChunk(&Characters[LastChunkStart], LastChunkLength)
+				}
+				
+				if (NextCharacter = 0x0A) {
+					this->NewLine()
+					this->X := 0 ; TODO: Make this only apply when a dumb linux program is running
+				}
+				else if (NextCharacter = 0x0D) {
+					this->X := 0
+				}
+				else if (NextCharacter = 0x1B) {
+					this->Mode := TerminalMode:Escape
+					this->EscapeState := TerminalEscapeState:ControlCode
+					this->StartEscape()
+					
+					return Index + 1
+				}
+				
+				LastChunkStart := Index + 1
+			}
+		}
+		
+		if (LastChunkStart < Count) {
+			this->PrintChunk(&Characters[LastChunkStart], Count - LastChunkStart)
+		}
+		
+		this->IgnoreCursorTicks := 1
+		this->ShowCursor()
+		
+		return Count
+	}
+	
+	define void Print(i8* AllCharacters, i32 TotalCount) {
+		i32 Written := 0
+		
+		while (Written != TotalCount) {
+			i8* Characters := &AllCharacters[Written]
+			i32 Count := TotalCount - Written
+			
+			if (this->Mode = TerminalMode:Sixel) {
+				Written += this->SixelPrint(Characters, Count)
+			}
+			else if (this->Mode = TerminalMode:Escape) {
+				Written += this->EscapePrint(Characters, Count)
+			}
+			else {
+				Written += this->TextPrint(Characters, Count)
+			}
+		}
+	}
+	
+	define void Print(i8* Text) {
+		this->Print(Text, StringLength(Text))
+	}
+	define void PrintLine(i8* Text) {
+		this->Print(Text)
+		this->Print("\n")
+	}
+	
+	define void Seek(i32 X, i32 Y) {
+		this->X := X
+		this->Y := Y
+	}
+	
+	define void OnScroll(i32 CharacterOffset) {
+		this->Y += CharacterOffset
+	}
+	
+	define i32 DeviceControl(i32 Function, void* Parameter) {
+		if (Function = TERMINAL_RENDERER_START_CURSOR_TIMER) {
+			this->SetCursorTimer()
+			
+			return 0
+		}
+		else {
+			return this->ComponentDeviceControl(Function, Parameter)
+		}
+	}
+	
+	define i32 Poll(i32 Mode) {
+		i32 Result := 0
+		
+		if (Mode & POLL_FOR_WRITE) {
+			Result |= POLL_FOR_WRITE
+		}
+		
+		return Result
+	}
+	define i32 Write(void* Buffer, i32 Count) {
+		this->Print(Buffer, Count)
+		
+		return Count
+	}
+}
+
+FileHandlePrototype TerminalRendererPrototype {
+	DataSize: #TerminalRendererInstance,
+	Initialize: &TerminalRendererInstance.Initialize,
+	
+	DeviceControl: &TerminalRendererInstance.DeviceControl,
+	
+	Poll: &TerminalRendererInstance.Poll,
+	Write: &TerminalRendererInstance.Write
+}
+
+i32 TERMINAL_RENDERER_PROTOTYPE_ID := RegisterHandlePrototype(&TerminalRendererPrototype)
+

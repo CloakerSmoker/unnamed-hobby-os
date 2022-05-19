@@ -6,8 +6,8 @@
 
 struct TerminalInputStreamInstance {
 	#Include "./src/kernel/file-system/HandleInstance.rlx"
-	
-	TermiosConfig Config
+	#Include "./src/kernel/graphics/terminal/InstanceComponent.rlx"
+	FileHandle* Output
 	
 	i8[64] RawLineBuffer
 	MemoryFIFO LineBuffer
@@ -18,11 +18,11 @@ struct TerminalInputStreamInstance {
 	InputToTerminalEscapesStream Escaper
 	
 	define i8 LocalFlag(i32 Mask) {
-		return (this~>Config->LocalFlags & Mask) != 0
+		return (this->Config->LocalFlags & Mask) != 0
 	}
 	
 	define void Echo(i8* Characters, i32 Count) {
-		
+		this->Output->Write(Characters, Count)
 	}
 	define void Echo(i8 Character) {
 		this->Echo(&Character, 1)
@@ -52,7 +52,7 @@ struct TerminalInputStreamInstance {
 		this~>LineBuffer->Initialize(this~>RawLineBuffer, 64)
 		this~>InputBuffer->Initialize(this~>RawInputBuffer, 64)
 		
-		this~>Config->SetDefaults()
+		this->Config->SetDefaults()
 	}
 	
 	define void OnInput(i8 Modifiers, i32 KeyCode) {
@@ -71,10 +71,10 @@ struct TerminalInputStreamInstance {
 			;	KeyboardBuffer->Write(&EOL, 1)
 			;}
 		
-			i8 EOL2 := this~>Config->ControlCharacters[LINUX_TERMIOS_CHARACTER_VEOL2]
+			i8 EOL2 := this->Config->ControlCharacters[LINUX_TERMIOS_CHARACTER_VEOL2]
 			
 			if (EOL2) {
-				this->Input(this~>Config->ControlCharacters[LINUX_TERMIOS_CHARACTER_VEOL2])
+				this->Input(this->Config->ControlCharacters[LINUX_TERMIOS_CHARACTER_VEOL2])
 			}
 			
 			if (this->LocalFlag(LINUX_TERMIOS_LOCAL_FLAG_ICANON)) {
@@ -123,6 +123,10 @@ struct TerminalInputStreamInstance {
 			Result |= POLL_CAN_READ
 		}
 		
+		if (Mode & POLL_CAN_WRITE) {
+			Result |= POLL_CAN_WRITE
+		}
+		
 		return Result
 	}
 	
@@ -145,13 +149,20 @@ struct TerminalInputStreamInstance {
 		
 		return this->ReadBuffered(Out, Count)
 	}
+	define i32 WriteToInputStream(void* Data, i32 Size) {
+		this~>InputBuffer->Write(Data, Size)
+	}
 }
 
 FileHandlePrototype TerminalInputStreamPrototype {
 	DataSize: #TerminalInputStreamInstance,
 	Initialize: &TerminalInputStreamInstance.Initialize,
 	
-	Poll: &TerminalInputStreamInstance.Poll,
-	Read: &TerminalInputStreamInstance.Read
+	DeviceControl: &TerminalInputStreamInstance.ComponentDeviceControl,
 	
+	Poll: &TerminalInputStreamInstance.Poll,
+	Read: &TerminalInputStreamInstance.Read,
+	Write: &TerminalInputStreamInstance.Write
 }
+
+i32 TERMINAL_KEY_INPUT_PROTOTYPE_ID := RegisterHandlePrototype(&TerminalInputStreamPrototype)

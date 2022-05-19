@@ -1,0 +1,13 @@
+	TermiosConfig* Config
+	void[0] OtherHalf
+	
+	define i32 ComponentDeviceControl(i32 Function, void* Parameter) {
+		if (Function = TERMINAL_COMPONENT_SET_CONFIG) {
+			this->Config := Parameter
+		}
+		else if (Function = TERMINAL_COMPONENT_SET_OTHER) {
+			*(this->OtherHalf As void**) := Parameter
+		}
+		
+		return 0
+	}

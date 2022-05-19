@@ -1,0 +1,105 @@
+#Require "./src/linux/Termios.rlx"
+
+#Require "./src/kernel/file-system/FileSystem.rlx"
+
+i32 TERMINAL_COMPONENT_SET_CONFIG := 'TCSC'
+i32 TERMINAL_COMPONENT_SET_OTHER  := 'TCSO'
+i32 TERMINAL_SET_INPUT  := 'TSIP'
+i32 TERMINAL_SET_OUTPUT := 'TSOP'
+
+i32 TERMINAL_MAJOR := 4
+i32 TERMINAL_MINOR := 1
+
+FileHandle* DefaultTerminalInput := null
+FileHandle* DefaultTerminalOutput := null
+
+struct TerminalInstance {
+	#Include "./src/kernel/file-system/HandleInstance.rlx"
+	
+	TermiosConfig Config
+	FileHandle* Input
+	FileHandle* Output
+	
+	define i32 DeviceControl(i32 Function, void* Parameter) {
+		if (Function = TERMINAL_SET_INPUT) {
+			this->Input := Parameter
+			
+			this->Input->DeviceControl(TERMINAL_COMPONENT_SET_CONFIG, this~>Config)
+			this->Input->DeviceControl(TERMINAL_COMPONENT_SET_OTHER, this->Output)
+			
+			if (this->Output) {
+				this->Output->DeviceControl(TERMINAL_COMPONENT_SET_OTHER, this->Input)
+			}
+		}
+		else if (Function = TERMINAL_SET_OUTPUT) {
+			this->Output := Parameter
+			
+			this->Output->DeviceControl(TERMINAL_COMPONENT_SET_CONFIG, this~>Config)
+			this->Output->DeviceControl(TERMINAL_COMPONENT_SET_OTHER, this->Input)
+			
+			if (this->Input) {
+				this->Input->DeviceControl(TERMINAL_COMPONENT_SET_OTHER, this->Output)
+			}
+		}
+		else {
+			; Cascade to input, if input doesn't handle it, give to output
+			
+			if (this->Input->DeviceControl(Function, Parameter)) {
+				this->Output->DeviceControl(Function, Parameter)
+			}
+		}
+		
+		return 0
+	}
+	
+	define i32 Poll(i32 Mode) {
+		i32 Result := 0
+		
+		if (Mode & POLL_FOR_READ) {
+			Result |= this->Input->Poll(POLL_FOR_READ)
+		}
+		
+		if (Mode & POLL_FOR_WRITE) {
+			Result |= this->Output->Poll(POLL_FOR_WRITE)
+		}
+		
+		return Result
+	}
+	
+	define i32 Read(void* Buffer, i32 Size) {
+		return this->Input->Read(Buffer, Size)
+	}
+	define i32 Write(void* Buffer, i32 Size) {
+		return this->Output->Write(Buffer, Size)
+	}
+	
+	define void Initialize(void** Options, i32 Count) {
+		i32 Major := Options[0] As i32
+		i32 Minor := Options[1] As i32
+		
+		if (Major = TERMINAL_MAJOR && Minor = TERMINAL_MINOR) {
+			this->DeviceControl(TERMINAL_SET_INPUT, DefaultTerminalInput)
+			this->DeviceControl(TERMINAL_SET_OUTPUT, DefaultTerminalOutput)
+		}
+	}
+}
+
+FileHandlePrototype TerminalFilePrototype {
+	DataSize: #TerminalInstance,
+	
+	DeviceControl: &TerminalInstance.DeviceControl
+	
+	Poll: &TerminalInstance.Poll,
+	Read: &TerminalInstance.Read,
+	Write: &TerminalInstance.Write
+}
+
+i32 TERMINAL_FILE_PROTOTYPE_ID := RegisterHandlePrototype(&TerminalFilePrototype)
+
+MagicFilePrototype TerminalMagicFilePrototype {
+	Prototype: &TerminalFilePrototype,
+	Major: 4,
+	Minor: 1
+}
+
+i32 TERMINAL_FILE_MAGIC_ID := RegisterMagicFile(&TerminalMagicFilePrototype)
