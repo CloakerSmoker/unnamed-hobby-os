@@ -21,9 +21,22 @@ struct TerminalInstance {
 	FileHandle* Input
 	FileHandle* Output
 	
+	i32 Major
+	i32 Minor
+	
 	define i32 DeviceControl(i32 Function, void* Parameter) {
 		if (Function = TERMINAL_INITIALIZE) {
 			this~>Config->SetDefaults()
+			
+			if (this->Major = TERMINAL_MAJOR && this->Minor = TERMINAL_MINOR) {
+				if (this->Input) {
+					this->Input->DeviceControl(TERMINAL_INITIALIZE, null)
+				}
+				
+				if (this->Output) {
+					this->Output->DeviceControl(TERMINAL_INITIALIZE, null)
+				}
+			}
 		}
 		else if (Function = TERMINAL_SET_INPUT) {
 			this->Input := Parameter
@@ -91,20 +104,23 @@ struct TerminalInstance {
 		i32 Major := Options[0] As i32
 		i32 Minor := Options[1] As i32
 		
+		this->Major := Major
+		this->Minor := Minor
+		
 		if (Major = TERMINAL_MAJOR && Minor = TERMINAL_MINOR) {
 			; We are the default terminal, inform our descendents
 			
 			this->Input := DefaultTerminalInput
 			this->Output := DefaultTerminalOutput
 			
-			this->Input->DeviceControl(TERMINAL_INITIALIZE, null)
-			this->Output->DeviceControl(TERMINAL_INITIALIZE, null)
+			this->DeviceControl(TERMINAL_INITIALIZE, null)
 		}
 	}
 }
 
 FileHandlePrototype TerminalFilePrototype {
 	DataSize: #TerminalInstance,
+	Initialize: &TerminalInstance.Initialize,
 	
 	DeviceControl: &TerminalInstance.DeviceControl,
 	

@@ -316,6 +316,8 @@ define void MainContinuation() {
 	KernelHeap->Initialize(ADDRESS_OF_KERNEL_HEAP, BYTES_IN_2MB)
 	Info("Initialized heap\n")
 	
+	InitializeHandle(&TerminalFilePrototype, KernelTerminal, TERMINAL_MAJOR, TERMINAL_MINOR)
+	
 	DefaultTerminalInput := NewHandle(&TerminalInputStreamPrototype)
 	KernelTerminal->DeviceControl(TERMINAL_SET_INPUT, DefaultTerminalInput)
 	

@@ -163,7 +163,7 @@ struct FileHandle {
 	}
 	
 	define void Close() {
-		Free(this)
+		;Free(this)
 	}
 	
 	define FileHandle* Clone() {
@@ -182,4 +182,13 @@ define FileHandle* NewHandle(FileHandlePrototype* Prototype, ... RawOptions) {
 	Prototype->Initialize(Result, Options, OptionCount)
 	
 	return Result
+}
+
+define void InitializeHandle(FileHandlePrototype* Prototype, FileHandle* Instance, ... RawOptions) {
+	Instance->Prototype := Prototype
+	
+	i32 OptionCount := *(RawOptions As i32*)
+	void** Options := (&RawOptions[1]) As void**
+	
+	Prototype->Initialize(Instance, Options, OptionCount)
 }
