@@ -2,9 +2,6 @@
 #Require "./src/kernel/input/Keys.rlx"
 
 struct InputToTerminalEscapesStream {
-	i8* EnterSequence
-	i32 EnterLength
-	
 	void* State
 	void(void*, i8*, i32) WriteOutput
 	
@@ -64,7 +61,7 @@ struct InputToTerminalEscapesStream {
 	
 	define void OnInput(i8 Modifiers, i32 KeyCode) {
 		if (KEY_ASCII_BASE <= KeyCode && KeyCode <= KEY_ASCII_LAST) {
-			if (Modifiers & KEY_MODIFIER_SHIFT = Modifiers) {
+			if (Modifiers & KEY_MODIFIER_SHIFT = KEY_MODIFIER_SHIFT) {
 				; shift + lowercase_letter = uppercase_letter
 				
 				if ('a' <= KeyCode && KeyCode <= 'z') {
@@ -101,9 +98,6 @@ struct InputToTerminalEscapesStream {
 				i8 XTermArrow := ((KeyCode - KEY_UP) + 'A') As i8
 				
 				this->OutputXTerm(Modifiers, XTermArrow)
-			}
-			else if (KeyCode = KEY_ENTER) {
-				this->Output(this->EnterSequence, this->EnterLength)
 			}
 			else if (KeyCode = KEY_END) {
 				this->OutputXTerm(Modifiers, 'F')

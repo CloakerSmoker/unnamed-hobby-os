@@ -17,7 +17,7 @@ i32 SCANCODE_EXTENDED_END         := 0x4F
 i32 SCANCODE_EXTENDED_INSERT      := 0x52
 i32 SCANCODE_EXTENDED_DELETE      := 0x53
 
-i32 SCANCODE_MASK_DOWN      := 0x80
+i32 SCANCODE_MASK_UP      := 0x80
 i32 SCANCODE_PREFIX_EXTENDED := 0xE0
 
 enum ScanCodeParserMode {
@@ -95,10 +95,10 @@ struct ScanCodeParser {
 					continue
 				}
 				
-				i8 Down := false
+				i8 Down := true
 				
-				if (Next & SCANCODE_MASK_DOWN) {
-					Down := true
+				if (Next & SCANCODE_MASK_UP) {
+					Down := false
 				}
 				
 				Next &= 0x7F
@@ -130,10 +130,10 @@ struct ScanCodeParser {
 				}
 			}
 			else if (this->Mode = ScanCodeParserMode:Extended) {
-				i8 Down := false
+				i8 Down := true
 				
-				if (Next & SCANCODE_MASK_DOWN) {
-					Down := true
+				if (Next & SCANCODE_MASK_UP) {
+					Down := false
 				}
 				
 				Next &= 0x7F

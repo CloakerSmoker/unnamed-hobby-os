@@ -54,10 +54,10 @@ struct TerminalInputStreamInstance {
 	}
 	
 	define void OnInput(i8 Modifiers, i32 KeyCode) {
-		Print("Got ")
-		PrintModifiers(Modifiers)
-		PrintKeyName(KeyCode)
-		Print("\n")
+		;Print("Got ")
+		;PrintModifiers(Modifiers)
+		;PrintKeyName(KeyCode)
+		;Print("\n")
 		
 		if (KeyCode = KEY_ENTER) {
 			;if !(RunningProgram) {
@@ -72,7 +72,7 @@ struct TerminalInputStreamInstance {
 			i8 EOL2 := this->Config->ControlCharacters[LINUX_TERMIOS_CHARACTER_VEOL2]
 			
 			if (EOL2) {
-				this->Input(this->Config->ControlCharacters[LINUX_TERMIOS_CHARACTER_VEOL2])
+				this->Input(EOL2)
 			}
 			
 			if (this->LocalFlag(LINUX_TERMIOS_LOCAL_FLAG_ICANON)) {
@@ -118,7 +118,7 @@ struct TerminalInputStreamInstance {
 		if (Function = TERMINAL_INITIALIZE) {
 			; Master is letting us know we are the default terminal, take ownership of keyboard input
 			
-			SinkPS2Input(this~>Escaper, &InputToTerminalEscapesStream.OnInput)
+			SinkPS2Input(this, &TerminalInputStreamInstance.OnInput)
 		}
 		else {
 			return this->ComponentDeviceControl(Function, Parameter)

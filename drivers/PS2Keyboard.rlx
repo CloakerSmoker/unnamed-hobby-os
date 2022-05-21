@@ -5,6 +5,9 @@ i8 PS2_PORT_DATA := 0x60
 i8 PS2_PORT_COMMAND := 0x64
 i8 PS2_PORT_STATUS := 0x64
 
+i8 PS2_STATUS_OUTPUT_READY := 0b0000_0001
+i8 PS2_STATUS_INPUT_READY  := 0b0000_0010
+
 i8 PS2_READ_COMMAND := 0x20
 i8 PS2_WRITE_COMMAND := 0x60
 i8 PS2_DISABLE_AUX := 0xA7 As i8
@@ -29,10 +32,10 @@ define void SinkPS2Input(void* State, void(void*, i8, i32) Function) {
 define void OnPS2Event() {
 	; IRQ1 handler
 	
-	PS2Wait(0, 1)
-	i8 ScanCode := InB(PS2_PORT_DATA)
-	PS2ScanCodeParser->Write(&ScanCode, 1)
+	i8 ScanCode := InB(PS2_PORT_DATA)	
 	SendEOI(1)
+	
+	PS2ScanCodeParser->Write(&ScanCode, 1)
 }
 
 define void OnPS2Interrupt() asm {
