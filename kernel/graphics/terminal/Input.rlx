@@ -29,12 +29,7 @@ struct TerminalInputStreamInstance {
 	}
 	
 	define void Input(void* Buffer, i32 Count) {
-		if (this->LocalFlag(LINUX_TERMIOS_LOCAL_FLAG_ICANON)) {
-			this~>LineBuffer->Write(Buffer, Count)
-		}
-		else {
-			this~>InputBuffer->Write(Buffer, Count)
-		}
+		this~>InputBuffer->Write(Buffer, Count)
 		
 		if (this->LocalFlag(LINUX_TERMIOS_LOCAL_FLAG_ECHO)) {
 			this->Echo(Buffer, Count)
@@ -76,25 +71,25 @@ struct TerminalInputStreamInstance {
 			}
 			
 			if (this->LocalFlag(LINUX_TERMIOS_LOCAL_FLAG_ICANON)) {
-				this~>LineBuffer->MoveTo(this~>InputBuffer, this~>LineBuffer->Available())
+				this~>InputBuffer->MoveTo(this~>LineBuffer, this~>InputBuffer->Available())
 			}
 		}
 		else if (KeyCode = KEY_BACKSPACE) {	
+			;Info("Available %i\n", this~>InputBuffer->Available())
+			
 			if (this->LocalFlag(LINUX_TERMIOS_LOCAL_FLAG_ICANON)) {
-				i32 Offset := this~>InputBuffer->WriteOffset - 1
+				i32 AvailableBefore := this~>InputBuffer->Available()
 				
-				if (Offset < 0) {
-					Offset := 0
-				}
+				this~>InputBuffer->Drop(1)
 				
-				this~>InputBuffer->WriteOffset := Offset
+				;Info("Available v2 %i\n", this~>InputBuffer->Available())
 				
-				if (Offset != 0 && this->LocalFlag(LINUX_TERMIOS_LOCAL_FLAG_ECHO)) {
-					this->Echo(0x7F)
+				if (AvailableBefore != 0 && this->LocalFlag(LINUX_TERMIOS_LOCAL_FLAG_ECHO)) {
+					this->Echo(ASCII_BACK As i8)
 				}
 			}
 			else {
-				this->Input(0x7F)
+				this->Input(ASCII_BACK As i8)
 			}
 		}
 		else {
@@ -102,14 +97,14 @@ struct TerminalInputStreamInstance {
 		}
 	}
 	
-	define i32 ReadBuffered(void* Out, i32 Count) {
-		i32 Available := this~>InputBuffer->Available()
+	define i32 ReadBuffered(MemoryFIFO* Buffer, void* Out, i32 Count) {
+		i32 Available := Buffer->Available()
 		
 		if (Available > Count) {
 			Available := Count
 		}
 		
-		this~>InputBuffer->Read(Out, Available)
+		Buffer->Read(Out, Available)
 		
 		return Available
 	}
@@ -128,9 +123,15 @@ struct TerminalInputStreamInstance {
 	}
 	
 	define i32 Poll(i32 Mode) {
+		MemoryFIFO* Buffer := this~>InputBuffer
+		
+		if (this->LocalFlag(LINUX_TERMIOS_LOCAL_FLAG_ICANON)) {
+			Buffer := this~>LineBuffer
+		}
+		
 		i32 Result := 0
 	
-		if (Mode & POLL_CAN_READ && this~>InputBuffer->Available() != 0) {
+		if (Mode & POLL_CAN_READ && Buffer->Available() != 0) {
 			Result |= POLL_CAN_READ
 		}
 		
@@ -142,26 +143,38 @@ struct TerminalInputStreamInstance {
 	}
 	
 	define i32 Read(void* Out, i32 Count) {
-		i32 Available := this~>InputBuffer->Available()
+		MemoryFIFO* Buffer := this~>InputBuffer
+		
+		if (this->LocalFlag(LINUX_TERMIOS_LOCAL_FLAG_ICANON)) {
+			Buffer := this~>LineBuffer
+		}
+		
+		i32 Available := Buffer->Available()
 		
 		if !(Available) {
 			if (IsSchedulerActive()) {
 				while !(Available) {
 					SchedulerYield()
-					Available := this~>InputBuffer->Available()
+					Available := Buffer->Available()
 				}
 			}
 			else {
 				while !(Available) {
-					Available := this~>InputBuffer->Available()
+					Available := Buffer->Available()
 				}
 			}
 		}
 		
-		return this->ReadBuffered(Out, Count)
+		return this->ReadBuffered(Buffer, Out, Count)
 	}
 	define i32 WriteToInputStream(void* Data, i32 Size) {
-		this~>InputBuffer->Write(Data, Size)
+		MemoryFIFO* Buffer := this~>InputBuffer
+		
+		if (this->LocalFlag(LINUX_TERMIOS_LOCAL_FLAG_ICANON)) {
+			Buffer := this~>LineBuffer
+		}
+		
+		Buffer->Write(Data, Size)
 		
 		return Size
 	}

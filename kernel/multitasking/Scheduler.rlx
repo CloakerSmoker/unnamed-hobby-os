@@ -50,7 +50,23 @@ struct TaskScheduler {
 		if !(Current) {
 			CurrentTask := DelayTask
 			
-			this->Debug(".")
+			this->Debug("\n[%i.%i] %x -> ", PITWhole, PITFraction, CurrentTask)
+		
+			if (DEBUG_SCHEDULER) {
+				Task* Walk := RootTask
+				
+				while (Walk) {
+					this->Debug("(%x %i)", Walk, Walk->State)
+					
+					Walk := Walk->Next
+					
+					if (Walk) {
+						this->Debug(", ")
+					}
+				}
+			}
+			
+			this->Debug("= .\n")
 		}
 		else {
 			this->Debug("\n[%i.%i] %x -> ", PITWhole, PITFraction, CurrentTask)
@@ -226,6 +242,8 @@ i8 SchedulerStarted := false
 
 define void StartScheduler() {
 	DisableInterrupts()
+	
+	SchedulerStarted := true
 	
 	DelayTask := Scheduler->MakeLightTask(&DoSchedulerDelay)
 	

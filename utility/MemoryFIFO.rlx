@@ -41,6 +41,16 @@ struct MemoryFIFO {
 		return &this->Buffer[Offset % this->Size]
 	}
 	
+	define void Drop(i32 Count) {
+		i32 NewWriteOffset := this->WriteOffset - Count
+		
+		if (NewWriteOffset < this->ReadOffset) {
+			NewWriteOffset := this->ReadOffset
+		}
+		
+		this->WriteOffset := NewWriteOffset
+	}
+	
 	define void Peek(void* RawOut, i32 Size) {
 		i8* Out := RawOut
 		

@@ -22,8 +22,6 @@ define EventState OnChildKilled(Process* Child, Event* Fired) {
 	Child->Free()
 	Free(Child)
 	
-	Prompt()
-	
 	return EventState:CallNextListener
 }
 
@@ -241,7 +239,6 @@ define void OnCommand(i8* CommandLine) {
 				
 				Print(" *(%x As i%i*) = %x\n", TargetAddress, (Size - '0') * 8, AddressValue)
 				
-				Prompt()
 				return
 			}
 		}
@@ -311,7 +308,6 @@ define void OnCommand(i8* CommandLine) {
 		
 		if !(NewCWD) {
 			Print("Could not find '%s'\n", Path)
-			Prompt()
 			return
 		}
 		
@@ -357,7 +353,6 @@ define void OnCommand(i8* CommandLine) {
 		
 		if !(OutputFile) {
 			Print("Could not open '%s'\n", Path)
-			Prompt()
 			return
 		}
 		
@@ -389,12 +384,28 @@ define void OnCommand(i8* CommandLine) {
 	else {
 		Print(" Unknown command '%s'\n", Command)
 	}
+}
+
+define void ShellThread() {
+	i8[64] InputLine
 	
-	Prompt()
+	loop {
+		Prompt()
+		
+		KernelTerminal->Wait(POLL_FOR_READ)
+		i32 LineLength := KernelTerminal->Read(InputLine, 64)
+		
+		InputLine[LineLength - 1] := 0 ; remove line ending
+		
+		OnCommand(InputLine)
+	}
+	
 }
 
 define void SetupShell() {
 	CWD := RootDirectory
 	
-	Prompt()
+	Task* ShellThreadTask := Scheduler->AddLightTask(&ShellThread)
+	
+	ShellThreadTask->State := TASK_CAN_RUN
 }

@@ -11,6 +11,10 @@ i32 POLL_CAN_WRITE := 0b10
 i32 POLL_FOR_WRITE := 0b10
 i32 POLL_HAS_ERROR := 0b100
 
+#Require "./src/linux/ErrorNumbers.rlx"
+
+i32 DEVICE_CONTROL_INVALID_FUNCTION := LINUX_ERROR_INVAL
+
 struct FileHandlePrototype {
 	i32 DataSize
 	
@@ -160,6 +164,23 @@ struct FileHandle {
 	}
 	define FileHandle* Open(i8* Path) {
 		return this->Prototype->Open(this, Path)
+	}
+	
+	define i32 Wait(i32 Mode, i32 Timeout) {
+		loop {
+			i32 Result := this->Poll(Mode)
+			
+			if (Result) {
+				return Result
+			}
+			
+			SchedulerYield()
+		}
+		
+		return 0
+	}
+	define i32 Wait(i32 Mode) {
+		return this->Wait(Mode, -1)
 	}
 	
 	define void Close() {

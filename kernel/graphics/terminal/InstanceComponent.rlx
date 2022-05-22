@@ -9,5 +9,5 @@
 			*(this->OtherHalf As void**) := Parameter
 		}
 		
-		return 0
+		return DEVICE_CONTROL_INVALID_FUNCTION
 	}

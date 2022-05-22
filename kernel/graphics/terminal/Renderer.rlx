@@ -532,8 +532,8 @@ struct TerminalRendererInstance {
 				if (this->X) {
 					this->X -= 1
 					
-					;this->ConvertToScreenCoords(this->X, this->Y, &ScreenX, &ScreenY)
-					;this->Font->Draw(this->Screen->Canvas, this->ForegroundColor, this->BackgroundColor, ScreenX, ScreenY, ' ')
+					this->ConvertToScreenCoords(this->X, this->Y, &ScreenX, &ScreenY)
+					this->Font->Draw(this->Screen->Canvas, this->ForegroundColor, this->BackgroundColor, ScreenX, ScreenY, ' ')
 				}
 			}
 			else {
