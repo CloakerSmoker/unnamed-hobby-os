@@ -1,10 +1,10 @@
-/*#Require "./src/kernel/graphics/Screen.rlx"
+#Require "./src/linux/Termios.rlx"
+
+#Require "./src/kernel/graphics/Screen.rlx"
 #Require "./src/kernel/graphics/Font.rlx"
 #Require "./src/kernel/graphics/Sixel.rlx"
 
 i32 TAB_SIZE := 4
-
-declare void ShellPleaseSendForMe(i8*, i32)
 
 enum TerminalMode {
 	Normal,
@@ -19,7 +19,15 @@ enum TerminalEscapeState {
 	Command
 }
 
-struct Terminal {
+i32 TERMINAL_RENDERER_START_CURSOR_TIMER := 'TRSC'
+
+#Require "./src/kernel/file-system/FileSystem.rlx"
+
+struct TerminalRendererInstance {
+	#Include "./src/kernel/file-system/HandleInstance.rlx"
+	#Include "./src/kernel/terminal/InstanceComponent.rlx"
+	FileHandle* Input
+	
 	Screen* Screen
 	
 	i32 X
@@ -44,8 +52,7 @@ struct Terminal {
 	
 	TerminalMode Mode
 	
-	SixelStreamInstance SixelDevice
-	CharacterDevice* Sixel
+	SixelRenderer Sixel
 	
 	define void Clear() {
 		this->Screen->Clear(this->BackgroundColor)
@@ -77,8 +84,11 @@ struct Terminal {
 		
 		this->CalculateBounds()
 		
-		this->Sixel := this~>SixelDevice->AsCharacterDevice()
-		InitializeCharacterDevice(this->Sixel, &SixelStreamPrototype, this->Screen->Canvas)
+		this~>Sixel->Initialize(this->Screen->Canvas)
+	}
+	
+	define void Initialize(void** Options, i32 Count) {
+		this->Adopt(Options[0], Options[1], Options[2] As i32, Options[3] As i32)
 	}
 	
 	define void SetColors(i32 ForegroundColor, i32 BackgroundColor) {
@@ -196,7 +206,7 @@ struct Terminal {
 	}
 	
 	define void SetCursorTimer() {
-		Task* CursorTimerTask := Scheduler->AddLightTask(&Terminal.DoCursorTimerTick)
+		Task* CursorTimerTask := Scheduler->AddLightTask(&TerminalRendererInstance.DoCursorTimerTick)
 		
 		CursorTimerTask~>Context->RDI := this As i64
 		
@@ -247,7 +257,7 @@ struct Terminal {
 			
 			;Info("Formatted '%s' %x\n", CursorPositionEscape, FormatLength)
 			
-			ShellPleaseSendForMe(CursorPositionEscape, FormatLength)
+			this->Input->Write(CursorPositionEscape, FormatLength)
 		}
 		else if (Command = 'm') {
 			if (ParameterCount != 1) { return }
@@ -283,7 +293,7 @@ struct Terminal {
 				this->BackgroundColor := BrightColors[Style]				
 			}
 			else if (Style = 0) {
-				Info("Style reset\n")
+				;Info("Style reset\n")
 				this->ForegroundColor := this->DefaultForegroundColor
 				this->BackgroundColor := this->DefaultBackgroundColor
 			}
@@ -414,14 +424,14 @@ struct Terminal {
 	declare i32 Print(i8*, i32)
 	
 	define i32 SixelPrint(i8* Characters, i32 Count) {
-		i32 Written := this->Sixel->Write(Characters, Count)
+		i32 Written := this~>Sixel->Write(Characters, Count)
 		
 		;Info("Sixel.Write(%i) = %i\n", Count, Written)
-			
+		
 		if (Written != Count) {
 			;Info("Sixel done\n")
 			
-			i32 NewScreenY := this~>SixelDevice->Y
+			i32 NewScreenY := this~>Sixel->Y
 			
 			i32 NewY := NewScreenY / this->Font->Height
 			
@@ -454,7 +464,7 @@ struct Terminal {
 					this->ConvertToScreenCoords(this->X, this->Y, &ScreenX, &ScreenY)
 					
 					this->Mode := TerminalMode:Sixel
-					this~>SixelDevice->Reset(ScreenX, ScreenY)
+					this~>Sixel->Reset(ScreenX, ScreenY)
 					
 					i8* SixelIntro := i8[0x1B, 'P']
 					
@@ -520,8 +530,8 @@ struct Terminal {
 				if (this->X) {
 					this->X -= 1
 					
-					;this->ConvertToScreenCoords(this->X, this->Y, &ScreenX, &ScreenY)
-					;this->Font->Draw(this->Screen->Canvas, this->ForegroundColor, this->BackgroundColor, ScreenX, ScreenY, ' ')
+					this->ConvertToScreenCoords(this->X, this->Y, &ScreenX, &ScreenY)
+					this->Font->Draw(this->Screen->Canvas, this->ForegroundColor, this->BackgroundColor, ScreenX, ScreenY, ' ')
 				}
 			}
 			else {
@@ -615,41 +625,49 @@ struct Terminal {
 	define void OnScroll(i32 CharacterOffset) {
 		this->Y += CharacterOffset
 	}
-}
-
-Terminal RawKernelTerminal
-Terminal* KernelTerminal := &RawKernelTerminal
-
-#Require "./src/kernel/file-system/FileSystem.rlx"
-
-struct TerminalInstance {
-	#Include "./src/kernel/file-system/HandleInstance.rlx"
 	
-	define i32 Read(void* Buffer, i32 Size) {
+	define i32 DeviceControl(i32 Function, void* Parameter) {
+		if (Function = TERMINAL_RENDERER_START_CURSOR_TIMER) {
+			this->SetCursorTimer()
+		}
+		else if (Function = TERMIOS_GET_WINDOW_SIZE) {
+			TermiosWindowSize* Window := Parameter
+			
+			Window->Rows := this->Height As i16
+			Window->Columns := this->Width As i16
+		}
+		else {
+			return this->ComponentDeviceControl(Function, Parameter)
+		}
 		
-		
-		return Size
+		return 0
 	}
-	define i32 Write(void* Buffer, i32 Size) {
-		KernelTerminal->Print(Buffer, Size)
-		
-		return Size
-	}
-}
-
-FileHandlePrototype TerminalFilePrototype {
-	DataSize: #TerminalInstance,
 	
-	Read: &TerminalInstance.Read,
-	Write: &TerminalInstance.Write
+	define i32 Poll(i32 Mode) {
+		i32 Result := 0
+		
+		if (Mode & POLL_FOR_WRITE) {
+			Result |= POLL_FOR_WRITE
+		}
+		
+		return Result
+	}
+	define i32 Write(void* Buffer, i32 Count) {
+		this->Print(Buffer, Count)
+		
+		return Count
+	}
 }
 
-i32 TERMINAL_FILE_PROTOTYPE_ID := RegisterHandlePrototype(&TerminalFilePrototype)
-
-MagicFilePrototype TerminalMagicFilePrototype {
-	Prototype: &TerminalFilePrototype,
-	Major: 4,
-	Minor: 1
+FileHandlePrototype TerminalRendererPrototype {
+	DataSize: #TerminalRendererInstance,
+	Initialize: &TerminalRendererInstance.Initialize,
+	
+	DeviceControl: &TerminalRendererInstance.DeviceControl,
+	
+	Poll: &TerminalRendererInstance.Poll,
+	Write: &TerminalRendererInstance.Write
 }
 
-i32 TERMINAL_FILE_MAGIC_ID := RegisterMagicFile(&TerminalMagicFilePrototype)*/
+i32 TERMINAL_RENDERER_PROTOTYPE_ID := RegisterHandlePrototype(&TerminalRendererPrototype)
+

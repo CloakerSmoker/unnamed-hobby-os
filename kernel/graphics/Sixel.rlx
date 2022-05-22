@@ -1,5 +1,4 @@
 #Require "./src/kernel/graphics/PixelBuffer.rlx"
-#Require "./src/kernel/core/CharacterDevice.rlx"
 
 enum SixelBackgroundMode {
 	Fill,
@@ -51,9 +50,7 @@ i8* DefaultSixelPalette := i8[
 	80, 80, 80
 ]
 
-struct SixelStreamInstance {
-	#Include "./src/kernel/core/CharacterDeviceInstance.rlx"
-
+struct SixelRenderer {
 	PixelBuffer* Display
 	i32[256] Palette
 	
@@ -77,8 +74,8 @@ struct SixelStreamInstance {
 		}
 	}
 	
-	define void Initialize(void** Parameters, i32 ParameterCount) {
-		this->Display := Parameters[0]
+	define void Initialize(PixelBuffer* Display) {
+		this->Display := Display
 		this->ClearPalette()
 	}
 	
@@ -271,14 +268,4 @@ struct SixelStreamInstance {
 		
 		return Count
 	}
-	
 }
-
-CharacterDevicePrototype SixelStreamPrototype {
-	DataSize: #SixelStreamInstance,
-	Initialize: &SixelStreamInstance.Initialize,
-	
-	Write: &SixelStreamInstance.Write
-}
-
-i32 SIXEL_STREAM_PROTOTYPE_ID := RegisterCharacterDevicePrototype(&SixelStreamPrototype)

@@ -61,12 +61,16 @@ struct InputToTerminalEscapesStream {
 	
 	define void OnInput(i8 Modifiers, i32 KeyCode) {
 		if (KEY_ASCII_BASE <= KeyCode && KeyCode <= KEY_ASCII_LAST) {
+			i8 AToZ := ('a' <= KeyCode && KeyCode <= 'z')
+			
 			if (Modifiers & KEY_MODIFIER_SHIFT = KEY_MODIFIER_SHIFT) {
 				; shift + lowercase_letter = uppercase_letter
 				
-				if ('a' <= KeyCode && KeyCode <= 'z') {
+				if (AToZ) {
 					KeyCode ^= 0x20
 					Modifiers ^= KEY_MODIFIER_SHIFT
+					
+					AToZ := false
 				}
 			}
 			
@@ -76,6 +80,11 @@ struct InputToTerminalEscapesStream {
 			else if (Modifiers & KEY_MODIFIER_ALT = Modifiers) {
 				this->Output("\e[", 2)
 				this->Output(&KeyCode, 1)
+			}
+			else if (Modifiers & KEY_MODIFIER_CONTROL = Modifiers && AToZ) {
+				i8 Character := (KeyCode - 'a' + 1) As i8
+				
+				this->Output(&Character, 1)
 			}
 			else {
 				Modifiers++

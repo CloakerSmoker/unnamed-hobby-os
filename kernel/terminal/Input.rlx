@@ -6,7 +6,7 @@
 
 struct TerminalInputStreamInstance {
 	#Include "./src/kernel/file-system/HandleInstance.rlx"
-	#Include "./src/kernel/graphics/terminal/InstanceComponent.rlx"
+	#Include "./src/kernel/terminal/InstanceComponent.rlx"
 	FileHandle* Output
 	
 	i8[64] RawLineBuffer

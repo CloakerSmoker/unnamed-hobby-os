@@ -82,7 +82,6 @@ declare void SchedulerYield()
 #Require "./src/kernel/multitasking/Timers.rlx"
 
 #Require "./src/kernel/graphics/LoadFON.rlx"
-#Require "./src/kernel/graphics/Terminal.rlx"
 #Require "./src/kernel/graphics/BMPOutput.rlx"
 
 define void PrintCharacter(i8 Character) {
@@ -93,9 +92,9 @@ define void PrintCharacter(i8 Character) {
 
 ; Terminal print functions
 
-#Require "./src/kernel/graphics/terminal/Terminal.rlx"
-#Require "./src/kernel/graphics/terminal/Input.rlx"
-#Require "./src/kernel/graphics/terminal/Renderer.rlx"
+#Require "./src/kernel/terminal/Terminal.rlx"
+#Require "./src/kernel/terminal/Input.rlx"
+#Require "./src/kernel/terminal/Renderer.rlx"
 
 TerminalInstance _RawKernelTerminal
 TerminalInstance* RawKernelTerminal := &_RawKernelTerminal

@@ -1,5 +1,0 @@
-	CharacterDevicePrototype* Prototype
-	
-	define CharacterDevice* AsCharacterDevice() {
-		return this As CharacterDevice*
-	}
