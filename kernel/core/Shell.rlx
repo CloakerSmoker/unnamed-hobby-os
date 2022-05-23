@@ -15,16 +15,6 @@ MemoryFIFO* RunningProgramInput := null
 
 i32 LastStatus := 0
 
-define EventState OnChildKilled(Process* Child, Event* Fired) {
-	LastStatus := Child->ExitCode
-	RunningProgram := false
-	
-	Child->Free()
-	Free(Child)
-	
-	return EventState:CallNextListener
-}
-
 FileHandle* CWD := null
 i8[40] PWD
 
@@ -291,7 +281,13 @@ define void OnCommand(i8* CommandLine) {
 			
 			KernelPageAllocator->FreeVirtual(FileData, FilePages)
 			
-			Child~>OnKilled->ListenFunction(&OnChildKilled)
+			Child~>OnKilled->Wait()
+			
+			LastStatus := Child->ExitCode
+			RunningProgram := false
+			
+			Child->Free()
+			Free(Child)
 			
 			return
 		}

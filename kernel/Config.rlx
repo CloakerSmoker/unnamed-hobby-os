@@ -18,7 +18,7 @@ i8 USE_PAGE_FAULT_HANDLER := false
 i8 RECOVER_FROM_USER_PAGE_FAULT := false
 
 i8 DEBUG_SCHEDULER         := false ; Logs task switches plus why
-i8 DEBUG_SYSTEM_CALLS      := false ; Logs system call names/parameters + result
+i8 DEBUG_SYSTEM_CALLS      := true ; Logs system call names/parameters + result
 i8 DEBUG_SYS_READ          := false ; Logs a hexdump of data moved by `read()`
 i8 DEBUG_SYS_WRITE         := false ; Logs a hexdump of data moved by `write()`
 i8 DEBUG_TERMINAL_ESCAPES  := false ; Logs ANSI escapes as the terminal processes them

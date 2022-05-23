@@ -1,9 +1,0 @@
-struct LinuxIOVector {
-	union {
-		void* Base
-		i8* Buffer
-	}
-	
-	i64 Size
-}
-

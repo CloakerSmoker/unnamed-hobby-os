@@ -24,18 +24,33 @@ struct TerminalInstance {
 	i32 Major
 	i32 Minor
 	
+	define i32 CascadeDeviceControl(i32 Function, void* Parameter) {
+		i32 InputResult := DEVICE_CONTROL_INVALID_FUNCTION
+		i32 OutputResult := DEVICE_CONTROL_INVALID_FUNCTION
+		
+		if (this->Input) {
+			InputResult := this->Input->DeviceControl(Function, Parameter)
+		}
+		
+		if (this->Output) {
+			OutputResult := this->Output->DeviceControl(Function, Parameter)
+		}
+		
+		; If at least one of the two understood the function, then we'll consider it a success
+		
+		if (InputResult = DEVICE_CONTROL_INVALID_FUNCTION && OutputResult = DEVICE_CONTROL_INVALID_FUNCTION) {
+			return DEVICE_CONTROL_INVALID_FUNCTION
+		}
+		
+		return 0
+	}
+	
 	define i32 DeviceControl(i32 Function, void* Parameter) {
 		if (Function = TERMINAL_INITIALIZE) {
 			this~>Config->SetDefaults()
 			
 			if (this->Major = TERMINAL_MAJOR && this->Minor = TERMINAL_MINOR) {
-				if (this->Input) {
-					this->Input->DeviceControl(TERMINAL_INITIALIZE, null)
-				}
-				
-				if (this->Output) {
-					this->Output->DeviceControl(TERMINAL_INITIALIZE, null)
-				}
+				this->CascadeDeviceControl(TERMINAL_INITIALIZE, null)
 			}
 		}
 		else if (Function = TERMINAL_SET_INPUT) {
@@ -62,18 +77,20 @@ struct TerminalInstance {
 			TermiosConfig* Config := Parameter
 			
 			MoveMemory(Config, this~>Config, #TermiosConfig)
+			
+			; Allow input/output to modify result
+			this->CascadeDeviceControl(TERMIOS_GET_CONFIG, Parameter)
 		}
 		else if (Function = TERMIOS_SET_CONFIG) {
+			; Allow input/output to modify new config
+			this->CascadeDeviceControl(TERMIOS_SET_CONFIG, Parameter)
+			
 			TermiosConfig* Config := Parameter
 			
 			MoveMemory(this~>Config, Config, #TermiosConfig)
 		}
 		else {
-			; Cascade to input, if input doesn't handle it, give to output
-			
-			if (this->Input->DeviceControl(Function, Parameter)) {
-				this->Output->DeviceControl(Function, Parameter)
-			}
+			return this->CascadeDeviceControl(Function, Parameter)
 		}
 		
 		return 0

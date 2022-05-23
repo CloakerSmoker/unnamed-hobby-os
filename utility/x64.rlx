@@ -195,7 +195,11 @@ struct AMD64Context {
 	
 	i64 Flags
 	
-	i64 RAX
+	union {
+		i64 RAX
+		i32 EAX
+		i16 AX
+	}
 	
 	define AMD64Context* Zero() {
 		FastSetMemory8(this, 0, #AMD64Context)

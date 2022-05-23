@@ -121,7 +121,7 @@ PrintOutputAdapterPrototype KernelPrinter {
 Ext2* FS := null
 
 #Require "./src/kernel/user-mode/Process.rlx"
-#Require "./src/kernel/core/SystemCalls.rlx"
+#Require "./src/kernel/system-calls/SystemCalls.rlx"
 
 #Require "./src/kernel/core/Shell.rlx"
 
