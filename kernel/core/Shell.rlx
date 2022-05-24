@@ -277,7 +277,21 @@ define void OnCommand(i8* CommandLine) {
 			
 			i8* User := "USER=root"
 			
-			Process* Child := Execute(CWD, FileData, ParameterCount, Parameters, 1, &User)
+			ExecuteParameters ExecuteOptions {
+				WorkingDirectory: CWD,
+				
+				StandardInput: KernelTerminal,
+				StandardOutput: KernelTerminal,
+				StandardError: KernelTerminal,
+				
+				ArgumentCount: ParameterCount,
+				Arguments: Parameters,
+				
+				EnvironmentCount: 1,
+				Environment: &User
+			}
+			
+			Process* Child := Execute(FileData, &ExecuteOptions)
 			
 			KernelPageAllocator->FreeVirtual(FileData, FilePages)
 			

@@ -76,7 +76,21 @@ define i64* SetupExecuteStack(void* Stack, i32 ArgumentCount, i8** Arguments, i3
 i8** NULL_ARGUMENTS := null As i8**
 i8** NULL_ENVIRONMENT := null As i8**
 
-define Process* Execute(FileHandle* WorkingDirectory, void* Buffer, i32 ArgumentCount, i8** Arguments, i32 EnvironmentCount, i8** Environment) {
+struct ExecuteParameters {
+	FileHandle* WorkingDirectory
+	
+	FileHandle* StandardInput
+	FileHandle* StandardOutput
+	FileHandle* StandardError
+	
+	i32 ArgumentCount
+	i8** Arguments
+	
+	i32 EnvironmentCount
+	i8** Environment
+}
+
+define Process* Execute(void* Buffer, ExecuteParameters* Parameters) {
 	ELFHeader* ELFData := Buffer As ELFHeader*
 	
 	
@@ -100,12 +114,16 @@ define Process* Execute(FileHandle* WorkingDirectory, void* Buffer, i32 Argument
 	
 	Info("Stack Top %x\nStack Bottom %x\n", StackTop, StackBottom)
 	
-	i64* RSP := SetupExecuteStack(StackTop, ArgumentCount, Arguments, EnvironmentCount, Environment)
+	i64* RSP := SetupExecuteStack(StackTop, Parameters->ArgumentCount, Parameters->Arguments, Parameters->EnvironmentCount, Parameters->Environment)
 	
 	Process* LastProcess := CurrentProcess
 	
 	CurrentProcess := KernelHeap->Allocate('PROC', #Process)
-	CurrentProcess->Initialize(ELFData, Mappings, WorkingDirectory)
+	CurrentProcess->Initialize(ELFData, Mappings, Parameters->WorkingDirectory)
+	
+	CurrentProcess->DefineFileDescriptor(STANDARD_INPUT_FILE_DESCRIPTOR, Parameters->StandardInput)
+	CurrentProcess->DefineFileDescriptor(STANDARD_OUTPUT_FILE_DESCRIPTOR, Parameters->StandardOutput)
+	CurrentProcess->DefineFileDescriptor(STANDARD_ERROR_FILE_DESCRIPTOR, Parameters->StandardError)
 	
 	UserThread* Thread := CurrentProcess~>MainThread
 	Thread->Start(2, CurrentProcess~>Signals, RSP, ELFData->EntryPoint As void*)
