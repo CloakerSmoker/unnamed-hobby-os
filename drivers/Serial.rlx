@@ -210,7 +210,7 @@ struct SerialPort {
 		}
 	}
 	define void WriteWake() {
-		while (this->CanWrite()) {
+		while (this->CanWrite() && this~>WriteBuffer->Available()) {
 			this->WriteInterrupt()
 		}
 	}

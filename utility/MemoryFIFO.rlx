@@ -30,7 +30,7 @@ struct MemoryFIFO {
 		return this->WriteOffset - this->ReadOffset
 	}
 	define i32 Space() {
-		return this->Size - this->WriteOffset
+		return this->Size - this->Available()
 	}
 	
 	define void Clear() {
