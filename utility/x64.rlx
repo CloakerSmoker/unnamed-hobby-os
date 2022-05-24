@@ -261,10 +261,9 @@ define void RestoreFullContext(AMD64Context* Save) asm {
 	; For when you don't want the function to "return" 1/0, and want an "original" value
 	;  for RAX
 	
-	mov, rsp, {rdi + 0x20} As i64* ; Restore RSP/RBP
-	mov, rbp, {rdi + 0x28} As i64* 
+	; Todo: Use AMD64Context.Whatever offsets instead of blind ones
 	
-	push, {rdi} As i64* ; Push RIP onto the restored stack, so we can `ret` to it
+	mov, rbp, {rdi + 0x28} As i64*
 	
 	mov, rbx, {rdi + 0x8 } As i64*
 	mov, rcx, {rdi + 0x10} As i64*
@@ -280,15 +279,82 @@ define void RestoreFullContext(AMD64Context* Save) asm {
 	mov, r14, {rdi + 0x70} As i64*
 	mov, r15, {rdi + 0x78} As i64*
 	
-	push, {rdi + 0x80} As i64*
-	emit, 0x48
-	emit, 0x9D ; POPFQ
+	mov, rax, {rdi + 0x88} As i64* 
 	
-	mov, rax, {rdi + 0x88} As i64*
+	; iret stack frame:
+	;  void* RIP
+	;  i64 CS
+	;  i64 Flags
+	;  void* RSP
+	;  i64 DS
 	
-	mov, rdi, {rdi + 0x38} As i64*
+	; push, 0x10 ; kernel DS
+	emit, 0x6A
+	emit, 0x10
 	
-	ret
+	push, {rdi + AMD64Context.RSP} As i64*
+	
+	push, {rdi + AMD64Context.Flags} As i64*
+	
+	; push, 0x8 ; kernel CS
+	emit, 0x6A
+	emit, 0x08
+	
+	push, {rdi + AMD64Context.RIP} As i64*
+	
+	mov, rdi, {rdi + 0x38} As i64* ; Restore RDI (everything left to restore is on the stack for iret)
+	
+	iret
+}
+
+define void RestoreFullUserContext(AMD64Context* Save) asm {
+	; For when you don't want the function to "return" 1/0, and want an "original" value
+	;  for RAX
+	
+	; Todo: Use AMD64Context.Whatever offsets instead of blind ones
+	
+	mov, rbp, {rdi + 0x28} As i64*
+	
+	mov, rbx, {rdi + 0x8 } As i64*
+	mov, rcx, {rdi + 0x10} As i64*
+	mov, rdx, {rdi + 0x18} As i64*
+	mov, rsi, {rdi + 0x30} As i64*
+
+	mov, r8 , {rdi + 0x40} As i64*
+	mov, r9 , {rdi + 0x48} As i64*
+	mov, r10, {rdi + 0x50} As i64*
+	mov, r11, {rdi + 0x58} As i64*
+	mov, r12, {rdi + 0x60} As i64*
+	mov, r13, {rdi + 0x68} As i64*
+	mov, r14, {rdi + 0x70} As i64*
+	mov, r15, {rdi + 0x78} As i64*
+	
+	mov, rax, {rdi + 0x88} As i64* 
+	
+	; iret stack frame:
+	;  void* RIP
+	;  i64 CS
+	;  i64 Flags
+	;  void* RSP
+	;  i64 DS
+	
+	; push, 0x20 | 3 ; User DS, RPL = 3
+	emit, 0x6A
+	emit, 0x23
+	
+	push, {rdi + AMD64Context.RSP} As i64*
+	
+	push, {rdi + AMD64Context.Flags} As i64*
+	
+	; push, 0x28 | 3 ; User CS, RPL = 3
+	emit, 0x6A
+	emit, 0x2B
+	
+	push, {rdi + AMD64Context.RIP} As i64*
+	
+	mov, rdi, {rdi + 0x38} As i64* ; Restore RDI (everything left to restore is on the stack for iret)
+	
+	iret
 }
 
 define void RestoreContext(AMD64Context* Save) asm {

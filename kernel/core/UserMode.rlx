@@ -8,12 +8,14 @@ define void RestoreUserModeContext(AMD64Context* Context) {
 define void ResumeUserMode(AMD64Context* Context) {
 	;Print("[ResumeUserMode %x]", Context->RIP)
 	
-	void* TerribleHack := &RestoreUserModeContext
+	RestoreFullUserContext(Context)
 	
-	asm (rax := Context->RSP, rdi := Context, rcx := TerribleHack) {
-		mov, r11, 0
-		mov, rsp, rax
-		xchg, bx, bx
-		sysret
-	}
+	;void* TerribleHack := &RestoreUserModeContext
+	;
+	;asm (rax := Context->RSP, rdi := Context, rcx := TerribleHack) {
+	;	mov, r11, 0
+	;	mov, rsp, rax
+	;	xchg, bx, bx
+	;	sysret
+	;}
 }

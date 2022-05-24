@@ -73,6 +73,7 @@ define void InterruptSetup() asm {
 	mov, {rdi} As i64*, rbx        ; Context.RIP = rax
 	
 	pop, rbx                       ; Pop CS
+	
 	pop, rbx                       ; Pop RFLAGS
 	mov, {rdi + 0x80} As i64*, rbx ; Context.Flags = rax
 	
