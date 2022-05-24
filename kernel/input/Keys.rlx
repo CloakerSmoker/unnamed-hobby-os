@@ -3,6 +3,10 @@ i8 KEY_MODIFIER_ALT     := 2
 i8 KEY_MODIFIER_CONTROL := 4
 i8 KEY_MODIFIER_META    := 8
 
+define i8 Modifier(i8 Modifiers, i8 Mask) {
+	return (Modifiers != 0) && (Modifiers & Mask) = Mask
+}
+
 define void PrintModifiers(i8 Modifiers) {
 	if (Modifiers & KEY_MODIFIER_SHIFT) {
 		Print("shift ")

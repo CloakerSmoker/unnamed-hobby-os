@@ -80,6 +80,7 @@ declare void SchedulerYield()
 #Require "./src/kernel/multitasking/Tasks.rlx"
 #Require "./src/kernel/multitasking/Scheduler.rlx"
 #Require "./src/kernel/multitasking/Timers.rlx"
+#Require "./src/kernel/user-mode/Process.rlx"
 
 #Require "./src/kernel/graphics/LoadFON.rlx"
 #Require "./src/kernel/graphics/BMPOutput.rlx"
@@ -120,7 +121,6 @@ PrintOutputAdapterPrototype KernelPrinter {
 
 Ext2* FS := null
 
-#Require "./src/kernel/user-mode/Process.rlx"
 #Require "./src/kernel/system-calls/SystemCalls.rlx"
 
 #Require "./src/kernel/core/Shell.rlx"

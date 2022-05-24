@@ -92,6 +92,15 @@ struct TerminalInputStreamInstance {
 				this->Input(ASCII_BACK As i8)
 			}
 		}
+		else if (KeyCode = 'c' && Modifier(Modifiers, KEY_MODIFIER_CONTROL)) {
+			if (this->Config->LocalFlags & LINUX_TERMIOS_LOCAL_FLAG_ISIG) {
+				CurrentProcess->QueueSignal(LINUX_SIGNAL_NUMBER_INT, 0, 0)
+			}
+			else {
+				this->Input(this->Config->InterruptCharacter)
+			}
+			
+		}
 		else {
 			this~>Escaper->OnInput(Modifiers, KeyCode)
 		}
