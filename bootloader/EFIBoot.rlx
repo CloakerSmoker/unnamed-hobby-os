@@ -24,18 +24,28 @@ define void* EFILoadELF(EFI_SYSTEM_TABLE* SystemTable, ELFHeader* Header) {
 	void* Data := Header
 	
 	ELFProgramHeader* ProgramHeaders := Header->GetProgramHeaders()
+
+	i64 CodeVirtual := 0
+	i64 CodePhysical := 0
 	
 	for (i32 Index := 0, Index < Header->ProgramHeaderEntryCount, Index++) {
 		ELFProgramHeader* Next := ProgramHeaders[Index]
 		
 		if (Next->Type = ELF_SEGMENT_TYPE_LOAD) {
 			void* SectionData := Data + Next->FileOffset
-			void* SectionMemory := null + Next->VirtualAddress
+			void* SectionMemory := null + Next->PhysicalAddress
 			
 			i32 SectionPageCount := (Next->MemorySize / 0x1000) As i32
 			
 			if (Next->MemorySize % 0x1000) {
 				SectionPageCount += 1
+			}
+
+			Print("Load... %i -> %x\n", Index, SectionMemory)
+
+			if (Next->Flags & ELF_SEGMENT_FLAGS_EXECUTE) {
+				CodeVirtual := Next->VirtualAddress
+				CodePhysical := Next->PhysicalAddress
 			}
 			
 			SystemTable->BootServices->AllocatePages(EFI_MEMORY_ALLOCATE_ADDRESS, SectionPageCount, &SectionMemory)
@@ -51,7 +61,7 @@ define void* EFILoadELF(EFI_SYSTEM_TABLE* SystemTable, ELFHeader* Header) {
 		}
 	}
 	
-	return null + Header->EntryPoint
+	return null + CodePhysical + (Header->EntryPoint - CodeVirtual)
 }
 
 #Require "./src/drivers/ACPI.rlx"
@@ -375,7 +385,9 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	ELFHeader* KernelELF := KernelFile
 	
 	i64 MaxKernelAddress := 0
-	
+	void* Data := null
+	i32 Size := 0
+
 	ELFProgramHeader* ProgramHeaders := KernelELF->GetProgramHeaders()
 	
 	for (i32 Index := 0, Index < KernelELF->ProgramHeaderEntryCount, Index++) {
@@ -386,6 +398,11 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 			
 			if (NextEnd > MaxKernelAddress) {
 				MaxKernelAddress := NextEnd
+			}
+
+			if (NextProgramHeader->Flags & ELF_SEGMENT_FLAGS_EXECUTE = 0) {
+				Data := null + NextProgramHeader->PhysicalAddress
+				Size := NextProgramHeader->MemorySize As i32
 			}
 		}
 	}
@@ -430,7 +447,10 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	BootloaderInfo BootInfo {
 		PhysicalFrameBuffer: FrameBuffer As i64,
 		MaxKernelAddress: MaxKernelAddress,
-		IOAPICBase: IOAPICBase
+		IOAPICBase: IOAPICBase,
+
+		Data: Data,
+		Size: Size
 	}
 	
 	MoveMemory(BootInfo~>IRQMappings, IRQMappings, 16 * #i32)

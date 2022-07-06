@@ -14,26 +14,10 @@ declare void TerminateAfterUnhandledException(i64)
 declare void Info(i8*, ...)
 declare void Print(i8*, ...)
 
-struct KernelInfo {
-	i32 Size
-	i32 PageCount
-	
-	void* InterruptStack
-	
-	i64 FrameBufferPages
-	
-	i64 Pages
-	i64 PageFramesPages
-	i64 StackPages
-	i64 HeapPages
-	i64 KernelPages
-	i64 UserPages
-}
+#Require "./src/bootloader/BootInfo.rlx"
 
 KernelInfo RawKernelInfo
 KernelInfo* Kernel := &RawKernelInfo
-
-#Require "./src/bootloader/BootInfo.rlx"
 
 BootloaderInfo RawBootInfo
 BootloaderInfo* BootInfo := &RawBootInfo
@@ -142,50 +126,89 @@ stop:
 	jmp, stop
 }
 
+define void* EarlyPhysicalToVirtual(void* Where) {
+	return ADDRESS_OF_KERNEL + ((Where As i64) - PHYSICAL_ADDRESS_OF_KERNEL)	
+}
+
 ; Dummy parameters are 100% needed since the kernel is compiled as a linux program
 ;  and the compiler automatically sets argc/argv when Main takes <=2 parameters
 
 define void Main(BootloaderInfo* RawInfo, i32 Dummy1, i32 Dummy2) {
 	MoveMemory(BootInfo, RawInfo, #BootloaderInfo)
+	MoveMemory(Kernel, RawInfo~>Kernel, #KernelInfo)
 	
-	Info("Main, FrameBuffer @ %x\n", RawInfo->PhysicalFrameBuffer)
-	
-	Kernel->FrameBufferPages := RawInfo->PhysicalFrameBuffer
-	
-	;PhysicalMemory->AddReserved(0, 0x10_0000) ; < 1mb, bootloader reserved
-	;PhysicalMemory->Add(0x10_0000, 0x350_0000) ; free memory
-	
-	PhysicalMemory := PageHeap:Adopt(0x10_0000, 0x500)
-	
-	i32 KernelSize := (RawInfo->MaxKernelAddress - (ADDRESS_OF_KERNEL As i64)) As i32
-	
-	Kernel->Size := KernelSize
-	Kernel->PageCount := SizeToPageCount(KernelSize) + 1
-	
-	i64 KernelLoadPages  := PhysicalMemory->Reserve(0x20_0000, Kernel->PageCount) ; Reserve the memory the kernel lives in
-	i64 PageFramesPages  := PhysicalMemory->Allocate(PAGE_COUNT_FOR_1MB)
-	i64 KernelStackPages := PhysicalMemory->Allocate(40)
-	i64 KernelHeapPages  := PhysicalMemory->Allocate(PAGE_COUNT_FOR_2MB)
-	i64 KernelPages      := PhysicalMemory->Allocate(NUMBER_OF_KERNEL_PAGES)
-	
-	Kernel->Pages           := KernelLoadPages
-	Kernel->PageFramesPages := PageFramesPages
-	Kernel->StackPages      := KernelStackPages
-	Kernel->HeapPages       := KernelHeapPages
-	Kernel->KernelPages     := KernelPages
-	
-	AddressSpaceManager* BootStrapAddressSpace := 0x14_0000 As void*
-	
-	BootStrapAddressSpace->Initialize(0x15_0000 As void*, 0x15_0000, 0x40)
-	
-	BootStrapAddressSpace->MapRange(0x10_0000 As void*, 0x100, 0x10)
-	BootStrapAddressSpace->MapRange(0x15_0000 As void*, 0x150, 0x45)
-	BootStrapAddressSpace->MapRange(ADDRESS_OF_KERNEL, KernelLoadPages / PAGE_SIZE, Kernel->PageCount)
-	
-	BootStrapAddressSpace->MapRange(ADDRESS_OF_PAGE_FRAMES, PageFramesPages / PAGE_SIZE, PAGE_COUNT_FOR_1MB)
-	BootStrapAddressSpace->MapRange(ADDRESS_OF_KERNEL_STACK, KernelStackPages / PAGE_SIZE, 40)
-	
-	BootStrapAddressSpace->Takeover(&RawBootStrap, ADDRESS_OF_KERNEL_STACK + (PAGE_SIZE * 40))
+	if (BootInfo->Relocated) {
+		RawBootStrap(ADDRESS_OF_KERNEL_STACK + (PAGE_SIZE * 40))
+	}
+	else {
+		Info("Main, FrameBuffer @ %x\n", RawInfo->PhysicalFrameBuffer)
+
+		KernelInfo* EarlyKernel := RawInfo~>Kernel
+		
+		EarlyKernel->FrameBufferPages := RawInfo->PhysicalFrameBuffer
+		
+		;PhysicalMemory->AddReserved(0, 0x10_0000) ; < 1mb, bootloader reserved
+		;PhysicalMemory->Add(0x10_0000, 0x350_0000) ; free memory
+		
+		PhysicalMemory := PageHeap:Adopt(0x10_0000, 0x500)
+		
+		i32 KernelSize := (RawInfo->MaxKernelAddress - (ADDRESS_OF_KERNEL As i64)) As i32
+		
+		EarlyKernel->Size := KernelSize
+		EarlyKernel->PageCount := SizeToPageCount(KernelSize) + 1
+		
+		i64 KernelLoadPages  := PhysicalMemory->Reserve(PHYSICAL_ADDRESS_OF_KERNEL, EarlyKernel->PageCount) ; Reserve the memory the kernel lives in
+		i64 PageFramesPages  := PhysicalMemory->Allocate(PAGE_COUNT_FOR_1MB)
+		i64 KernelStackPages := PhysicalMemory->Allocate(40)
+		i64 KernelHeapPages  := PhysicalMemory->Allocate(PAGE_COUNT_FOR_2MB)
+		i64 KernelPages      := PhysicalMemory->Allocate(NUMBER_OF_KERNEL_PAGES)
+		
+		EarlyKernel->Pages           := KernelLoadPages
+		EarlyKernel->PageFramesPages := PageFramesPages
+		EarlyKernel->StackPages      := KernelStackPages
+		EarlyKernel->HeapPages       := KernelHeapPages
+		EarlyKernel->KernelPages     := KernelPages
+		
+		AddressSpaceManager* BootStrapAddressSpace := 0x14_0000 As void*
+		
+		BootStrapAddressSpace->Initialize(0x15_0000 As void*, 0x15_0000, 0x40)
+		
+		BootStrapAddressSpace->MapRange(0x10_0000 As void*, 0x100, 0x10)
+		BootStrapAddressSpace->MapRange(0x15_0000 As void*, 0x150, 0x45)
+		BootStrapAddressSpace->MapRange(ADDRESS_OF_KERNEL, KernelLoadPages / PAGE_SIZE, EarlyKernel->PageCount)
+		
+		BootStrapAddressSpace->MapRange(ADDRESS_OF_PAGE_FRAMES, PageFramesPages / PAGE_SIZE, PAGE_COUNT_FOR_1MB)
+		BootStrapAddressSpace->MapRange(ADDRESS_OF_KERNEL_STACK, KernelStackPages / PAGE_SIZE, 40)
+		
+		; Preserve BootInfo/KernelInfo
+
+		void* RoundedInfo := RawInfo & 0x7FFF_FFFF_FFFF_F000
+		i64 InfoPages := (RoundedInfo As i64) / PAGE_SIZE
+
+		BootStrapAddressSpace->MapRange(RoundedInfo, InfoPages, 2)
+
+		; Preserve SetCR3 (so it can jump to the relocated kernel)
+
+		void* PhysicalSetCR3 := &SetCR3
+		i64 PhysicalSetCR3Page := (PhysicalSetCR3 As i64) / PAGE_SIZE
+
+		BootStrapAddressSpace->MapRange(PhysicalSetCR3, PhysicalSetCR3Page, 1)
+
+		; Figure out where `Main()` will end up, and wipe globals
+		;  (so to the relocated kernel, it is as if it was loaded directly to
+		;    the destination)
+
+		void* VirtualMain := EarlyPhysicalToVirtual(&Main)
+
+		Info("Wiping globals, calling virtual main at %x\n", VirtualMain)
+
+		; Zero all globals so everything reinitializes
+		FastSetMemory8(RawInfo->Data, 0, RawInfo->Size)
+
+		RawInfo->Relocated := true
+
+		BootStrapAddressSpace->Takeover(VirtualMain, RawInfo, ADDRESS_OF_KERNEL_STACK + (PAGE_SIZE * 40))
+	}
 }
 
 declare void MainContinuation()
@@ -206,7 +229,7 @@ define void BootStrap() {
 	KernelAddressSpace->Initialize(ADDRESS_OF_PAGE_FRAMES, Kernel->PageFramesPages, BYTES_IN_1MB / PAGE_SIZE)
 	
 	KernelAddressSpace->MapRange(0x10_0000 As void*, 0x10_0000 / PAGE_SIZE, 0x10)
-	KernelAddressSpace->MapRange(0x20_0000 As void*, 0x20_0000 / PAGE_SIZE, Kernel->PageCount)
+	KernelAddressSpace->MapRange(ADDRESS_OF_KERNEL, PHYSICAL_ADDRESS_OF_KERNEL / PAGE_SIZE, Kernel->PageCount)
 	
 	KernelAddressSpace->MapRange(ADDRESS_OF_PAGE_FRAMES, Kernel->PageFramesPages / PAGE_SIZE, PAGE_COUNT_FOR_1MB)
 	KernelAddressSpace->MapRange(ADDRESS_OF_KERNEL_STACK, Kernel->StackPages / PAGE_SIZE, 40)
@@ -214,7 +237,9 @@ define void BootStrap() {
 	
 	KernelAddressSpace->MapRange(ADDRESS_OF_KERNEL_PAGES, Kernel->KernelPages / PAGE_SIZE, NUMBER_OF_KERNEL_PAGES)
 	
-	KernelAddressSpace->Takeover(&RawMainContinuation, ADDRESS_OF_KERNEL_STACK + (PAGE_SIZE * 40))
+	void* Stack := ADDRESS_OF_KERNEL_STACK + (PAGE_SIZE * 40)
+
+	KernelAddressSpace->Takeover(&RawMainContinuation, Stack, Stack)
 }
 
 ATADevice* FirstDisk := null

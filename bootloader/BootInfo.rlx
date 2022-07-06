@@ -1,6 +1,30 @@
+struct KernelInfo {
+	i32 Size
+	i32 PageCount
+	
+	void* InterruptStack
+	
+	i64 FrameBufferPages
+	
+	i64 Pages
+	i64 PageFramesPages
+	i64 StackPages
+	i64 HeapPages
+	i64 KernelPages
+	i64 UserPages
+}
+
 struct BootloaderInfo {
 	i64 PhysicalFrameBuffer
 	i64 MaxKernelAddress
 	i64 IOAPICBase
 	i32[16] IRQMappings
+
+	void* Data
+	i32 Size
+
+	i8 Relocated
+
+	KernelInfo Kernel
 }
+

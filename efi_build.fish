@@ -60,6 +60,7 @@ import busybox_ED linux_ed
 import busybox_VI linux_vi
 import new_compiler.elf compiler
 import Signaler.elf signaler.elf
+import lua lua.elf
 quit
 " | ./Ext2Tool.elf 'File(EFIBoot.img,512)>GPT(1)'
 

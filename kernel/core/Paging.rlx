@@ -191,6 +191,10 @@ struct AddressSpaceManager {
 	define i32 PageFramePointerToIndex(void* PageFrame) {
 		return PointerToPageNumber(PageFrame - this->VirtualPML4) As i32
 	}
+
+	define void FreePageFrame(void* PageFrame) {
+		this->FreePageFrameIndex(this->PageFramePointerToIndex(PageFrame))
+	}
 	
 	define void Initialize(void* VirtualBase, i64 PhysicalBase, i32 FrameCount) {
 		i32 BitmapSize := FrameCount / 8 
@@ -348,7 +352,7 @@ struct AddressSpaceManager {
 			}
 		}
 		
-		this->FreePageFrameIndex(this->PageFramePointerToIndex(Table))
+		this->FreePageFrame(Table)
 		
 		*TableEntry := null
 	}
@@ -403,8 +407,8 @@ struct AddressSpaceManager {
 		}
 	}
 	
-	define void Takeover(void* Continuation, void* Parameter){
-		SetCR3(this->PhysicalPML4, Continuation, Parameter)
+	define void Takeover(void* Continuation, void* Parameter, void* Stack){
+		SetCR3(this->PhysicalPML4, Continuation, Parameter, Stack)
 	}
 	
 	
