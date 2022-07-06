@@ -2,9 +2,9 @@ rm EFIBoot.img
 rm EFIBoot.qcow2
 rm src/EFIBoot.qcow2
 
-nrlx -i ./src/bootloader/EFIBoot.rlx -o ./build/EFIBoot.efi --pe --crlf --pe-subsystem 10; or exit
+nrlx -i ./src/bootloader/EFIBoot.rlx -o ./build/EFIBoot.efi --pe --pe-reloc --crlf --efi --debug; or exit
 
-set Options "--elf" "--crlf" "--debug" "--dwarf"
+set Options "--elf" "--crlf" "--debug" "--dwarf" "--linux"
 
 nrlx -i ./src/kernel/Main.rlx      -o ./build/kernel.elf      $Options; or exit
 nrlx -i ./src/user/TestProgram.rlx -o ./build/TestProgram.elf $Options; or exit

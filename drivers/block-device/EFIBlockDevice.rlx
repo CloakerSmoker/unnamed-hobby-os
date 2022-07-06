@@ -1,5 +1,5 @@
 #Require "./src/drivers/block-device/BlockDevice.rlx"
-#Require "./src/drivers/EFI.rlx"
+#Require "@/System.rlx"
 
 ; Can only be manually initialized
 

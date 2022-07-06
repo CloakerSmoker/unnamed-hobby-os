@@ -1,6 +1,8 @@
 i8 DEBUG_EXT2_OPTIMIZATION := false
 
 #Require "./src/utility/EFIApplication.rlx"
+#Require "@/Console.rlx"
+#Require "$/Memory.rlx"
 
 #Require "./src/drivers/block-device/BlockDevice.rlx"
 #Require "./src/drivers/block-device/EFIBlockDevice.rlx"

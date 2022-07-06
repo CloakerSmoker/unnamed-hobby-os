@@ -11,7 +11,6 @@ declare void TerminateAfterUnhandledException(i64)
 
 #Require "./src/utility/x64.rlx"
 
-declare void PrintCharacter(i8)
 declare void Info(i8*, ...)
 declare void Print(i8*, ...)
 
@@ -42,7 +41,15 @@ BootloaderInfo* BootInfo := &RawBootInfo
 #Require "./src/kernel/core/Paging.rlx"
 #Require "./src/utility/Memory.rlx"
 
-#Require "./src/utility/Print.rlx"
+define void PrintCharacter(i8 Character) {
+	; Pre-terminal print function
+}
+define void PrintCharacters(i8* Character, i32 Count) {
+	; Pre-terminal print function
+}
+
+#Require "$/Print.rlx"
+
 #Require "./src/utility/PrintHelpers.rlx"
 #Require "./src/utility/DebugOutput.rlx"
 
@@ -84,12 +91,6 @@ declare void SchedulerYield()
 
 #Require "./src/kernel/graphics/LoadFON.rlx"
 #Require "./src/kernel/graphics/BMPOutput.rlx"
-
-define void PrintCharacter(i8 Character) {
-	; Pre-terminal print function
-}
-
-#Require "./src/utility/Print.rlx"
 
 ; Terminal print functions
 

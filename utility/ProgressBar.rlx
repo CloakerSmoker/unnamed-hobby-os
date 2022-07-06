@@ -6,7 +6,7 @@
 ;	FileWrite(STDOUT, &Character, 1)
 ;}
 
-#Require "./src/utility/Print.rlx"
+#Require "$/Print.rlx"
 
 i32 PROGRESS_BAR_LENGTH := 20
 

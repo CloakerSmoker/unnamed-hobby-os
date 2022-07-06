@@ -1,5 +1,5 @@
 #Require "./src/drivers/Serial.rlx"
-#Require "./src/utility/Print.rlx"
+#Require "$/Print.rlx"
 
 SerialPort RawOutputPort
 SerialPort* OutputPort := &RawOutputPort
