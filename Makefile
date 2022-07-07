@@ -1,30 +1,31 @@
 ROOT_EXTRA= TestFile.txt test.txt 
 BIN_EXTRA= 
 
-RLX_FLAGS?= --crlf --dwarf
+RLX_FLAGS?= --crlf --dwarf --debug
 EFI_RLX_FLAGS?= $(RLX_FLAGS) --pe-reloc --pe
 ELF_RLX_FLAGS?= $(RLX_FLAGS) --linux
 
+RLX?=no-rlx-compiler-set
+
 CLEAN_FILES=
+LIGHT_CLEAN_FILES=
 
 BUILD=./build
 
 Disk.qcow2: $(BUILD)/Disk.img
 	qemu-img convert -f raw -O qcow2 $(BUILD)/Disk.img Disk.qcow2
 
-CLEAN_FILES+= EFIBoot.qcow2
+LIGHT_CLEAN_FILES+= EFIBoot.qcow2
 
 $(BUILD)/Disk.img: $(BUILD)/Temp.img.gpt $(BUILD)/Temp.img.fat32 $(BUILD)/Temp.img.ext2
 	cp $(BUILD)/Temp.img $(BUILD)/Disk.img
 
-CLEAN_FILES+= $(BUILD)/Temp.img $(BUILD)/Disk.img
+LIGHT_CLEAN_FILES+= $(BUILD)/Temp.img $(BUILD)/Disk.img
 
-$(BUILD)/Temp.img.gpt:
-	mkdir -p $(BUILD)
-
+$(BUILD)/Temp.img.gpt: $(BUILD)/GPTTool.elf
 	rm -f $(BUILD)/Temp.img
 
-	./GPTTool.elf "File($(BUILD)/Temp.img,512)" \
+	$(BUILD)/GPTTool.elf "File($(BUILD)/Temp.img,512)" \
 		"format 120 m" \
 		"create start 0x32 b end 70 m name \"EFI System\" type system" \
 		"create start 71 m end 119 m name \"Boot\" type custom" \
@@ -32,10 +33,15 @@ $(BUILD)/Temp.img.gpt:
 	
 	touch $@
 
-CLEAN_FILES+= $(BUILD)/Temp.img.gpt
+LIGHT_CLEAN_FILES+= $(BUILD)/Temp.img.gpt
 
-$(BUILD)/Temp.img.fat32: $(BUILD)/Temp.img.gpt $(BUILD)/Boot.efi
-	./FAT32Tool.elf "File($(BUILD)/Temp.img,512)>GPT(0)" \
+$(BUILD)/GPTTool.elf: ./host/GPTTool.rlx ./drivers/block-device/*.rlx ./drivers/GPT.rlx
+	cd ..; $(RLX) -i ./src/host/GPTTool.rlx -o ./src/$@ ${ELF_RLX_FLAGS}
+
+CLEAN_FILES+= $(BUILD)/GPTTool.elf
+
+$(BUILD)/Temp.img.fat32: $(BUILD)/Temp.img.gpt $(BUILD)/Boot.efi $(BUILD)/FAT32Tool.elf
+	$(BUILD)/FAT32Tool.elf "File($(BUILD)/Temp.img,512)>GPT(0)" \
 		"format 64 m" \
 		"mkdir EFI" \
 		"cd EFI" \
@@ -46,9 +52,14 @@ $(BUILD)/Temp.img.fat32: $(BUILD)/Temp.img.gpt $(BUILD)/Boot.efi
 	
 	touch $@
 
-CLEAN_FILES+= $(BUILD)/Temp.img.fat32
+LIGHT_CLEAN_FILES+= $(BUILD)/Temp.img.fat32
 
-$(BUILD)/Temp.img.ext2: $(BUILD)/Temp.img.gpt $(BUILD)/Kernel.elf
+$(BUILD)/FAT32Tool.elf: ./host/FAT32Tool.rlx ./drivers/block-device/*.rlx ./drivers/FAT32.rlx
+	cd ..; $(RLX) -i ./src/host/FAT32Tool.rlx -o ./src/$@ ${ELF_RLX_FLAGS}
+
+CLEAN_FILES+= $(BUILD)/FAT32Tool.elf
+
+$(BUILD)/Temp.img.ext2: $(BUILD)/Temp.img.gpt $(BUILD)/Kernel.elf $(BUILD)/Ext2Tool.elf
 	./Ext2Tool.elf "File($(BUILD)/Temp.img,512)>GPT(1)" \
 		"format 32 m" \
 		"import Kernel.elf" \
@@ -66,18 +77,34 @@ $(BUILD)/Temp.img.ext2: $(BUILD)/Temp.img.gpt $(BUILD)/Kernel.elf
 	
 	touch $@
 
-CLEAN_FILES+= $(BUILD)/Temp.img.ext2
+LIGHT_CLEAN_FILES+= $(BUILD)/Temp.img.ext2
+
+$(BUILD)/Ext2Tool.elf: ./host/Ext2Tool.rlx ./drivers/block-device/*.rlx ./drivers/Ext2.rlx
+	cd ..; $(RLX) -i ./src/host/Ext2Tool.rlx -o ./src/$@ ${ELF_RLX_FLAGS}
+
+CLEAN_FILES+= $(BUILD)/Ext2Tool.elf
 
 $(BUILD)/Boot.efi: ./bootloader/*.rlx
 	cd ..; $(RLX) -i ./src/bootloader/EFIBoot.rlx -o ./src/$@ $(EFI_RLX_FLAGS) --pe-reloc --efi
 
-CLEAN_FILES+= $(BUILD)/Boot.efi
+LIGHT_CLEAN_FILES+= $(BUILD)/Boot.efi
 
 $(BUILD)/Kernel.elf: ./kernel/*.rlx ./drivers/*.rlx ./utility/*.rlx ./linux/*.rlx
 	cd ..; $(RLX) -i ./src/kernel/Main.rlx -o ./src/$@ ${ELF_RLX_FLAGS}
 
-CLEAN_FILES+= $(BUILD)/Kernel.elf
+LIGHT_CLEAN_FILES+= $(BUILD)/Kernel.elf
+
+kernel/core/%.rlx: kernel/core/generated/%.py
+	python3 $^
+
+gen: kernel/core/*.rlx
+
+tools: $(BUILD)/GPTTool.elf $(BUILD)/FAT32Tool.elf $(BUILD)/Ext2Tool.elf
+
+fast: $(BUILD)/Disk.img
 
 clean:
+	rm -f $(LIGHT_CLEAN_FILES)
+
+clean-all: clean
 	rm -f $(CLEAN_FILES)
-	rm -df $(BUILD)
