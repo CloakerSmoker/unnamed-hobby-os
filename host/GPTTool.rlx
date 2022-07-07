@@ -131,6 +131,9 @@ define i64 ParseBlockCount(i8* ValueString, i8* Scale) {
 		if (Scale[0] = 'm') {
 			Value *= 0x800	
 		}
+		else if (Scale[0] = 'b') {
+			; Dummy
+		}
 		else {
 			Print("Unknown scale '%s', defaulting to 1\n", Scale)
 		}
@@ -139,69 +142,72 @@ define i64 ParseBlockCount(i8* ValueString, i8* Scale) {
 	return Value
 }
 
-define void PromptPartitionUpdate(GPTDevice* Device, GPTPartitionEntry* Entry) {
-	loop {
-		Print("^90-->^F0")
-		i8* NextLine := ReadLine()
-		
-		i64 ArgC := 0
-		i8** ArgV := null
-		
-		ParseCommandLine(NextLine, &ArgC, &ArgV)
-		i8* Command := ArgV[0]
-		
+define void UpdatePartition(GPTDevice* Device, GPTPartitionEntry* Entry, i64 ArgC, i8** ArgV) {
+	for (i32 Index := 0, Index < ArgC, null) {
+		i8* Command := ArgV[Index++]
 		i64 Argument := 0
-		
+
 		if (StringEquals(Command, "start")) {
-			Argument := ParseBlockCount(ArgV[1], ArgV[2])
+			Argument := ParseBlockCount(ArgV[Index], ArgV[Index + 1])
 			
 			Entry->StartingLBA := Argument
 			Print(" + Set entry StartingLBA to %x\n", Argument)
+
+			Index += 2
 		}
 		else if (StringEquals(Command, "end")) {
-			Argument := ParseBlockCount(ArgV[1], ArgV[2])
+			Argument := ParseBlockCount(ArgV[Index], ArgV[Index + 1])
 			
 			Entry->EndingLBA := Argument
 			Print(" + Set entry EndingLBA to %x\n", Argument)
+
+			Index += 2
 		}
 		else if (StringEquals(Command, "name")) {
-			i32 NameLength := StringLength(ArgV[1])
+			i32 NameLength := StringLength(ArgV[Index])
 			
-			MoveMemory(Entry~>PartitionName, AToW(ArgV[1], NameLength), NameLength * 2)
-			Print(" + Set entry name to '%s'\n", ArgV[1])
+			MoveMemory(Entry~>PartitionName, AToW(ArgV[Index], NameLength), NameLength * 2)
+			Print(" + Set entry name to '%s'\n", ArgV[Index])
+
+			Index += 1
 		}
 		else if (StringEquals(Command, "type")) {
-			if (StringEquals(ArgV[1], "system")) {
+			if (StringEquals(ArgV[Index], "system")) {
 				MoveMemory(Entry~>PartitionTypeGUID, GPT_PARTITION_TYPE_SYSTEM, 16)
 			}
-			else if (StringEquals(ArgV[1], "custom")) {
+			else if (StringEquals(ArgV[Index], "custom")) {
 				MoveMemory(Entry~>PartitionTypeGUID, GPT_PARTITION_TYPE_CUSTOM, 16)
 			}
-			else if (StringEquals(ArgV[1], "none")) {
+			else if (StringEquals(ArgV[Index], "none")) {
 				MoveMemory(Entry~>PartitionTypeGUID, GPT_PARTITION_TYPE_NONE, 16)
 			}
 			else {
-				Print(" - Unknown partition type '%s'\n", ArgV[1])
+				Print(" - Unknown partition type '%s'\n", ArgV[Index])
 				continue
 			}
 			
-			Print("Set partition type to %s\n", ArgV[1])
+			Print("Set partition type to %s\n", ArgV[Index])
+
+			Index += 1
 		}
 		else if (StringEquals(Command, "attr")) {
 			i8 NegateNext := false
 			
-			for (i32 Index := 1, Index < ArgC, Index++) {
-				if (StringEquals(ArgV[Index], "!")) {
+			for (i32 AttributeIndex := Index, AttributeIndex < ArgC, AttributeIndex++) {
+				if (StringEquals(ArgV[AttributeIndex], "!")) {
 					NegateNext := true
 				}
 				else {
 					i64 AttributeMask := 0
 					
-					if (StringEquals(ArgV[Index], "required")) {
+					if (StringEquals(ArgV[AttributeIndex], "required")) {
 						AttributeMask := GPT_PARTITION_ATTRIBUTE_REQUIRED
 					}
-					else if (StringEquals(ArgV[Index], "not_block")) {
+					else if (StringEquals(ArgV[AttributeIndex], "not_block")) {
 						AttributeMask := GPT_PARTITION_ATTRIBUTE_NOT_BLOCK
+					}
+					else {
+						break
 					}
 					
 					if (NegateNext) {
@@ -212,6 +218,8 @@ define void PromptPartitionUpdate(GPTDevice* Device, GPTPartitionEntry* Entry) {
 					}
 				}
 			}
+
+			Index := AttributeIndex
 			
 			Print(" + Updated entry attributes to ")
 			PrintGPTPartitionEntryAttributes(Entry->Attributes)
@@ -223,140 +231,141 @@ define void PromptPartitionUpdate(GPTDevice* Device, GPTPartitionEntry* Entry) {
 	}
 }
 
+define void ExecuteLine(GPTDevice* Device, i8* Line) {
+	i64 ArgC := 0
+	i8** ArgV := null
+	
+	ParseCommandLine(Line, &ArgC, &ArgV)
+	i8* Command := ArgV[0]
+	i8* Path := ArgV[1]
+	
+	if (StringEquals(Command, "ls")) {
+		for (i32 Index := 0, Index < Device->Header->PartitionEntryCount, Index++) {
+			GPTPartitionEntry* NextPartition := Device->ReadPartitionEntry(Index)
+			
+			PrintGPTPartitionEntry(NextPartition)
+		}
+	}
+	else if (StringEquals(Command, "format")) {
+		i64 DeviceSize := ParseBlockCount(ArgV[1], ArgV[2])
+		
+		Device->Format(DeviceSize)
+		Device->ReadHeader(1)
+		PrintGPTPartitionTableHeader(Device->Header)
+	}
+	else if (StringEquals(Command, "headers")) {
+		Device->ReadHeader(1)
+		PrintGPTPartitionTableHeader(Device->Header)
+		
+		Device->ReadHeader(Device->Header->AlternateHeaderLBA)
+		PrintGPTPartitionTableHeader(Device->Header)
+	}
+	else if (StringEquals(Command, "create")) {
+		GPTPartitionEntry* NewEntry := Alloc(#GPTPartitionEntry)
+		
+		GenerateGUID(NewEntry->PartitionGUID)
+
+		UpdatePartition(Device, NewEntry, ArgC - 1, &ArgV[1])
+		
+		i32 Index := Device->AddPartition(NewEntry)
+		
+		Free(NewEntry)
+		
+		if (Index = -1) {
+			Print("Could not add entry, partition entry table has no free slots\n")
+		}
+		else {
+			Print("Added entry in slot %i\n", Index)
+		}
+	}
+	else if (StringEquals(Command, "update")) {
+		i32 UpdateEntryIndex := AToI(ArgV[1]) As i32
+		
+		GPTPartitionEntry UpdateEntry
+		
+		MoveMemory(&UpdateEntry, Device->ReadPartitionEntry(UpdateEntryIndex), #GPTPartitionEntry)
+		
+		Print("Updating:\n")
+		PrintGPTPartitionEntry(&UpdateEntry)
+		
+		UpdatePartition(Device, &UpdateEntry, ArgC - 1, &ArgV[1])
+		
+		Device->WritePartitionEntry(UpdateEntryIndex, &UpdateEntry)
+		
+		Print("Updated entry in slot %i\n", UpdateEntryIndex)
+	}
+	else if (StringEquals(Command, "import-image")) {
+		i8* PartitionName := ArgV[1]
+		
+		BlockDevice* PartitionDevice := NewBlockDevice(Device->Device, &GPTPartitionBlockDevicePrototype, PartitionName)
+		
+		GPTPartitionEntry* Partition := (PartitionDevice As GPTPartitionBlockDeviceInstance)~>Entry
+		
+		if !(PartitionDevice) {
+			Print("Could not find partition '%s'\n", PartitionName)
+			return
+		}
+		
+		i8* RealPath := ArgV[2]
+		
+		i64 File := FileOpen(RealPath, FILE_READ)
+		
+		if (File < 0) {
+			Print("Could not open real file '%s', error %i\n", RealPath, File)
+			return
+		}
+		
+		i32 ImportSize := FileGetSize(File)
+		void* ImportData := FileReadAll(File)
+		
+		i32 PartitionSectors := (Partition->EndingLBA - Partition->StartingLBA) As i32
+		i32 PartitionSize := PartitionSectors * 0x200
+		
+		if (ImportSize > PartitionSize) {
+			Print("Image is %x bytes, partition has %x bytes of space, can't import\n", ImportSize, PartitionSize)
+			return
+		}
+		
+		Print("Importing %x byte image to %x byte partition, %x bytes of space remaining on partition\n", ImportSize, PartitionSize, PartitionSize - ImportSize)
+		
+		i32 ImportSectorCount := ImportSize / 0x200
+		
+		PartitionDevice->Write(0, ImportSectorCount, ImportData)
+		
+		i32 ImportLastSectorSize := ImportSize % 0x200
+		
+		if (ImportLastSectorSize) {
+			MoveMemory(Device->TempSector, ImportData + (ImportSectorCount * 0x200), ImportLastSectorSize)
+			PartitionDevice->Write(ImportSectorCount, 1, Device->TempSector)
+		}
+		
+		Print("Done, wrote %x blocks of %x block partition\n", ImportSectorCount + !!ImportLastSectorSize, PartitionSectors)
+		
+		FileClose(File)
+	}
+	else if (StringEquals(Command, "fix_mbr")) {
+		Device->WriteMBR()
+	}
+	else {
+		Exit(0)
+	}
+}
+
 define void Prompt(GPTDevice* Device) {
-	Device->ReadHeader(1)
 	PrintGPTPartitionTableHeader(Device->Header)
 	
 	loop {
 		Print("^90->^F0")
-		i8* NextLine := ReadLine()
 		
-		i64 ArgC := 0
-		i8** ArgV := null
-		
-		ParseCommandLine(NextLine, &ArgC, &ArgV)
-		i8* Command := ArgV[0]
-		i8* Path := ArgV[1]
-		
-		if (StringEquals(Command, "ls")) {
-			for (i32 Index := 0, Index < Device->Header->PartitionEntryCount, Index++) {
-				GPTPartitionEntry* NextPartition := Device->ReadPartitionEntry(Index)
-				
-				PrintGPTPartitionEntry(NextPartition)
-			}
-		}
-		else if (StringEquals(Command, "format")) {
-			i64 DeviceSize := ParseBlockCount(ArgV[1], ArgV[2])
-			
-			Device->Format(DeviceSize)
-			Device->ReadHeader(1)
-			PrintGPTPartitionTableHeader(Device->Header)
-		}
-		else if (StringEquals(Command, "headers")) {
-			Device->ReadHeader(1)
-			PrintGPTPartitionTableHeader(Device->Header)
-			
-			Device->ReadHeader(Device->Header->AlternateHeaderLBA)
-			PrintGPTPartitionTableHeader(Device->Header)
-		}
-		else if (StringEquals(Command, "create")) {
-			GPTPartitionEntry* NewEntry := Alloc(#GPTPartitionEntry)
-			
-			GenerateGUID(NewEntry->PartitionGUID)
-			
-			PromptPartitionUpdate(Device, NewEntry)
-			
-			i32 Index := Device->AddPartition(NewEntry)
-			
-			Free(NewEntry)
-			
-			if (Index = -1) {
-				Print("Could not add entry, partition entry table has no free slots\n")
-			}
-			else {
-				Print("Added entry in slot %i\n", Index)
-			}
-		}
-		else if (StringEquals(Command, "update")) {
-			i32 UpdateEntryIndex := AToI(ArgV[1]) As i32
-			
-			GPTPartitionEntry UpdateEntry
-			
-			MoveMemory(&UpdateEntry, Device->ReadPartitionEntry(UpdateEntryIndex), #GPTPartitionEntry)
-			
-			Print("Updating:\n")
-			PrintGPTPartitionEntry(&UpdateEntry)
-			
-			PromptPartitionUpdate(Device, &UpdateEntry)
-			
-			Device->WritePartitionEntry(UpdateEntryIndex, &UpdateEntry)
-			
-			Print("Updated entry in slot %i\n", UpdateEntryIndex)
-		}
-		else if (StringEquals(Command, "import-image")) {
-			i8* PartitionName := ArgV[1]
-			
-			BlockDevice* PartitionDevice := NewBlockDevice(Device->Device, &GPTPartitionBlockDevicePrototype, PartitionName)
-			
-			GPTPartitionEntry* Partition := (PartitionDevice As GPTPartitionBlockDeviceInstance)~>Entry
-			
-			if !(PartitionDevice) {
-				Print("Could not find partition '%s'\n", PartitionName)
-				continue
-			}
-			
-			i8* RealPath := ArgV[2]
-			
-			i64 File := FileOpen(RealPath, FILE_READ)
-			
-			if (File < 0) {
-				Print("Could not open real file '%s', error %i\n", RealPath, File)
-				continue
-			}
-			
-			i32 ImportSize := FileGetSize(File)
-			void* ImportData := FileReadAll(File)
-			
-			i32 PartitionSectors := (Partition->EndingLBA - Partition->StartingLBA) As i32
-			i32 PartitionSize := PartitionSectors * 0x200
-			
-			if (ImportSize > PartitionSize) {
-				Print("Image is %x bytes, partition has %x bytes of space, can't import\n", ImportSize, PartitionSize)
-				continue
-			}
-			
-			Print("Importing %x byte image to %x byte partition, %x bytes of space remaining on partition\n", ImportSize, PartitionSize, PartitionSize - ImportSize)
-			
-			i32 ImportSectorCount := ImportSize / 0x200
-			
-			PartitionDevice->Write(0, ImportSectorCount, ImportData)
-			
-			i32 ImportLastSectorSize := ImportSize % 0x200
-			
-			if (ImportLastSectorSize) {
-				MoveMemory(Device->TempSector, ImportData + (ImportSectorCount * 0x200), ImportLastSectorSize)
-				PartitionDevice->Write(ImportSectorCount, 1, Device->TempSector)
-			}
-			
-			Print("Done, wrote %x blocks of %x block partition\n", ImportSectorCount + !!ImportLastSectorSize, PartitionSectors)
-			
-			FileClose(File)
-		}
-		else if (StringEquals(Command, "fix_mbr")) {
-			Device->WriteMBR()
-		}
-		else {
-			return
-		}
+		ExecuteLine(Device, ReadLine())
 	}
 }
 
 define i32 Main(i64 ArgC, i8** ArgV) {
 	GetArgs(&ArgC, &ArgV)
 	
-	i8* ProgramDirectory := GetAbsolutePath(Concatenate(ArgV[0], "/../"))
-	Print("%s\n", ProgramDirectory)
-	SetWorkingDirectory(ProgramDirectory)
+	;i8* ProgramDirectory := GetAbsolutePath(Concatenate(ArgV[0], "/../"))
+	;SetWorkingDirectory(ProgramDirectory)
 	
 	BlockDevice* Device := InstantiateBlockDeviceChainFromPath(ArgV[1])
 	
@@ -364,6 +373,12 @@ define i32 Main(i64 ArgC, i8** ArgV) {
 	GPTParent->Device := Device
 	
 	AddGPTDeviceBinding(Device, GPTParent)
+
+	GPTParent->ReadHeader(1)
+
+	for (i32 Index := 2, Index < ArgC, Index++) {
+		ExecuteLine(GPTParent, ArgV[Index])
+	}
 	
 	Prompt(GPTParent)
 	

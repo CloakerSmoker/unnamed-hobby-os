@@ -1,0 +1,83 @@
+#Require "$/Memory.rlx"
+#Require "$/File.rlx"
+#Require "$/Console.rlx"
+#Require "$/Exception.rlx"
+#Require "$/Debug.rlx"
+
+#Require "./src/kernel/input/ScanCodesToInput.rlx"
+#Require "./src/kernel/input/InputToTerminalEscapes.rlx"
+#Require "./src/kernel/input/TerminalEscapesToInput.rlx"
+
+InputEscapeParser* P2
+
+define void OnKey2(void* State, i8 Modifiers, i32 KeyCode) {
+	Print(" is ")
+	PrintModifiers(Modifiers)
+	PrintKeyName(KeyCode)
+}
+
+define void Write(void* State, i8* Characters, i32 Count) {
+	for (i32 Index := 0, Index < Count, Index++) {
+		i8 Next := Characters[Index]
+		
+		if (Next = 0x1B) {
+			Print("<esc>")
+		}
+		else {
+			Print("%c", Next)
+		}
+	}
+	
+	P2->Write(Characters, Count)
+}
+
+define void OnKey(void* State, i8 Modifiers, i32 KeyCode) {
+	PrintModifiers(Modifiers)
+	PrintKeyName(KeyCode)
+	Print(" is ")
+	(State As InputToTerminalEscapesStream*)->OnInput(Modifiers, KeyCode)
+	Print("\n")
+}
+
+define void Main() {
+	; Does
+	;  fake_keyboard => printer middle => input to escapes => dummy output
+	; which is very close to the target
+	;  keyboard => input to escapes => terminal
+	; and also should prove that
+	;  serial => escapes to input => input to escapes => terminal
+	; will work, even though it is extra work for no reason.
+	
+	InputToTerminalEscapesStream T {
+		WriteOutput: &Write,
+		EnterSequence: "\n",
+		EnterLength: 2
+	}
+	
+	ScanCodeParser P {
+		State: T As void*,
+		PushOutput: &OnKey
+	}
+	
+	P2 := Alloc(#InputEscapeParser)
+	P2->PushOutput := &OnKey2
+	
+	P.Write(i8[0x82], 1) ; 1
+	P.Write(i8[0xE0, 0xC7], 2) ; home
+	P.Write(i8[0x9D], 1) ; control
+	P.Write(i8[0x83], 1) ; 2
+	P.Write(i8[0xB2], 1) ; m
+	P.Write(i8[0x1D, 0xAA], 2) ; control up, shift
+	P.Write(i8[0xB2], 1) ; m
+	P.Write(i8[0xB8], 1) ; alt
+	P.Write(i8[0xB2], 1) ; m
+	P.Write(i8[0xB4], 1) ; .
+	
+	P.Write(i8[0x38, 0x2A], 2) ; clear shift + alt
+	
+	P.Write(i8[0xE0, 0xC8], 2) ; up
+	P.Write(i8[0xAA], 1) ; shift
+	P.Write(i8[0xE0, 0xC8], 2) ; up
+	P.Write(i8[0xE0, 0xC7], 2) ; home
+	P.Write(i8[0xE0, 0xD3], 2) ; delete
+}
