@@ -1,4 +1,4 @@
-out = open('../InterruptStubs.rlx', 'w')
+out = open('kernel/core/InterruptStubs.rlx', 'w')
 
 error_code_stub = '''
 define void OnInterrupt{}() asm {{

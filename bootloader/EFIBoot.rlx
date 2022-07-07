@@ -355,10 +355,10 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	
 	RootDirectory := Ext2OpenINodeNumber(FS, 2)
 	
-	FileHandle* KernelHandle := RootDirectory->Open("kernel.elf")
+	FileHandle* KernelHandle := RootDirectory->Open("Kernel.elf")
 	
 	if (KernelHandle = null) {
-		Print("Could not find `kernel.elf`")
+		Print("Could not find `kernel.elf`\n")
 		return -1
 	}
 	
