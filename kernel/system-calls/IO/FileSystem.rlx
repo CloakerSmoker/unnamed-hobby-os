@@ -1,0 +1,148 @@
+define i64 SystemCallOpen(i8* Path, i32 Flags, i32 Mode) {
+	if (Path = null) {
+		; wtf busybox vi?
+		
+		return -LINUX_ERROR_FAULT
+	}
+	
+	i8 Ext2Flags := EXT2_OPEN_IF_EXISTS
+	
+	if (Flags & LINUX_FILE_CREATE_NEW) {
+		Ext2Flags := EXT2_OPEN_CREATE
+	}
+	
+	i32 FileDescriptor := CurrentProcess->FileDescriptorCount++
+	FileHandle* Result := CurrentProcess->WorkingDirectory->Open(Path, Ext2Flags)
+	CurrentProcess->FileDescriptorsToHandles[FileDescriptor] := Result
+	
+	return FileDescriptor
+}
+
+define i64 SystemCallClose(i64 FileDescriptor) {
+	CurrentProcess->FileDescriptorsToHandles[FileDescriptor]->Close()
+	CurrentProcess->FileDescriptorsToHandles[FileDescriptor] := null
+	
+	return 0
+}
+
+define i64 SystemCallDeviceControl(i64 FileDescriptor, i32 Command, void* Argument) {
+	return CurrentProcess->FileDescriptorsToHandles[FileDescriptor]->DeviceControl(Command, Argument)
+}
+
+define i64 SystemCallFileStatus(i64 FileDescriptor, LinuxFileStatus* Out) {
+	CurrentProcess->FileDescriptorsToHandles[FileDescriptor]->Status(Out As FileStatus*)
+	
+	return 0
+}
+
+define i64 SystemCallPathStatus(i8* Path, LinuxFileStatus* Out) {
+	;Info("Stat(%s, %x)\n", Path, Out)
+	
+	FileHandle* Target := CurrentProcess->WorkingDirectory->Open(Path)
+	
+	if !(Target) {
+		return -LINUX_ERROR_NOENT
+	}
+	
+	Target->Status(Out As FileStatus*)
+	Target->Close()
+	
+	return 0
+}
+
+define i64 SystemCallTruncate(i64 FileDescriptor, i32 Size) {
+	return 0
+}
+
+define i64 SystemCallSeek(i64 FileDescriptor, i32 Offset, i8 Mode) {
+	return CurrentProcess->FileDescriptorsToHandles[FileDescriptor]->Seek(Offset, Mode As SeekMode)
+}
+
+define i32 SystemCallPoll(LinuxPollTarget* Targets, i32 TargetCount, i32 Timeout) {
+	if (Timeout < 0) {
+		Timeout := 0x7FFF_FFFF
+	}
+	
+	i32 CountWithReturnEvents := 0
+	
+	for (i32 Index := 0, Index < TargetCount, Index++) {
+		LinuxPollTarget* Target := Targets[Index]
+		
+		if (Target->FileDescriptor = 0 && Target->RequestedEvents & LINUX_POLL_EVENT_INPUT_READY) {
+			;if (ShellPollForInput(Timeout)) {
+			;	Target->ReturnedEvents |= LINUX_POLL_EVENT_INPUT_READY
+			;	
+			;	CountWithReturnEvents++
+			;}
+		}
+	}
+	
+	return CountWithReturnEvents
+}
+
+define i64 SystemCallRead(i64 FileDescriptor, i8* Buffer, i32 Size) {
+	FileHandle* Handle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
+	
+	return Handle->Read(Buffer, Size)
+}
+
+define i64 SystemCallWrite(i64 FileDescriptor, i8* Buffer, i32 Size) {
+	if (FileDescriptor = 1 || FileDescriptor = 2) {
+		if (DEBUG_SYS_WRITE) {
+			Info("%hexdump", Buffer, Size)
+		}
+	}
+	
+	FileHandle* Handle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
+	
+	return Handle->Write(Buffer, Size)
+}
+
+define void SystemCallSendFile(i64 Out, i64 In, i64* Offset, i64 Count) {
+	;Print("SendFile(%x, %x, %x, %x)\n", Out, In, Offset, Count)
+	
+	for (i32 Index := 0, Index < Count, Index++) {
+		i8 Byte := 0
+		
+		i64 Result := SystemCallRead(In, &Byte, 1)
+		
+		;Print("Read %i bytes\n", Result)
+		
+		if (Result != 1) {
+			break
+		}
+		
+		i64 Written := SystemCallWrite(Out, &Byte, 1)
+		
+		;Print("Wrote %i bytes\n", Written)
+	}
+}
+
+define i64 SystemCallWriteMultiple(i64 FileDescriptor, void* Data, i32 Count) {
+	i64 TotalWritten := 0
+	
+	LinuxIOVector* Vectors := Data
+	
+	for (i32 Index := 0, Index < Count, Index++) {
+		LinuxIOVector* Next := Vectors[Index]
+		
+		TotalWritten += SystemCallWrite(FileDescriptor, Next->Base, Next->Size As i32)
+	}
+	
+	return TotalWritten
+}
+
+define void RegisterFileSystemSystemCalls() {
+	SystemCalls->Register(LINUX_SYSCALL_OPEN, &SystemCallOpen)
+	SystemCalls->Register(LINUX_SYSCALL_CLOSE, &SystemCallClose)
+	SystemCalls->Register(LINUX_SYSCALL_IOCTL, &SystemCallDeviceControl)
+	SystemCalls->Register(LINUX_SYSCALL_FSTAT, &SystemCallFileStatus)
+	SystemCalls->Register(LINUX_SYSCALL_STAT, &SystemCallPathStatus)
+	SystemCalls->Register(LINUX_SYSCALL_FTRUNCATE, &SystemCallTruncate)
+	SystemCalls->Register(LINUX_SYSCALL_LSEEK, &SystemCallSeek)
+	SystemCalls->Register(LINUX_SYSCALL_POLL, &SystemCallPoll)
+	SystemCalls->Register(LINUX_SYSCALL_READ, &SystemCallRead)
+	SystemCalls->Register(LINUX_SYSCALL_WRITE, &SystemCallWrite)
+	SystemCalls->Register(LINUX_SYSCALL_SENDFILE, &SystemCallSendFile)
+	SystemCalls->Register(LINUX_SYSCALL_WRITEV, &SystemCallWriteMultiple)
+}

@@ -1,0 +1,35 @@
+i64 SYSTEM_CALL_ENTRY_NOT_PRESENT := 'SCENP'
+
+struct SystemCallTable {
+	i32 Count
+	i64(i64, i64, i64, i64, i64, i64)[0] Entries
+	
+	define void Register(i32 Index, void* Function) {
+		this->Entries[Index] := Function
+	}
+	define i64 Invoke(i32 Index, i64 One, i64 Two, i64 Three, i64 Four, i64 Five, i64 Six) {
+		if (Index >= this->Count) {
+			Throw(SYSTEM_CALL_ENTRY_NOT_PRESENT)
+		}
+		
+		i64(i64, i64, i64, i64, i64, i64) Entry := this->Entries[Index]
+		
+		if !(Entry) {
+			Throw(SYSTEM_CALL_ENTRY_NOT_PRESENT)
+		}
+		
+		return Entry(One, Two, Three, Four, Five, Six)
+	}
+}
+
+
+SystemCallTable* SystemCalls := null
+
+define void SetupSystemCallTable() {
+	i32 SizeNeeded := (SYSTEM_CALL_COUNT * 8) + #SystemCallTable
+	i32 PagesNeeded := SizeToPageCount(SizeNeeded)
+	
+	SystemCalls := KernelPageAllocator->AllocateVirtual(PagesNeeded)
+	
+	SystemCalls->Count := SYSTEM_CALL_COUNT
+}

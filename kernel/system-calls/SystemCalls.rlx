@@ -1,0 +1,89 @@
+#Require "./src/linux/SystemCalls.rlx"
+
+i32 SYSTEM_CALL_COUNT := LINUX_SYSCALL_COUNT
+
+#Require "./src/kernel/system-calls/SystemCallTable.rlx"
+
+define void HandleSystemCall(AMD64Context* Context) {
+	SendEOI(0) ; HACK: PIC gets confused into thinking we've handling a very high priority interrupt
+	SendEOI(8) ;  so we need to convince it otherwise in order to get interrupts while handling syscalls
+	
+	i32 Number := Context->EAX
+	
+	;Print("Syscall %x\n", Number)
+	
+	if (DEBUG_SYSTEM_CALLS) {
+		i8* Name := GetLinuxSysCallName(Number)
+		
+		Info("%s(%x, %x, %x, %x, %x, %x)\n", Name, Context->RDI, Context->RSI, Context->RDX, Context->R10, Context->R8, Context->R9)
+	}
+	
+	try {
+		Context->RAX := SystemCalls->Invoke(Number, Context->RDI, Context->RSI, Context->RDX, Context->R10, Context->R8, Context->R9)
+	}
+	catch (i64 Code) {
+		Info("Exception %l during syscall\n", Code)
+		
+		i8* Name := GetLinuxSysCallName(Number)
+		
+		Info("%s(%x, %x, %x, %x, %x, %x)\n", Name, Context->RDI, Context->RSI, Context->RDX, Context->R10, Context->R8, Context->R9)
+		
+		loop {}
+	}
+	
+	;ResumeUserMode(Context)
+}
+
+define void ExitSystemCall() {
+	Scheduler->RunNext()
+}
+
+define void EnterSystemCall(AMD64Context* UserContext) {
+	CurrentThread->FireSystemCall()
+}
+
+define void OnSystemCall() asm {
+	push, rax          ; Clobbered by GetCurrentTaskContext
+	push, rdi          ; Clobbered by SaveContext(GetCurrentTaskContext())
+	
+	call, @GetCurrentTaskContext
+	mov, rdi, rax      ; Parameter = CurrentTaskContext
+	call, @SaveContext ; Capure user-mode RSP and everything else (only rcx/r11 are clobbered)
+	; Of course, RIP and flags are lost (but the processor saved them for us)
+	
+	mov, {rdi} As i64*, rcx        ; Context.RIP = rcx
+	mov, {rdi + 0x80} As i64*, r11 ; Context.Flags = r11
+	
+	pop, rax
+	mov, {rdi + 0x38} As i64*, rax ; Context.RDI = UserRDI
+	
+	pop, rax
+	mov, {rdi + 0x88} As i64*, rax ; Context.RAX = UserRAX
+	
+	mov, {rdi + 0x20} As i64*, rsp ; Context.RSP = UserRSP
+	; (since we push rax/rdi, we need to update the saved RSP after our pops)
+	
+	jmp, @EnterSystemCall
+}
+
+#Require "./src/kernel/system-calls/IO/FileSystem.rlx"
+#Require "./src/kernel/system-calls/control/Environment.rlx"
+#Require "./src/kernel/system-calls/control/Process.rlx"
+
+define void SetupSystemCalls() {
+	i64 OldEFER := ReadMSR(AMD64_MSR_EFER)
+	WriteMSR(AMD64_MSR_EFER, OldEFER | 1)
+	WriteMSR(AMD64_MSR_STAR, (KERNEL_CS << 32) | (USER_NULL << 48))
+	WriteMSR(AMD64_MSR_LSTAR, &OnSystemCall As i64)
+	WriteMSR(AMD64_MSR_SFMASK, 0x600 | X64_RFLAGS_IF)
+	
+	SetupSystemCallTable()
+	RegisterFileSystemSystemCalls()
+	RegisterEnvironmentSystemCalls()
+	RegisterProcessSystemCalls()
+}
+
+define void UserModeReturnStub() asm {
+	mov, rax, 60
+	syscall
+}

@@ -1,0 +1,25 @@
+define i64 SystemCallGetWorkingDirectory(i8* Buffer, i32 Size) {
+	if (Size >= 1) {
+		*Buffer := '.'
+	}
+	
+	return 1
+}
+define i64 SystemCallSetWorkingDirectory(i8* Path) {
+	return 0
+}
+
+define void SystemCallExit(i64 Code) {
+	CurrentThread->Exit(Code As i32)
+}
+
+define void SystemCallExitGroup(i64 Code) {
+	CurrentProcess->ExitAll(Code As i32)
+}
+
+define void RegisterProcessSystemCalls() {
+	SystemCalls->Register(LINUX_SYSCALL_GETCWD, &SystemCallGetWorkingDirectory)
+	SystemCalls->Register(LINUX_SYSCALL_CHDIR, &SystemCallSetWorkingDirectory)
+	SystemCalls->Register(LINUX_SYSCALL_EXIT, &SystemCallExit)
+	SystemCalls->Register(LINUX_SYSCALL_EXIT_GROUP, &SystemCallExitGroup)
+}

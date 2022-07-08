@@ -1,0 +1,138 @@
+define void SystemCallSetSignalAction(i32 Number, LinuxSignalAction* New, LinuxSignalAction* Old) {
+	if (Old) {
+		MoveMemory(Old, CurrentProcess~>Signals->Actions[Number], #LinuxSignalAction)
+	}
+	
+	MoveMemory(CurrentProcess~>Signals->Actions[Number], New, #LinuxSignalAction)
+}
+
+define void SystemCallSetSignalMask(i32 Operation, i64* New, i64* Old) {
+	i64 Mask := CurrentThread->SignalMask
+	
+	if (Old != null) {
+		*Old := Mask
+	}
+	
+	if (New != null) {
+		if (Operation = LINUX_SIGNAL_MASK_BLOCK) {
+			Mask |= *New
+		}
+		else if (Operation = LINUX_SIGNAL_MASK_UNBLOCK) {
+			Mask &= ~(*New)
+		}
+		else if (Operation = LINUX_SIGNAL_MASK_SET) {
+			Mask := *New
+		}
+	}
+	
+	CurrentThread->SignalMask := Mask
+}
+
+define void* SystemCallProgramBreak(void* NewBreak) {
+	if (NewBreak = null) {
+		return CurrentProcess->GetBreak()
+	}
+	else {
+		return CurrentProcess->SetBreak(NewBreak)
+	}
+}
+
+i32 LINUX_PROTECTION_READ  := 0x1
+i32 LINUX_PROTECTION_WRITE := 0x2
+i32 LINUX_PROTECTION_EXECUTE  := 0x4
+i32 LINUX_PROTECTION_NONE  := 0x0
+
+i32 LINUX_MAP_SHARED := 0x1
+i32 LINUX_MAP_PRIVATE := 0x2
+i32 LINUX_MAP_TYPE_MASK := 0xF
+
+i32 LINUX_MAP_FIXED := 0x10
+i32 LINUX_MAP_ANONYMOUS := 0x20
+
+define i64 ConvertLinuxMemoryProtection(i32 Protection) {
+	if (Protection = LINUX_PROTECTION_NONE) {
+		return 0
+	}
+	
+	i64 Result := PAGE_USER
+	
+	if (Protection & LINUX_PROTECTION_WRITE) {
+		Result |= PAGE_WRITE
+	}
+	
+	return Result
+}
+
+define void* SystemCallMapMemory(void* Address, i32 Size, i32 Protection, i32 Flags, i32 File, i32 Offset) {
+	i64 MemoryFlags := ConvertLinuxMemoryProtection(Protection)
+	
+	i32 PageCount := SizeToPageCount(Size)
+	MemoryMapping* Mapping := null
+	
+	if (Address = null) {
+		Mapping := CurrentProcess->Mappings->MapAnonymous(PageCount, MemoryFlags)
+		Address := Mapping->Virtual
+		
+		if (Flags & LINUX_MAP_ANONYMOUS) {
+			SetMemory(Address, Size, 0)
+		}
+	}
+	else {
+		Mapping := CurrentProcess->Mappings->FindVirtual(Address, Size)
+		
+		if (Mapping) {
+			CurrentProcess->Mappings->UpdateFlags(Mapping, MemoryFlags)
+		}
+		else {
+			Mapping := CurrentProcess->Mappings->MapAddressAnonymous(Address, PageCount, MemoryFlags)
+			
+			if (Flags & LINUX_MAP_ANONYMOUS) {
+				SetMemory(Address, Size, 0)
+			}
+		}
+	}
+	
+	return Address
+}
+
+define i64 SystemCallUnMapMemory(void* Address, i32 Size) {
+	MemoryMapping* Mapping := CurrentProcess->Mappings->FindVirtual(Address, Size)
+	
+	if (Mapping) {
+		CurrentProcess->Mappings->Delete(Mapping)
+	}
+	else {
+		return -1
+	}
+	
+	return 0
+}
+
+i32 ARCH_PRCTL_SET_GS := 0x1001
+i32 ARCH_PRCTL_SET_FS := 0x1002
+i32 ARCH_PRCTL_GET_FS := 0x1003
+i32 ARCH_PRCTL_GET_GS := 0x1004
+
+define void SystemCallArchPrctl(i64 SubFunction, void* Parameter) {
+	if (SubFunction = ARCH_PRCTL_SET_GS) {
+		SetGS(Parameter)
+	}
+	else if (SubFunction = ARCH_PRCTL_GET_GS) {
+		*(Parameter As i64*) := GetGS() As i64
+	}
+	else if (SubFunction = ARCH_PRCTL_SET_FS) {
+		SetFS(Parameter)
+	}
+	else if (SubFunction = ARCH_PRCTL_GET_FS) {
+		*(Parameter As i64*) := GetFS() As i64
+	}
+}
+
+define void RegisterEnvironmentSystemCalls() {
+	SystemCalls->Register(LINUX_SYSCALL_RT_SIGACTION, &SystemCallSetSignalAction)
+	SystemCalls->Register(LINUX_SYSCALL_RT_SIGPROCMASK, &SystemCallSetSignalMask)
+	SystemCalls->Register(LINUX_SYSCALL_BRK, &SystemCallProgramBreak)
+	SystemCalls->Register(LINUX_SYSCALL_MMAP, &SystemCallMapMemory)
+	SystemCalls->Register(LINUX_SYSCALL_MUNMAP, &SystemCallUnMapMemory)
+	SystemCalls->Register(LINUX_SYSCALL_ARCH_PRCTL, &SystemCallArchPrctl)
+}
