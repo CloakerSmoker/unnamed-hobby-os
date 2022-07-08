@@ -28,7 +28,7 @@ LIGHT_CLEAN_FILES+= EFIBoot.qcow2
 $(BUILD)/Disk.img: $(BUILD)/GPTTool.elf
 $(BUILD)/Disk.img: $(BUILD)/FAT32Tool.elf $(BUILD)/Boot.efi
 $(BUILD)/Disk.img: $(BUILD)/Ext2Tool.elf $(BUILD)/Kernel.elf
-$(BUILD)/Disk.img:  
+$(BUILD)/Disk.img:
 	rm -f $@
 
 	$(BUILD)/GPTTool.elf "File($@,512)" \
@@ -48,7 +48,7 @@ $(BUILD)/Disk.img:
 	
 	$(BUILD)/Ext2Tool.elf "File($@,512)>GPT(1)" \
 		"format 32 m" \
-		"import Kernel.elf" \
+		"import $(BUILD)/Kernel.elf Kernel.elf" \
 		"import-all $(ROOT_EXTRA)" \
 		"mkdir dev" \
 		"cd dev" \
