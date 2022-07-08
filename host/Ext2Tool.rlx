@@ -588,8 +588,8 @@ define void Prompt(Ext2* FS, Ext2INode** RootINode) {
 define i32 Main(i64 ArgC, i8** ArgV) {
 	GetArgs(&ArgC, &ArgV)
 	
-	i8* ProgramDirectory := GetAbsolutePath(Concatenate(ArgV[0], "/../"))
-	SetWorkingDirectory(ProgramDirectory)
+	;i8* ProgramDirectory := GetAbsolutePath(Concatenate(ArgV[0], "/../"))
+	;SetWorkingDirectory(ProgramDirectory)
 	
 	BlockDevice* Device := InstantiateBlockDeviceChainFromPath(ArgV[1])
 	
