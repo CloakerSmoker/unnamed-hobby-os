@@ -9,7 +9,7 @@ i32 BYTES_PER_PIXEL := 4
 i32 TERMINAL_FOREGROUND := 0xFF_FF_FF
 i32 TERMINAL_BACKGROUND := 0x00_00_00
 
-void* BOOT_FONT_FON := i8[#File "./src/misc/fonts/OlivettiThin_8x14.fon"]
+void* BOOT_FONT_FON := i8[#File "./misc/fonts/OlivettiThin_8x14.fon"]
 
 i8 USE_INTERRUPT_STUBS := true
 i8 USE_PAGE_FAULT_HANDLER := false
