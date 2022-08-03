@@ -1,6 +1,6 @@
 # Config-ish
 
-ROOT_EXTRA= TestFile.txt test.txt 
+ROOT_EXTRA= TestFile.txt test.txt sponge.six dum.six
 BIN_EXTRA= 
 
 RLX_FLAGS?= --crlf --dwarf --debug --silent
@@ -143,7 +143,7 @@ clean-all: clean
 	rm -f $(CLEAN_FILES)
 
 depend dep deps:
-	rm $(BUILD)/*.d
+	rm -f $(BUILD)/*.d
 	$(MAKE) secret-internal-deps
 
 all: Disk.qcow2
