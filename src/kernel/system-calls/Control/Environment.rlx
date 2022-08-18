@@ -128,6 +128,10 @@ define void SystemCallArchPrctl(i64 SubFunction, void* Parameter) {
 	}
 }
 
+define i64 SystemCallSetThreadIDAdress(i64* pThreadID) {
+	return -LINUX_ERROR_NOENT
+}
+
 define void RegisterEnvironmentSystemCalls() {
 	SystemCalls->Register(LINUX_SYSCALL_RT_SIGACTION, &SystemCallSetSignalAction)
 	SystemCalls->Register(LINUX_SYSCALL_RT_SIGPROCMASK, &SystemCallSetSignalMask)
@@ -135,4 +139,5 @@ define void RegisterEnvironmentSystemCalls() {
 	SystemCalls->Register(LINUX_SYSCALL_MMAP, &SystemCallMapMemory)
 	SystemCalls->Register(LINUX_SYSCALL_MUNMAP, &SystemCallUnMapMemory)
 	SystemCalls->Register(LINUX_SYSCALL_ARCH_PRCTL, &SystemCallArchPrctl)
+	SystemCalls->Register(LINUX_SYSCALL_SET_TID_ADDRESS, &SystemCallSetThreadIDAdress)
 }

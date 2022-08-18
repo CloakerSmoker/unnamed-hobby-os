@@ -98,24 +98,41 @@ define i64 SystemCallWrite(i64 FileDescriptor, i8* Buffer, i32 Size) {
 	return Handle->Write(Buffer, Size)
 }
 
-define void SystemCallSendFile(i64 Out, i64 In, i64* Offset, i64 Count) {
-	;Print("SendFile(%x, %x, %x, %x)\n", Out, In, Offset, Count)
+define i64 SystemCallSendFile(i64 Out, i64 In, i64* Offset, i64 Size) {
+	;Print("SendFile(%x, %x, %x, %x)\n", Out, In, Offset, Size)
 	
-	for (i32 Index := 0, Index < Count, Index++) {
-		i8 Byte := 0
+	i64 Count := Size
+	i64 Written := 0
+
+	void* Temp := KernelPageAllocator->AllocateVirtual(2)
+	i32 ChunkSize := 2 * PAGE_SIZE
+
+	while (Count != 0) {
+		i32 ThisChunkSize := ChunkSize
+
+		if (ThisChunkSize > Count) {
+			ThisChunkSize := Count As i32
+		}
+
+		i64 ThisChunkRead := SystemCallRead(In, Temp, ThisChunkSize)
 		
-		i64 Result := SystemCallRead(In, &Byte, 1)
+		;Info("Read %x/%x bytes\n", ThisChunkRead, ThisChunkSize)
 		
-		;Print("Read %i bytes\n", Result)
-		
-		if (Result != 1) {
+		i64 ThisChunkWritten := SystemCallWrite(Out, Temp, ThisChunkRead As i32)
+
+		;Info("Written %x/%x bytes\n", ThisChunkWritten, ThisChunkSize)
+
+		if (ThisChunkRead != ThisChunkSize || ThisChunkWritten != ThisChunkSize) {
 			break
 		}
-		
-		i64 Written := SystemCallWrite(Out, &Byte, 1)
-		
-		;Print("Wrote %i bytes\n", Written)
+
+		Written += ThisChunkSize
+		Count -= ThisChunkSize
 	}
+
+	KernelPageAllocator->FreeVirtual(Temp, 2)
+
+	return Written
 }
 
 define i64 SystemCallWriteMultiple(i64 FileDescriptor, void* Data, i32 Count) {

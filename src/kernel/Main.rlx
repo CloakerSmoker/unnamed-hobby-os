@@ -150,8 +150,6 @@ define void Main(BootloaderInfo* RawInfo, i32 Dummy1, i32 Dummy2) {
 		;PhysicalMemory->AddReserved(0, 0x10_0000) ; < 1mb, bootloader reserved
 		;PhysicalMemory->Add(0x10_0000, 0x350_0000) ; free memory
 		
-		PhysicalMemory := PageHeap:Adopt(0x10_0000, 0x500)
-		
 		i32 KernelSize := (RawInfo->MaxKernelAddress - (ADDRESS_OF_KERNEL As i64)) As i32
 		
 		EarlyKernel->Size := KernelSize

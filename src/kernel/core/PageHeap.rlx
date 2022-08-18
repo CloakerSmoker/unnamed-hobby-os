@@ -170,4 +170,4 @@ struct PageHeap {
 	}
 }
 
-PageHeap* PhysicalMemory := null
+PageHeap* PhysicalMemory := PageHeap:Adopt(0x10_0000, 0x500)

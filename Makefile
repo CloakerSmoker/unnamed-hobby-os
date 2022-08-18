@@ -1,7 +1,7 @@
 # Config-ish
 
 ROOT_EXTRA= TestFile.txt test.txt sponge.six dum.six
-BIN_EXTRA= 
+BIN_EXTRA=cat ed hexedit vi
 
 RLX_FLAGS?= --crlf --dwarf --debug --silent
 EFI_RLX_FLAGS?= $(RLX_FLAGS) --pe-reloc --pe --efi
@@ -28,6 +28,7 @@ LIGHT_CLEAN_FILES+= EFIBoot.qcow2
 $(BUILD)/Disk.img: $(BUILD)/GPTTool.elf
 $(BUILD)/Disk.img: $(BUILD)/FAT32Tool.elf $(BUILD)/Boot.efi
 $(BUILD)/Disk.img: $(BUILD)/Ext2Tool.elf $(BUILD)/Kernel.elf
+$(BUILD)/Disk.img: $(BIN_EXTRA)
 $(BUILD)/Disk.img:
 	rm -f $@
 
