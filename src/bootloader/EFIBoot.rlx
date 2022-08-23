@@ -389,11 +389,15 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	i32 Size := 0
 
 	ELFProgramHeader* ProgramHeaders := KernelELF->GetProgramHeaders()
+	ELFProgramHeader* PHDR := null
 	
 	for (i32 Index := 0, Index < KernelELF->ProgramHeaderEntryCount, Index++) {
 		ELFProgramHeader* NextProgramHeader := ProgramHeaders[Index]
-		
-		if (NextProgramHeader->Type = ELF_SEGMENT_TYPE_LOAD) {
+
+		if (NextProgramHeader->Type = ELF_SEGMENT_TYPE_PHDR) {
+			PHDR := NextProgramHeader
+		}
+		else if (NextProgramHeader->Type = ELF_SEGMENT_TYPE_LOAD) {
 			i64 NextEnd := NextProgramHeader->VirtualAddress + NextProgramHeader->MemorySize
 			
 			if (NextEnd > MaxKernelAddress) {
@@ -401,8 +405,10 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 			}
 
 			if (NextProgramHeader->Flags & ELF_SEGMENT_FLAGS_EXECUTE = 0) {
-				Data := null + NextProgramHeader->PhysicalAddress
-				Size := NextProgramHeader->MemorySize As i32
+				if (NextProgramHeader->PhysicalAddress != PHDR->PhysicalAddress) {
+					Data := null + NextProgramHeader->PhysicalAddress
+					Size := NextProgramHeader->MemorySize As i32
+				}
 			}
 		}
 	}

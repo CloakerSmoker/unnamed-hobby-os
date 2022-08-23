@@ -198,7 +198,7 @@ define void Main(BootloaderInfo* RawInfo, i32 Dummy1, i32 Dummy2) {
 
 		void* VirtualMain := EarlyPhysicalToVirtual(&Main)
 
-		Info("Wiping globals, calling virtual main at %x\n", VirtualMain)
+		Info("Wiping globals (%x, %x), calling virtual main at %x\n", RawInfo->Data, RawInfo->Size, VirtualMain)
 
 		; Zero all globals so everything reinitializes
 		FastSetMemory8(RawInfo->Data, 0, RawInfo->Size)
