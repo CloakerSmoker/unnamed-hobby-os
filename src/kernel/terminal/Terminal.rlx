@@ -44,6 +44,13 @@ struct TerminalInstance {
 		
 		return 0
 	}
+
+	define void UpdateLinks() {
+		if (this->Output && this->Input) {
+			this->Output->DeviceControl(TERMINAL_COMPONENT_SET_OTHER, this->Input)
+			this->Input->DeviceControl(TERMINAL_COMPONENT_SET_OTHER, this->Output)
+		}
+	}
 	
 	define i32 DeviceControl(i32 Function, void* Parameter) {
 		if (Function = TERMINAL_INITIALIZE) {
@@ -57,21 +64,13 @@ struct TerminalInstance {
 			this->Input := Parameter
 			
 			this->Input->DeviceControl(TERMINAL_COMPONENT_SET_CONFIG, this~>Config)
-			this->Input->DeviceControl(TERMINAL_COMPONENT_SET_OTHER, this->Output)
-			
-			if (this->Output) {
-				this->Output->DeviceControl(TERMINAL_COMPONENT_SET_OTHER, this->Input)
-			}
+			this->UpdateLinks()
 		}
 		else if (Function = TERMINAL_SET_OUTPUT) {
 			this->Output := Parameter
 			
 			this->Output->DeviceControl(TERMINAL_COMPONENT_SET_CONFIG, this~>Config)
-			this->Output->DeviceControl(TERMINAL_COMPONENT_SET_OTHER, this->Input)
-			
-			if (this->Input) {
-				this->Input->DeviceControl(TERMINAL_COMPONENT_SET_OTHER, this->Output)
-			}
+			this->UpdateLinks()
 		}
 		else if (Function = TERMIOS_GET_CONFIG) {
 			TermiosConfig* Config := Parameter
@@ -126,10 +125,9 @@ struct TerminalInstance {
 		
 		if (Major = TERMINAL_MAJOR && Minor = TERMINAL_MINOR) {
 			; We are the default terminal, inform our descendents
-			
-			this->Input := DefaultTerminalInput
-			this->Output := DefaultTerminalOutput
-			
+
+			this->DeviceControl(TERMINAL_SET_INPUT, DefaultTerminalInput)
+			this->DeviceControl(TERMINAL_SET_OUTPUT, DefaultTerminalOutput)
 			this->DeviceControl(TERMINAL_INITIALIZE, null)
 		}
 	}

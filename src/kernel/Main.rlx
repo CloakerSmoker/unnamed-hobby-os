@@ -338,16 +338,13 @@ define void MainContinuation() {
 	
 	KernelHeap->Initialize(ADDRESS_OF_KERNEL_HEAP, BYTES_IN_2MB)
 	Info("Initialized heap\n")
+
+	; Terminals created as TERMINAL_MAJOR:TERMINAL_MINOR will grab DefaultTerminal(Input|Output)
+
+	DefaultTerminalInput := NewHandle(&TerminalInputStreamPrototype)
+	DefaultTerminalOutput := NewHandle(&TerminalRendererPrototype, NativeScreen, BootFont, TERMINAL_FOREGROUND, TERMINAL_BACKGROUND)
 	
 	InitializeHandle(&TerminalFilePrototype, KernelTerminal, TERMINAL_MAJOR, TERMINAL_MINOR)
-	
-	DefaultTerminalInput := NewHandle(&TerminalInputStreamPrototype)
-	KernelTerminal->DeviceControl(TERMINAL_SET_INPUT, DefaultTerminalInput)
-	
-	DefaultTerminalOutput := NewHandle(&TerminalRendererPrototype, NativeScreen, BootFont, TERMINAL_FOREGROUND, TERMINAL_BACKGROUND)
-	KernelTerminal->DeviceControl(TERMINAL_SET_OUTPUT, DefaultTerminalOutput)
-	
-	KernelTerminal->DeviceControl(TERMINAL_INITIALIZE, null)
 	
 	Printer := &KernelPrinter
 	
