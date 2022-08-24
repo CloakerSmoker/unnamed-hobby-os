@@ -65,12 +65,39 @@ struct InputToTerminalEscapesStream {
 			
 			if (Modifiers & KEY_MODIFIER_SHIFT = KEY_MODIFIER_SHIFT) {
 				; shift + lowercase_letter = uppercase_letter
+
+				Modifiers ^= KEY_MODIFIER_SHIFT
 				
 				if (AToZ) {
 					KeyCode ^= 0x20
-					Modifiers ^= KEY_MODIFIER_SHIFT
 					
 					AToZ := false
+				}
+				else if ('0' <= KeyCode && KeyCode <= '9') {
+					i8* ShiftedNumbers := i8[')', '!', '@', '#', '$', '%', '^', '&', '*', '(']
+					KeyCode := ShiftedNumbers[KeyCode - '0']
+				}
+				else if (',' <= KeyCode && KeyCode <= '/') {
+					i8* ShiftedMisc := i8['<', '_', '>', '?']
+					KeyCode := ShiftedMisc[KeyCode - ',']
+				}
+				else if (KeyCode = ''') {
+					KeyCode := '"'
+				}
+				else if (KeyCode = ';') {
+					KeyCode := ':'
+				}
+				else if (KeyCode = '[') {
+					KeyCode := '{'
+				}
+				else if (KeyCode = ']') {
+					KeyCode := '}'
+				}
+				else if (KeyCode = '=') {
+					KeyCode := '+'
+				}
+				else if (KeyCode = '\') {
+					KeyCode := '|'
 				}
 			}
 			

@@ -93,7 +93,13 @@ define i32 SystemCallPoll(LinuxPollTarget* Targets, i32 TargetCount, i32 Timeout
 define i64 SystemCallRead(i64 FileDescriptor, i8* Buffer, i32 Size) {
 	FileHandle* Handle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
 	
-	return Handle->Read(Buffer, Size)
+	i64 ActualSize := Handle->Read(Buffer, Size)
+
+	if (DEBUG_SYS_READ) {
+		Info("sys_read(%x, %x) -> %x\n%hexdump\n", FileDescriptor, Size, ActualSize, Buffer, ActualSize)
+	}
+
+	return ActualSize
 }
 
 define i64 SystemCallWrite(i64 FileDescriptor, i8* Buffer, i32 Size) {

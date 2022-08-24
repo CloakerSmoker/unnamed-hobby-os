@@ -11,13 +11,13 @@ i32 TERMINAL_BACKGROUND := 0x00_00_00
 
 void* BOOT_FONT_FON := i8[#File "./misc/fonts/OlivettiThin_8x14.fon"]
 
-i8 USE_INTERRUPT_STUBS := true
-i8 USE_PAGE_FAULT_HANDLER := true
+i8 USE_INTERRUPT_STUBS := false
+i8 USE_PAGE_FAULT_HANDLER := false
 i8 RECOVER_FROM_USER_PAGE_FAULT := false
 
 i8 DEBUG_SCHEDULER         := false ; Logs task switches plus why
 i8 DEBUG_SYSTEM_CALLS      := true ; Logs system call names/parameters + result
-i8 DEBUG_SYS_READ          := false ; Logs a hexdump of data moved by `read()`
+i8 DEBUG_SYS_READ          := true ; Logs a hexdump of data moved by `read()`
 i8 DEBUG_SYS_WRITE         := false ; Logs a hexdump of data moved by `write()`
 i8 DEBUG_TERMINAL_ESCAPES  := false ; Logs ANSI escapes as the terminal processes them
 i8 DEBUG_EXT2_OPTIMIZATION := false ; Logs when the ext2 driver tries to get smart and might break things

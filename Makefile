@@ -148,3 +148,6 @@ depend dep deps:
 	$(MAKE) secret-internal-deps
 
 all: Disk.qcow2
+
+boot: Disk.qcow2
+	qemu-system-x86_64 -bios OVMF.fd -hda Disk.qcow2 -serial stdio --cpu max,la57=off -s $(QEMU_FLAGS)
