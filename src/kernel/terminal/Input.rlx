@@ -99,7 +99,6 @@ struct TerminalInputStreamInstance {
 			else {
 				this->Input(this->Config->InterruptCharacter)
 			}
-			
 		}
 		else {
 			this~>Escaper->OnInput(Modifiers, KeyCode)
@@ -137,7 +136,7 @@ struct TerminalInputStreamInstance {
 		if (this->LocalFlag(LINUX_TERMIOS_LOCAL_FLAG_ICANON)) {
 			Buffer := this~>LineBuffer
 		}
-		
+
 		i32 Result := 0
 	
 		if (Mode & POLL_CAN_READ && Buffer->Available() != 0) {

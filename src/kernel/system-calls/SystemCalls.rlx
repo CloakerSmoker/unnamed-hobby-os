@@ -4,6 +4,8 @@ i32 SYSTEM_CALL_COUNT := LINUX_SYSCALL_COUNT
 
 #Require "./src/kernel/system-calls/SystemCallTable.rlx"
 
+i64 SyscallCount := 0
+
 define void HandleSystemCall(AMD64Context* Context) {
 	SendEOI(0) ; HACK: PIC gets confused into thinking we've handling a very high priority interrupt
 	SendEOI(8) ;  so we need to convince it otherwise in order to get interrupts while handling syscalls
@@ -11,24 +13,31 @@ define void HandleSystemCall(AMD64Context* Context) {
 	i32 Number := Context->EAX
 	
 	;Print("Syscall %x\n", Number)
+
+	SyscallCount += 1
 	
 	if (DEBUG_SYSTEM_CALLS) {
 		i8* Name := GetLinuxSysCallName(Number)
 		
-		Info("%s(%x, %x, %x, %x, %x, %x)\n", Name, Context->RDI, Context->RSI, Context->RDX, Context->R10, Context->R8, Context->R9)
+		Info("%i: %s(%x, %x, %x, %x, %x, %x)\n", SyscallCount, Name, Context->RDI, Context->RSI, Context->RDX, Context->R10, Context->R8, Context->R9)
 	}
 	
 	try {
 		Context->RAX := SystemCalls->Invoke(Number, Context->RDI, Context->RSI, Context->RDX, Context->R10, Context->R8, Context->R9)
 	}
 	catch (i64 Code) {
-		Info("Exception %l during syscall\n", Code)
-		
 		i8* Name := GetLinuxSysCallName(Number)
-		
-		Info("%s(%x, %x, %x, %x, %x, %x)\n", Name, Context->RDI, Context->RSI, Context->RDX, Context->R10, Context->R8, Context->R9)
+			
+		Info("During syscall %i: %s(%x, %x, %x, %x, %x, %x) -> ", SyscallCount, Name, Context->RDI, Context->RSI, Context->RDX, Context->R10, Context->R8, Context->R9)
+		Info("Exception %l\n", Code)
 		
 		loop {}
+	}
+
+	if (DEBUG_SYSTEM_CALLS) {
+		i8* Name := GetLinuxSysCallName(Number)
+		
+		Info("%i: %s(%x, %x, %x, %x, %x, %x) -> %x\n", SyscallCount, Name, Context->RDI, Context->RSI, Context->RDX, Context->R10, Context->R8, Context->R9, Context->RAX)
 	}
 	
 	;ResumeUserMode(Context)

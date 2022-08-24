@@ -78,7 +78,7 @@ define void* SystemCallMapMemory(void* Address, i32 Size, i32 Protection, i32 Fl
 		}
 	}
 	else {
-		Mapping := CurrentProcess->Mappings->FindVirtual(Address, Size)
+		Mapping := CurrentProcess->Mappings->FindVirtual(Address, PageCount)
 		
 		if (Mapping) {
 			CurrentProcess->Mappings->UpdateFlags(Mapping, MemoryFlags)

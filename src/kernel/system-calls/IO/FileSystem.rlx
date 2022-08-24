@@ -62,22 +62,32 @@ define i32 SystemCallPoll(LinuxPollTarget* Targets, i32 TargetCount, i32 Timeout
 	if (Timeout < 0) {
 		Timeout := 0x7FFF_FFFF
 	}
+
+	i64 End := GetUptimeMS() + Timeout
 	
-	i32 CountWithReturnEvents := 0
-	
-	for (i32 Index := 0, Index < TargetCount, Index++) {
-		LinuxPollTarget* Target := Targets[Index]
-		
-		if (Target->FileDescriptor = 0 && Target->RequestedEvents & LINUX_POLL_EVENT_INPUT_READY) {
-			;if (ShellPollForInput(Timeout)) {
-			;	Target->ReturnedEvents |= LINUX_POLL_EVENT_INPUT_READY
-			;	
-			;	CountWithReturnEvents++
-			;}
+	while (GetUptimeMS() <= End) {
+		i32 CountWithReturnEvents := 0
+
+		for (i32 Index := 0, Index < TargetCount, Index++) {
+			LinuxPollTarget* TargetInfo := Targets[Index]
+			
+			FileHandle* Target := CurrentProcess->FileDescriptorsToHandles[TargetInfo->FileDescriptor]
+
+			TargetInfo->ReturnedEvents := Target->Poll(TargetInfo->RequestedEvents) As i16
+
+			if (TargetInfo->ReturnedEvents) {
+				CountWithReturnEvents += 1
+			}
 		}
+
+		if (CountWithReturnEvents) {
+			return CountWithReturnEvents
+		}
+
+		SchedulerYield()
 	}
-	
-	return CountWithReturnEvents
+
+	return 0
 }
 
 define i64 SystemCallRead(i64 FileDescriptor, i8* Buffer, i32 Size) {
