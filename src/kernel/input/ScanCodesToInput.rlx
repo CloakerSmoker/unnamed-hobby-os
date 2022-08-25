@@ -48,6 +48,9 @@ struct ScanCodeParser {
 		else if (Code = SCANCODE_BACKSPACE) {
 			return KEY_BACKSPACE
 		}
+		else if (Code = SCANCODE_ESCAPE) {
+			return KEY_ESCAPE
+		}
 		else if (0 <= Code && Code <= 58) {
 			return Map[Code]
 		}
