@@ -54,7 +54,14 @@ define void OnPITInterrupt(InterruptContext* Context) {
 	
 	;Info("T")
 	
-	OnHardwareTimerTick->Fire(PITWhole As void*)
+	if (DEBUG_SLOW_CLOCK) {
+		if (TickCount % DEBUG_SLOW_CLOCK = 0) {
+			OnHardwareTimerTick->Fire(PITWhole As void*)
+		}
+	}
+	else {
+		OnHardwareTimerTick->Fire(PITWhole As void*)
+	}
 	
 	SendEOI(0)
 }

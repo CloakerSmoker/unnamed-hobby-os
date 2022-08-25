@@ -153,6 +153,9 @@ struct InputToTerminalEscapesStream {
 			else if (KeyCode = KEY_PAGE_DOWN) {
 				this->OutputVT(Modifiers, '6')
 			}
+			else if (KeyCode = KEY_ESCAPE) {
+				this->Output("\e", 1)
+			}
 		}
 	}
 	

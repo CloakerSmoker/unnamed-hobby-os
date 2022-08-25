@@ -1,3 +1,5 @@
+i64 MEMORY_FIFO_READ_OVERFLOW := 'MFRO'
+
 struct MemoryFIFO {
 	union {
 		void* RawBuffer
@@ -61,6 +63,11 @@ struct MemoryFIFO {
 	
 	define void Read(void* RawOut, i32 Size) {
 		i8* Out := RawOut
+
+		if (this->ReadOffset + Size > this->WriteOffset) {
+			Info("MemoryFIFO Read Overflow: %stackdump")
+			Throw(MEMORY_FIFO_READ_OVERFLOW)
+		}
 		
 		for (i32 Index := 0, Index < Size, Index++) {
 			Out[Index] := *this->BytePosition(this->ReadOffset + Index)

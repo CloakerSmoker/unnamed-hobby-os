@@ -68,6 +68,7 @@ struct UserThread {
 	LinuxSignalUserContext* CurrentSignalContext
 	i32 CurrentSignal
 	
+	i8 Killed
 	i32 ExitCode
 	Event OnKilled
 	
@@ -106,6 +107,10 @@ struct UserThread {
 	
 		SaveContext(this~>AbortSystemCallState)
 		DisableInterrupts()
+
+		if (this->Killed) {
+			SchedulerEnd()
+		}
 		
 		i32 SignalErrorNumber := 0
 		i32 SignalCode := 0
@@ -120,21 +125,17 @@ struct UserThread {
 			;   but I think we can skip that.
 			
 			this->SetupSignalState(Signal, SignalErrorNumber, SignalCode)
-			
-			if !(this->KernelTask->CouldRun()) {
-				SchedulerEnd()
-			}
 		}
 		else if (this->HasPendingSystemCall) {
 			EnableInterrupts()
 			HandleSystemCall(this->UserTask~>Context)
 			DisableInterrupts()
 			
-			if !(this->KernelTask->CouldRun()) {
-				SchedulerEnd()
-			}
-			
 			this->HasPendingSystemCall := false
+		}
+
+		if (this->Killed) {
+			SchedulerEnd()
 		}
 		
 		MoveMemory(this->KernelTask~>Context, this~>AbortSystemCallState, #AMD64Context)
@@ -145,12 +146,9 @@ struct UserThread {
 	}
 	
 	define void Exit(i32 Code) {
+		this->Killed := true
 		this->ExitCode := Code
 		this~>OnKilled->Fire(this)
-		
-		DisableInterrupts()
-		this->KernelTask->State := TASK_KILLED
-		EnableInterrupts()
 		
 		;KernelHeap->Free(CurrentProcess)
 		;Mappings->Delete()
