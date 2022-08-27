@@ -1,6 +1,5 @@
 #Require "./src/linux/Termios.rlx"
 
-#Require "./src/kernel/graphics/Screen.rlx"
 #Require "./src/kernel/graphics/Font.rlx"
 #Require "./src/kernel/graphics/Sixel.rlx"
 
@@ -28,7 +27,7 @@ struct TerminalRendererInstance {
 	#Include "./src/kernel/terminal/InstanceComponent.rlx"
 	FileHandle* Input
 	
-	Screen* Screen
+	PixelBuffer* Output
 	
 	i32 X
 	i32 Y
@@ -55,23 +54,23 @@ struct TerminalRendererInstance {
 	SixelRenderer Sixel
 	
 	define void Clear() {
-		this->Screen->Clear(this->BackgroundColor)
+		this->Output->Clear(this->BackgroundColor)
 	}
 	
 	define void CalculateBounds() {
 		this->X := 0
 		this->Y := 0
 		
-		this->Width  := this->Screen->Canvas->Width()  / this->Font->Width
-		this->Height := this->Screen->Canvas->Height() / this->Font->Height
+		this->Width  := this->Output->Width()  / this->Font->Width
+		this->Height := this->Output->Height() / this->Font->Height
 		this->MaxColumn := this->Width  - 1
 		this->MaxRow    := this->Height - 1
 		
 		this->Clear()
 	}
 	
-	define void Adopt(Screen* NewScreen, Font* NewFont, i32 Foreground, i32 Background) {
-		this->Screen := NewScreen
+	define void Adopt(PixelBuffer* Output, Font* NewFont, i32 Foreground, i32 Background) {
+		this->Output := Output
 		this->Font := NewFont
 		
 		this->DefaultForegroundColor := Foreground
@@ -84,7 +83,7 @@ struct TerminalRendererInstance {
 		
 		this->CalculateBounds()
 		
-		this~>Sixel->Initialize(this->Screen->Canvas)
+		this~>Sixel->Initialize(this->Output)
 	}
 	
 	define void Initialize(void** Options, i32 Count) {
@@ -96,22 +95,22 @@ struct TerminalRendererInstance {
 		this->BackgroundColor := BackgroundColor
 	}
 	
-	define void ConvertToScreenCoords(i32 XIn, i32 YIn, i32* XOut, i32* YOut) {
+	define void ConvertToOutputCoords(i32 XIn, i32 YIn, i32* XOut, i32* YOut) {
 		*XOut := XIn * this->Font->Width
 		*YOut := YIn * this->Font->Height
 	}
 	
 	define void ClearToLineEnd(i32 X, i32 Y) {
-		i32 ScreenX := 0
-		i32 ScreenY := 0
+		i32 OutputX := 0
+		i32 OutputY := 0
 		
-		this->ConvertToScreenCoords(X, Y, &ScreenX, &ScreenY)
+		this->ConvertToOutputCoords(X, Y, &OutputX, &OutputY)
 		
 		i32 Width := (this->MaxColumn - X) * this->Font->Width
 		
 		;Info("(%i, %i) -> (%i, %i)\n", ScreenX, ScreenY, ScreenX + Width, ScreenY + this->Font->Height)
 		
-		this->Screen->DrawRectangle(ScreenX, ScreenY, Width, this->Font->Height, this->BackgroundColor)
+		this->Output->DrawRectangle(OutputX, OutputY, Width, this->Font->Height, this->BackgroundColor)
 	}
 	define void ClearLine(i32 Y) {
 		this->ClearToLineEnd(0, Y)
@@ -129,14 +128,14 @@ struct TerminalRendererInstance {
 		
 		this->Y -= LineCount
 		
-		this->Screen->VerticalScroll(-ScrollSize)
+		this->Output->VerticalScroll(-ScrollSize, this->BackgroundColor)
 	}
 	
 	define void NewLine() {
 		this->Y += 1
 		
-		i32 ScreenX := 0
-		i32 ScreenY := 0
+		i32 OutputX := 0
+		i32 OutputY := 0
 		
 		if (this->Y >= this->Height) {
 			this->ScrollUp(4)
@@ -150,10 +149,10 @@ struct TerminalRendererInstance {
 			return
 		}
 		
-		i32 ScreenX := 0
-		i32 ScreenY := 0
+		i32 OutputX := 0
+		i32 OutputY := 0
 		
-		this->ConvertToScreenCoords(this->X, this->Y, &ScreenX, &ScreenY)
+		this->ConvertToOutputCoords(this->X, this->Y, &OutputX, &OutputY)
 		
 		i32 Color := this->BackgroundColor
 		
@@ -161,14 +160,14 @@ struct TerminalRendererInstance {
 			Color := this->ForegroundColor
 		}
 		
-		;this->Font->Draw(this->Screen->Canvas, Color, this->BackgroundColor, ScreenX, ScreenY, '_')
+		;this->Font->Draw(this->Output, Color, this->BackgroundColor, ScreenX, ScreenY, '_')
 		
 		i32 Height := 1
 		i32 Right  := 0
 		i32 Width  := this->Font->Width - 0
 		i32 Down   := this->Font->Height - 1
 		
-		this->Screen->DrawRectangle(ScreenX + Right, ScreenY + Down, Width, Height, Color)
+		this->Output->DrawRectangle(OutputX + Right, OutputY + Down, Width, Height, Color)
 		
 		this->CursorShown := Enable
 	}
@@ -407,9 +406,9 @@ struct TerminalRendererInstance {
 		}
 	}
 	
-	define void RawPrintCharacter(i32* ScreenX, i32* ScreenY, i8 Character) {		
+	define void RawPrintCharacter(i32* OutputX, i32* OutputY, i8 Character) {		
 		;this->Screen->DrawCharacter(*ScreenX, *ScreenY, Character, this->ForegroundColor, this->BackgroundColor)
-		this->Font->Draw(this->Screen->Canvas, this->ForegroundColor, this->BackgroundColor, *ScreenX, *ScreenY, Character)
+		this->Font->Draw(this->Output, this->ForegroundColor, this->BackgroundColor, *OutputX, *OutputY, Character)
 		
 		this->X += 1
 		
@@ -418,7 +417,7 @@ struct TerminalRendererInstance {
 			this->X := 0
 		}
 		
-		this->ConvertToScreenCoords(this->X, this->Y, ScreenX, ScreenY)
+		this->ConvertToOutputCoords(this->X, this->Y, OutputX, OutputY)
 	}
 	
 	declare i32 Print(i8*, i32)
@@ -431,11 +430,11 @@ struct TerminalRendererInstance {
 		if (Written != Count) {
 			;Info("Sixel done\n")
 			
-			i32 NewScreenY := this~>Sixel->Y
+			i32 NewOutputY := this~>Sixel->Y
 			
-			i32 NewY := NewScreenY / this->Font->Height
+			i32 NewY := NewOutputY / this->Font->Height
 			
-			if (NewScreenY % this->Font->Height) {
+			if (NewOutputY % this->Font->Height) {
 				NewY += 1
 			}
 			
@@ -459,12 +458,12 @@ struct TerminalRendererInstance {
 					this->EscapeState := TerminalEscapeState:CSI
 				}
 				else if (Next = 'P') {
-					i32 ScreenX := 0
-					i32 ScreenY := 0
-					this->ConvertToScreenCoords(this->X, this->Y, &ScreenX, &ScreenY)
+					i32 OutputX := 0
+					i32 OutputY := 0
+					this->ConvertToOutputCoords(this->X, this->Y, &OutputX, &OutputY)
 					
 					this->Mode := TerminalMode:Sixel
-					this~>Sixel->Reset(ScreenX, ScreenY)
+					this~>Sixel->Reset(OutputX, OutputY)
 					
 					i8* SixelIntro := i8[0x1B, 'P']
 					
@@ -511,10 +510,10 @@ struct TerminalRendererInstance {
 	}
 	
 	define void PrintChunk(i8* Chunk, i32 Length) {
-		i32 ScreenX := 0
-		i32 ScreenY := 0
+		i32 OutputX := 0
+		i32 OutputY := 0
 		
-		this->ConvertToScreenCoords(this->X, this->Y, &ScreenX, &ScreenY)
+		this->ConvertToOutputCoords(this->X, this->Y, &OutputX, &OutputY)
 		
 		for (i32 Index := 0, Index < Length, Index++) {
 			i8 Next := Chunk[Index]
@@ -523,19 +522,19 @@ struct TerminalRendererInstance {
 				i32 TabLength := this->GetTabLength(this->X + Index)
 				
 				for (i32 TabIndex := 0, TabIndex < TabLength, TabIndex++) {
-					this->RawPrintCharacter(&ScreenX, &ScreenY, ' ')
+					this->RawPrintCharacter(&OutputX, &OutputY, ' ')
 				}
 			}
 			else if (Next = ASCII_BACK) {
 				if (this->X) {
 					this->X -= 1
 					
-					this->ConvertToScreenCoords(this->X, this->Y, &ScreenX, &ScreenY)
-					this->Font->Draw(this->Screen->Canvas, this->ForegroundColor, this->BackgroundColor, ScreenX, ScreenY, ' ')
+					this->ConvertToOutputCoords(this->X, this->Y, &OutputX, &OutputY)
+					this->Font->Draw(this->Output, this->ForegroundColor, this->BackgroundColor, OutputX, OutputY, ' ')
 				}
 			}
 			else {
-				this->RawPrintCharacter(&ScreenX, &ScreenY, Chunk[Index])
+				this->RawPrintCharacter(&OutputX, &OutputY, Chunk[Index])
 			}
 		}
 	}

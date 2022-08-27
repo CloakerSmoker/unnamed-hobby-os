@@ -37,8 +37,10 @@ define void PrintCharacters(i8* Character, i32 Count) {
 #Require "./src/utility/PrintHelpers.rlx"
 #Require "./src/utility/DebugOutput.rlx"
 
+#Require "./src/kernel/graphics/PixelBuffer.rlx"
 #Require "./src/kernel/graphics/Font.rlx"
-#Require "./src/kernel/graphics/Screen.rlx"
+
+PixelBuffer* PrimaryDisplay := null
 
 #Require "./src/kernel/core/PageHeap.rlx"
 #Require "./src/kernel/core/Heap.rlx"
@@ -307,6 +309,8 @@ define void VisitPCIFunction(i32 Bus, i32 Slot, i32 Function) {
 Task _KernelSetupTask
 Task* KernelSetupTask := &_KernelSetupTask
 
+#Require "./src/kernel/graphics/DoubleBuffer.rlx"
+
 ;#Require "./src/drivers/networking/Ethernet.rlx"
 ;#Require "./src/drivers/networking/ARP.rlx"
 
@@ -331,18 +335,25 @@ define void MainContinuation() {
 	
 	Info("Mapped the framebuffer\n")
 	
-	NativeScreen->Adopt(ADDRESS_OF_FRAME_BUFFER, RGB32, SCREEN_WIDTH, SCREEN_HEIGHT, TERMINAL_BACKGROUND)
-	NativeScreen->Clear()
-	
-	Info("Adopted screen\n")
-	
 	KernelHeap->Initialize(ADDRESS_OF_KERNEL_HEAP, BYTES_IN_2MB)
 	Info("Initialized heap\n")
+
+	PixelBuffer* FrameBuffer := Alloc(#PixelBuffer)
+	FrameBuffer->Initialize(ADDRESS_OF_FRAME_BUFFER, RGB32, SCREEN_WIDTH, SCREEN_HEIGHT)
+
+	PrimaryDisplay := FrameBuffer
+
+	;PixelBuffer* Front := Alloc(#PixelBuffer)
+	;void* FrontBuffer := KernelPageAllocator->AllocateVirtual(FrameBufferPageCount)
+	;Front->Initialize(FrontBuffer, RGB32, SCREEN_WIDTH, SCREEN_HEIGHT)
+
+	;DoubleBufferController* DoubleBuffer := Alloc(#DoubleBufferController)
+	;DoubleBuffer->Initialize(NativeScreen->Canvas, Front)
 
 	; Terminals created as TERMINAL_MAJOR:TERMINAL_MINOR will grab DefaultTerminal(Input|Output)
 
 	DefaultTerminalInput := NewHandle(&TerminalInputStreamPrototype)
-	DefaultTerminalOutput := NewHandle(&TerminalRendererPrototype, NativeScreen, BootFont, TERMINAL_FOREGROUND, TERMINAL_BACKGROUND)
+	DefaultTerminalOutput := NewHandle(&TerminalRendererPrototype, PrimaryDisplay, BootFont, TERMINAL_FOREGROUND, TERMINAL_BACKGROUND)
 	
 	InitializeHandle(&TerminalFilePrototype, KernelTerminal, TERMINAL_MAJOR, TERMINAL_MINOR)
 	
@@ -460,6 +471,8 @@ define void MainContinuation() {
 	
 	KernelTerminal->Close()
 	KernelTerminal := NewKernelConsole
+
+	;DoubleBuffer->Flush()
 	
 	Print("Hello /dev/console!\n")
 	

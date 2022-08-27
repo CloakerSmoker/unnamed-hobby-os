@@ -369,7 +369,7 @@ define void OnCommand(i8* CommandLine) {
 		void* ChunkBuffer := KernelPageAllocator->AllocateVirtual(1)
 		
 		PixelBufferCapture Capture
-		Capture.Initialize(NativeScreen->Canvas)
+		Capture.Initialize(PrimaryDisplay)
 		i32 tot := 0
 		
 		loop {
