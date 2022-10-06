@@ -89,6 +89,13 @@ struct FileHandlePrototype {
 		Throw(HANDLE_ERROR_NOT_SUPPORTED)
 		return null
 	}
+
+	i32(void*, MemoryMappingGroup*, void*, i32, i32) MapIntoMemory
+
+	define i32 DefaultMapIntoMemory(MemoryMappingGroup* Mappings, void* Virtual, i32 Offset, i32 Size) {
+		Throw(HANDLE_ERROR_NOT_SUPPORTED)
+		return 0
+	}
 }
 
 define i32 RegisterHandlePrototype(FileHandlePrototype* Prototype) {
@@ -131,6 +138,10 @@ define i32 RegisterHandlePrototype(FileHandlePrototype* Prototype) {
 	
 	if !(Prototype->Open) {
 		Prototype->Open := &FileHandlePrototype.DefaultOpen
+	}
+
+	if !(Prototype->Open) {
+		Prototype->MapIntoMemory := &FileHandlePrototype.DefaultMapIntoMemory
 	}
 	
 	return 10 ; Fairly chosen by a dice roll
@@ -196,6 +207,10 @@ struct FileHandle {
 	
 	define FileHandle* Clone() {
 		return CloneMemory(this, this->Prototype->DataSize)
+	}
+
+	define i32 MapIntoMemory(MemoryMappingGroup* Mappings, void* Where, i32 Offset, i32 Size) {
+		return this->Prototype->MapIntoMemory(this, Mappings, Where, Offset, Size)
 	}
 }
 

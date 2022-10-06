@@ -341,14 +341,16 @@ define void MainContinuation() {
 	PixelBuffer* FrameBuffer := Alloc(#PixelBuffer)
 	FrameBuffer->Initialize(ADDRESS_OF_FRAME_BUFFER, RGB32, SCREEN_WIDTH, SCREEN_HEIGHT)
 
-	PrimaryDisplay := FrameBuffer
+	;PrimaryDisplay := FrameBuffer
 
-	;PixelBuffer* Front := Alloc(#PixelBuffer)
-	;void* FrontBuffer := KernelPageAllocator->AllocateVirtual(FrameBufferPageCount)
-	;Front->Initialize(FrontBuffer, RGB32, SCREEN_WIDTH, SCREEN_HEIGHT)
+	PixelBuffer* Front := Alloc(#PixelBuffer)
+	void* FrontBuffer := KernelPageAllocator->AllocateVirtual(FrameBufferPageCount)
+	Front->Initialize(FrontBuffer, RGB32, SCREEN_WIDTH, SCREEN_HEIGHT)
 
 	;DoubleBufferController* DoubleBuffer := Alloc(#DoubleBufferController)
-	;DoubleBuffer->Initialize(NativeScreen->Canvas, Front)
+	;DoubleBuffer->Initialize(FrameBuffer, Front)
+
+	PrimaryDisplay := Front
 
 	; Terminals created as TERMINAL_MAJOR:TERMINAL_MINOR will grab DefaultTerminal(Input|Output)
 
@@ -471,8 +473,6 @@ define void MainContinuation() {
 	
 	KernelTerminal->Close()
 	KernelTerminal := NewKernelConsole
-
-	;DoubleBuffer->Flush()
 	
 	Print("Hello /dev/console!\n")
 	
