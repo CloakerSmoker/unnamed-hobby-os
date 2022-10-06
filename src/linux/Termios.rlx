@@ -205,3 +205,10 @@ struct TermiosConfig {
 		this->ControlCharacters[LINUX_TERMIOS_CHARACTER_VEOL2 ] := 0xA
 	}
 }
+
+i32 LINUX_CONSOLE_MAKE_TONE := 0x4B30
+i32 LINUX_CONSOLE_SOUND := 0x4B2F
+
+define void* PackLinuxConsoleTone(i32 Frequency, i32 Length) {
+	return ((1193180 / Frequency) | (Length << 16)) As void*
+}

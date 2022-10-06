@@ -143,6 +143,8 @@ define void Main(BootloaderInfo* RawInfo, i32 Dummy1, i32 Dummy2) {
 		RawBootStrap(ADDRESS_OF_KERNEL_STACK + (PAGE_SIZE * 40))
 	}
 	else {
+		StopSound()
+
 		Info("Main, FrameBuffer @ %x\n", RawInfo->PhysicalFrameBuffer)
 
 		KernelInfo* EarlyKernel := RawInfo~>Kernel
@@ -343,14 +345,14 @@ define void MainContinuation() {
 
 	;PrimaryDisplay := FrameBuffer
 
-	PixelBuffer* Front := Alloc(#PixelBuffer)
-	void* FrontBuffer := KernelPageAllocator->AllocateVirtual(FrameBufferPageCount)
-	Front->Initialize(FrontBuffer, RGB32, SCREEN_WIDTH, SCREEN_HEIGHT)
+	;PixelBuffer* Front := Alloc(#PixelBuffer)
+	;void* FrontBuffer := KernelPageAllocator->AllocateVirtual(FrameBufferPageCount)
+	;Front->Initialize(FrontBuffer, RGB32, SCREEN_WIDTH, SCREEN_HEIGHT)
 
 	;DoubleBufferController* DoubleBuffer := Alloc(#DoubleBufferController)
 	;DoubleBuffer->Initialize(FrameBuffer, Front)
 
-	PrimaryDisplay := Front
+	PrimaryDisplay := FrameBuffer
 
 	; Terminals created as TERMINAL_MAJOR:TERMINAL_MINOR will grab DefaultTerminal(Input|Output)
 

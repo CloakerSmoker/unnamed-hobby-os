@@ -1746,14 +1746,14 @@ define FileHandle* Ext2OpenINode(Ext2* FS, Ext2INode* Node) {
 		i32 Major := Node->GetMagicMajor()
 		i32 Minor := Node->GetMagicMinor()
 		
-		FileHandlePrototype* MagicPrototype := GetMagicFilePrototype(Major, Minor)
+		MagicFilePrototype* MagicPrototype := FindMagicFilePrototype(Major, Minor)
 		
 		if !(MagicPrototype) {
 			Info("Attempt to open unimplemented character device %i:%i\n", Major, Minor)
 			Throw('NO_MAGIC') ; yeah I'm funny
 		}
 		
-		return NewHandle(MagicPrototype, Major, Minor)
+		return MagicPrototype->GetInstance()
 	}
 	else {
 		return null

@@ -124,9 +124,7 @@ define void SleepMS(i32 Milliseconds) {
 	while (PITWhole < End) {}
 }
 
-define void PlayFrequency(i32 Frequency) {
-	i32 Counter := 1193180 / Frequency
-
+define void PlayRawSound(i32 Counter) {
 	InitializePITChannel(PIT_CHANNEL_2, PIT_ACCESS_BOTHBYTE, PIT_MODE_RATE_GENERATOR, Counter As i16)
 
 	i8 State := InB(PC_SPEAKER_PORT)
@@ -135,6 +133,10 @@ define void PlayFrequency(i32 Frequency) {
 		OutB(PC_SPEAKER_PORT, State | PC_SPEAKER_ENABLE)
 	}
 }
+define void PlaySound(i32 Frequency) {
+	PlayRawSound(1193180 / Frequency)
+}
+
 define void StopSound() {
 	OutB(PC_SPEAKER_PORT, InB(PC_SPEAKER_PORT) & PC_SPEAKER_DISABLE)
 }

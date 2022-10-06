@@ -3,6 +3,8 @@
 #Require "./src/kernel/graphics/Font.rlx"
 #Require "./src/kernel/graphics/Sixel.rlx"
 
+#Require "./src/kernel/terminal/PCSpeaker.rlx"
+
 i32 TAB_SIZE := 4
 
 enum TerminalMode {
@@ -52,6 +54,8 @@ struct TerminalRendererInstance {
 	TerminalMode Mode
 	
 	SixelRenderer Sixel
+
+	FileHandle* Speaker
 	
 	define void Clear() {
 		this->Output->Clear(this->BackgroundColor)
@@ -88,6 +92,8 @@ struct TerminalRendererInstance {
 	
 	define void Initialize(void** Options, i32 Count) {
 		this->Adopt(Options[0], Options[1], Options[2] As i32, Options[3] As i32)
+
+		this->Speaker := FindMagicFilePrototype(PC_SPEAKER_MAJOR, PC_SPEAKER_MINOR)->GetInstance()
 	}
 	
 	define void SetColors(i32 ForegroundColor, i32 BackgroundColor) {
@@ -552,8 +558,11 @@ struct TerminalRendererInstance {
 			
 		for (i32 Index := 0, Index < Count, Index += 1) {
 			i8 NextCharacter := Characters[Index]
-			
-			if (NextCharacter = 0x0A || NextCharacter = 0x0D || NextCharacter = 0x1B) {
+
+			if (NextCharacter = 0x7) {
+				this->Speaker->DeviceControl(LINUX_CONSOLE_MAKE_TONE, PackLinuxConsoleTone(750, 350))
+			}
+			else if (NextCharacter = 0x0A || NextCharacter = 0x0D || NextCharacter = 0x1B) {
 				i32 LastChunkLength := Index - LastChunkStart
 				
 				if (LastChunkLength) {
@@ -635,7 +644,7 @@ struct TerminalRendererInstance {
 			Window->Rows := this->Height As i16
 			Window->Columns := this->Width As i16
 		}
-		else {
+		else if (this->Speaker->DeviceControl(Function, Parameter) = DEVICE_CONTROL_INVALID_FUNCTION) {
 			return this->ComponentDeviceControl(Function, Parameter)
 		}
 		

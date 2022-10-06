@@ -4,19 +4,41 @@
 
 struct Timer {
 	i64 LastFiredAt
+	i8 Enabled
+
+	i8 OneShot
 	i64 IntervalMS
 	Task* Target
 	
 	Timer* Next
 	
 	define void MaybeFire(i64 TimeMS) {
-		if ((TimeMS - this->LastFiredAt) >= this->IntervalMS) {
+		if (this->Enabled && (TimeMS - this->LastFiredAt) >= this->IntervalMS) {
 			this->Target->State := TASK_CAN_RUN
 			
 			;Info("\nFire %x\n", this->Target)
+
+			if (this->OneShot) {
+				this->Enabled := false
+			}
 			
 			this->LastFiredAt := TimeMS
 		}
+	}
+
+	define void Enable() {
+		this->Enabled := true
+	}
+	define void Disable() {
+		this->Enabled := false
+	}
+
+	define void SetOneShot(i64 Interval) {
+		this->Enabled := true
+		this->OneShot := true
+
+		this->LastFiredAt := GetUptimeMS()
+		this->IntervalMS := Interval
 	}
 }
 
@@ -39,11 +61,10 @@ define void SetupTimers() {
 	OnHardwareTimerTick->ListenFunction(&OnTick)
 }
 
-define Timer* SetTimer(i64 IntervalMS, Task* Target) {
+define Timer* AllocateTimer(Task* Target) {
 	Timer* Result := Alloc(#Timer)
 	
 	Result->Target := Target
-	Result->IntervalMS := IntervalMS
 	
 	if (RootTimer) {
 		Timer* Last := RootTimer
@@ -57,6 +78,15 @@ define Timer* SetTimer(i64 IntervalMS, Task* Target) {
 	else {
 		RootTimer := Result
 	}
+
+	return Result
+}
+
+define Timer* SetTimer(i64 IntervalMS, Task* Target) {
+	Timer* Result := AllocateTimer(Target)
+
+	Result->IntervalMS := IntervalMS
+	Result->Enabled := true
 	
 	return Result
 }
