@@ -10,9 +10,16 @@ define i64 SystemCallOpen(i8* Path, i32 Flags, i32 Mode) {
 	if (Flags & LINUX_FILE_CREATE_NEW) {
 		Ext2Flags := EXT2_OPEN_CREATE
 	}
+
+	FileHandle* WorkingDirectory := CurrentProcess->WorkingDirectory
+
+	if(Path[0] = '/') {
+		WorkingDirectory := RootDirectory
+		Path += 1
+	}
 	
 	i32 FileDescriptor := CurrentProcess->FileDescriptorCount++
-	FileHandle* Result := CurrentProcess->WorkingDirectory->Open(Path, Ext2Flags)
+	FileHandle* Result := WorkingDirectory->Open(Path, Ext2Flags)
 	CurrentProcess->FileDescriptorsToHandles[FileDescriptor] := Result
 	
 	return FileDescriptor

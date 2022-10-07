@@ -1,0 +1,24 @@
+#Require "$/ConsoleBase.rlx"
+
+#Require "./src/linux/SystemCalls.rlx"
+#Require "./src/linux/Termios.rlx"
+
+define void DeviceControl(i64 Device, i32 Function, void* Parameter) {
+    syscall:(LINUX_SYSCALL_IOCTL, Device, Function, Parameter)
+}
+
+define i32 Main(i64 ArgC, i8** ArgV) {
+    i64 Device := FileOpen("/dev/console", 0)
+	
+    if (ArgC = 2) {
+        DeviceControl(Device, LINUX_CONSOLE_SOUND, AToI(ArgV[1]) As void*)
+    }
+    else if (ArgC = 3) {
+        i32 Frequency := AToI(ArgV[1]) As i32
+        i32 Duration := AToI(ArgV[2]) As i32
+
+        DeviceControl(Device, LINUX_CONSOLE_MAKE_TONE, PackLinuxConsoleTone(Frequency, Duration))
+    }
+	
+	return 0
+}

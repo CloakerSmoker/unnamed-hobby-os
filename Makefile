@@ -29,6 +29,7 @@ $(BUILD)/Disk.img: $(BUILD)/GPTTool.elf
 $(BUILD)/Disk.img: $(BUILD)/FAT32Tool.elf $(BUILD)/Boot.efi
 $(BUILD)/Disk.img: $(BUILD)/Ext2Tool.elf $(BUILD)/Kernel.elf
 $(BUILD)/Disk.img: $(BIN_EXTRA)
+$(BUILD)/Disk.img: $(BUILD)/Beep.elf
 $(BUILD)/Disk.img:
 	rm -f $@
 
@@ -56,10 +57,12 @@ $(BUILD)/Disk.img:
 		"mknod tty1 c 4 1" \
 		"mknod ttyS0 c 4 64" \
 		"hard-link console tty1" \
+		"mknod pc-speaker c 10 129" \
 		"cd .." \
 		"mkdir bin" \
 		"cd bin" \
 		"import-all $(BIN_EXTRA)" \
+		"import $(BUILD)/Beep.elf beep" \
 		"quit"
 
 LIGHT_CLEAN_FILES+= $(BUILD)/Disk.img
@@ -123,6 +126,18 @@ $(BUILD)/Kernel.d:
 	$(RLX) -i ./src/kernel/Main.rlx -o $@ --makedep $(ELF_RLX_FLAGS)
 
 LIGHT_CLEAN_FILES+= $(BUILD)/Kernel.elf $(BUILD)/Kernel.d
+
+# Userland
+
+$(BUILD)/Beep.elf: $(shell cat $(BUILD)/Beep.d 2>/dev/null) $(BUILD)/Beep.d
+	$(RLX) -i ./src/user/Beep.rlx -o $@ ${ELF_RLX_FLAGS}
+
+secret-internal-deps: $(BUILD)/Beep.d
+
+$(BUILD)/Beep.d:
+	$(RLX) -i ./src/user/Beep.rlx -o $@ --makedep $(ELF_RLX_FLAGS)
+
+LIGHT_CLEAN_FILES+= $(BUILD)/Beep.elf $(BUILD)/Beep.d
 
 # Generated
 
