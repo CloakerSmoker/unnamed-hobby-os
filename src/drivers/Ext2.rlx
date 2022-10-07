@@ -735,16 +735,19 @@ struct Ext2 {
 		loop {
 			for (i32 Index := 0, Index < Length, Index += 1) {
 				if (Path[Index] = '/') {
-					Path[Index] := 0
 					break
 				}
 			}
+
+			i8[40] Part
+			MoveMemory(Part, Path, Index)
+			Part[Index] := 0
 			
-			;Print("Next '%s' %i\n", Path, Length)
+			;Print("Next '%s' %i\n", Part, Index)
 			
 			Length -= Index
 			
-			Ext2DirectoryEntry* Next := this->FindDirectoryEntryByName(At, Path)
+			Ext2DirectoryEntry* Next := this->FindDirectoryEntryByName(At, Part)
 			
 			if (Next = null) {
 				return null
@@ -753,7 +756,6 @@ struct Ext2 {
 				return Next
 			}
 			
-			Path[Index] := '/'
 			Path += Index + 1
 			At := this->ReadINode(Next->INode)
 		}

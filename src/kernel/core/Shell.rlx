@@ -249,7 +249,14 @@ define void OnCommand(i8* CommandLine) {
 	else if (StringEquals(Command, "exec")) {
 		i8* Path := CommandParameters[1]
 		
-		FileHandle* File := CWD->Open(Path)
+		FileHandle* File := null
+
+		if (Path[0] = '/') {
+			File := RootDirectory->Open(Path + 1)
+		}
+		else {
+			File := CWD->Open(Path)
+		}
 		
 		if !(File) {
 			Print(" Could not find file '%s'\n", Path)
