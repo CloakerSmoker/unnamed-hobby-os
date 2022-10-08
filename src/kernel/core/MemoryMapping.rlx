@@ -7,17 +7,88 @@ i32 VIRTUAL_MEMORY_ALLOCATION := 2
 struct MemoryMapping {
 	void* Virtual
 	i64 Physical
-	i64 Flags
+	i32 Flags
 	i32 PageCount
 	i32 AllocatorIndex
+	i32 ReferenceCount
 	MemoryMapping* Next
+}
+
+struct AllocationListHead {
+	AllocationListHead* Next
+}
+
+struct PhysicalAllocation {
+	PhysicalAllocation* Next
+
+	i64 Address
+	i32 PageCount
+	i32 ReferenceCount
+
+	static self* New(i64 Address, i32 Count) {
+		self* this := Alloc(#self, 'MMG_P')
+
+		this->Address := Physical
+		this->PageCount := Count
+
+		return this
+	}
+}
+
+struct VirtualAllocation {
+	VirtualAllocation* Next
+
+	void* Address
+	i32 PageCount
+	i32 ReferenceCount
+
+	i8 IsAnonymous
+
+	static self* New(void* Address, i32 PageCount) {
+		self* this := Alloc(#self, 'MMG_V')
+
+		this->Address := Virtual
+		this->Count := Count
+
+		return this
+	}
+
+	static self* NewAnonymous(void* Address, i32 PageCount) {
+		self* this := self:New(Address, PageCount)
+
+		this->IsAnonymous := true
+
+		return this
+	}
+}
+
+struct VirtualToPhysicalMapping {
+	VirtualToPhysicalMapping* Next
+
+	VirtualAllocation* Virtual
+	PhysicalAllocation* Physical
+
+	i64 Flags
+
+	static self* New(VirtualAllocation* Virtual, PhysicalAllocation* Physical, i64 Flags) {
+		self* this := Alloc(#self, 'MMG_M')
+
+		this->Virtual := Virtual
+		this->Physical := Physical
+		this->Flags := Flags
+
+		return this
+	}
 }
 
 struct MemoryMappingGroup {
 	AddressSpaceManager* AddressSpace
 	PageHeap* PhysicalAllocator
 	PageHeap* VirtualAllocator
-	MemoryMapping* First
+	
+	PhysicalAllocation* FirstPhysical
+	VirtualAllocation* FirstVirtual
+	VirtualToPhysicalMapping* FirstMapping
 	
 	i8 Active
 	
@@ -31,6 +102,17 @@ struct MemoryMappingGroup {
 		
 		return this
 	}
+
+	define void InsertMapping(AllocationListHead** Head, void* RawNew) {
+		AllocationListHead* New := RawNew
+		AllocationListHead* Existing := *Head
+
+		if (Existing) {
+			New->Next := Existing
+		}
+
+		*Head := New
+	}
 	
 	define MemoryMapping* RecordMapping(void* Virtual, i64 Physical, i64 Flags, i32 Count, i32 Allocator) {
 		MemoryMapping* New := Alloc('MM', #MemoryMapping)
@@ -40,57 +122,61 @@ struct MemoryMappingGroup {
 		New->Flags := Flags
 		New->PageCount := Count
 		New->AllocatorIndex := Allocator
+		New->ReferenceCount := 1
 		
-		if (this->First) {
-			New->Next := this->First
-			this->First := New
-		}
-		else {
-			this->First := New
-		}
+		this->InsertMapping(New)
 		
 		return New
 	}
 	
-	define MemoryMapping* Map(void* Virtual, i64 Physical, i32 Count, i64 Flags) {
-		i32 Allocator := 3
-		
+	define MemoryMapping* Map(VirtualAllocation* Virtual, PhysicalAllocation* Physical, i64 Flags) {
 		Flags |= PAGE_PRESENT
 		
-		if (this->Active) {
-			Allocator := 0
-			this->AddressSpace->MapRange(Virtual, Physical / PAGE_SIZE, Count, Flags)
-		}
-		
-		return this->RecordMapping(Virtual, Physical, Flags, Count, Allocator)
+		VirtualToPhysicalMapping* New := VirtualToPhysicalMapping:New(Virtual, Physical, Flags)
+
+		this->InsertMapping(this~>FirstMapping, New)
+
+		return New
 	}
 	
-	define i64 AllocatePhysical(i32 Count) {
+	define PhysicalAllocation* AllocatePhysical(i32 Count) {
 		i64 Physical := this->PhysicalAllocator->Allocate(Count)
+		PhysicalAllocation* New := PhysicalAllocation:New(Physical, Count)
+
+		this->InsertMapping(this~>FirstPhysical, New)
 		
-		this->RecordMapping(null, Physical, 0, Count, 1)
-		
-		return Physical
+		return New
 	}
 	
-	define void* AllocateVirtual(i32 Count) {
+	define VirtualAllocation* AllocateVirtual(i32 Count) {
 		void* Virtual := this->VirtualAllocator->Allocate(Count) As void*
+		VirtualAllocation* New := VirtualAllocation:New(Virtual, Count)
 		
-		this->RecordMapping(Virtual, 0, 0, Count, 2)
+		this->InsertMapping(this~>FirstVirtual, New)
+
+		return New
+	}
+
+	define VirtualAllocation* AllocateAnonymousVirtual(void* Virtual, i32 Count) {
+		VirtualAllocation* New := VirtualAllocation:New(Virtual, Count)
 		
-		return Virtual
+		this->InsertMapping(this~>FirstVirtual, New)
+
+		return New
 	}
 	
-	define MemoryMapping* MapAddressAnonymous(void* Virtual, i32 Count, i64 Flags) {
-		i64 Physical := this->AllocatePhysical(Count)
+	define MemoryMapping* MapAddressAnonymous(void* Address, i32 Count, i64 Flags) {
+		VirtualAllocation* Virtual := this->AllocateAnonymousVirtual(Address)
+		PhysicalAllocation* Physical := this->AllocatePhysical(Count)
 		
 		return this->Map(Virtual, Physical, Count, Flags)
 	}
 	
 	define MemoryMapping* MapAnonymous(i32 Count, i64 Flags) {
-		void* Virtual := this->AllocateVirtual(Count)
+		VirtualAllocation* Virtual := this->AllocateVirtual(Count)
+		PhysicalAllocation* Physical := this->AllocatePhysical(Count)
 		
-		return this->MapAddressAnonymous(Virtual, Count, Flags)
+		return this->Map(Virtual, Physical, Count, Flags)
 	}
 	
 	define MemoryMapping* Split(MemoryMapping* Old, i32 SplitPage) {

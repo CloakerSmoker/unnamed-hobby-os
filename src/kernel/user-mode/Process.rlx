@@ -48,14 +48,13 @@ struct ProcessSignalContainer {
 	}
 }
 
-UserThread* CurrentThread := null
-
 struct UserThread {
 	Task* UserTask ; Just holds state
 	Task* KernelTask ; Actually scheduled
 	AMD64Context AbortSystemCallState
 	
 	ProcessSignalContainer* ParentSignals
+	MemoryMappingGroup* ParentEnvironment
 	
 	i32 ParentProcessID
 	
@@ -245,6 +244,8 @@ struct UserThread {
 		this->UserTask->Free()
 	}
 }
+
+UserThread* CurrentThread := null
 
 i32 STANDARD_INPUT_FILE_DESCRIPTOR := 0
 i32 STANDARD_OUTPUT_FILE_DESCRIPTOR := 1
