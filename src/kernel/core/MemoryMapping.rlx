@@ -1,5 +1,31 @@
 #Require "./src/kernel/core/Paging.rlx"
 
+; Needs to serve as "mmap", including the security boundary entailed
+;  not the "can't mmap over the kernel" boundary though, that's somebody
+;  else's job, I think.
+; So, for each mmap call we need to figure out which actual memory to map it
+;  to, and need to keep track of all actual mappings.
+; Additionally, we need to keep track of which mappings are anonymous so we
+;  can allow the virtual allocator to reclaim them. Although this might not
+;  be needed, since the virtual allocator *should* be single use.
+; Physical allocations can only be referenced once, but could be referenced
+;  more if COW is implemented. COW isn't implemented though, so we're fine.
+;
+; To cleanup a process:
+;  Free all physical allocations
+;  Undo all mappings
+; To clone a process:
+;  Get a new virtual allocator
+;  Clone all mappings (metadata only)
+;  Re-allocate all mapped addresses in new allocator
+;  Clone all phyiscal allocations (size+data)
+;  Update mapping with cloned physical memory
+;
+; We don't need to track virtual allocations since the virtual allocator
+;  already does, and is single-tenet. Opposed to the physical allocator,
+;  which everyone is sharing and can't be deleted/recreated at will.
+
+
 i32 VIRTUAL_TO_PHYSICAL_MAPPING := 0
 i32 PHYSICAL_MEMORY_ALLOCATION := 1
 i32 VIRTUAL_MEMORY_ALLOCATION := 2
@@ -394,7 +420,7 @@ struct MemoryMappingGroup {
 			New->Virtual := New->Virtual->Clone()
 
 			Result->Mappings->Insert(New)
-			Result->
+			Result->VirtualAllocations->Insert(New->Virtual)
 		}
 		
 		return null
