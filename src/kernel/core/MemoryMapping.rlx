@@ -24,6 +24,10 @@
 ; We don't need to track virtual allocations since the virtual allocator
 ;  already does, and is single-tenet. Opposed to the physical allocator,
 ;  which everyone is sharing and can't be deleted/recreated at will.
+;
+; We do need a way to enable/disable all mappings in the "collection" at
+;  once though.
+; TODO: Come up with a better name. MemoryManager? MemoryMapper? 
 
 
 i32 VIRTUAL_TO_PHYSICAL_MAPPING := 0
@@ -52,9 +56,9 @@ struct PhysicalAllocation {
 	i32 ReferenceCount
 
 	static self* New(i64 Address, i32 Count) {
-		self* this := Alloc(#self, 'MMG_P')
+		self* this := Alloc('MMG_P', #self)
 
-		this->Address := Physical
+		this->Address := Address
 		this->PageCount := Count
 
 		return this
@@ -69,10 +73,10 @@ struct VirtualAllocation {
 	i8 IsAnonymous
 
 	static self* New(void* Address, i32 PageCount) {
-		self* this := Alloc(#self, 'MMG_V')
+		self* this := Alloc('MMG_V', #self)
 
-		this->Address := Virtual
-		this->Count := Count
+		this->Address := Address
+		this->PageCount := PageCount
 
 		return this
 	}
@@ -81,6 +85,29 @@ struct VirtualAllocation {
 		self* this := self:New(Address, PageCount)
 
 		this->IsAnonymous := true
+
+		return this
+	}
+
+	define self* Clone() {
+		return CloneMemory(this, #self)
+	}
+}
+
+struct VirtualToPhysicalMapping {
+	VirtualToPhysicalMapping* Next
+
+	VirtualAllocation* Virtual
+	PhysicalAllocation* Physical
+
+	i64 Flags
+
+	static self* New(VirtualAllocation* Virtual, PhysicalAllocation* Physical, i64 Flags) {
+		self* this := Alloc('MMG_M', #self)
+
+		this->Virtual := Virtual
+		this->Physical := Physical
+		this->Flags := Flags
 
 		return this
 	}
@@ -98,28 +125,7 @@ struct VirtualAllocation {
 	}
 }
 
-struct VirtualToPhysicalMapping {
-	VirtualToPhysicalMapping* Next
-
-	VirtualAllocation* Virtual
-	PhysicalAllocation* Physical
-
-	i64 Flags
-
-	static self* New(VirtualAllocation* Virtual, PhysicalAllocation* Physical, i64 Flags) {
-		self* this := Alloc(#self, 'MMG_M')
-
-		this->Virtual := Virtual
-		this->Physical := Physical
-		this->Flags := Flags
-
-		return this
-	}
-
-	define self* Clone() {
-		return CloneMemory(this, #self)
-	}
-}
+#Require "$/PointerArray.rlx"
 
 struct MemoryMappingGroup {
 	AddressSpaceManager* AddressSpace

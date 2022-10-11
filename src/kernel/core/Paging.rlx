@@ -41,10 +41,6 @@ define i64 PointerToPageNumber(void* PageMemory) {
 	return (PageMemory / PAGE_SIZE) As i64
 }
 
-struct Page {
-	i8[0x1000] Data
-}
-
 define i32 GetPML4Index(void* Address) {
 	return ((Address & 0b_111111111_000000000_000000000_000000000_000000000000) >> 39) As i32
 }
