@@ -15,11 +15,3 @@ define void* ReAlloc(void* Memory, i32 Size) {
 define void Free(void* Memory) {
 	KernelHeapFree(Memory)
 }
-
-define void* CloneMemory(void* Memory, i32 Size) {
-	void* NewBuffer := Alloc(Size)
-	
-	MoveMemory(NewBuffer, Memory, Size)
-	
-	return NewBuffer
-}

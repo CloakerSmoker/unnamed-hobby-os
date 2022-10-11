@@ -23,7 +23,7 @@ BootloaderInfo RawBootInfo
 BootloaderInfo* BootInfo := &RawBootInfo
 
 #Require "./src/kernel/core/Paging.rlx"
-#Require "./src/utility/Memory.rlx"
+#Require "$/Memory.rlx"
 
 define void PrintCharacter(i8 Character) {
 	; Pre-terminal print function
@@ -62,7 +62,6 @@ define void KernelHeapFree(void* Memory) {
 
 #Require "./src/kernel/core/Descriptors.rlx"
 
-#Require "./src/utility/Memory.rlx"
 #Require "./src/utility/Exception.rlx"
 
 declare void SchedulerYield()

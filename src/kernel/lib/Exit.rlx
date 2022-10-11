@@ -1,0 +1,6 @@
+declare void Info(i8*, ...)
+
+define void Exit(i32 Code) {
+    Info("EXIT CALLED\n%stackdump\nHALTING")
+    loop {}
+}

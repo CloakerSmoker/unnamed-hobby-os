@@ -6,6 +6,7 @@ BIN_EXTRA=cat ed hexedit vi
 RLX_FLAGS?= --crlf --dwarf --debug --silent
 EFI_RLX_FLAGS?= $(RLX_FLAGS) --pe-reloc --pe --efi
 ELF_RLX_FLAGS?= $(RLX_FLAGS) --linux
+KERNEL_RLX_FLAGS?= $(RLX_FLAGS) --standalone-elf --platform kernel --platform-dir src/kernel/lib
 
 RLX?=no-rlx-compiler-set
 
@@ -118,12 +119,12 @@ LIGHT_CLEAN_FILES+= $(BUILD)/Boot.efi $(BUILD)/Boot.d
 # Kernel
 
 $(BUILD)/Kernel.elf: $(shell cat $(BUILD)/Kernel.d 2>/dev/null) $(BUILD)/Kernel.d
-	$(RLX) -i ./src/kernel/Main.rlx -o $@ ${ELF_RLX_FLAGS}
+	$(RLX) -i ./src/kernel/Main.rlx -o $@ $(KERNEL_RLX_FLAGS)
 
 secret-internal-deps: $(BUILD)/Kernel.d
 
 $(BUILD)/Kernel.d:
-	$(RLX) -i ./src/kernel/Main.rlx -o $@ --makedep $(ELF_RLX_FLAGS)
+	$(RLX) -i ./src/kernel/Main.rlx -o $@ --makedep $(KERNEL_RLX_FLAGS)
 
 LIGHT_CLEAN_FILES+= $(BUILD)/Kernel.elf $(BUILD)/Kernel.d
 
