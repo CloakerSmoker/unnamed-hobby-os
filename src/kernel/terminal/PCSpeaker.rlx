@@ -1,0 +1,69 @@
+#Require "./src/kernel/file-system/FileSystem.rlx"
+
+struct PCSpeakerInstance {
+    #Include "./src/kernel/file-system/HandleInstance.rlx"
+
+    Timer* StopTimer
+
+    define void DoStopTimerTick() {
+        loop {
+            StopSound()
+            SchedulerBlock()
+        }
+    }
+
+    define i32 DeviceControl(i32 Function, void* RawParameter) {
+        i32 Parameter := RawParameter As i32
+        
+        if (Function = LINUX_CONSOLE_MAKE_TONE) {
+            i32 Counter := Parameter & 0xFFFF
+            i32 Duration := (Parameter >> 16) & 0xFFFF
+
+            PlayRawSound(Counter)
+            this->StopTimer->SetOneShot(Duration)
+        }
+        else if (Function = LINUX_CONSOLE_SOUND) {
+            i32 Frequency := Parameter
+            
+            if (Frequency = 0) {
+                StopSound()
+            }
+            else {
+                PlaySound(Frequency)
+            }
+        }
+        else {
+            return DEVICE_CONTROL_INVALID_FUNCTION
+        }
+
+        return 0
+    }
+
+    define void Initialize(void** Options, i32 Count) {
+        Task* StopTimerTask := Scheduler->AddLightTask(&PCSpeakerInstance.DoStopTimerTick)
+		
+		StopTimerTask~>Context->RDI := this As i64
+		
+		this->StopTimer := AllocateTimer(StopTimerTask)
+    }
+}
+
+FileHandlePrototype PCSpeakerPrototype {
+	DataSize: #PCSpeakerInstance,
+	Initialize: &PCSpeakerInstance.Initialize,
+	
+	DeviceControl: &PCSpeakerInstance.DeviceControl
+}
+
+i32 PC_SPEAKER_FILE_PROTOTYPE_ID := RegisterHandlePrototype(&PCSpeakerPrototype)
+
+i32 PC_SPEAKER_MAJOR := 10
+i32 PC_SPEAKER_MINOR := 129
+
+MagicFilePrototype PCSpeakerMagicFilePrototype {
+	Prototype: &PCSpeakerPrototype,
+	Major: 10,
+	Minor: 129
+}
+
+i32 PC_SPEAKER_FILE_MAGIC_ID := RegisterMagicFile(&PCSpeakerMagicFilePrototype)
