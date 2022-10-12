@@ -8,7 +8,7 @@ EFI_RLX_FLAGS?= $(RLX_FLAGS) --pe-reloc --pe --efi
 ELF_RLX_FLAGS?= $(RLX_FLAGS) --linux
 KERNEL_RLX_FLAGS?= $(RLX_FLAGS) --standalone-elf --platform kernel --platform-dir src/kernel/lib
 
-RLX?=no-rlx-compiler-set
+RLX?=compiler/build/linux_compiler.elf
 
 BUILD=./build
 

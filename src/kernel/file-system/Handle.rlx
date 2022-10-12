@@ -202,7 +202,7 @@ struct FileHandle {
 	}
 	
 	define void Close() {
-		;Free(this)
+		Free(this)
 	}
 	
 	define FileHandle* Clone() {

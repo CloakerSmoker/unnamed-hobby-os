@@ -7,6 +7,8 @@ struct PhysicalAllocation {
 	static self* New(i64 Address, i32 Count) {
 		self* this := Alloc('MMG_P', #self)
 
+		;Info("MMG_P(%x, %i):\n%stackdump\n", Address, Count)
+
 		this->Address := Address
 		this->PageCount := Count
 
@@ -24,6 +26,8 @@ struct VirtualToPhysicalMapping {
 
 	static self* New(void* Virtual, PhysicalAllocation* Physical, i32 PageCount, i64 Flags) {
 		self* this := Alloc('MMG_M', #self)
+
+		;Info("MMG_M(%x -> %x, %i):\n%stackdump\n", Virtual, Physical->Address, PageCount)
 
 		this->Address := Virtual
 		this->Physical := Physical
@@ -120,8 +124,10 @@ struct MemoryMapper {
 		i32 OldPages := Old->PageCount - NewPages
 		
 		Old->PageCount := OldPages
+		Old->Physical->PageCount := OldPages
 
 		PhysicalAllocation* NewPhysical := PhysicalAllocation:New(PhysicalSplit, NewPages)
+		this->PhysicalAllocations->Push(NewPhysical)
 		
 		return this->Map(VirtualSplit, NewPhysical, NewPages, Old->Flags)
 	}
@@ -287,17 +293,23 @@ struct MemoryMapper {
 	}
 	
 	define void Free() {
-		for (i32 Index := 0, Index < this->Mappings->Count(), Index++) {
-			VirtualToPhysicalMapping* Mapping := this->Mappings->At(Index)
+		while (this->Mappings->Count()) {
+			VirtualToPhysicalMapping* Mapping := this->Mappings->Last()
 
 			this->DeleteMapping(Mapping)
 		}
 
-		for (i32 Index := 0, Index < this->PhysicalAllocations->Count(), Index++) {
-			PhysicalAllocation* Physical := this->PhysicalAllocations->At(Index)
+		while (this->PhysicalAllocations->Count()) {
+			PhysicalAllocation* Physical := this->PhysicalAllocations->Last()
 
 			this->DeletePhysical(Physical)
 		}
+
+		this->PhysicalAllocations->Free()
+		Free(this->PhysicalAllocations)
+		
+		this->Mappings->Free()
+		Free(this->Mappings)
 	}
 	
 	define MemoryMapper* Clone() {
