@@ -67,11 +67,11 @@ define void* SystemCallMapMemory(void* Address, i32 Size, i32 Protection, i32 Fl
 	i64 MemoryFlags := ConvertLinuxMemoryProtection(Protection)
 	
 	i32 PageCount := SizeToPageCount(Size)
-	MemoryMapping* Mapping := null
+	VirtualToPhysicalMapping* Mapping := null
 	
 	if (Address = null) {
 		Mapping := CurrentProcess->Mappings->MapAnonymous(PageCount, MemoryFlags)
-		Address := Mapping->Virtual
+		Address := Mapping->Address
 		
 		if (Flags & LINUX_MAP_ANONYMOUS) {
 			SetMemory(Address, Size, 0)
@@ -96,10 +96,10 @@ define void* SystemCallMapMemory(void* Address, i32 Size, i32 Protection, i32 Fl
 }
 
 define i64 SystemCallUnMapMemory(void* Address, i32 Size) {
-	MemoryMapping* Mapping := CurrentProcess->Mappings->FindVirtual(Address, Size)
+	VirtualToPhysicalMapping* Mapping := CurrentProcess->Mappings->FindVirtual(Address, Size)
 	
 	if (Mapping) {
-		CurrentProcess->Mappings->Delete(Mapping)
+		CurrentProcess->Mappings->DeleteMapping(Mapping)
 	}
 	else {
 		return -1

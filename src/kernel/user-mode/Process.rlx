@@ -48,6 +48,8 @@ struct ProcessSignalContainer {
 	}
 }
 
+UserThread* CurrentThread := null
+
 struct UserThread {
 	Task* UserTask ; Just holds state
 	Task* KernelTask ; Actually scheduled
@@ -245,8 +247,6 @@ struct UserThread {
 	}
 }
 
-UserThread* CurrentThread := null
-
 i32 STANDARD_INPUT_FILE_DESCRIPTOR := 0
 i32 STANDARD_OUTPUT_FILE_DESCRIPTOR := 1
 i32 STANDARD_ERROR_FILE_DESCRIPTOR := 2
@@ -258,7 +258,7 @@ struct Process {
 	FileHandle* WorkingDirectory
 	
 	ELFHeader* ELF
-	MemoryMappingGroup* Mappings
+	MemoryMapper* Mappings
 	
 	void* BreakStart
 	i64 BreakPages
@@ -283,7 +283,7 @@ struct Process {
 		return EventState:CallNextListener
 	}
 	
-	define void Initialize(ELFHeader* Header, MemoryMappingGroup* Mappings, FileHandle* WorkingDirectory) {
+	define void Initialize(ELFHeader* Header, MemoryMapper* Mappings, FileHandle* WorkingDirectory) {
 		this->ELF := Header
 		this->Mappings := Mappings
 		this->WorkingDirectory := WorkingDirectory
@@ -320,11 +320,11 @@ struct Process {
 		this->FileDescriptorsToHandles[Index] := Target
 	}
 	
-	define void Unmap() {
-		this->Mappings->Disable()
+	define void Map() {
+		this->Mappings->EnableVirtualMappings()
 	}
-	define void Remap() {
-		this->Mappings->Enable()
+	define void UnMap() {
+		this->Mappings->DisableVirtualMappings()
 	}
 	
 	define void* GetBreak() {

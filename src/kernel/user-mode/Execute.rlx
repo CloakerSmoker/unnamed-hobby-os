@@ -94,11 +94,12 @@ define Process* Execute(void* Buffer, ExecuteParameters* Parameters) {
 	ELFHeader* ELFData := Buffer As ELFHeader*
 	
 	
-	MemoryMappingGroup* Mappings := MemoryMappingGroup:New(KernelAddressSpace, PhysicalMemory, null)
+	MemoryMapper* Mappings := MemoryMapper:New(KernelAddressSpace, PhysicalMemory, null)
 	
-	i64 VirtualAllocatorBase := Mappings->AllocatePhysical(1)
-	Mappings->Map(ADDRESS_OF_USER_PAGES, VirtualAllocatorBase, 1, PAGE_WRITE | PAGE_PRESENT)
-	Mappings->Enable()
+	; Juggling to map the user virtual allocator
+	PhysicalAllocation* VirtualAllocatorPhysical := Mappings->AllocatePhysical(1)
+	Mappings->Map(ADDRESS_OF_USER_PAGES, VirtualAllocatorPhysical, 1, PAGE_WRITE | PAGE_PRESENT)
+	Mappings->EnableVirtualMappings()
 	
 	Mappings->VirtualAllocator := PageHeap:Adopt(ADDRESS_OF_USER_PAGES As i64, NUMBER_OF_USER_PAGES)
 	

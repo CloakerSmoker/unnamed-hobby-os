@@ -23,7 +23,7 @@ i8 DEBUG_SYS_WRITE         := false ; Logs a hexdump of data moved by `write()`
 i8 DEBUG_TERMINAL_ESCAPES  := false ; Logs ANSI escapes as the terminal processes them
 i8 DEBUG_EXT2_OPTIMIZATION := false ; Logs when the ext2 driver tries to get smart and might break things
 i8 DEBUG_ATA_PIO_READWRITE := false ; Logs when ATAPIO might have freaked out
-i8 DEBUG_HEAP_ALLOC_FREE   := false
+i8 DEBUG_HEAP_ALLOC_FREE   := true
 
 #PhysicalImageBase 0x20_0000
 i64 PHYSICAL_ADDRESS_OF_KERNEL := 0x20_0000

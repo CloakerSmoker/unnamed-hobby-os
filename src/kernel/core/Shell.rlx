@@ -299,11 +299,12 @@ define void OnCommand(i8* CommandLine) {
 			}
 			
 			Process* Child := Execute(FileData, &ExecuteOptions)
-			
+
 			KernelPageAllocator->FreeVirtual(FileData, FilePages)
 			
 			Child~>OnKilled->Wait()
 			
+
 			LastStatus := Child->ExitCode
 			RunningProgram := false
 			

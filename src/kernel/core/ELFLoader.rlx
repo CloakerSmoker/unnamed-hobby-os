@@ -1,7 +1,7 @@
 #Require "./src/utility/ELF.rlx"
 #Require "./src/kernel/core/MemoryMapping.rlx"
 
-define MemoryMappingGroup* MapELF(MemoryMappingGroup* Mappings, ELFHeader* Image) {
+define MemoryMapper* MapELF(MemoryMapper* Mappings, ELFHeader* Image) {
 	ELFProgramHeader* ProgramHeaders := Image->GetProgramHeaders()
 	
 	for (i32 Index := 0, Index < Image->ProgramHeaderEntryCount, Index++) {
@@ -35,7 +35,7 @@ define MemoryMappingGroup* MapELF(MemoryMappingGroup* Mappings, ELFHeader* Image
 				FinalFlags |= PAGE_WRITE
 			}
 			
-			MemoryMapping* Mapping := Mappings->MapPages(SectionVirtualPage, SectionPageCount, TempFlags)
+			VirtualToPhysicalMapping* Mapping := Mappings->MapPages(SectionVirtualPage, SectionPageCount, TempFlags)
 			
 			if (Next->MemorySize > Next->FileSize) {
 				void* ZeroArea := SectionMemory + Next->FileSize
