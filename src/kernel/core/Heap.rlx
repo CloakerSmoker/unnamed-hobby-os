@@ -36,8 +36,11 @@ i32 TAIL_SPACE_FOR_NEW_BLOCK := 0x20 + #HeapBlock
 struct Heap {
 	union {
 		void* RawBackingMemory
+		void* Start
 		HeapBlock* FirstBlock
 	}
+
+	void* End
 	
 	HeapBlock* FirstFreeBlock
 	i32 Size
@@ -55,6 +58,39 @@ struct Heap {
 		
 		this->FirstFreeBlock := FirstBlock
 		this->Size := Size
+
+		this->End := Memory + Size
+	}
+
+	define void Print() {
+		Print("Heap [%x owns %x] {\n", this, this->RawBackingMemory)
+		
+		i32 TotalSize := 0
+		
+		for (HeapBlock* Block := this->FirstBlock, Block != null, Block := Block->Next()) {
+			TotalSize += Block->Size
+			
+			Print("    Block [%l] { Size %x, Free? %i, IsEnd? %i }\n", Block->Tag, Block->Size, Block->IsFree, Block->IsEnd)
+			
+			if (Block->IsEnd) {
+				break
+			}
+		}
+		
+		Print("} %x bytes\n", TotalSize)
+	}
+
+	define void AssertInBounds(void* Where, i32 Size) {
+		if (this->Start > Where || Where > this->End) {
+			Info("Bad heap pointer of %i bytes at %x\n", Size, Where)
+			Info("\t%i bytes from heap start\n", Where - this->Start)
+			Info("\t%i bytes from heap end\n", Where - this->End)
+			this->Print()
+			Throw('HEAP-OOB')
+		}
+		else if (Size != 0) {
+			this->AssertInBounds(Where + Size, 0)
+		}
 	}
 	
 	define HeapBlock* AllocateBlock(i64 Tag, i32 Size) {
@@ -108,6 +144,7 @@ struct Heap {
 		
 		;Info("}\n")
 		
+		this->Print()
 		Throw('HEAP-OOM')
 		
 		return null
@@ -134,6 +171,7 @@ struct Heap {
 		
 		if (DEBUG_HEAP_ALLOC_FREE) {
 			Info("Block { %x }\n", Block->Size, GetRBP())
+			this->AssertInBounds(Block->Body(), Block->Size)
 		}
 		
 		if (Block < this->FirstFreeBlock) {
@@ -143,6 +181,7 @@ struct Heap {
 	define void Free(void* RawBlock) {
 		if (DEBUG_HEAP_ALLOC_FREE) {
 			Info("Free(%x) = ", RawBlock)
+			this->AssertInBounds(RawBlock, #HeapBlock)
 		}
 		
 		this->FreeBlock((RawBlock - #HeapBlock) As HeapBlock*)
@@ -151,16 +190,15 @@ struct Heap {
 	define void* Extend(void* RawOldBlock, i32 NewSize) {
 		HeapBlock* OldBlock := RawOldBlock - #HeapBlock
 		
-		i32 OldSize := OldBlock->Size
-		i32 TrueNewSize := NewSize + #HeapBlock
+		i32 OldSize := OldBlock->Size - #HeapBlock
 		
-		if (OldBlock->Size >= TrueNewSize) {
+		if (OldSize >= NewSize) {
 			return RawOldBlock
 		}
 		
 		this->FreeBlock(OldBlock)
 		
-		HeapBlock* NewBlock := this->AllocateBlock(OldBlock->Tag, TrueNewSize)
+		HeapBlock* NewBlock := this->AllocateBlock(OldBlock->Tag, NewSize + #HeapBlock)
 		
 		i8* NewBlockBody := NewBlock->Body()
 		
@@ -171,23 +209,5 @@ struct Heap {
 		}
 		
 		return NewBlockBody
-	}
-	
-	define void Print() {
-		Print("Heap [%x owns %x] {\n", this, this->RawBackingMemory)
-		
-		i32 TotalSize := 0
-		
-		for (HeapBlock* Block := this->FirstBlock, Block != null, Block := Block->Next()) {
-			TotalSize += Block->Size
-			
-			Print("    Block [%l] { Size %x, Free? %i, IsEnd? %i }\n", Block->Tag, Block->Size, Block->IsFree, Block->IsEnd)
-			
-			if (Block->IsEnd) {
-				break
-			}
-		}
-		
-		Print("} %x bytes\n", TotalSize)
 	}
 }
