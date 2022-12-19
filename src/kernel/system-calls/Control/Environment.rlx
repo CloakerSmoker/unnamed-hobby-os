@@ -28,6 +28,7 @@ define void SystemCallSetSignalMask(i32 Operation, i64* New, i64* Old) {
 	CurrentThread->SignalMask := Mask
 }
 
+/*
 define void* SystemCallProgramBreak(void* NewBreak) {
 	if (NewBreak = null) {
 		return CurrentProcess->GetBreak()
@@ -36,6 +37,7 @@ define void* SystemCallProgramBreak(void* NewBreak) {
 		return CurrentProcess->SetBreak(NewBreak)
 	}
 }
+;*/
 
 i32 LINUX_PROTECTION_READ  := 0x1
 i32 LINUX_PROTECTION_WRITE := 0x2
@@ -70,7 +72,7 @@ define void* SystemCallMapMemory(void* Address, i32 Size, i32 Protection, i32 Fl
 	VirtualToPhysicalMapping* Mapping := null
 	
 	if (Address = null) {
-		Mapping := CurrentProcess->Mappings->MapAnonymous(PageCount, MemoryFlags)
+		Mapping := CurrentThread->Mapper->MapAnonymous(PageCount, MemoryFlags)
 		Address := Mapping->Address
 		
 		if (Flags & LINUX_MAP_ANONYMOUS) {
@@ -78,13 +80,13 @@ define void* SystemCallMapMemory(void* Address, i32 Size, i32 Protection, i32 Fl
 		}
 	}
 	else {
-		Mapping := CurrentProcess->Mappings->FindVirtual(Address, PageCount)
+		Mapping := CurrentThread->Mapper->FindVirtual(Address, PageCount)
 		
 		if (Mapping) {
-			CurrentProcess->Mappings->UpdateFlags(Mapping, MemoryFlags)
+			CurrentThread->Mapper->UpdateFlags(Mapping, MemoryFlags)
 		}
 		else {
-			Mapping := CurrentProcess->Mappings->MapAddressAnonymous(Address, PageCount, MemoryFlags)
+			Mapping := CurrentThread->Mapper->MapAddressAnonymous(Address, PageCount, MemoryFlags)
 			
 			if (Flags & LINUX_MAP_ANONYMOUS) {
 				SetMemory(Address, Size, 0)
@@ -96,10 +98,10 @@ define void* SystemCallMapMemory(void* Address, i32 Size, i32 Protection, i32 Fl
 }
 
 define i64 SystemCallUnMapMemory(void* Address, i32 Size) {
-	VirtualToPhysicalMapping* Mapping := CurrentProcess->Mappings->FindVirtual(Address, Size)
+	VirtualToPhysicalMapping* Mapping := CurrentThread->Mapper->FindVirtual(Address, Size)
 	
 	if (Mapping) {
-		CurrentProcess->Mappings->DeleteMapping(Mapping)
+		CurrentThread->Mapper->DeleteMapping(Mapping)
 	}
 	else {
 		return -1
@@ -135,7 +137,7 @@ define i64 SystemCallSetThreadIDAdress(i64* pThreadID) {
 define void RegisterEnvironmentSystemCalls() {
 	SystemCalls->Register(LINUX_SYSCALL_RT_SIGACTION, &SystemCallSetSignalAction)
 	SystemCalls->Register(LINUX_SYSCALL_RT_SIGPROCMASK, &SystemCallSetSignalMask)
-	SystemCalls->Register(LINUX_SYSCALL_BRK, &SystemCallProgramBreak)
+	;SystemCalls->Register(LINUX_SYSCALL_BRK, &SystemCallProgramBreak)
 	SystemCalls->Register(LINUX_SYSCALL_MMAP, &SystemCallMapMemory)
 	SystemCalls->Register(LINUX_SYSCALL_MUNMAP, &SystemCallUnMapMemory)
 	SystemCalls->Register(LINUX_SYSCALL_ARCH_PRCTL, &SystemCallArchPrctl)

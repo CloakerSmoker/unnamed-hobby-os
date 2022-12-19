@@ -76,8 +76,8 @@ define void OnSystemCall() asm {
 }
 
 #Require "./src/kernel/system-calls/IO/FileSystem.rlx"
-#Require "./src/kernel/system-calls/control/Environment.rlx"
-#Require "./src/kernel/system-calls/control/Process.rlx"
+#Require "./src/kernel/system-calls/Control/Environment.rlx"
+#Require "./src/kernel/system-calls/Control/Process.rlx"
 
 define void SetupSystemCalls() {
 	i64 OldEFER := ReadMSR(AMD64_MSR_EFER)

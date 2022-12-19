@@ -56,7 +56,7 @@ struct UserThread {
 	AMD64Context AbortSystemCallState
 	
 	ProcessSignalContainer* ParentSignals
-	MemoryMappingGroup* ParentEnvironment
+	MemoryMapper* Mapper
 	
 	i32 ParentProcessID
 	
@@ -218,9 +218,11 @@ struct UserThread {
 		this->CurrentSignal := 0
 	}
 	
-	define void Start(i32 ParentProcessID, ProcessSignalContainer* ParentSignals, void* Stack, void* Code) {
+	define void Start(i32 ParentProcessID, MemoryMapper* Mapper, ProcessSignalContainer* ParentSignals, void* Stack, void* Code) {
 		this->ParentProcessID := ParentProcessID
 		this->ParentSignals   := ParentSignals
+
+		this->Mapper := Mapper
 		
 		this->UserTask~>Context->RSP := Stack
 		this->UserTask~>Context->RIP := Code
@@ -258,12 +260,13 @@ struct Process {
 	FileHandle* WorkingDirectory
 	
 	ELFHeader* ELF
-	MemoryMapper* Mappings
 	
 	void* BreakStart
 	i64 BreakPages
 	
 	UserThread MainThread
+
+	PointerArray* Threads ; <UserThread*>
 	
 	i32 TotalThreads
 	i32 AliveThreads
@@ -273,6 +276,8 @@ struct Process {
 	i32 ExitCode
 	
 	define EventState OnThreadKilled(UserThread* Thread, Event* Fired) {
+		this->Threads->RemoveValue(Thread)
+
 		this->AliveThreads -= 1
 		
 		if (this->AliveThreads = 0) {
@@ -283,9 +288,8 @@ struct Process {
 		return EventState:CallNextListener
 	}
 	
-	define void Initialize(ELFHeader* Header, MemoryMapper* Mappings, FileHandle* WorkingDirectory) {
+	define void Initialize(ELFHeader* Header, FileHandle* WorkingDirectory) {
 		this->ELF := Header
-		this->Mappings := Mappings
 		this->WorkingDirectory := WorkingDirectory
 		
 		i64 MaxAddress := 0
@@ -320,13 +324,7 @@ struct Process {
 		this->FileDescriptorsToHandles[Index] := Target
 	}
 	
-	define void Map() {
-		this->Mappings->EnableVirtualMappings()
-	}
-	define void UnMap() {
-		this->Mappings->DisableVirtualMappings()
-	}
-	
+	/*
 	define void* GetBreak() {
 		return this->BreakStart + (this->BreakPages * PAGE_SIZE)
 	}
@@ -342,7 +340,7 @@ struct Process {
 		this->BreakPages += AdditionalBreakPages
 		
 		return this->GetBreak()
-	}
+	};*/
 	
 	define void ExitAll(i32 Code) {
 		this~>MainThread->Exit(Code)
@@ -361,9 +359,6 @@ struct Process {
 	define void Free() {
 		this~>MainThread->Free()
 		this~>OnKilled->Free()
-		
-		this->Mappings->Free()
-		Free(this->Mappings)
 	}
 }
 

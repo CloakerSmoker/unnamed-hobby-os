@@ -83,9 +83,7 @@ declare void SchedulerYield()
 #Require "./src/kernel/terminal/Input.rlx"
 #Require "./src/kernel/terminal/Renderer.rlx"
 
-TerminalInstance _RawKernelTerminal
-TerminalInstance* RawKernelTerminal := &_RawKernelTerminal
-FileHandle* KernelTerminal := RawKernelTerminal->AsHandle()
+FileHandle* KernelTerminal
 
 define void KernelPrintCharacter(PrintOutputAdapterPrototype* this, i8 Character) {
 	KernelTerminal->Write(&Character, 1)
@@ -358,7 +356,7 @@ define void MainContinuation() {
 	DefaultTerminalInput := NewHandle(&TerminalInputStreamPrototype)
 	DefaultTerminalOutput := NewHandle(&TerminalRendererPrototype, PrimaryDisplay, BootFont, TERMINAL_FOREGROUND, TERMINAL_BACKGROUND)
 	
-	InitializeHandle(&TerminalFilePrototype, KernelTerminal, TERMINAL_MAJOR, TERMINAL_MINOR)
+	KernelTerminal := NewHandle(&TerminalFilePrototype, TERMINAL_MAJOR, TERMINAL_MINOR)
 	
 	Printer := &KernelPrinter
 	

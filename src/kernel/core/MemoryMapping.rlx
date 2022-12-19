@@ -314,13 +314,31 @@ struct MemoryMapper {
 	
 	define MemoryMapper* Clone() {
 		MemoryMapper* Result := MemoryMapper:New(this->AddressSpace, this->PhysicalAllocator, this->VirtualAllocator)
+
+		; Since we're duplicating virtual mappings, there's inherently a conflict
+		;  over virtual addresses here, so instead, we allocated a new virtual
+		;  page and point it to the physical memory which cloned existing
+		;  mapping will point to.
+		; TODO: COW instead.
+
+		void* TransferPage := this->VirtualAllocator->AllocateVirtual(1)
 		
 		for (i32 Index := 0, Index < this->Mappings->Count(), Index++) {
 			VirtualToPhysicalMapping* Existing := this->Mappings->At(Index)
 			VirtualToPhysicalMapping* New := Existing->Clone()
 
+			New->Physical := Result->AllocatePhysical(Existing->Physical->PageCount)
+			
+			for (i32 PageIndex := 0, PageIndex < New->PageCount, PageIndex++) {
+				this->AddressSpace->MapRange(TransferPage, New->Physical->Address + (PageIndex * PAGE_SIZE), 1, PAGE_PRESENT | PAGE_WRITE)
+
+				MoveMemory(TransferPage, Existing->Address, PAGE_SIZE)
+			}
+
 			Result->Mappings->Push(New)
 		}
+
+		this->VirtualAllocator->FreeVirtual(TransferPage, 1)
 		
 		return null
 	}
