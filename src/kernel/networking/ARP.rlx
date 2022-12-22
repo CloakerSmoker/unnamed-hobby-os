@@ -1,0 +1,87 @@
+
+
+i16 ARP_LINK_LAYER_ETHERNET := 0x0001
+
+i16 ARP_PROTOCOL_IPV4 := 0x0800
+
+i16 ARP_OPCODE_REQUEST := 1
+i16 ARP_OPCODE_REPLY := 2
+
+struct ARPHeader {
+    i16 LinkLayerType
+    i16 ProtocolType
+    i8 LinkLayerSize
+    i8 ProtocolSize
+    i16 Opcode
+    i8[0] Data
+
+    define void FlipEndianess() {
+        this->LinkLayerType := NetworkShort(this->LinkLayerType)
+        this->ProtocolType := NetworkShort(this->ProtocolType)
+        this->LinkLayerSize := NetworkByte(this->LinkLayerSize)
+        this->ProtocolSize := NetworkByte(this->ProtocolSize)
+        this->Opcode := NetworkShort(this->Opcode)
+    }
+
+    define void MakeIPV4() {
+        this->LinkLayerType := ARP_LINK_LAYER_ETHERNET
+        this->ProtocolType := ARP_PROTOCOL_IPV4
+        this->LinkLayerSize := 6
+        this->ProtocolSize := 4
+        this->Opcode := ARP_OPCODE_REQUEST
+    }
+}
+
+/*
+
+There's a compiler bug for
+
+struct A unaligned {
+    union {
+        i8[6] Field
+    }
+    union {
+        i32 Field2
+    }
+}
+
+where padding is still included
+
+*/
+
+struct ARPBodyIPV4 unaligned {
+    i8[6] SHA
+    i32 SPA
+    i8[6] THA
+    i32 TPA
+    
+    define void FlipEndianess() {
+        this->SPA := NetworkInt(this->SPA)
+        this->TPA := NetworkInt(this->TPA)
+    }
+}
+
+define ARPHeader* EnterARPHeader(PacketBuffer* Buffer) {
+    return Buffer->Bump(#ARPHeader)
+}
+
+define void ExitARPHeader(PacketBuffer* Buffer, ARPHeader* Header) {
+    Header->FlipEndianess()
+}
+
+define void MakeARPToIPV4Announcement(PacketBuffer* Buffer, MACAddress* MyMAC, i32 MyIP) {
+    ARPHeader* ARP := EnterARPHeader(Buffer)
+
+	ARP->MakeIPV4()
+	
+	ARPBodyIPV4* Body := Buffer->Bump(#ARPBodyIPV4)
+
+	MoveMemory(Body~>SHA, MyMAC, 6)
+
+	Body->TPA := MyIP
+	Body->SPA := MyIP
+
+	Body->FlipEndianess()
+
+	ExitARPHeader(Buffer, ARP)
+}

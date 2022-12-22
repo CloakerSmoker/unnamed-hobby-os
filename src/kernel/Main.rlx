@@ -242,7 +242,10 @@ define void BootStrap() {
 }
 
 ATADevice* FirstDisk := null
-;E1000* FirstE1000 := null
+
+E1000* FirstE1000 := null
+
+#Require "./src/drivers/networking/E1000.rlx"
 
 define void VisitPCIFunction(i32 Bus, i32 Slot, i32 Function) {
 	Print("%x/%x/%x: ", Bus, Slot, Function)
@@ -279,30 +282,30 @@ define void VisitPCIFunction(i32 Bus, i32 Slot, i32 Function) {
 		Print("\tPCI address: %x/%x/%x\n", Bus, Slot, Function)
 		Print("\tports: %x-%x %x-%x\n", PrimaryIOBase, PrimaryControlBase, SecondaryIOBase, SecondaryControlBase)
 	}
-	;else if (Class = PCI_CLASS_CODE_NETWORK_CONTROLLER 
-	;     && SubClass = PCI_SUBCLASS_NETWORK_ETHERNET) {
-	;	 
-	;	PCIDevice NetworkDevice {
-	;		Bus: Bus,
-	;		Slot: Slot,
-	;		Function: Function
-	;	}
-	;	
-	;	i32 Vendor := NetworkDevice.Read(PCI_HEADER_VENDOR_ID)
-	;	i32 Device := NetworkDevice.Read(PCI_HEADER_DEVICE_ID)
-	;	
-	;	NetworkDevice.DumpConfigurationSpace()
-	;	
-	;	;Print("MSI: %x\n", NetworkDevice.FindCapability(5))
-	;	
-	;	Print("Network interface %x:%x\n", Vendor, Device)
-	;	
-	;	if (Vendor = PCI_VENDOR_INTEL && Device = PCI_DEVICE_INTEL_E1000) {
-	;		FirstE1000 := Alloc('E1000', #E1000)
-	;		
-	;		FirstE1000->Initialize(Bus, Slot, Function)
-	;	}
-	;}
+	else if (Class = PCI_CLASS_CODE_NETWORK_CONTROLLER 
+	     && SubClass = PCI_SUBCLASS_NETWORK_ETHERNET) {
+		 
+		PCIDevice NetworkDevice {
+			Bus: Bus,
+			Slot: Slot,
+			Function: Function
+		}
+		
+		i32 Vendor := NetworkDevice.Read(PCI_HEADER_VENDOR_ID)
+		i32 Device := NetworkDevice.Read(PCI_HEADER_DEVICE_ID)
+		
+		NetworkDevice.DumpConfigurationSpace()
+		
+		;Print("MSI: %x\n", NetworkDevice.FindCapability(5))
+		
+		Print("Network interface %x:%x\n", Vendor, Device)
+		
+		if (Vendor = PCI_VENDOR_INTEL && Device = PCI_DEVICE_INTEL_E1000) {
+			FirstE1000 := Alloc('E1000', #E1000)
+			
+			FirstE1000->Initialize(Bus, Slot, Function)
+		}
+	}
 }
 
 Task _KernelSetupTask
@@ -310,8 +313,9 @@ Task* KernelSetupTask := &_KernelSetupTask
 
 #Require "./src/kernel/graphics/DoubleBuffer.rlx"
 
-;#Require "./src/drivers/networking/Ethernet.rlx"
-;#Require "./src/drivers/networking/ARP.rlx"
+#Require "./src/kernel/networking/Utility.rlx"
+#Require "./src/kernel/networking/Ethernet.rlx"
+#Require "./src/kernel/networking/ARP.rlx"
 
 define void MainContinuation() {
 	CurrentTask := KernelSetupTask
@@ -422,26 +426,37 @@ define void MainContinuation() {
 		}
 	}
 	
-	;FirstE1000->Setup()
-	;Print("%B:%B:%B:%B:%B:%B\n", FirstE1000->MAC[0], FirstE1000->MAC[1], FirstE1000->MAC[2], FirstE1000->MAC[3], FirstE1000->MAC[4], FirstE1000->MAC[5])
-	;
-	;void* Packet := KernelPageAllocator->AllocateVirtual(2)
-	;
-	;i32 BodySize := #ARPHeaderMACToIPV4
-	;i32 PacketSize := EthernetSize(BodySize)
-	;
-	;i8* MulticastMAC := i8[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]
-	;i8* MyMAC := FirstE1000->MAC
-	;i32 MyIP := 0x01020304
-	;
-	;Print("Status %x\nCommand %x\n", FirstE1000->Read(E1000_REGISTER_STATUS), FirstE1000->Read(E1000_REGISTER_CTRL))
-	;
-	;void* Buffer := EthernetWriteHeader(Packet, MulticastMAC, MyMAC, ETHERTYPE_ARP)
-	;ARPRequestMACToIPV4(Buffer, MyMAC, MyIP, MyMAC, MyIP)
-	;
-	;Info("%hexdump\n", Packet, PacketSize)
-	;
-	;FirstE1000->Send(Packet, PacketSize)
+	FirstE1000->Setup()
+	
+	void* Buffer := KernelPageAllocator->AllocateVirtual(2)
+	
+	PacketBuffer* Packet := Alloc(#PacketBuffer)
+
+	Packet->Initialize(Buffer)
+	
+	i8* MulticastMAC := i8[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]
+	MACAddress* MyMAC := FirstE1000->MAC As void*
+	i32 MyIP := 0x01020304
+
+	Print("My MAC is: %mac\n", MyMAC)
+	
+	Print("Status %x\nCommand %x\n", FirstE1000->Read(E1000_REGISTER_STATUS), FirstE1000->Read(E1000_REGISTER_CTRL))
+
+	EthernetHeader* Ethernet := EnterEthernetHeader(Packet)
+
+	MoveMemory(Ethernet~>SourceMAC, MyMAC, 6)
+	MoveMemory(Ethernet~>DestinationMAC, MulticastMAC, 6)
+	Ethernet->EtherType := ETHERTYPE_ARP
+
+	MakeARPToIPV4Announcement(Packet, MyMAC, MyIP)
+
+	ExitEthernetHeader(Packet, Ethernet)
+	
+	Info("%hexdump\n", Packet->Base, Packet->Size)
+	
+	FirstE1000->Send(Packet->Base, Packet->Size)
+
+	/*
 	
 	Print("BOOT: Mounting disk\n")
 	
@@ -480,5 +495,7 @@ define void MainContinuation() {
 	SetupShell()
 	
 	StartScheduler()
+
+	*/
 	
 }

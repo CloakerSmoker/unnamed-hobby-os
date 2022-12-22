@@ -1,0 +1,27 @@
+define i8 NetworkByte(i8 Value) asm {
+    mov, eax, edi
+    ret
+}
+define i16 NetworkShort(i16 Value) asm {
+    mov, eax, edi
+    
+    emit, 0x86 ; xchg al, ah
+    emit, 0xE0
+
+    ret
+}
+define i32 NetworkInt(i32 Value) asm {
+    emit, 0x0F ; bswap edi
+    emit, 0xCF
+
+    mov, eax, edi
+    ret
+}
+define i64 NetworkLong(i64 Value) asm {
+    emit, 0x48 ; bswap rdi
+    emit, 0x0F
+    emit, 0xCF
+
+    mov, rax, rdi
+    ret
+}

@@ -1,0 +1,42 @@
+
+struct MACAddress {
+    i8[6] Bytes
+}
+
+define void DoMACAddressPrint(PrintOutputAdapterPrototype* this, i8* Format, i32* FormatIndex, void* Parameters, i32 ParameterCount, i32* ParameterIndex) {
+    MACAddress* Address := Parameters[*ParameterIndex] As void*
+
+    this->Print("%B:%B:%B:%B:%B:%B", Address->Bytes[0], Address->Bytes[1], Address->Bytes[2], Address->Bytes[3], Address->Bytes[4], Address->Bytes[5])
+
+    *ParameterIndex += 1
+}
+
+PrintFormatPrototype MACAddressFormatPrototype {
+	Name: "mac",
+	Format: &DoMACAddressPrint
+}
+
+i32 MAC_ADDRESS_FORMAT_PROTOTYPE_ID := AddPrintFormat(&MACAddressFormatPrototype)
+
+struct PacketBuffer {
+    void* Base
+    void* Write
+    i32 Size
+
+    define void Initialize(void* Base) {
+        this->Base := Base
+        this->Write := Base
+        this->Size := 0
+    }
+    
+    define void* Bump(i32 Size) {
+        void* Result := this->Write
+
+        this->Write += Size
+        this->Size += Size
+        
+        return Result
+    }
+
+
+}
