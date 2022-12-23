@@ -1,0 +1,148 @@
+
+i8 DHCP_OPERATION_REQUEST := 1
+i8 DHCP_OPERATION_REPLY := 2
+
+i8 DHCP_HARDWARE_TYPE_ETHERNET := 1
+
+i32 DHCP_MAGIC := 0x63825363
+
+struct DHCPHeader {
+    i8 Operation
+    
+    i8 HardwareAddressType
+    i8 HardwareAddressLength
+
+    i8 Hops
+    i32 TransactionID
+    i16 Seconds
+    i16 Flags
+
+    i32 ClientAddress
+    i32 YourIPAddress
+    i32 NextServerAddress
+    i32 GatewayAddress
+    
+    union {
+        i8[6] ClientHardwareAddress
+        i8[16] ClientHardwareAddressPadding
+    }
+
+    i8[64] ServerHostname
+    i8[128] BootFileName
+
+    i32 Magic
+
+    define void Initialize() {
+        this->HardwareAddressType := DHCP_HARDWARE_TYPE_ETHERNET
+        this->HardwareAddressLength := 6
+
+        this->Magic := DHCP_MAGIC
+    }
+
+    define void FlipEndianess() {
+        this->TransactionID := NetworkInt(this->TransactionID)
+        this->Seconds := NetworkShort(this->Seconds)
+        this->Flags := NetworkShort(this->Flags)
+
+        this->ClientAddress := NetworkInt(this->ClientAddress)
+        this->NextServerAddress := NetworkInt(this->NextServerAddress)
+        this->GatewayAddress := NetworkInt(this->GatewayAddress)
+
+        this->Magic := NetworkInt(this->Magic)
+    }
+}
+
+define DHCPHeader* EnterDHCPHeader(PacketBuffer* Buffer) {
+    DHCPHeader* Result := Buffer->Bump(#DHCPHeader)
+
+    Result->Initialize()
+
+    return Result
+}
+define void ExitDHCPHeader(PacketBuffer* Buffer, DHCPHeader* Header) {
+    Header->FlipEndianess()
+}
+
+i8 DHCP_OPTION_PADDING := 0
+i8 DHCP_OPTION_SUBNET_MASK := 1
+i8 DHCP_OPTION_TIME_OFFSET := 2
+i8 DHCP_OPTION_ROUTER := 3
+i8 DHCP_OPTION_DOMAIN_NAME_SERVER := 6
+i8 DHCP_OPTION_HOST_NAME := 12
+i8 DHCP_OPTION_REQUESTED_IP := 50
+i8 DHCP_OPTION_LEASE_TIME := 51
+i8 DHCP_OPTION_MESSAGE_TYPE := 53
+i8 DHCP_OPTION_PARAMETER_LIST := 55
+i8 DHCP_OPTION_CLIENT_IDENTIFIER := 61
+
+i8 DHCP_OPTION_END := -1 As i8
+
+i8 DHCP_MESSAGE_TYPE_DISCOVER := 1
+i8 DHCP_MESSAGE_TYPE_OFFER := 2
+i8 DHCP_MESSAGE_TYPE_REQUEST := 3
+i8 DHCP_MESSAGE_TYPE_DECLINE := 4
+i8 DHCP_MESSAGE_TYPE_ACK := 5
+i8 DHCP_MESSAGE_TYPE_NACK := 6
+i8 DHCP_MESSAGE_TYPE_INFORM := 7
+
+struct DHCPOption {
+    i8 OptionCode
+    i8 Length
+    i8[0] Data
+
+    define DHCPOption* Next() {
+        return ((this->Data As i64) + this->Length) As void*
+    }
+}
+
+define DHCPOption* EnterDHCPOption(PacketBuffer* Buffer) {
+    return Buffer->Bump(#DHCPOption)
+}
+define void ExitDHCPOption(PacketBuffer* Buffer, DHCPOption* Option) {
+    Option->Length := Buffer->Tell(Option->Data) As i8
+}
+
+define void DHCPTest(PacketBuffer* Buffer, EthernetHeader* Ethernet, IPV4Header* IPV4) {
+    IPV4->DestinationIP := PackIPV4(255, 255, 255, 255)
+    
+    UDPHeader* UDP := EnterUDPHeader(Buffer, IPV4)
+
+    UDP->SourcePort := 68
+    UDP->DestinationPort := 67
+
+    DHCPHeader* DHCP := EnterDHCPHeader(Buffer)
+
+    DHCP->Operation := DHCP_OPERATION_REQUEST
+    DHCP->TransactionID := 0x1234
+    DHCP->Seconds := 1
+
+    MoveMemory(DHCP->ClientHardwareAddress, Ethernet->SourceMAC, 6)
+
+    DHCPOption* MessageType := EnterDHCPOption(Buffer)
+        MessageType->OptionCode := DHCP_OPTION_MESSAGE_TYPE
+        Buffer->WriteI8(DHCP_MESSAGE_TYPE_DISCOVER)
+    ExitDHCPOption(Buffer, MessageType)
+
+    DHCPOption* ClientIdentifier := EnterDHCPOption(Buffer)
+        ClientIdentifier->OptionCode := DHCP_OPTION_CLIENT_IDENTIFIER
+        Buffer->WriteI8(DHCP_HARDWARE_TYPE_ETHERNET)
+        Buffer->Write(Ethernet->SourceMAC, 6)
+    ExitDHCPOption(Buffer, ClientIdentifier)
+
+    DHCPOption* RequestedIP := EnterDHCPOption(Buffer)
+        RequestedIP->OptionCode := DHCP_OPTION_REQUESTED_IP
+        Buffer->WriteI32(0)
+    ExitDHCPOption(Buffer, RequestedIP)
+
+    DHCPOption* ParameterRequestList := EnterDHCPOption(Buffer)
+        ParameterRequestList->OptionCode := DHCP_OPTION_PARAMETER_LIST
+        Buffer->WriteI8(DHCP_OPTION_SUBNET_MASK)
+        Buffer->WriteI8(DHCP_OPTION_ROUTER)
+        Buffer->WriteI8(DHCP_OPTION_DOMAIN_NAME_SERVER)
+    ExitDHCPOption(Buffer, ParameterRequestList)
+
+    Buffer->WriteI8(DHCP_OPTION_END)
+
+    ExitDHCPHeader(Buffer, DHCP)
+    ExitUDPHeader(Buffer, UDP)
+}

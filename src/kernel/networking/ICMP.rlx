@@ -1,0 +1,50 @@
+
+i8 IPV4_PROTOCOL_ICMP := 1
+
+i8 ICMP_TYPE_ECHO_REPLY := 0
+i8 ICMP_TYPE_ECHO_REQUEST := 8
+
+struct ICMPHeader {
+    i8 Type
+    i8 Code
+    i16 Checksum
+}
+
+define ICMPHeader* EnterICMPHeader(PacketBuffer* Buffer) {
+    return Buffer->Bump(#ICMPHeader)
+}
+define void ExitICMPHeader(PacketBuffer* Buffer, ICMPHeader* Header) {
+    i32 ICMPSize := Buffer->Tell(Header)
+
+    i16 Checksum := RFC1071Checksum(Header, ICMPSize)
+
+    Header->Checksum := Checksum
+}
+
+struct ICMPEchoRequest {
+    i16 Identifier
+    i16 SequenceNumber
+}
+
+/*
+
+	IPV4->SourceIP := PackIPV4(1, 2, 3, 4)
+	IPV4->DestinationIP := PackIPV4(192, 168, 0, 1)
+
+	IPV4->Protocol := IPV4_PROTOCOL_ICMP
+	IPV4->TimeToLive := 40
+
+	ICMPHeader* ICMP := EnterICMPHeader(Packet)
+
+	ICMP->Type := ICMP_TYPE_ECHO_REQUEST
+
+	ICMPEchoRequest* Echo := Packet->Bump(#ICMPEchoRequest)
+
+	Echo->Identifier := 1
+	Echo->SequenceNumber := 1
+
+	MoveMemory(Packet->Bump(8), "abcd1234", 8)
+
+	ExitICMPHeader(Packet, ICMP)
+
+	*/

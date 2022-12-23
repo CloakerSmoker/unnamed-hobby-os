@@ -85,3 +85,9 @@ define void MakeARPToIPV4Announcement(PacketBuffer* Buffer, MACAddress* MyMAC, i
 
 	ExitARPHeader(Buffer, ARP)
 }
+
+	/*
+	Ethernet->EtherType := ETHERTYPE_ARP
+
+	MakeARPToIPV4Announcement(Packet, MyMAC, MyIP)
+	*/

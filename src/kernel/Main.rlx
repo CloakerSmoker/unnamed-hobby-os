@@ -316,6 +316,10 @@ Task* KernelSetupTask := &_KernelSetupTask
 #Require "./src/kernel/networking/Utility.rlx"
 #Require "./src/kernel/networking/Ethernet.rlx"
 #Require "./src/kernel/networking/ARP.rlx"
+#Require "./src/kernel/networking/IPV4.rlx"
+#Require "./src/kernel/networking/ICMP.rlx"
+#Require "./src/kernel/networking/UDP.rlx"
+#Require "./src/kernel/networking/DHCP.rlx"
 
 define void MainContinuation() {
 	CurrentTask := KernelSetupTask
@@ -446,9 +450,14 @@ define void MainContinuation() {
 
 	MoveMemory(Ethernet~>SourceMAC, MyMAC, 6)
 	MoveMemory(Ethernet~>DestinationMAC, MulticastMAC, 6)
-	Ethernet->EtherType := ETHERTYPE_ARP
 
-	MakeARPToIPV4Announcement(Packet, MyMAC, MyIP)
+	Ethernet->EtherType := ETHERTYPE_IPV4
+
+	IPV4Header* IPV4 := EnterIPV4Header(Packet)
+
+	DHCPTest(Packet, Ethernet, IPV4)
+
+	ExitIPV4Header(Packet, IPV4)
 
 	ExitEthernetHeader(Packet, Ethernet)
 	

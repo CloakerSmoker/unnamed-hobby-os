@@ -1,0 +1,48 @@
+
+i16 ETHERTYPE_IPV4 := 0x800
+
+i8 IPV4_FLAG_DO_NOT_FRAGMENT := 2
+i8 IPV4_FLAG_HAS_FOLLOWING_FRAGMENTS := 4
+
+struct IPV4Header {
+    i8 Version_IHL
+    i8 DSCP_ECN
+    i16 TotalLength
+    i16 Identification
+    i16 Flags_FragmentOffset
+    i8 TimeToLive
+    i8 Protocol
+    i16 HeaderChecksum
+    i32 SourceIP
+    i32 DestinationIP
+
+    define void Initialize() {
+        this->Version_IHL := (5 | (4 << 4)) As i8
+        this->TimeToLive := 250 As i8
+    }
+
+    define void FlipEndianess() {
+        this->TotalLength := NetworkShort(this->TotalLength)
+        this->Identification := NetworkShort(this->Identification)
+        this->Flags_FragmentOffset := NetworkShort(this->Flags_FragmentOffset)
+        this->SourceIP := NetworkInt(this->SourceIP)
+        this->DestinationIP := NetworkInt(this->DestinationIP)
+    }
+}
+
+define IPV4Header* EnterIPV4Header(PacketBuffer* Buffer) {
+    IPV4Header* Result := Buffer->Bump(#IPV4Header)
+
+    Result->Initialize()
+
+    return Result
+}
+
+define void ExitIPV4Header(PacketBuffer* Buffer, IPV4Header* Header) {
+    Header->TotalLength := Buffer->Tell(Header)
+    Header->FlipEndianess()
+
+    i16 Checksum := RFC1071Checksum(Header, #IPV4Header)
+
+    Header->HeaderChecksum := Checksum
+}

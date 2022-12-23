@@ -1,0 +1,31 @@
+i8 IPV4_PROTOCOL_UDP := 17
+
+struct UDPHeader {
+    i16 SourcePort
+    i16 DestinationPort
+    i16 Length
+    i16 Checksum
+
+    define void FlipEndianess() {
+        this->SourcePort := NetworkShort(this->SourcePort)
+        this->DestinationPort := NetworkShort(this->DestinationPort)
+        this->Length := NetworkShort(this->Length)
+    }
+}
+
+define UDPHeader* EnterUDPHeader(PacketBuffer* Buffer, IPV4Header* IPV4) {
+    IPV4->Protocol := IPV4_PROTOCOL_UDP
+
+    return Buffer->Bump(#UDPHeader)
+}
+
+define void ExitUDPHeader(PacketBuffer* Buffer, UDPHeader* Header) {
+    i16 Length := Buffer->Tell(Header)
+
+    Header->Length := Length
+    Header->FlipEndianess()
+
+    i16 Checksum := RFC1071Checksum(Header, Length)
+
+    Header->Checksum := Checksum
+}
