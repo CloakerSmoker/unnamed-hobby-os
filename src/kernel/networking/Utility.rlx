@@ -69,31 +69,24 @@ define i16 RFC1071Checksum(void* Data, i32 Size) {
     i64 Sum := 0
 
     while (Size > 1) {
-        Sum += *(Data As i16*)
+        i16 Word := NetworkShort(*(Data As i16*))
+
+        Sum += (Word As i32) & 0xFFFF
         Data += 2
         Size -= 2
     }
 
     if (Size > 0) {
-        Sum += *(Data As i8*)
-    }
+        i16 Word := NetworkShort(*(Data As i8*))
 
-    Info("Plain sum: %x\n", Sum)
+        Sum += (Word As i32) & 0xFFFF
+    }
 
     while (Sum > 0xFFFF) {
-        i64 Upper := Sum >> 16
-        i64 Lower := Sum & 0xFFFF
-
-        Info("Folding %x (%x, %x) into %x\n", Sum, Upper, Lower, Upper + Lower)
-
-        Sum := Upper + Lower
+        Sum := (Sum >> 16) + (Sum & 0xFFFF)
     }
 
-    Info("Done, complement of %x: %x\n", Sum, (~Sum) & 0xFFFF)
-
-    Sum := ~Sum
-
-    return Sum As i16
+    return NetworkShort((~Sum) As i16)
 }
 
 define i32 PackIPV4(i32 A, i32 B, i32 C, i32 D) {
