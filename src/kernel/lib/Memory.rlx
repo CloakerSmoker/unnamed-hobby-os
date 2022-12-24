@@ -1,17 +1,30 @@
+#Require "$/MemoryBase.rlx"
 
 declare void* KernelHeapAllocate(i64, i32)
 declare void* KernelHeapExtendAllocation(void*, i32)
 declare void KernelHeapFree(void*)
 
-define void* Alloc(i32 Size) {
-	return KernelHeapAllocate('Alloc', Size)
-}
 define void* Alloc(i64 Tag, i32 Size) {
 	return KernelHeapAllocate(Tag, Size)
 }
-define void* ReAlloc(void* Memory, i32 Size) {
-	return KernelHeapExtendAllocation(Memory, Size)
+
+struct KernelHeapAllocator {
+    define void* Alloc(i32 Size) {
+		return KernelHeapAllocate('Alloc', Size)
+	}
+	define void* ReAlloc(void* Memory, i32 Size) {
+		return KernelHeapExtendAllocation(Memory, Size)
+	}
+	define void Free(void* Memory) {
+		KernelHeapFree(Memory)
+	}
 }
-define void Free(void* Memory) {
-	KernelHeapFree(Memory)
+
+KernelHeapAllocator DefaultKernelHeap
+
+MemoryAllocator DefaultAllocator {
+    State: &DefaultKernelHeap,
+    DoAllocate: &KernelHeapAllocator.Alloc,
+    DoExtend: &KernelHeapAllocator.ReAlloc,
+    DoFree: &KernelHeapAllocator.Free
 }
