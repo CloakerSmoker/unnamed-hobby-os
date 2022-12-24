@@ -152,9 +152,11 @@ struct E1000ReceiveBuffer unaligned {
 struct E1000TransmitBuffer unaligned {
 	i64 Address
 	i16 Length
-	i8 Checksum
+	i8 ChecksumOffset
 	i8 Command
 	i8 Status
+	i8 ChecksumStart
+	i16 Special
 }
 
 E1000* RootE1000 := null

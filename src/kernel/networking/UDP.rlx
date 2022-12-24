@@ -27,5 +27,5 @@ define void ExitUDPHeader(PacketBuffer* Buffer, UDPHeader* Header) {
 
     i16 Checksum := RFC1071Checksum(Header, Length)
 
-    Header->Checksum := Checksum
+    ;Header->Checksum := Checksum
 }
