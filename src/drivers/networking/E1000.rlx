@@ -462,6 +462,10 @@ struct E1000 {
 		;	Info("Packet status %x, %x\n", Buffer->Status, Buffer->Command)
 		;}
 	}
+
+	define void ServiceInterrupt() {
+		
+	}
 	
 	static void ServiceInterrupt() {
 		E1000* Current := RootE1000

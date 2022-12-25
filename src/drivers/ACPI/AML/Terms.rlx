@@ -1,5 +1,5 @@
 
-#Require "./src/utility/AVLTree.rlx"
+#Require "$/AVLTree.rlx"
 
 i8 AML_WHILE_OP := 0xA2 As i8
 
@@ -9,18 +9,19 @@ struct AMLWhileLoop {
 	i32 Count
 	AMLTerm** Body
 	
-	define void Print() {
+	define void Print(i32 Depth) {
+		Indent(Depth)
 		Print("While (")
 		this->Condition->Print()
 		Print(") {\n")
 		
 		for (i32 Index := 0, Index < this->Count, Index++) {
-			Print("\t")
-			PrintTerm(this->Body[Index])
+			PrintTerm(Depth + 1, this->Body[Index])
 			Print("\n")
 		}
 		
-		Print("}\n")
+		Indent(Depth)
+		Print("}")
 	}
 }
 
@@ -32,18 +33,19 @@ struct AMLIfStatement {
 	i32 Count
 	AMLTerm** Body
 	
-	define void Print() {
+	define void Print(i32 Depth) {
+		Indent(Depth)
 		Print("If (")
 		this->Condition->Print()
 		Print(") {\n")
 		
 		for (i32 Index := 0, Index < this->Count, Index++) {
-			Print("\t")
-			PrintTerm(this->Body[Index])
+			PrintTerm(Depth + 1, this->Body[Index])
 			Print("\n")
 		}
 		
-		Print("}\n")
+		Indent(Depth)
+		Print("}")
 	}
 }
 
@@ -54,16 +56,17 @@ struct AMLElseStatement {
 	i32 Count
 	AMLTerm** Body
 	
-	define void Print() {
+	define void Print(i32 Depth) {
+		Indent(Depth)
 		Print("Else {\n")
 		
 		for (i32 Index := 0, Index < this->Count, Index++) {
-			Print("\t")
-			PrintTerm(this->Body[Index])
+			PrintTerm(Depth + 1, this->Body[Index])
 			Print("\n")
 		}
 		
-		Print("}\n")
+		Indent(Depth)
+		Print("}")
 	}
 }
 
@@ -72,7 +75,8 @@ i8 AML_RETURN_OP := 0xA4 As i8
 struct AMLReturnStatement {
 	AMLTermArg* Value
 	
-	define void Print() {
+	define void Print(i32 Depth) {
+		Indent(Depth)
 		Print("Return ")
 		this->Value->Print()
 	}
@@ -88,18 +92,18 @@ struct AMLStatementOpcode {
 	
 	i8 Kind
 	
-	define void Print() {
+	define void Print(i32 Depth) {
 		if (this->Kind = AML_IF_OP) {
-			this->IfStatement->Print()
+			this->IfStatement->Print(Depth)
 		}
 		else if (this->Kind = AML_ELSE_OP) {
-			this->ElseStatement->Print()
+			this->ElseStatement->Print(Depth)
 		}
 		else if (this->Kind = AML_WHILE_OP) {
-			this->WhileLoop->Print()
+			this->WhileLoop->Print(Depth)
 		}
 		else if (this->Kind = AML_RETURN_OP) {
-			this->ReturnStatement->Print()
+			this->ReturnStatement->Print(Depth)
 		}
 	}
 }
@@ -111,14 +115,15 @@ struct AMLDefineRegion {
 	AMLTermArg* Offset
 	AMLTermArg* Length
 	
-	define void Print() {
+	define void Print(i32 Depth) {
+		Indent(Depth)
 		Print("AMLDefineRegion ")
 		this->Name->Print()
 		Print(" %x { ", this->AddressSpace)
 		this->Offset->Print()
 		Print(", ")
 		this->Length->Print()
-		Print(" }\n")
+		Print(" }")
 	}
 }
 
@@ -132,18 +137,19 @@ struct AMLDefineMethod {
 	i32 Count
 	AMLTerm** Terms
 	
-	define void Print() {
+	define void Print(i32 Depth) {
+		Indent(Depth)
 		Print("AMLDefineMethod ")
 		this->Name->Print()
 		Print(" %x {\n", this->Flags)
 		
 		for (i32 Index := 0, Index < this->Count, Index++) {
-			Print("\t")
-			PrintTerm(this->Terms[Index])
+			PrintTerm(Depth + 1, this->Terms[Index])
 			Print("\n")
 		}
-		
-		Print("}\n")
+
+		Indent(Depth)
+		Print("}")
 	}
 	
 	define i32 ParameterCount() {
@@ -186,30 +192,32 @@ struct AMLDefineField {
 	i32 Count
 	AMLField** Fields
 	
-	define void Print() {
+	define void Print(i32 Depth) {
+		Indent(Depth)
 		Print("AMLDefineField ")
 		this->Name->Print()
 		Print(" %x {\n", this->Flags)
 		
 		for (i32 Index := 0, Index < this->Count, Index++) {
-			Print("\t")
+			Indent(Depth + 1)
 			this->Fields[Index]->Print()
 			Print("\n")
 		}
 		
-		Print("}\n")
+		Indent(Depth)
+		Print("}")
 	}
 }
 
 struct AMLScope {
 	AMLScope* Parent
-	AVLTree Children
+	AVLTree Children ; <i32, AMLScope*>
 	
 	i8 IsRoot
 	i32 NameSegment
 	
-	AVLTree Methods
-	AVLTree Fields
+	AVLTree Methods ; <i32, AMLDefineMethod>
+	AVLTree Fields ; <i32, 
 	
 	define void Initialize(i8 IsRoot, i32 NameSegment) {
 		this->IsRoot := IsRoot
@@ -324,18 +332,19 @@ struct AMLDefineScope {
 	i32 Count
 	AMLTerm** Terms
 	
-	define void Print() {
+	define void Print(i32 Depth) {
+		Indent(Depth)
 		Print("AMLScope ")
 		this->Name->Print()
 		Print(" {\n")
 		
 		for (i32 Index := 0, Index < this->Count, Index++) {
-			Print("\t")
-			PrintTerm(this->Terms[Index])
+			PrintTerm(Depth + 1, this->Terms[Index])
 			Print("\n")
 		}
 		
-		Print("}\n")
+		Indent(Depth)
+		Print("}")
 	}
 }
 
@@ -345,18 +354,19 @@ struct AMLDefineDevice {
 	i32 Count
 	AMLTerm** Terms
 	
-	define void Print() {
+	define void Print(i32 Depth) {
+		Indent(Depth)
 		Print("AMLDefineDevice ")
 		this->Name->Print()
 		Print(" {\n")
 		
 		for (i32 Index := 0, Index < this->Count, Index++) {
-			Print("\t")
-			PrintTerm(this->Terms[Index])
+			PrintTerm(Depth + 1, this->Terms[Index])
 			Print("\n")
 		}
 		
-		Print("}\n")
+		Indent(Depth)
+		Print("}")
 	}
 }
 
@@ -364,7 +374,8 @@ struct AMLDefineName {
 	AMLNameString* Name
 	AMLDataObject* Data
 	
-	define void Print() {
+	define void Print(i32 Depth) {
+		Indent(Depth)
 		this->Name->Print()
 		Print(": ")
 		this->Data->Print()
@@ -377,7 +388,8 @@ struct AMLDefineMutex {
 	AMLNameString* Name
 	i8 Info
 	
-	define void Print() {
+	define void Print(i32 Depth) {
+		Indent(Depth)
 		Print("Mutex(")
 		this->Name->Print()
 		Print(", %x)", this->Info)
@@ -390,7 +402,8 @@ struct AMLAcquireMutex {
 	AMLSuperName* Name
 	i16 Info
 	
-	define void Print() {
+	define void Print(i32 Depth) {
+		Indent(Depth)
 		Print("Acquire(")
 		this->Name->Print()
 		Print(", %x)", this->Info)
@@ -402,7 +415,8 @@ i8 AML_EXT_RELEASE_OP := 0x27
 struct AMLReleaseMutex {
 	AMLSuperName* Name
 	
-	define void Print() {
+	define void Print(i32 Depth) {
+		Indent(Depth)
 		Print("Release(")
 		this->Name->Print()
 		Print(")")
@@ -419,7 +433,8 @@ struct AMLCreateField {
 	
 	i8 Kind
 	
-	define void Print() {
+	define void Print(i32 Depth) {
+		Indent(Depth)
 		Print("Create")
 		
 		if (this->Kind = AML_CREATE_BYTE_FIELD_OP) {
@@ -445,7 +460,8 @@ struct AMLNotify {
 	AMLSuperName* Name
 	AMLTermArg* Argument
 	
-	define void Print() {
+	define void Print(i32 Depth) {
+		Indent(Depth)
 		Print("Notify(")
 		this->Name->Print()
 		Print(", ")
@@ -466,16 +482,18 @@ struct AMLDefineProcessor {
 	i32 Count
 	AMLTerm** Terms
 	
-	define void Print() {
+	define void Print(i32 Depth) {
+		Indent(Depth)
 		Print("AMLDefineProcessor ")
 		this->Name->Print()
 		Print("(%x, %x, %x) {\n", this->ProcessorID, this->BlockAddress, this->BlockLength)
 		
 		for (i32 Index := 0, Index < this->Count, Index++) {
-			PrintTerm(this->Terms[Index])
+			PrintTerm(Depth + 1, this->Terms[Index])
 		}
 		
-		Print("}\n")
+		Indent(Depth)
+		Print("}")
 	}
 	
 }
@@ -519,61 +537,65 @@ struct AMLTerm {
 	
 	i8 Kind
 	
-	define void Print() {
+	define void Print(i32 Depth) {
 		if (this->Kind = AML_NAME_OP) {
-			this->Name->Print()
+			this->Name->Print(Depth)
 		}
 		else if (this->Kind = AML_SCOPE_OP) {
-			this->Scope->Print()
+			this->Scope->Print(Depth)
 		}
 		else if (this->Kind = AML_METHOD_OP) {
-			this->Method->Print()
+			this->Method->Print(Depth)
 		}
 		else if (this->Kind = AML_EXPRESSION_OP) {
+			Indent(Depth)
 			this->Expression->Print()
 		}
 		else if (this->Kind = AML_STATEMENT_OP) {
-			this->Statement->Print()
+			this->Statement->Print(Depth)
 		}
 		else if (this->Kind = AML_FIELD_OP) {
-			this->CreateField->Print()
+			this->CreateField->Print(Depth)
 		}
 		else if (this->Kind = AML_NOTIFY_OP) {
-			this->Notify->Print()
+			this->Notify->Print(Depth)
 		}
 		else if (this->Kind = AML_CONTINUE_OP) {
-			Print("Continue\n")
+			Indent(Depth)
+			Print("Continue")
 		}
 		else if (this->Kind = AML_BREAK_OP) {
-			Print("Break\n")
+			Indent(Depth)
+			Print("Break")
 		}
 		else if (this->Kind = AML_NO_OP) {
-			Print("Noop\n")
+			Indent(Depth)
+			Print("Noop")
 		}
 		else if (this->Kind = AML_EXT_MUTEX_OP) {
-			this->Mutex->Print()
+			this->Mutex->Print(Depth)
 		}
 		else if (this->Kind = AML_EXT_ACQUIRE_OP) {
-			this->Acquire->Print()
+			this->Acquire->Print(Depth)
 		}
 		else if (this->Kind = AML_EXT_RELEASE_OP) {
-			this->Release->Print()
+			this->Release->Print(Depth)
 		}
 		else if (this->Kind = AML_EXT_REGION_OP) {
-			this->Region->Print()
+			this->Region->Print(Depth)
 		}
 		else if (this->Kind = AML_EXT_FIELD_OP) {
-			this->Field->Print()
+			this->Field->Print(Depth)
 		}
 		else if (this->Kind = AML_EXT_DEVICE_OP) {
-			this->Device->Print()
+			this->Device->Print(Depth)
 		}
 		else if (this->Kind = AML_EXT_PROCESSOR_OP) {
-			this->Processor->Print()
+			this->Processor->Print(Depth)
 		}
 	}
 }
 
-define void PrintTerm(AMLTerm* Term) {
-	Term->Print()
+define void PrintTerm(i32 Depth, AMLTerm* Term) {
+	Term->Print(Depth)
 }

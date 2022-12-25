@@ -1,4 +1,4 @@
-declare void PrintTerm(AMLTerm*)
+declare void PrintTerm(i32, AMLTerm*)
 declare void PrintTermArg(AMLTermArg*)
 declare void PrintDataObject(AMLDataObject*)
 
@@ -28,7 +28,9 @@ struct AMLNameString {
 	}
 	
 	define void Print() {
-		Print("%c", this->RootCharacter)
+		if (this->RootCharacter) {
+			Print("%c", this->RootCharacter)
+		}
 		
 		if (this->Kind = AML_NAME_STRING_SINGLE) {
 			Print("%l", this->DirectNameSegments[0])

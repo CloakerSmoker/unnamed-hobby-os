@@ -4,13 +4,62 @@
 #Require "$/Exception.rlx"
 #Require "$/Debug.rlx"
 
+define void Indent(i32 Depth) {
+	for (i32 Index := 0, Index < Depth, Index++) {
+		Print("\t")
+	}
+}
+
 #Require "./src/drivers/ACPI/AML/Parser.rlx"
+
+define void PrintTerms(i32 Depth, i32 Count, AMLTerm** Terms) {
+	for (i32 Index := 0, Index < Count, Index++) {
+		PrintTerm(Depth, Terms[Index])
+		Print("\n")
+	}
+}
+
+define void PrintScope(i32 Depth, AMLScope* Scope) {
+	Indent(Depth)
+	Scope->Print()
+	Print("\n")
+
+	i32 Count := Scope~>Methods->Count()
+
+	if (Count) {
+		Indent(Depth + 1)
+		Print("Methods:\n")
+
+		for (i32 Index := 0, Index < Count, Index++) {
+			AMLDefineMethod* Method := Scope~>Methods->PointerValueAt(Index)
+
+			Indent(Depth + 2)
+			Method->Name->Print()
+			Print(":\n")
+
+			PrintTerms(Depth + 3, Method->Count, Method->Terms)
+		}
+	}
+
+	i32 Count := Scope~>Children->Count()
+
+	if (Count) {
+		Indent(Depth + 1)
+		Print("Children:\n")
+
+		for (i32 Index := 0, Index < Count, Index++) {
+			AMLScope* Child := Scope~>Children->PointerValueAt(Index)
+
+			PrintScope(Depth + 2, Child)
+		}
+	}
+}
 
 define void Main() {
 	Print("%x %x\n", #AMLTerm, #AMLTermArg)
 	Print("%x\n", (null As AMLTerm*)~>Statement~>WhileLoop~>Body)
 
-	i64 F := FileOpen("/home/connor/Desktop/nasm-2.14.02-win64/example.aml", FILE_READ)
+	i64 F := FileOpen("dsdt.aml.bin", FILE_READ)
 	
 	i32 Size := FileGetSize(F)
 	void* AML := FileReadAll(F)
@@ -27,13 +76,15 @@ define void Main() {
 	AMLTerm** Terms := null
 	P->ParseTopLevelBlock(Size, &Count, &Terms)
 	
-	for (i32 Index := 0, Index < Count, Index++) {
-		Terms[Index]->Print()
-	}
+	;for (i32 Index := 0, Index < Count, Index++) {
+	;	Terms[Index]->Print()
+	;}
 	
 	P->ParseBodyBlocks()
 	
-	for (i32 Index := 0, Index < Count, Index++) {
-		Terms[Index]->Print()
-	}
+	;for (i32 Index := 0, Index < Count, Index++) {
+	;	Terms[Index]->Print()
+	;}
+
+	PrintScope(0, P->RootScope)
 }

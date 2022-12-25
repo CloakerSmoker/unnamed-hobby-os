@@ -201,6 +201,20 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 		else if (Signature = ACPI_TABEL_SIGNATURE_FIXED_ACPI_DESCRIPTION) {
 			ACPI_FADT* FADT := NextACPITable->Data()
 			ACPI_DSDT* DSDT := FADT->ExtendedDSDT As void*
+
+			i32 Length := DSDT~>Header->Length
+
+			asm {cli}
+
+			Print("DSDT: ")
+
+			for (i32 Index := 0, Index < Length, Index++) {
+				Print("%B|", (DSDT As i8*)[Index])
+			}
+
+			Print("\n")
+
+			loop {}
 			
 			;Print("%hexdump\n", DSDT, DSDT~>Header->Length)
 		}
