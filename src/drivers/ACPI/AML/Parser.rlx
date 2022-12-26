@@ -494,15 +494,23 @@ struct AMLParser {
 		if (0x72 <= Next && Next <= 0x74) {
 			Result->Operation := (Next - 0x72) As i8
 		}
-		else if (0x77 <= Next && Next <= 0x7F) {
-			Result->Operation := (2 + (Next - 0x77)) As i8
+		else if (Next = 0x77) {
+			Result->Operation := AML_DDT_MULTIPLY
 		}
-		else if (Next = 0x84 || Next = 0x85) {
-			Result->Operation := (11 + (Next = 0x85)) As i8
+		else if (0x79 <= Next && Next <= 0x7F) {
+			Result->Operation := (AML_DDT_SHIFT_LEFT + (Next - 0x79)) As i8
+		}
+		else if (Next = 0x84) {
+			Result->Operation := AML_DDT_CONCAT_RES
+		}
+		else if (Next = 0x85) {
+			Result->Operation := AML_DDT_MOD
 		}
 		else if (Next = 0x88) {
-			Result->Operation := 13
+			Result->Operation := AML_DDT_INDEX
 		}
+
+		;Print("DDT %x -> index %i\n", Next, Result->Operation)
 		
 		Result->Left := this->ParseTermArg()
 		Result->Right := this->ParseTermArg()

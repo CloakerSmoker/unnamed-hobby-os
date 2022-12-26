@@ -197,11 +197,14 @@ struct AMLDataObject {
 	
 	union {
 		i8* StringValue
-		
+	
 		i8 ByteValue
 		i16 WordValue
 		i32 DoubleWordValue
 		i64 QuadWordValue
+		
+		i64 IntegerValue
+
 		AMLSuperName* Name
 		AMLBuffer* Buffer
 		AMLPackage* Package
@@ -210,15 +213,6 @@ struct AMLDataObject {
 	define void Print() {
 		if (this->Kind = AML_DATA_OBJECT_STRING_PREFIX) {
 			Print("%s", this->StringValue)
-		}
-		else if (this->Kind = AML_DATA_OBJECT_BYTE_PREFIX) {
-			Print("%x", this->ByteValue)
-		}
-		else if (this->Kind = AML_DATA_OBJECT_WORD_PREFIX) {
-			Print("%x", this->WordValue)
-		}
-		else if (this->Kind = AML_DATA_OBJECT_DWORD_PREFIX) {
-			Print("%x", this->DoubleWordValue)
 		}
 		else if (this->Kind = AML_DATA_OBJECT_SUPERNAME) {
 			this->Name->Print()
@@ -230,7 +224,7 @@ struct AMLDataObject {
 			this->Package->Print()
 		}
 		else {
-			Print("%x", this->QuadWordValue)
+			Print("%x", this->IntegerValue)
 		}
 	}
 }
@@ -307,11 +301,13 @@ struct AMLDataDataTargetOperation {
 	
 	define void Print() {
 		i8*[14] Names {
-			"+", ".", "-", "<<", ">>", "&", "NAND", "|", "NOR", "^", "..", "%", "["
+			"+", "..", "-", "*", "<<", ">>", "&", "NAND", "|", "NOR", "^", "..", "%", "["
 		}
 		
 		this->Target->Print()
+		Print("(")
 		PrintTermArg(this->Left)
+		Print(")")
 		
 		if (this->Operation = AML_DDT_INDEX) {
 			Print("[")
@@ -320,7 +316,9 @@ struct AMLDataDataTargetOperation {
 			Print(" %s ", Names[this->Operation])
 		}
 		
+		Print("(")
 		PrintTermArg(this->Right)
+		Print(")")
 		
 		if (this->Operation = AML_DDT_INDEX) {
 			Print("]")
@@ -378,9 +376,13 @@ struct AMLDataDataOperation {
 			"&&", "||", "!=", "<=", ">=", "==", ">", "<"
 		}
 		
+		Print("(")
 		PrintTermArg(this->Left)
+		Print(")")
 		Print(" %s ", Operators[this->Operation])
+		Print("(")
 		PrintTermArg(this->Right)
+		Print(")")
 	}
 }
 
