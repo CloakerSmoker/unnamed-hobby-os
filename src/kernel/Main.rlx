@@ -257,6 +257,15 @@ define void VisitPCIFunction(i32 Bus, i32 Slot, i32 Function) {
 	PCIClassCodes->Print(Class, SubClass, Interface)
 	
 	Print("\n")
+
+	if (Bus = 0 && Slot = 1 && Function = 3) {
+		Print("ISA bridge\n")
+		for (i32 Index := 0, Index < 4, Index++) {
+			i32 Interrupt := PCIReadConfig(Bus, Slot, Function, 0x60 + Index)
+
+			Print("Int %c = %i\n", 'A' + Index, Interrupt)
+		}
+	}
 	
 	if (Class = PCI_CLASS_CODE_MASS_STORAGE_CONTROLLER 
 	 && SubClass = PCI_SUBCLASS_IDE_INTERFACE) {

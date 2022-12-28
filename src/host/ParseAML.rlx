@@ -24,33 +24,20 @@ define void PrintScope(i32 Depth, AMLScope* Scope) {
 	Scope->Print()
 	Print("\n")
 
-	i32 Count := Scope~>Methods->Count()
+	i32 Count := Scope~>Members->Count()
 
 	if (Count) {
-		Indent(Depth + 1)
-		Print("Methods:\n")
-
 		for (i32 Index := 0, Index < Count, Index++) {
-			AMLDefineMethod* Method := Scope~>Methods->PointerValueAt(Index)
+			AMLScopeMember* Member := Scope~>Members->At(Index)
 
-			Indent(Depth + 2)
-			Method->Name->Print()
-			Print(":\n")
 
-			PrintTerms(Depth + 3, Method->Count, Method->Terms)
-		}
-	}
-
-	i32 Count := Scope~>Children->Count()
-
-	if (Count) {
-		Indent(Depth + 1)
-		Print("Children:\n")
-
-		for (i32 Index := 0, Index < Count, Index++) {
-			AMLScope* Child := Scope~>Children->PointerValueAt(Index)
-
-			PrintScope(Depth + 2, Child)
+			if (Member->Kind = AML_MEMBER_KIND_SCOPE) {
+				PrintScope(Depth + 1, Member->ScopeValue)
+			}
+			else {
+				Member->Print(Depth + 1)
+				Print("\n")
+			}
 		}
 	}
 }
@@ -75,6 +62,10 @@ define void Main() {
 	i32 Count := 0
 	AMLTerm** Terms := null
 	P->ParseTopLevelBlock(Size, &Count, &Terms)
+
+	Print("===\nDone with method declarations\n===\n")
+
+	PrintScope(0, P->RootScope)
 	
 	;for (i32 Index := 0, Index < Count, Index++) {
 	;	Terms[Index]->Print()

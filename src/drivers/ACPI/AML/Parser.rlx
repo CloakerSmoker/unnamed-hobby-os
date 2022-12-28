@@ -70,7 +70,7 @@ struct AMLParser {
 		AMLScope* Current := Root
 		
 		for (i32 Index := 0, Index < NameSegmentCount, Index++) {
-			Current := Current->FindOrAddChild(NameSegments[Index])
+			Current := Current->FindOrAddChildScope(NameSegments[Index])
 		}
 		
 		return Current
@@ -94,7 +94,7 @@ struct AMLParser {
 		AMLScope* Current := Root
 		
 		for (i32 Index := 0, Index < NameSegmentCount, Index++) {
-			Current := Current->FindChild(NameSegments[Index])
+			Current := Current->FindChildScope(NameSegments[Index])
 			
 			if !(Current) {
 				return null
@@ -122,7 +122,7 @@ struct AMLParser {
 		this->CurrentScope := Old
 	}
 	
-	define AMLDefineMethod* FindMethod(AMLNameString* Name) {
+	define AMLMethod* FindMethod(AMLNameString* Name) {
 		i32* NameSegments := null
 		i32 NameSegmentCount := 0
 		i8 RootCharacter := Name->Unpack(&NameSegments, &NameSegmentCount)
@@ -137,15 +137,17 @@ struct AMLParser {
 			Print("No container\n")
 			return null
 		}
+
+		i32 LocalName := NameSegments[NameSegmentCount - 1]
 		
-		AMLDefineMethod* Result := Container->FindMethod(NameSegments[NameSegmentCount - 1])
+		AMLMethod* Result := Container->FindMember(AML_MEMBER_KIND_METHOD, LocalName)
 		
 		Container->Print()
-		Print(".%l\n", NameSegments[NameSegmentCount - 1])
+		Print(".%l (%x)\n", LocalName, Result)
 		
 		return Result
 	}
-	define void AddMethod(AMLNameString* Name, AMLDefineMethod* Method) {
+	define void AddMethod(AMLNameString* Name, AMLMethod* Method) {
 		Print("AddMethod (")
 		this->CurrentScope->Print()
 		Print("): ")
@@ -161,7 +163,29 @@ struct AMLParser {
 		Container->Print()
 		Print(".%l\n", NameSegments[NameSegmentCount - 1])
 		
-		Container->AddMethod(NameSegments[NameSegmentCount - 1], Method)
+		Container->AddMember(AML_MEMBER_KIND_METHOD, NameSegments[NameSegmentCount - 1], Method)
+
+		AMLMethod* Meth := Container->FindMember(AML_MEMBER_KIND_METHOD, NameSegments[NameSegmentCount - 1])
+
+		Print("Method: %x\nMeth: %x\n", Method, Meth)
+		Print("Meth name: ")
+		Meth->Name->Print()
+		Print("\n")
+	}
+
+	define void AddScopeMember(i8 Kind, AMLNameString* Name, void* Value) {
+		;Print("AddField (")
+		;this->CurrentScope->Print()
+		;Print("): ")
+		;Name->Print()
+		
+		i32* NameSegments := null
+		i32 NameSegmentCount := 0
+		i8 RootCharacter := Name->Unpack(&NameSegments, &NameSegmentCount)
+
+		AMLScope* Container := this->FindOrAddScope(RootCharacter, NameSegments, NameSegmentCount - 1)
+
+		Container->AddMember(Kind, NameSegments[NameSegmentCount - 1], Value)
 	}
 	
 	define void Fail() {
@@ -600,7 +624,7 @@ struct AMLParser {
 			
 			AMLNameString MaybeMethodName
 			this->ParseNamePath(&MaybeMethodName)
-			AMLDefineMethod* Method := this->FindMethod(&MaybeMethodName)
+			AMLMethod* Method := this->FindMethod(&MaybeMethodName)
 			
 			this->Index := Before
 			
@@ -615,7 +639,7 @@ struct AMLParser {
 		|| this->NextIsDataOperation()
 	}
 	
-	define AMLMethodInvoke* ParseMethodInvoke(AMLDefineMethod* Method) {
+	define AMLMethodInvoke* ParseMethodInvoke(AMLMethod* Method) {
 		AMLMethodInvoke* Result := Alloc(#AMLMethodInvoke)
 		
 		Print("ParseMethodInvoke(")
@@ -669,7 +693,7 @@ struct AMLParser {
 		}
 		else {
 			AMLNameString* MethodName := this->ParseNameString()
-			AMLDefineMethod* Method := this->FindMethod(MethodName)
+			AMLMethod* Method := this->FindMethod(MethodName)
 			
 			Result->Kind := AML_EXPRESSION_METHOD_INVOKE
 			Result->MethodInvoke := this->ParseMethodInvoke(Method)
@@ -839,6 +863,8 @@ struct AMLParser {
 		}
 		
 		Result->Count := Index
+
+		;this->AddField(Result->Name, Result)
 		
 		return Result
 	}
@@ -858,8 +884,8 @@ struct AMLParser {
 		return Result
 	}
 	
-	define AMLDefineMethod* ParseDefineMethod() {
-		AMLDefineMethod* Result := Alloc(#AMLDefineMethod)
+	define AMLMethod* ParseDefineMethod() {
+		AMLMethod* Result := Alloc(#AMLMethod)
 		
 		i32 Start := this->Index
 		Result->Length := this->ParsePackageLength()
@@ -885,6 +911,8 @@ struct AMLParser {
 		this->ParseTopLevelBlock(End, Result~>Count, Result~>Terms)
 		this->ExitScope(Last)
 		
+		this->AddScopeMember(AML_MEMBER_KIND_DEVICE, Result->Name, Result)
+
 		return Result
 	}
 	

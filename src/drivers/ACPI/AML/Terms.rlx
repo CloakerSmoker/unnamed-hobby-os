@@ -130,7 +130,7 @@ struct AMLDefineRegion {
 
 i8 AML_DEFINE_METHOD_COUNT_MASK := 0b0000_0_111
 
-struct AMLDefineMethod {
+struct AMLMethod {
 	i32 Length
 	AMLNameString* Name
 	i8 Flags
@@ -139,7 +139,7 @@ struct AMLDefineMethod {
 	
 	define void Print(i32 Depth) {
 		Indent(Depth)
-		Print("AMLDefineMethod ")
+		Print("AMLMethod ")
 		this->Name->Print()
 		Print(" %x {\n", this->Flags)
 		
@@ -209,28 +209,101 @@ struct AMLDefineField {
 	}
 }
 
+struct AMLDefineDevice {
+	i32 Length
+	AMLNameString* Name
+	i32 Count
+	AMLTerm** Terms
+	
+	define void Print(i32 Depth) {
+		Indent(Depth)
+		Print("AMLDefineDevice ")
+		this->Name->Print()
+		Print(" {\n")
+		
+		for (i32 Index := 0, Index < this->Count, Index++) {
+			PrintTerm(Depth + 1, this->Terms[Index])
+			Print("\n")
+		}
+		
+		Indent(Depth)
+		Print("}")
+	}
+}
+
+i8 AML_MEMBER_KIND_METHOD := 1
+i8 AML_MEMBER_KIND_SCOPE := 2
+i8 AML_MEMBER_KIND_DEVICE := 3
+
+struct AMLScopeMember {
+	union {
+		AMLMethod* MethodValue
+		AMLScope* ScopeValue
+		AMLDefineDevice* DeviceValue
+		void* Value
+	}
+
+	i32 NameSegment
+
+	i8 Kind
+
+	define void Print(i32 Depth) {
+		if (this->Kind = AML_MEMBER_KIND_METHOD) {
+			this->MethodValue->Print(Depth)
+		}
+		else if (this->Kind = AML_MEMBER_KIND_DEVICE) {
+			this->DeviceValue->Print(Depth)
+		}
+	}
+}
+
 struct AMLScope {
 	AMLScope* Parent
-	AVLTree Children ; <i32, AMLScope*>
 	
 	i8 IsRoot
 	i32 NameSegment
-	
-	AVLTree Methods ; <i32, AMLDefineMethod>
-	AVLTree Fields ; <i32, 
+
+	AVLTree Members ; <i32, AMLScopeMember>
 	
 	define void Initialize(i8 IsRoot, i32 NameSegment) {
 		this->IsRoot := IsRoot
 		this->NameSegment := NameSegment
 		
-		this~>Methods->ValueSize := 8
-		this~>Fields->ValueSize := 8
-		this~>Children->ValueSize := 8
+		this~>Members->ValueSize := #AMLScopeMember
+	}
+
+	define void AddOwnMember(i8 Kind, i32 NameSegment, void* Value) {
+		AMLScopeMember Member {
+			NameSegment: NameSegment,
+			Kind: Kind,
+			Value: Value
+		}
+
+		this~>Members->Insert(NameSegment, &Member)
+	}
+
+	define void* FindOwnMember(i8 Kind, i32 NameSegment) {
+		AMLScopeMember* Member := this~>Members->Get(NameSegment)
+
+		if (Member = null) {
+			return null
+		}
+
+		if (Member->Kind != Kind) {
+			return null
+		}
+
+		return Member->Value
+	}
+
+	define i8 HasOwnMember(i8 Kind, i32 NameSegment) {
+		return this->FindOwnMember(Kind, NameSegment) != null
 	}
 	
-	define void AddChild(AMLScope* Child) {
+	define void AddChildScope(AMLScope* Child) {
 		Child->Parent := this
-		this~>Children->Insert(Child->NameSegment, &Child)
+
+		this->AddOwnMember(AML_MEMBER_KIND_SCOPE, Child->NameSegment, Child)
 	}
 	
 	static AMLScope* New() {
@@ -246,17 +319,17 @@ struct AMLScope {
 		
 		this->Initialize(false, NameSegment)
 		
-		Parent->AddChild(this)
+		Parent->AddChildScope(this)
 		
 		return this
 	}
 	
-	define AMLScope* FindChild(i32 NameSegment) {
-		return this~>Children->GetNode(NameSegment)->ValueAsPointer()
+	define AMLScope* FindChildScope(i32 NameSegment) {
+		return this->FindOwnMember(AML_MEMBER_KIND_SCOPE, NameSegment)
 	}
 	
-	define AMLScope* FindOrAddChild(i32 NameSegment) {
-		AMLScope* Result := this->FindChild(NameSegment)
+	define AMLScope* FindOrAddChildScope(i32 NameSegment) {
+		AMLScope* Result := this->FindChildScope(NameSegment)
 		
 		if !(Result) {
 			Result := AMLScope:New(this, NameSegment)
@@ -277,43 +350,26 @@ struct AMLScope {
 		
 		Print("%l", this->NameSegment)
 	}
-	
-	define void AddMethod(i32 NameSegment, AMLDefineMethod* Method) {
-		;this->Name->Print()
-		;Print(".AddMethod(")
-		;Name->Print()
-		;Print(", %x, %x)\n", Name->Hash(), Method)
-		;
-		;this~>Methods->Print()
-		
-		this~>Methods->Insert(NameSegment, &Method)
-	}
-	define i8 IsOwnMethod(i32 NameSegment) {
-		return this~>Methods->Has(NameSegment)
-	}
-	define AMLDefineMethod* FindOwnMethod(i32 NameSegment) {
-		return this~>Methods->GetNode(NameSegment)->ValueAsPointer()
-	}
-	
-	define i8 IsMethod(i32 NameSegment) {
+
+	define i8 HasMember(i8 Kind, i32 NameSegment) {
 		AMLScope* Current := this
-		
+
 		while (Current) {
-			if (Current->IsOwnMethod(NameSegment)) {
+			if (Current->HasOwnMember(Kind, NameSegment)) {
 				return true
 			}
-			
+
 			Current := Current->Parent
 		}
-		
+
 		return false
 	}
 	
-	define AMLDefineMethod* FindMethod(i32 NameSegment) {
+	define void* FindMember(i8 Kind, i32 NameSegment) {
 		AMLScope* Current := this
 		
 		while (Current) {
-			AMLDefineMethod* Result := Current->FindOwnMethod(NameSegment)
+			void* Result := Current->FindOwnMember(Kind, NameSegment)
 			
 			if (Result) {
 				return Result
@@ -324,6 +380,12 @@ struct AMLScope {
 		
 		return null
 	}
+
+	define void AddMember(i8 Kind, i32 NameSegment, void* Value) {
+		this->AddOwnMember(Kind, NameSegment, Value)
+	}
+	
+
 }
 
 struct AMLDefineScope {
@@ -335,28 +397,6 @@ struct AMLDefineScope {
 	define void Print(i32 Depth) {
 		Indent(Depth)
 		Print("AMLScope ")
-		this->Name->Print()
-		Print(" {\n")
-		
-		for (i32 Index := 0, Index < this->Count, Index++) {
-			PrintTerm(Depth + 1, this->Terms[Index])
-			Print("\n")
-		}
-		
-		Indent(Depth)
-		Print("}")
-	}
-}
-
-struct AMLDefineDevice {
-	i32 Length
-	AMLNameString* Name
-	i32 Count
-	AMLTerm** Terms
-	
-	define void Print(i32 Depth) {
-		Indent(Depth)
-		Print("AMLDefineDevice ")
 		this->Name->Print()
 		Print(" {\n")
 		
@@ -522,7 +562,9 @@ struct AMLTerm {
 		AMLDefineRegion* Region
 		AMLDefineField* Field
 		AMLDefineScope* Scope
-		AMLDefineMethod* Method
+
+		AMLMethod* Method
+
 		AMLExpressionOpcode* Expression
 		AMLStatementOpcode* Statement
 		AMLDefineDevice* Device

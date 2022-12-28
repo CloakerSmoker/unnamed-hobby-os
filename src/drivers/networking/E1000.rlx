@@ -505,9 +505,9 @@ struct E1000 {
 		this~>PCI->Slot := Slot
 		this~>PCI->Function := Function
 		
-		;Info("IRQ %i\n", this~>PCI->GetIRQ())
+		Info("IRQ %i\n", this~>PCI->Read(PCI_HEADER_INTERRUPT_PIN))
 		
-		this~>PCI->SetIRQ(9)
+		;this~>PCI->SetIRQ(9)
 		
 		i32 Size := -this~>PCI->GetBARSize(0)
 		i32 BAR0 := 0x7000_0000
