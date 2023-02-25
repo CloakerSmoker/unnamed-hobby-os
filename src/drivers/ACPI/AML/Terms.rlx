@@ -257,119 +257,60 @@ struct AMLScopeMember {
 	}
 }
 
+
+enum AML_SCOPE_KIND {
+    NONE,
+    ROOT,
+    SCOPE,
+    DEVICE
+}
+
 struct AMLScope {
-	AMLScope* Parent
-	
-	i8 IsRoot
-	i32 NameSegment
+    union {
+        AMLDevice* Device
 
-	AVLTree Members ; <i32, AMLScopeMember>
-	
-	define void Initialize(i8 IsRoot, i32 NameSegment) {
-		this->IsRoot := IsRoot
+        void* Value
+    }
+
+    i32 NameSegment
+    AML_SCOPE_KIND Kind
+
+    AVLTree Children ; <i32, AMLScope*>
+
+    define void Initialize() {
+        this~>Children->ValueSize := #AMLScope
+    }
+
+    define void Initialize(i32 NameSegment, AML_SCOPE_KIND Kind, void* Value) {
 		this->NameSegment := NameSegment
+		this->Kind := Kind
+        this->Value := Value
 		
-		this~>Members->ValueSize := #AMLScopeMember
+		this~>Children->ValueSize := #AMLScope
 	}
 
-	define void AddOwnMember(i8 Kind, i32 NameSegment, void* Value) {
-		AMLScopeMember Member {
-			NameSegment: NameSegment,
-			Kind: Kind,
-			Value: Value
-		}
+    define void AddChild(i32 NameSegment, AML_SCOPE_KIND Kind, void* Value) {
+        AMLScope Child
 
-		this~>Members->Insert(NameSegment, &Member)
-	}
+        ZeroMemory(&Child, #AMLScope)
 
-	define void* FindOwnMember(i8 Kind, i32 NameSegment) {
-		AMLScopeMember* Member := this~>Members->Get(NameSegment)
+        Child.Initialize(Kind, NameSegment, Value)
 
-		if (Member = null) {
-			return null
-		}
+        this~>Children->Insert(NameSegment, &Child)
+    }
 
-		if (Member->Kind != Kind) {
-			return null
-		}
+    define AMLScope* FindOwnChild(i32 NameSegment) {
+        return this~>Children->Get(NameSegment)
+    }
+    define i8 HasOwnChild(i32 NameSegment) {
+        return this->FindChild(NameSegment) != null
+    }
 
-		return Member->Value
-	}
-
-	define i8 HasOwnMember(i8 Kind, i32 NameSegment) {
-		return this->FindOwnMember(Kind, NameSegment) != null
-	}
-	
-	define void AddChildScope(AMLScope* Child) {
-		Child->Parent := this
-
-		this->AddOwnMember(AML_MEMBER_KIND_SCOPE, Child->NameSegment, Child)
-	}
-	
-	static AMLScope* New() {
-		AMLScope* this := Alloc(#AMLScope)
-		
-		this->Initialize(true, 0)
-		
-		return this
-	}
-	
-	static AMLScope* New(AMLScope* Parent, i32 NameSegment) {
-		AMLScope* this := Alloc(#AMLScope)
-		
-		this->Initialize(false, NameSegment)
-		
-		Parent->AddChildScope(this)
-		
-		return this
-	}
-	
-	define AMLScope* FindChildScope(i32 NameSegment) {
-		return this->FindOwnMember(AML_MEMBER_KIND_SCOPE, NameSegment)
-	}
-	
-	define AMLScope* FindOrAddChildScope(i32 NameSegment) {
-		AMLScope* Result := this->FindChildScope(NameSegment)
-		
-		if !(Result) {
-			Result := AMLScope:New(this, NameSegment)
-		}
-		
-		return Result
-	}
-	
-	define void Print() {
-		if (this->Parent) {
-			this->Parent->Print()
-			Print(".")
-		}
-		
-		if (this->IsRoot) {
-			Print("\\")
-		}
-		
-		Print("%l", this->NameSegment)
-	}
-
-	define i8 HasMember(i8 Kind, i32 NameSegment) {
-		AMLScope* Current := this
-
-		while (Current) {
-			if (Current->HasOwnMember(Kind, NameSegment)) {
-				return true
-			}
-
-			Current := Current->Parent
-		}
-
-		return false
-	}
-	
-	define void* FindMember(i8 Kind, i32 NameSegment) {
+    define AMLScope* FindChild(i32 NameSegment) {
 		AMLScope* Current := this
 		
 		while (Current) {
-			void* Result := Current->FindOwnMember(Kind, NameSegment)
+			AMLScope* Result := Current->FindOwnChild(NameSegment)
 			
 			if (Result) {
 				return Result
@@ -381,11 +322,19 @@ struct AMLScope {
 		return null
 	}
 
-	define void AddMember(i8 Kind, i32 NameSegment, void* Value) {
-		this->AddOwnMember(Kind, NameSegment, Value)
-	}
-	
+    define i8 HasChild(i32 NameSegment) {
+		AMLScope* Current := this
 
+		while (Current) {
+			if (Current->HasOwnChild(NameSegment)) {
+				return true
+			}
+
+			Current := Current->Parent
+		}
+
+		return false
+	}
 }
 
 struct AMLDefineScope {

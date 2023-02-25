@@ -60,7 +60,7 @@ struct AMLParser {
 	AMLScope* RootScope
 	AMLScope* CurrentScope
 	
-	define AMLScope* FindOrAddScope(i8 RootCharacter, i32* NameSegments, i32 NameSegmentCount) {
+	define AMLScope* FindOrAddScope(i8 RootCharacter, i32* NameSegments, i32 NameSegmentCount, AML_SCOPE_KIND Kind, void* Value) {
 		AMLScope* Root := this->CurrentScope
 		
 		if (RootCharacter = '\') {
@@ -70,18 +70,44 @@ struct AMLParser {
 		AMLScope* Current := Root
 		
 		for (i32 Index := 0, Index < NameSegmentCount, Index++) {
-			Current := Current->FindOrAddChildScope(NameSegments[Index])
+			i32 Name := NameSegments[Index]
+			AMLScope* Next := Current->FindOwnChild(Name)
+
+			if (Index + 1 = NameSegmentCount) {
+				; Final segment is the actual object/scope name
+
+				if (Next->Kind != AML_SCOPE_KIND_NONE) {
+					Print("wtf???? scope already populated bozo")
+					Print(".%l\n", Name)
+					Throw('wtf!!!')
+				}
+
+				if (Kind != AML_SCOPE_KIND_NONE) {
+					Next->Kind := Kind
+					Next->Value := Value
+				}
+
+				return Next
+			}
+
+			if (Next = null) {
+				Current->AddChild(Name, AML_SCOPE_KIND_NONE, null)
+
+				Next := Current->FindOwnChild(Name)
+			}
+
+			Current := Next
 		}
 		
 		return Current
 	}
 	
-	define AMLScope* FindOrAddScope(AMLNameString* Name) {
+	define AMLScope* FindOrAddScope(AMLNameString* Name, AML_SCOPE_KIND Kind, void* Value) {
 		i32* NameSegments := null
 		i32 NameSegmentCount := 0
 		i8 RootCharacter := Name->Unpack(&NameSegments, &NameSegmentCount)
 		
-		return this->FindOrAddScope(RootCharacter, NameSegments, NameSegmentCount)
+		return this->FindOrAddScope(RootCharacter, NameSegments, NameSegmentCount, Kind, Value)
 	}
 	
 	define AMLScope* FindScope(i8 RootCharacter, i32* NameSegments, i32 NameSegmentCount) {
@@ -104,14 +130,14 @@ struct AMLParser {
 		return Current
 	}
 	
-	define AMLScope* EnterScope(AMLNameString* Name) {
+	define AMLScope* EnterScope(AMLNameString* Name, AML_SCOPE_KIND Kind, void* Value) {
 		AMLScope* Last := this->CurrentScope
 		
 		;Print("EnterScope(")
 		;Name->Print()
 		;Print(") = ")
 		
-		this->CurrentScope := this->FindOrAddScope(Name)
+		this->CurrentScope := this->FindOrAddScope(Name, Kind, Value)
 		
 		;this->CurrentScope->Print()
 		;Print("\n")

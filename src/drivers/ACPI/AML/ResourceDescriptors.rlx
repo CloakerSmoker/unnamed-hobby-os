@@ -1,0 +1,64 @@
+
+; ugh
+
+enum AML_SHORT_RESOURCE_TYPE {
+    IRQ := 0x4
+    DMA,
+    IOPort := 0x8
+    FixedIOPort,
+    FixedDMA,
+    End := 0xF
+}
+
+enum AML_EXTENDED_RESOURCE_TYPE {
+
+}
+
+bits AMLResourceLeadByte As i8 {
+    [7] IsExtendedResource
+}
+
+bits AMLShortResourceLeadByte As i8 {
+    [0:2] Length
+    [3:6] AML_SHORT_RESOURCE_TYPE Type
+}
+
+bits AMLExtendedResourceLeadByte As i8 {
+    [0:6] Type
+}
+
+struct AMLExtendedResource {
+    i16 Length
+}
+
+struct AMLExtendedInterruptDescriptor {
+    i8 Flags
+    i8 Length
+}
+
+struct AMLResource {
+    union {
+        AMLResourceLeadByte Header
+        AMLShortResourceLeadByte ShortHeader
+        AMLExtendedResourceLeadByte LongHeader
+    }
+
+    union {
+        i8[0] Data
+    }
+
+    define i32 Length() {
+        if (this->Header.IsExtendedResource) {
+
+        }
+    }
+
+    define AMLResource* Next() {
+        if (this->Header.IsLongResource) {
+
+        }
+        else {
+            i32 Length := this->Header.
+        }
+    } 
+}
