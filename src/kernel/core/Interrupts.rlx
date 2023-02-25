@@ -144,11 +144,13 @@ define void SetupInterrupts() {
 	
 	RemapPIC(0x20, 0x28)
 	
-	LocalAPIC->Initialize()
-	LocalAPIC->Setup()
-	
-	FirstIOAPIC->Initialize(BootInfo->IOAPICBase, 0)
-	FirstIOAPIC->Setup()
+	if (USE_APIC) {
+		LocalAPIC->Initialize()
+		LocalAPIC->Setup()
+		
+		FirstIOAPIC->Initialize(BootInfo->IOAPICBase, 0)
+		FirstIOAPIC->Setup()
+	}
 	
 	if (USE_INTERRUPT_STUBS) {
 		AddHandlerStubs()

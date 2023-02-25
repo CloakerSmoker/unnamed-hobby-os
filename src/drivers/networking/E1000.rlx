@@ -305,8 +305,8 @@ struct E1000 {
 			Buffers[Index]->Status := 0
 		}
 		
-		this->Write(E1000_REGISTER_RXDESCLO, ((BuffersPhysical >> 32) & 0xFFFF_FFFF) As i32)
-		this->Write(E1000_REGISTER_RXDESCHI, (BuffersPhysical & 0xFFFF_FFFF) As i32)
+		this->Write(E1000_REGISTER_RXDESCLO, (BuffersPhysical & 0xFFFF_FFFF) As i32)
+		this->Write(E1000_REGISTER_RXDESCHI, ((BuffersPhysical >> 32) & 0xFFFF_FFFF) As i32)
 		
 		this->Write(E1000_REGISTER_RXDESCLEN, E1000_BUFFER_COUNT * #E1000ReceiveBuffer)
 		
@@ -346,8 +346,8 @@ struct E1000 {
 			Buffers[Index]->Command := 0
 		}
 		
-		this->Write(E1000_REGISTER_TXDESCHI, ((BuffersPhysical >> 32) & 0xFFFF_FFFF) As i32)
 		this->Write(E1000_REGISTER_TXDESCLO, (BuffersPhysical & 0xFFFF_FFFF) As i32)
+		this->Write(E1000_REGISTER_TXDESCHI, ((BuffersPhysical >> 32) & 0xFFFF_FFFF) As i32)
 		
 		this->Write(E1000_REGISTER_TXDESCLEN, E1000_BUFFER_COUNT * #E1000TransmitBuffer)
 		
@@ -368,6 +368,7 @@ struct E1000 {
 	
 	define void EnableInterrupts() {
 		this->Write(E1000_REGISTER_IMS, E1000_IMS_LSC | E1000_IMS_RXO | E1000_IMS_TXQE | E1000_IMS_TXDW | E1000_IMS_RXT)
+		this->Read(E1000_REGISTER_ICR)
 		this->Read(E1000_REGISTER_ICR)
 	}
 	
@@ -401,12 +402,12 @@ struct E1000 {
 		
 		; Clear MTA
 		for (i32 Index := 0, Index < E1000_REGISTER_MTA_SIZE, Index++) {
-			this->Write(E1000_REGISTER_MTA_BASE + (Index * 4), 0)
+			;this->Write(E1000_REGISTER_MTA_BASE + (Index * 4), 0)
 		}
 		
 		; Clear counters
 		for (i32 Index := 0, Index < E1000_REGISTER_COUNTERS_SIZE, Index++) {
-			this->Write(E1000_REGISTER_COUNTERS_BASE + (Index * 4), 0)
+			;this->Write(E1000_REGISTER_COUNTERS_BASE + (Index * 4), 0)
 		}
 		
 		this->ReadMACAddress()
@@ -414,6 +415,8 @@ struct E1000 {
 		
 		this->SetupReceive()
 		this->SetupTransmit()
+
+		EnableInterrupts()
 		this->EnableInterrupts()
 		
 		i32 Status := this->Read(E1000_REGISTER_STATUS)
@@ -434,8 +437,7 @@ struct E1000 {
 		
 		Print(" Speed: %s\n", Speeds[Speed])
 		
-		EnableInterrupts()
-		this->Write(E1000_REGISTER_ICS, E1000_IMS_LSC)
+		;this->Write(E1000_REGISTER_ICS, E1000_IMS_LSC)
 	}
 	
 	define void Send(void* Data, i32 Size) {
@@ -513,7 +515,7 @@ struct E1000 {
 		i32 BAR0 := 0x7000_0000
 		this~>PCI->WriteBAR(0, BAR0)
 		
-		Print("BAR0: %x, %x\n", BAR0, Size)
+		Info("BAR0: %x, %x\n", BAR0, Size)
 		
 		if (BAR0 & PCI_BAR_IS_PORT) {
 			this->UseMMIO := false

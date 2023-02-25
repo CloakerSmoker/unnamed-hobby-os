@@ -438,8 +438,14 @@ define void MainContinuation() {
 			Print("not present\n")
 		}
 	}
+
+	Info("E1000 Status: %b\n", FirstE1000~>PCI->Read(PCI_HEADER_STATUS))
+	Info("E1000 Command: %b\n", FirstE1000~>PCI->Read(PCI_HEADER_COMMAND))
 	
 	FirstE1000->Setup()
+
+	Info("E1000 Status: %b\n", FirstE1000~>PCI->Read(PCI_HEADER_STATUS))
+	Info("E1000 Command: %b\n", FirstE1000~>PCI->Read(PCI_HEADER_COMMAND))
 	
 	void* Buffer := KernelPageAllocator->AllocateVirtual(2)
 	
@@ -471,8 +477,12 @@ define void MainContinuation() {
 	ExitEthernetHeader(Packet, Ethernet)
 	
 	Info("%hexdump\n", Packet->Base, Packet->Size)
+
+	Info("E1000 Status: %b\n", FirstE1000~>PCI->Read(PCI_HEADER_STATUS))
 	
 	FirstE1000->Send(Packet->Base, Packet->Size)
+
+	Info("E1000 Status: %b\n", FirstE1000~>PCI->Read(PCI_HEADER_STATUS))
 
 	/*
 	
