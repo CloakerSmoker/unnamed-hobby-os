@@ -118,6 +118,9 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	}
 	
 	i64 IOAPICBase := 0
+
+	i32 SegmentGroupCount := 0
+	ACPI_MCFG_ENTRY* SegmentGroups := null
 	
 	ACPI_TABLE* XSDT := RSDP->XSDTPhysicalAddress As void*
 	
@@ -126,9 +129,9 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 		
 		i32 Signature := NextACPITable~>Header->Signature
 		
-		;Print("Table %i: %l\n", Index, Signature)
+		Print("Table %i: %l\n", Index, Signature)
 		
-		if (Signature = ACPI_TABEL_SIGNATURE_MULTIPLE_APIC_DESCRIPTION) {
+		if (Signature = ACPI_TABLE_SIGNATURE_MULTIPLE_APIC_DESCRIPTION) {
 			;Print("APIC {\n")
 			
 			ACPI_APIC_TABLE* APIC := NextACPITable->Data()
@@ -198,7 +201,7 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 			
 			;Print("}\n")
 		}
-		else if (Signature = ACPI_TABEL_SIGNATURE_FIXED_ACPI_DESCRIPTION) {
+		else if (Signature = ACPI_TABLE_SIGNATURE_FIXED_ACPI_DESCRIPTION) {
 			ACPI_FADT* FADT := NextACPITable->Data()
 			ACPI_DSDT* DSDT := FADT->ExtendedDSDT As void*
 
@@ -219,8 +222,28 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 			
 			*/
 		}
+		else if (Signature = ACPI_TABLE_SIGNATURE_PCIE_CONFIG_DESCRIPTION) {
+			ACPI_MCFG* MCFG := NextACPITable->Data()
+			i32 MCFGCount := MCFG->Count()
+
+			SegmentGroups := MCFG->At(0)
+			SegmentGroupCount := MCFGCount
+
+			Print("MCFG Entry count: %i\n", MCFGCount)
+
+			for (i32 MCFGIndex := 0, MCFGIndex < MCFGCount, MCFGIndex++) {
+				ACPI_MCFG_ENTRY* Entry := MCFG->At(MCFGIndex)
+
+				Print("\t%i @ %x: %i.%i - %i.%i\n", MCFGIndex, Entry->BaseAddress, Entry->SegmentGroup, Entry->StartBusNumber, Entry->SegmentGroup, Entry->EndBusNumber)
+			}
+		}
 	}
 	
+	;SystemTable->ConsoleInput->Reset()
+	;SystemTable->BootServices->WaitForEvent(SystemTable->ConsoleInput->WaitForKey)
+
+	;return 0
+
 	;SystemTable->ConsoleInput->Reset()
 	;SystemTable->BootServices->WaitForEvent(SystemTable->ConsoleInput->WaitForKey)
 	
@@ -470,9 +493,13 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 		MaxKernelAddress: MaxKernelAddress,
 		IOAPICBase: IOAPICBase,
 
+		PCISegmentGroupCount: SegmentGroupCount,
+
 		Data: Data,
 		Size: Size
 	}
+
+	MoveMemory(BootInfo~>PCISegmentGroups, SegmentGroups, SegmentGroupCount * #ACPI_MCFG_ENTRY)
 	
 	MoveMemory(BootInfo~>IRQMappings, IRQMappings, 16 * #i32)
 	

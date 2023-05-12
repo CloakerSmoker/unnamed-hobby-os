@@ -110,6 +110,7 @@ Ext2* FS := null
 #Require "./src/kernel/core/Shell.rlx"
 
 #Require "./src/drivers/PCI/PCI.rlx"
+#Require "./src/drivers/PCI/PCIe.rlx"
 
 ;#Require "./src/drivers/networking/E1000.rlx"
 
@@ -246,6 +247,13 @@ ATADevice* FirstDisk := null
 E1000* FirstE1000 := null
 
 #Require "./src/drivers/networking/E1000.rlx"
+
+define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Device) {
+	Print("%x/%x/%x: ", Bus, Slot, Function)
+	PCIClassCodes->Print(Device->ClassCode, Device->SubClass, Device->Interface)
+	Print("\n")
+
+}
 
 define void VisitPCIFunction(i32 Bus, i32 Slot, i32 Function) {
 	Print("%x/%x/%x: ", Bus, Slot, Function)
@@ -405,6 +413,27 @@ define void MainContinuation() {
 	EnableInterrupts()
 	
 	SetupSystemCalls()
+
+	ACPI_MCFG_ENTRY* First := BootInfo->PCISegmentGroups[0]
+
+	Info("Creating group\n")
+
+	PCIeSegmentGroup* Group := PCIeSegmentGroup:New(First)
+
+	Info("Adding to manager\n")
+
+	PCIeManager := PCIeSegmentGroupManager:New()
+	PCIeManager->AddSegmentGroup(Group)
+
+	Info("Getting root complex\n")
+
+	PCIeDevice* Root := PCIeManager->Get(0, 0, 0)
+
+	Info("Enumerating root complex\n")
+
+	Root->EnumerateAsBus(0, &VisitPCIeFunction)
+
+	loop {asm {emit, 0xF4}}
 	
 	DiskController := KernelHeap->Allocate('IDE', #IDEDiskController)
 	

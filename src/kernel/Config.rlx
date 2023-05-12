@@ -48,6 +48,7 @@ void* ADDRESS_OF_USER_STACK   := 0x9000_0000 As void*
 void* ADDRESS_OF_USER_PAGES   := 0x8000_0000 As void* ; Decides where user pages are allocated from
 i32   NUMBER_OF_USER_PAGES    := 0x100 ; Decides the total number of user pages that can be allocated
 
+void* ADDRESS_OF_PCIE_CONFIG := 0xE_0000_0000 As void*
 
 ; Calculated, ignore
 

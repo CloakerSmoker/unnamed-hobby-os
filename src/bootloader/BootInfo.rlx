@@ -1,3 +1,5 @@
+#Require "./src/drivers/ACPI.rlx"
+
 struct KernelInfo {
 	i32 Size
 	i32 PageCount
@@ -19,6 +21,9 @@ struct BootloaderInfo {
 	i64 MaxKernelAddress
 	i64 IOAPICBase
 	i32[16] IRQMappings
+
+	i32 PCISegmentGroupCount
+	ACPI_MCFG_ENTRY[4] PCISegmentGroups
 
 	void* Data
 	i32 Size
