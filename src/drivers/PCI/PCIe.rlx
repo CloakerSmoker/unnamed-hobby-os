@@ -99,6 +99,170 @@ struct PCIeSegmentGroupManager {
 
 PCIeSegmentGroupManager* PCIeManager := null
 
+struct PCICapability {
+    i8 ID
+    i8 Next
+    void[0] Data
+}
+
+i8 PCI_CAPABILITY_ID_MSI := 0x5
+
+bits PCIMSIControlRegister As i16 {
+    [0:1] Enable
+    [1:3] MultipleMessageCapable
+    [4:6] MultipleMessageEnable
+    [7:8] LargeAddressCapable
+    [8:9] PreVectorMaskingCapable
+    [9:10] ExtendedMessageDataCapable
+    [10:11] ExtendedMessageDataEnable
+
+    define void Info() {
+        if (this.Enable) {
+            Info("E")
+        }
+
+        if (this.MultipleMessageCapable) {
+            i32 VectorsRequested := 1 << this.MultipleMessageCapable
+
+            Info("R(%i)", VectorsRequested)
+
+            if (this.MultipleMessageEnable) {
+                i32 VectorsAllocated := 1 << this.MultipleMessageEnable
+
+                Info("A(%i)", VectorsAllocated)
+            }
+        }
+
+        if (this.LargeAddressCapable) {
+            Info("64")
+        }
+
+        if (this.PreVectorMaskingCapable) {
+            Info("M")
+        }
+
+        if (this.ExtendedMessageDataCapable) {
+            Info("D")
+
+            if (this.ExtendedMessageDataEnable) {
+                Info("+")
+            }
+        }
+    }
+}
+
+i16 AMD64_MSI_ADDRESS_MAGIC := 0x0FEE
+
+bits AMD64MessageAddressRegister As i32 {
+    [1:2] DestinationMode
+    [2:3] RedirectionHint
+    [12:19] DestinationID
+    [20:31] Magic
+
+    i32 [0:31] Value
+}
+
+i8 AMD64_MSI_DATA_TRIGGER_EDGE := 0
+i8 AMD64_MSI_DATA_TRIGGER_LEVEL := 1
+
+i8 AMD64_MSI_DATA_LEVEL_MODE_DEASSERT := 0
+i8 AMD64_MSI_DATA_LEVEL_MODE_ASSERT := 1
+
+i8 AMD64_MSI_DELIVERY_MODE_FIXED := 0
+i8 AMD64_MSI_DELIVERY_MODE_LOW_PRIORITY := 1
+i8 AMD64_MSI_DELIVERY_MODE_SMI := 2
+i8 AMD64_MSI_DELIVERY_MODE_NMI := 4
+i8 AMD64_MSI_DELIVERY_MODE_INIT := 5
+
+bits AMD64MessageAddressData As i16 {
+    [0:7] Vector
+    [8:10] DeliveryMode
+    [13:14] LevelMode
+    [14:15] TriggerMode
+
+    i16 [0:15] Value
+}
+
+struct PCIMSICapability32Bit {
+    PCICapability Header
+
+    PCIMSIControlRegister Control
+
+    i32 MessageAddress
+    i16 MessageData
+
+    ; if Control.ExtendedMessageDataCapable
+    i16 ExtendedMessageData
+
+    ; if Control.PreVectorMaskingCapable
+    i32 MaskBits
+    i32 PendingBits
+}
+
+struct PCIMSICapability64Bit {
+    PCICapability Header
+
+    PCIMSIControlRegister Control
+
+    i32 MessageAddressLow
+    i32 MessageAddressHigh
+
+    i16 MessageData
+
+    ; if Control.ExtendedMessageDataCapable
+    i16 ExtendedMessageData
+
+    ; if Control.PreVectorMaskingCapable
+    i32 MaskBits
+    i32 PendingBits
+
+    define void Info() {
+        Info("PCI MSI Capability {\n")
+        Info("\tControl ")
+        this->Control.Info()
+        Info("\n")
+        Info("\tAddressLow %x\n", this->MessageAddressLow)
+        Info("\tAddressHigh %x\n", this->MessageAddressHigh)
+
+        Info("\tData %x\n", this->MessageData)
+
+        if (this->Control.ExtendedMessageDataEnable) {
+            Info("\tExtended Data %x\n", this->ExtendedMessageData)
+        }
+
+        if (this->Control.PreVectorMaskingCapable) {
+            Info("\tMask %x\n", this->MaskBits)
+            Info("\tPending %x\n", this->PendingBits)
+        }
+
+        Info("}\n")
+    }
+}
+
+struct PCIMSICapability {
+    PCICapability Header
+
+    PCIMSIControlRegister Control
+
+    define void Info() {
+        Info("PCI MSI Capability {\n")
+        Info("\tControl ")
+        this->Control.Info()
+        Info("\n")
+        Info("}\n")
+    }
+}
+
+bits PCIeCapability As i32 {
+    [0:15] ID
+    [16:19] Version
+    [20:31] Next
+
+    define void Print() {
+        Info("PCIeCapability{%x.%x, +%x}", this.ID, this.Version, this.Next)
+    }
+}
+
 struct PCIeBridgeFields {
     i32 BAR0
     i32 BAR1
@@ -106,6 +270,21 @@ struct PCIeBridgeFields {
     i8 PrimaryBus
     i8 SecondaryBus
     i8 SubordinateBus
+
+    i8 SecondaryLatency
+    i8 IOBase
+    i8 IOLimit
+
+    i16 SecondaryStatus
+
+    i16 MemoryBase
+    i16 MemoryLimmit
+    i16 PrefetchableMemoryBase
+    i16 PrefetchableMemoryLimit
+}
+
+struct PCIType0Fields {
+    i32[6] BAR
 }
 
 struct PCIeDevice {
@@ -126,6 +305,59 @@ struct PCIeDevice {
 
     union {
         PCIeBridgeFields Bridge
+        PCIType0Fields Type0
+        i8[0x24] Padding
+    }
+
+    i8 CapabilitiesPointer
+
+    i8[0xCE] Padding2
+
+    PCIeCapability FirstCapability
+
+    define PCICapability* PCICapabilityAt(i8 RawOffset) {
+        i32 Offset := (RawOffset As i32) & 0xFF
+
+        PCICapability* Result := ((this As i64) + Offset) As PCICapability*
+
+        return Result
+    }
+
+    define PCICapability* FirstPCICapability() {
+        return this->PCICapabilityAt(this->CapabilitiesPointer)
+    }
+
+    define PCICapability* NextPCICapability(PCICapability* Last) {
+        return this->PCICapabilityAt(Last->Next)
+    }
+
+    define PCICapability* FindPCICapability(i8 ID) {
+        PCICapability* Current := this->FirstPCICapability()
+
+        loop {
+            if (Current->ID = ID) {
+                return Current
+            }
+
+            if (Current->Next = 0) {
+                break
+            }
+
+            Current := this->NextPCICapability(Current)
+        }
+
+        return null
+    }
+
+    define void WriteBAR(i32 Index, i32 Value) {
+        this~>Type0->BAR[Index] := Value
+    }
+    define i32 ReadBAR(i32 Index) {
+        return this~>Type0->BAR[Index]
+    }
+    define i32 GetBARSize(i32 Index) {
+        this->WriteBAR(Index, -1)
+        return -this->ReadBAR(Index)
     }
 
     define i8 IsPresent() {

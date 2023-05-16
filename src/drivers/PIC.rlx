@@ -32,6 +32,10 @@ define void RemapPIC(i8 MasterOffset, i8 SlaveOffset) {
 }
 
 define i32 IRQToIDT(i32 IRQ) {
+	if (LocalAPIC->IsEnabled) {
+		return IRQ
+	}
+
 	if (IRQ >= 8) {
 		return PIC_SLAVE_OFFSET + IRQ - 8
 	}

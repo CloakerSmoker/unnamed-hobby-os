@@ -5,6 +5,7 @@ i32 PCI_VENDOR_INTEL := 0x8086
 i32 PCI_DEVICE_INTEL_E1000 := 0x100E
 i32 PCI_DEVICE_INTEL_I217 := 0x153A
 i32 PCI_DEVICE_INTEL_82577LM := 0x10EA
+i32 PCI_DEVICE_INTEL_82574L := 0x10D3
 
 i32 E1000_BUFFER_COUNT := 8
 
@@ -162,7 +163,7 @@ struct E1000TransmitBuffer unaligned {
 E1000* RootE1000 := null
 
 struct E1000 {
-	PCIDevice PCI
+	PCIeDevice* PCIe
 	
 	i8 UseMMIO
 	
@@ -378,8 +379,8 @@ struct E1000 {
 	}
 	
 	define void Setup() {
-		this~>PCI->SetBusMaster(true)
-		this~>PCI->EnableIRQ(true)
+		;this~>PCI->SetBusMaster(true)
+		;this~>PCI->EnableIRQ(true)
 		
 		this->Reset()
 		
@@ -486,7 +487,9 @@ struct E1000 {
 		jmp, @InterruptReturn
 	}
 	
-	define void Initialize(i32 Bus, i32 Slot, i32 Function) {
+	define void Initialize(PCIeDevice* PCIe) {
+		this->PCIe := PCIe
+
 		if (RootE1000) {
 			E1000* Current := RootE1000
 			
@@ -499,24 +502,24 @@ struct E1000 {
 		else {
 			RootE1000 := this
 			
-			InsertIDTEntry(IRQToIDT(9), &E1000:OnIRQ, true)
-			EnablePICLine(9, true)
+			InsertIDTEntry(IRQToIDT(19), &E1000:OnIRQ, true)
+			EnablePICLine(19, true)
 		}
 		
-		this~>PCI->Bus := Bus
-		this~>PCI->Slot := Slot
-		this~>PCI->Function := Function
+		;this~>PCI->Bus := Bus
+		;this~>PCI->Slot := Slot
+		;this~>PCI->Function := Function
 		
-		Info("IRQ %i\n", this~>PCI->Read(PCI_HEADER_INTERRUPT_PIN))
+		;Info("IRQ %i\n", this~>PCI->Read(PCI_HEADER_INTERRUPT_PIN))
 		
 		;this~>PCI->SetIRQ(9)
-		
-		i32 Size := -this~>PCI->GetBARSize(0)
+				
+		i32 Size := this->PCIe->GetBARSize(0)
 		i32 BAR0 := 0x7000_0000
-		this~>PCI->WriteBAR(0, BAR0)
+		this->PCIe->WriteBAR(0, BAR0)
 		
 		Info("BAR0: %x, %x\n", BAR0, Size)
-		
+
 		if (BAR0 & PCI_BAR_IS_PORT) {
 			this->UseMMIO := false
 			this->IOBase := (BAR0 & PCI_BAR_PORT_MASK) As i16

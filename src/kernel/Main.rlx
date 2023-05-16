@@ -253,6 +253,78 @@ define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Devic
 	PCIClassCodes->Print(Device->ClassCode, Device->SubClass, Device->Interface)
 	Print("\n")
 
+	if (Device->Status & PCI_STATUS_REGISTER_HAS_CAPABILITIES) {
+		;Print("\tCaps @ %x\n", Device->CapabilitiesPointer)
+		;Print("\tOffset %x + %x\n", Device, (Device~>CapabilitiesPointer As i64) - (Device As i64))
+		;Print("\tOffset %x + %x\n", Device, (Device~>FirstCapability As i64) - (Device As i64))
+
+		Info("%x/%x/%x\n", Bus, Slot, Function)
+
+		PCICapability* Current := Device->FirstPCICapability()
+
+		loop {
+			Info("\tHas capability %x\n", Current->ID & 0xFF)
+
+			if (Current->Next = 0) {
+				break
+			}
+
+			Current := Device->NextPCICapability(Current)
+		}
+
+		PCICapability* RawMSI := Device->FindPCICapability(PCI_CAPABILITY_ID_MSI)
+
+		Info("MSI @ %x\n", RawMSI)
+
+		PCIMSICapability64Bit* MSI := RawMSI As void*
+		
+		MSI->Info()
+
+		;Print("%x %x\n", Device->ClassCode, Device->SubClass)
+
+		if (Device->ClassCode = PCI_CLASS_CODE_NETWORK_CONTROLLER && Device->SubClass = PCI_SUBCLASS_NETWORK_ETHERNET) {
+			Print("Network interface %x:%x\n", Device->VendorID, Device->DeviceID)
+			
+			if (Device->VendorID = PCI_VENDOR_INTEL && Device->DeviceID = PCI_DEVICE_INTEL_82574L) {
+				Print("Found E1000\n")
+
+				AMD64MessageAddressRegister Address := 0 As AMD64MessageAddressRegister
+
+				Address.Magic := AMD64_MSI_ADDRESS_MAGIC
+				Address.DestinationID := LocalAPIC->ID As i8
+
+				MSI->MessageAddressLow := Address.Value
+				
+				AMD64MessageAddressData Data := 0 As AMD64MessageAddressData
+
+				Data.Vector := 19
+				Data.DeliveryMode := AMD64_MSI_DELIVERY_MODE_FIXED
+				Data.TriggerMode := AMD64_MSI_DATA_TRIGGER_EDGE
+
+				MSI->MessageData := Data.Value
+
+				PCIMSIControlRegister Control := MSI->Control
+
+				Control.Enable := true
+
+				MSI->Control := Control
+
+				MSI->Info()
+
+				FirstE1000 := Alloc('E1000', #E1000)
+				
+				FirstE1000->Initialize(Device)
+			}
+		}
+
+		;Info("%x/%x/%x\n", Bus, Slot, Function)
+		;Info("%hexdump\n", Device, 0x40)
+	}
+
+	;Device->FirstCapability.Print()
+
+	;Info("%hexdump\n", Device, 0x40)
+
 }
 
 define void VisitPCIFunction(i32 Bus, i32 Slot, i32 Function) {
@@ -320,7 +392,7 @@ define void VisitPCIFunction(i32 Bus, i32 Slot, i32 Function) {
 		if (Vendor = PCI_VENDOR_INTEL && Device = PCI_DEVICE_INTEL_E1000) {
 			FirstE1000 := Alloc('E1000', #E1000)
 			
-			FirstE1000->Initialize(Bus, Slot, Function)
+			;FirstE1000->Initialize(Bus, Slot, Function)
 		}
 	}
 }
@@ -433,6 +505,7 @@ define void MainContinuation() {
 
 	Root->EnumerateAsBus(0, &VisitPCIeFunction)
 
+	/*
 	loop {asm {emit, 0xF4}}
 	
 	DiskController := KernelHeap->Allocate('IDE', #IDEDiskController)
@@ -467,14 +540,15 @@ define void MainContinuation() {
 			Print("not present\n")
 		}
 	}
-
-	Info("E1000 Status: %b\n", FirstE1000~>PCI->Read(PCI_HEADER_STATUS))
-	Info("E1000 Command: %b\n", FirstE1000~>PCI->Read(PCI_HEADER_COMMAND))
+	*/
+	
+	Info("E1000 Status: %b\n", FirstE1000->PCIe->Status)
+	Info("E1000 Command: %b\n", FirstE1000->PCIe->Command)
 	
 	FirstE1000->Setup()
 
-	Info("E1000 Status: %b\n", FirstE1000~>PCI->Read(PCI_HEADER_STATUS))
-	Info("E1000 Command: %b\n", FirstE1000~>PCI->Read(PCI_HEADER_COMMAND))
+	Info("E1000 Status: %b\n", FirstE1000->PCIe->Status)
+	Info("E1000 Command: %b\n", FirstE1000->PCIe->Command)
 	
 	void* Buffer := KernelPageAllocator->AllocateVirtual(2)
 	
@@ -507,11 +581,13 @@ define void MainContinuation() {
 	
 	Info("%hexdump\n", Packet->Base, Packet->Size)
 
-	Info("E1000 Status: %b\n", FirstE1000~>PCI->Read(PCI_HEADER_STATUS))
+	Info("E1000 Status: %b\n", FirstE1000->PCIe->Status)
 	
 	FirstE1000->Send(Packet->Base, Packet->Size)
 
-	Info("E1000 Status: %b\n", FirstE1000~>PCI->Read(PCI_HEADER_STATUS))
+	Info("E1000 Status: %b\n", FirstE1000->PCIe->Status)
+
+	loop {}
 
 	/*
 	
