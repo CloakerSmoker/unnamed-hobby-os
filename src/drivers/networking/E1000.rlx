@@ -148,7 +148,50 @@ struct E1000ReceiveBuffer unaligned {
 	i8 Status
 	i8 Errors
 	i16 Special
+
+	define void Info() {
+		i8*[8] StatusNames {
+			"DONE", "END-OF-PACKET", "IGNORE-CHECKSUM",
+			"VLAN-MATCH", "RESERVED", "TCP-CHECKSUM",
+			"IP-CHECKSUM", "IN-EXACT"
+		}
+
+		Info("Recv Buffer {\n")
+		Info("\tLength %x\n", this->Length)
+		Info("\tChecksum %x\n", this->Checksum)
+
+		Info("\tStatus %x (", this->Status)
+		
+		i8 Previous := false
+
+		for (i8 Shift := 0, Shift < 8, Shift++) {
+			i32 Mask := 1 << Shift
+
+			if (this->Status & Mask) {
+				if (Previous) {
+					Info("%c", ',')
+				}
+
+				Info(StatusNames[Shift])
+				Previous := true
+			}
+		}
+
+		Info(")\n")
+
+		Info("\tErrors %x\n", this->Errors)
+		Info("\tSpecial %x\n", this->Special)
+		Info("}\n")
+	}
 }
+
+i32 E1000_RECEIVE_STATUS_DONE := 1 << 0
+i32 E1000_RECEIVE_STATUS_EOP := 1 << 1
+i32 E1000_RECEIVE_STATUS_IXSM := 1 << 2
+i32 E1000_RECEIVE_STATUS_VP := 1 << 3
+i32 E1000_RECEIVE_STATUS_TCPCS := 1 << 5
+i32 E1000_RECEIVE_STATUS_IPCS := 1 << 6
+i32 E1000_RECEIVE_STATUS_PIF := 1 << 7
 
 struct E1000TransmitBuffer unaligned {
 	i64 Address
@@ -158,6 +201,12 @@ struct E1000TransmitBuffer unaligned {
 	i8 Status
 	i8 ChecksumStart
 	i16 Special
+}
+
+bits E1000ICRBits As i32 {
+	[0:1] DescriptorWriteBack
+	[1:2] TransmitQueueEmpty
+	[2:3] LinkStatusChange
 }
 
 E1000* RootE1000 := null
@@ -386,11 +435,8 @@ struct E1000 {
 		
 		this->HasEEProm := this->CheckForEEProm()
 		
-		; automatic speed detection, set link up
-		this->Set(E1000_REGISTER_CTRL, E1000_CTRL_ASDE | E1000_CTRL_SLU)
-		
 		; disable link reset, disable PHY reset, disable invert loss of signal, disable receive flow control
-		this->Clear(E1000_REGISTER_CTRL, E1000_CTRL_LRST | E1000_CTRL_PHY_RST | E1000_CTRL_ILOS | E1000_CTRL_RFCE)
+		;this->Clear(E1000_REGISTER_CTRL, E1000_CTRL_LRST | E1000_CTRL_PHY_RST | E1000_CTRL_ILOS | E1000_CTRL_RFCE)
 		
 		; double disable flow control
 		this->Write(E1000_REGISTER_FCAL, 0)
@@ -419,6 +465,9 @@ struct E1000 {
 
 		EnableInterrupts()
 		this->EnableInterrupts()
+
+		; automatic speed detection, set link up
+		this->Set(E1000_REGISTER_CTRL, E1000_CTRL_ASDE | E1000_CTRL_SLU)
 		
 		i32 Status := this->Read(E1000_REGISTER_STATUS)
 		
@@ -466,8 +515,27 @@ struct E1000 {
 		;}
 	}
 
+	define void OnRecieve() {
+
+		E1000ReceiveBuffer* Buffer := this->ReceiveBuffers[this->ReceiveIndex]
+
+		while (Buffer->Status & E1000_RECEIVE_STATUS_DONE) {
+			Buffer->Info()
+
+			Buffer->Status := 0
+
+			i32 Tail := this->ReceiveIndex
+			this->ReceiveIndex := (this->ReceiveIndex + 1) % E1000_BUFFER_COUNT
+
+			this->Write(E1000_REGISTER_RXDESCTAIL, Tail)
+
+			Buffer := this->ReceiveBuffers[this->ReceiveIndex]
+		}
+	}
+
 	define void ServiceInterrupt() {
 		
+
 	}
 	
 	static void ServiceInterrupt() {
@@ -476,9 +544,19 @@ struct E1000 {
 		while (Current->Next != null) {
 			Current := Current->Next
 		}
+
+		i32 ICR := Current->Read(E1000_REGISTER_ICR)
 		
-		Info("E1000 Interrupt on %x\n", Current)
-		Info(" ICR: %x\n", Current->Read(E1000_REGISTER_ICR))
+		Print("E1000 Interrupt on %x\n", Current)
+		Print(" ICR: %x\n", ICR)
+
+		Current->OnRecieve()
+
+		if (ICR & E1000_IMS_RXT) {
+			;Info("%hexdump", Current->ReceiveBuffersVirtual[0], 0x100)
+		}
+
+		LocalAPIC->EOI()
 	}
 	
 	static void OnIRQ() asm {

@@ -505,12 +505,11 @@ define void MainContinuation() {
 
 	Root->EnumerateAsBus(0, &VisitPCIeFunction)
 
-	/*
-	loop {asm {emit, 0xF4}}
+	;/*
 	
 	DiskController := KernelHeap->Allocate('IDE', #IDEDiskController)
 	
-	PCIEnumerateBusses(&VisitPCIFunction)
+	;PCIEnumerateBusses(&VisitPCIFunction)
 	
 	if !(DiskController->IsInitialized) {
 		Print("Didn't find disk controller, hanging\n")
@@ -540,8 +539,10 @@ define void MainContinuation() {
 			Print("not present\n")
 		}
 	}
-	*/
+	;*/
 	
+	/*
+
 	Info("E1000 Status: %b\n", FirstE1000->PCIe->Status)
 	Info("E1000 Command: %b\n", FirstE1000->PCIe->Command)
 	
@@ -579,7 +580,7 @@ define void MainContinuation() {
 
 	ExitEthernetHeader(Packet, Ethernet)
 	
-	Info("%hexdump\n", Packet->Base, Packet->Size)
+	;Info("%hexdump\n", Packet->Base, Packet->Size)
 
 	Info("E1000 Status: %b\n", FirstE1000->PCIe->Status)
 	
@@ -588,6 +589,7 @@ define void MainContinuation() {
 	Info("E1000 Status: %b\n", FirstE1000->PCIe->Status)
 
 	loop {}
+	*/
 
 	/*
 	
