@@ -321,3 +321,20 @@ struct PCIDevice {
 		}
 	}
 }
+
+enum PCI_BAR_TYPE {
+	Memory,
+	IO
+}
+
+bits PCI_BAR As i32 {
+	PCI_BAR_TYPE [0] Type
+	[1:2] MemoryLocatable
+	[3] MemoryPrefetchable
+	[4:31] MemoryBase
+	[2:31] PortBase
+
+	define i8 Is(PCI_BAR_TYPE Type) {
+		return this.Type = Type
+	}
+}

@@ -3,16 +3,34 @@
 struct IDEDiskController {
 	ATAChannel ChannelOne
 	ATAChannel ChannelTwo
+	i32 ChannelCount
+
 	i8 IsInitialized
 	
 	define void DetectDevices() {
-		this~>ChannelOne->DetectDevices()
-		this~>ChannelTwo->DetectDevices()
+		if (this->ChannelCount >= 1) {
+			this~>ChannelOne->DetectDevices()
+
+			if (this->ChannelCount = 2) {
+				this~>ChannelTwo->DetectDevices()
+			}
+		}
 	}
 	
 	define void Initialize(i32 ChannelOneIOBase, i32 ChannelOneControlBase, i32 ChannelTwoIOBase, i32 ChannelTwoControlBase) {
-		this~>ChannelOne->Initialize(ChannelOneIOBase, ChannelOneControlBase)
-		this~>ChannelTwo->Initialize(ChannelTwoIOBase, ChannelTwoControlBase)
+		if (ChannelOneIOBase != 0 && ChannelOneControlBase != 0) {
+			this~>ChannelOne->Initialize(ChannelOneIOBase, ChannelOneControlBase)
+			this->ChannelCount += 1
+
+			if (ChannelTwoIOBase != 0 && ChannelTwoControlBase != 0) {
+				this~>ChannelTwo->Initialize(ChannelTwoIOBase, ChannelTwoControlBase)
+				this->ChannelCount += 1
+			}
+		}
+		else if (ChannelTwoIOBase != 0 && ChannelTwoControlBase != 0) {
+			this~>ChannelOne->Initialize(ChannelTwoIOBase, ChannelTwoControlBase)
+			this->ChannelCount += 1
+		}
 		
 		this->IsInitialized := true
 	}
@@ -35,7 +53,9 @@ struct IDEDiskController {
 	}
 	
 	define i32 FindFirstDiskIndex() {
-		for (i32 Index := 0, Index < 4, Index++) {
+		i32 MaxDisk := this->ChannelCount * 2
+
+		for (i32 Index := 0, Index < MaxDisk, Index++) {
 			if (this->Disk(Index)) {
 				return Index
 			}

@@ -353,6 +353,8 @@ struct PCIeDevice {
         this~>Type0->BAR[Index] := Value
     }
     define i32 ReadBAR(i32 Index) {
+        Print("ReadBar %i @ %x\n", Index, (&this~>Type0->BAR[Index]) - (this As i64))
+
         return this~>Type0->BAR[Index]
     }
     define i32 GetBARSize(i32 Index) {
@@ -401,4 +403,25 @@ struct PCIeDevice {
             }
         }
     }
+}
+
+define void InitializePCIe(void(i32, i32, i32, PCIeDevice*) Visitor) {
+    ACPI_MCFG_ENTRY* First := BootInfo->PCISegmentGroups[0]
+
+	Info("Creating group\n")
+
+	PCIeSegmentGroup* Group := PCIeSegmentGroup:New(First)
+
+	Info("Adding to manager\n")
+
+	PCIeManager := PCIeSegmentGroupManager:New()
+	PCIeManager->AddSegmentGroup(Group)
+
+	Info("Getting root complex\n")
+
+	PCIeDevice* Root := PCIeManager->Get(0, 0, 0)
+
+	Info("Enumerating root complex\n")
+
+	Root->EnumerateAsBus(0, Visitor)
 }

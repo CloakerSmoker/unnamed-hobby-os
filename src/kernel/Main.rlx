@@ -248,6 +248,11 @@ E1000* FirstE1000 := null
 
 #Require "./src/drivers/networking/E1000.rlx"
 
+
+#Require "./src/drivers/PCI/AHCI.rlx"
+
+SATAController* FirstSATAController := null
+
 define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Device) {
 	Print("%x/%x/%x: ", Bus, Slot, Function)
 	PCIClassCodes->Print(Device->ClassCode, Device->SubClass, Device->Interface)
@@ -321,9 +326,16 @@ define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Devic
 		;Info("%hexdump\n", Device, 0x40)
 	}
 
-	;Device->FirstCapability.Print()
+	if (Device->ClassCode = PCI_CLASS_CODE_MASS_STORAGE_CONTROLLER && Device->SubClass = PCI_SUBCLASS_SATA_CONTROLLER) {
+		Info("%hexdump\n", Device, 0x40)
 
-	;Info("%hexdump\n", Device, 0x40)
+		FirstSATAController := Alloc(#AHCI::Controller)
+
+		
+
+
+
+	}
 
 }
 
@@ -486,29 +498,11 @@ define void MainContinuation() {
 	
 	SetupSystemCalls()
 
-	ACPI_MCFG_ENTRY* First := BootInfo->PCISegmentGroups[0]
-
-	Info("Creating group\n")
-
-	PCIeSegmentGroup* Group := PCIeSegmentGroup:New(First)
-
-	Info("Adding to manager\n")
-
-	PCIeManager := PCIeSegmentGroupManager:New()
-	PCIeManager->AddSegmentGroup(Group)
-
-	Info("Getting root complex\n")
-
-	PCIeDevice* Root := PCIeManager->Get(0, 0, 0)
-
-	Info("Enumerating root complex\n")
-
-	Root->EnumerateAsBus(0, &VisitPCIeFunction)
-
 	;/*
 	
 	DiskController := KernelHeap->Allocate('IDE', #IDEDiskController)
 	
+	InitializePCIe(&VisitPCIeFunction)
 	;PCIEnumerateBusses(&VisitPCIFunction)
 	
 	if !(DiskController->IsInitialized) {
