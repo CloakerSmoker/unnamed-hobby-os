@@ -1,0 +1,303 @@
+namespace AHCI {
+    namespace HBA {
+        struct PortControl {
+            i32 CommandListBaseAddressLow
+            i32 CommandListBaseAddressHigh
+
+            i32 FISBaseAddressLow
+            i32 FISBaseAddressHigh
+
+            i32 InterruptStatus
+            i32 InterruptEnable
+
+            i32 CommandStatus
+
+            i32 Reserved
+
+            i32 TaskFileData
+            i32 Signature
+
+            i32 SATA_Status
+            i32 SATA_Control
+            i32 SATA_Error
+            i32 SATA_Active
+
+            i32 CommandIssue
+
+            i32 SATA_Notification
+
+            i32 FISBasedSwitchControl
+
+            i8[0x2c] Reserved2
+
+            i8[0x10] VendorSpecific
+        }
+
+        struct HostControl {
+            i32 HostCapability
+            i32 GlobalHostControl
+            i32 InterruptStatus
+            i32 PortImplemented
+            i32 Version
+            i32 CommandCompletionCoalescingControl
+            i32 CommandCompletionCoalescingPorts
+            i32 EnclosureManagementLocation
+            i32 EnclosureManagementControl
+            i32 HostCapabilitiesExtended
+            i32 BIOSHandoffControl
+
+            i8[0x74] Reserved
+            i8[0x60] VendorSpecific
+
+            PortControl[32] Ports
+        }
+
+        struct CommandHeader {
+            union {
+                struct {
+                    bits As i16 {
+                        [0:4] DWORDCount
+                        [5] UseATAPI
+                        [6] Direction
+                        [7] Prefetchable
+                        [8] Reset
+                        [9] SelfTest
+                        [10] ClearBusy
+                        [12:15] PortMultiplierPort
+                    }
+
+                    i16 PhysicalDescriptorTableLength
+
+                    i32 PhysicalDescriptorBytesTransferred
+
+                    i32 CommandTableDescriptorBaseAddressLow
+                    i32 CommandTableDescriptorBaseAddressHigh
+                }
+
+                ;i32[8] DWORDs
+            }
+        }
+
+        struct PhysicalRegionDescriptor {
+            i32 BaseAddressLow
+            i32 BaseAddressHigh
+
+            i32 Reserved
+
+            bits As i32 {
+                [0:22] ByteCount
+                [31] InterruptOnCompletion
+            }
+        }
+
+        struct CommandTable {
+            i8[0x40] CommandFIS
+
+            i8[0x10] ATAPICommand
+
+            i8[0x30] Reserved
+
+            PhysicalRegionDescriptor[0] PhysicalRegions
+        }
+    }
+
+    namespace FIS {
+        enum Type As i8 {
+            HostToDevice := 0x27
+            DeviceToHost := 0x34
+            ActivateDMA := 0x39
+            SetupDMA := 0x41
+            Data := 0x46
+            SelfTest := 0x58
+            SetupPIO := 0x5F
+            SetDeviceBits := 0xA1
+        }
+
+        struct SetDeviceRegisters {
+            union {
+                struct {
+                    Type Type
+
+                    bits as i8 {
+                        [0:3] PortMultiplier
+                        [7] CommandOrControl
+                    }
+
+                    i8 Command
+                    i8 FeatureLow
+                }
+
+                i32 DWORD1
+            }
+
+            union {
+                bits as i32 {
+                    [0:23] LBALow
+                    [24:31] Device
+                }
+
+                i32 DWORD2
+            }
+
+            union {
+                bits as i32 {
+                    [0:23] LBAHigh
+                    [24:31] FeatureHigh
+                }
+
+                i32 DWORD3
+            }
+
+            union {
+                struct {
+                    i16 Count
+                    i8 IsochronousCommandCompletion
+                    i8 Control
+
+                    i32 Reserved
+                }
+
+                i32 DWORD4
+            }
+        }
+
+        struct GetDeviceRegisters {
+            union {
+                struct {
+                    Type Type
+
+                    bits as i8 {
+                        [0:3] PortMultiplier
+                        [5] InterruptBit
+                    }
+
+                    i8 Status
+                    i8 Error
+                }
+
+                i32 DWORD1
+            }
+
+            union {
+                bits as i32 {
+                    [0:23] LBALow
+                    [24:31] Device
+                }
+
+                i32 DWORD2
+            }
+
+            bits as i32 {
+                [0:23] LBAHigh
+            }
+
+            i16 Count
+
+            i32 Reserved
+        }
+
+        struct Data {
+            union {
+                struct {
+                    Type Type
+
+                    bits as i8 {
+                        [0:3] PortMultiplier
+                    }
+
+                    i16 Reserved
+                }
+
+                i32 DWORD1
+            }
+
+            i8[0] Data
+        }
+
+        struct NotifyPIOSetup {
+            union {
+                struct {
+                    Type Type
+
+                    bits as i8 {
+                        [0:3] PortMultiplier
+                        [5] TransferDirection
+                        [6] InterruptBit
+                    }
+
+                    i8 Status
+                    i8 Error
+                }
+
+                i32 DWORD1
+            }
+
+            union {
+                bits as i32 {
+                    [0:23] LBALow
+                    [24:31] Device
+                }
+
+                i32 DWORD2
+            }
+
+            union {
+                bits as i32 {
+                    [0:23] LBAHigh
+                }
+
+                i32 DWORD3
+            }
+
+            union {
+                struct {
+                    i16 Count
+                    i8 Padding
+                    i8 NewStatus
+                }
+
+                i32 DWORD4
+            }
+
+            union {
+                i16 TransferCount
+
+                i32 DWORD5
+            }
+        }
+
+        struct NotifyDMASetup {
+            union {
+                struct {
+                    Type Type
+
+                    bits as i8 {
+                        [0:3] PortMultiplier
+                        [5] TransferDirection
+                        [6] InterruptBit
+                        [7] AutoActivate
+                    }
+                }
+            }
+        }
+    }
+
+    struct Controller {
+        PCIeDevice* Device
+
+        HBA::HostControl* HostControl
+        HBA::PortControl* RawPorts
+
+        define void Initialize(PCIeDevice* Device) {
+            this->Device := Device
+
+            Info("AHCI_HBA_HOST_CONTROL: %x\n", #HBA::HostControl)
+            Info("AHCI_HBA_PORT_CONTROL: %x\n", #HBA::PortControl)
+            Info("AHCI_HBA_COMMAND_HEADER: %x\n", #HBA::CommandHeader)
+            Info("AHCI_HBA_COMMAND_TABLE: %x\n", #HBA::CommandTable)
+            Info("AHCI_HBA_PHYSICAL_REGION_DESCRIPTOR: %x\n", #HBA::PhysicalRegionDescriptor)
+
+
+        }
+    }
+}
