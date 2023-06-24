@@ -249,9 +249,9 @@ E1000* FirstE1000 := null
 #Require "./src/drivers/networking/E1000.rlx"
 
 
-#Require "./src/drivers/PCI/AHCI.rlx"
+;#Require "./src/drivers/AHCI.rlx"
 
-SATAController* FirstSATAController := null
+;;AHCI::Controller* FirstSATAController := null
 
 define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Device) {
 	Print("%x/%x/%x: ", Bus, Slot, Function)
@@ -329,10 +329,10 @@ define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Devic
 	if (Device->ClassCode = PCI_CLASS_CODE_MASS_STORAGE_CONTROLLER && Device->SubClass = PCI_SUBCLASS_SATA_CONTROLLER) {
 		Info("%hexdump\n", Device, 0x40)
 
-		FirstSATAController := Alloc(#AHCI::Controller)
+		;FirstSATAController := Alloc(#AHCI::Controller)
 
 		
-
+		;FirstSATAController->Initialize(Device)
 
 
 	}

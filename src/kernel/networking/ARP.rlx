@@ -2,15 +2,24 @@
 
 i16 ARP_LINK_LAYER_ETHERNET := 0x0001
 
+i16 ARP_HARDWARE_TYPE_ETHERNET := 0x0001
+i16 ARP_PROTOCOL_TYPE_IPV4 := 0x0800
+
 i16 ARP_PROTOCOL_IPV4 := 0x0800
 
 i16 ARP_OPCODE_REQUEST := 1
 i16 ARP_OPCODE_REPLY := 2
 
 struct ARPHeader {
-    i16 LinkLayerType
+    union {
+        i16 LinkLayerType
+        i16 HardwareType
+    }
     i16 ProtocolType
-    i8 LinkLayerSize
+    union {
+        i8 LinkLayerSize
+        i8 HardwareSize
+    }
     i8 ProtocolSize
     i16 Opcode
     i8[0] Data
@@ -50,10 +59,10 @@ where padding is still included
 */
 
 struct ARPBodyIPV4 unaligned {
-    i8[6] SHA
-    i32 SPA
-    i8[6] THA
-    i32 TPA
+    MACAddress SenderHardwareAddress
+    i32 SenderProtocolAddress
+    MACAddress TargetHardwareAddress
+    i32 TargetProtocolAddress
     
     define void FlipEndianess() {
         this->SPA := NetworkInt(this->SPA)
@@ -91,3 +100,188 @@ define void MakeARPToIPV4Announcement(PacketBuffer* Buffer, MACAddress* MyMAC, i
 
 	MakeARPToIPV4Announcement(Packet, MyMAC, MyIP)
 	*/
+
+struct ARPTableEntry {
+    i32 ProtocolAddress
+    MACAddress HardwareAddress
+}
+
+struct ARPLayer {
+    NetworkLayer* LinkLayer
+
+    AVLTree* Cache ; <i32, ARPTableEntry>
+
+    define NetworkPacket* Enter(MACAddress* Destination, i16 Opcode) {
+        if (Destination->Hash = 0) {
+            Destination := i8[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF] As MACAddress*
+        }
+
+        NetworkPacket* Packet := this->LinkLayer->Enter(Destination)
+
+        ARPHeader* Header := Packet->DefineSection(PROTOCOL_ARP_HEADER, #ARPHeader)
+
+        Header->HardwareType := ARP_HARDWARE_TYPE_ETHERNET
+        Header->HardwareSize := 6
+
+        Header->ProtocolType := ARP_PROTOCOL_TYPE_IPV4
+        Header->ProtocolSize := 4
+
+        Packet->DefineSection(PROTOCOL_ARP_BODY, #ARPBodyIPV4)
+    }
+
+    define void Send(NetworkPacket* Packet) {
+        ARPHeader* Header := Packet->Get(PROTOCOL_ARP_HEADER)
+        Header->FlipEndianess()
+
+        ARPBodyIPV4* Body := Packet->Get(PROTOCOL_ARP_BODY)
+        Body->FlipEndianess()
+
+        this->LinkLayer->Send(Packet)
+    }
+
+    define void SendRequest(MACAddress* TargetHardwareAddress, i32 TargetProtocolAddress) {
+        NetworkPacket* Packet := this->Enter(TargetHardwareAddress, ARP_OPCODE_REQUEST)
+        ARPBodyIPV4* Body := Packet->Get(PROTOCOL_ARP_BODY)
+
+        Body->SenderHardwareAddress->Set(this->Interface->MAC)
+        Body->SenderProtocolAddress := this->Interface->IP
+
+        Body->TargetHardwareAddress := TargetHardwareAddress
+        Body->TargetProtocolAddress := TargetProtocolAddress
+
+        this->Send(Packet)
+    }
+
+    define void SendReply(MACAddress* TargetHardwareAddress, i32 TargetProtocolAddress) {
+        NetworkPacket* Packet := this->Enter(TargetHardwareAddress, ARP_OPCODE_REQUEST)
+        ARPBodyIPV4* Body := Packet->Get(PROTOCOL_ARP_BODY)
+
+        Body->SenderHardwareAddress->Set(this->Interface->MAC)
+        Body->SenderProtocolAddress := this->Interface->IP
+
+        Body->TargetHardwareAddress := TargetHardwareAddress
+        Body->TargetProtocolAddress := TargetProtocolAddress
+
+        this->Send(Packet)
+    }
+
+    define void PopulateCache(MACAddress* HardwareAddress, i32 ProtocolAddress) {
+        if (HardwareAddress->Hash() = 0 || ProtocolAddress = 0) {
+            return
+        }
+
+        ARPTableEntry Entry {
+            ProtocolAddress: ProtocolAddress
+        }
+
+        Entry~>HardwareAddress->Set(HardwareAddress)
+
+        this->Cache->Insert(ProtocolAddress, &Entry)
+    }
+
+    define ARPTableEntry* LookupCachedEntry(i32 ProtocolAddress) {
+        return this->Cache->Get(ProtocolAddress)
+    }
+
+    define void EvictProtocolAddress(i32 ProtocolAddress) {
+        this->Cache->Remove(ProtocolAddress)
+    }
+
+    define void EvictEntry(ARPTableEntry* Entry) {
+        this->Cache->Remove(Entry->ProtocolAddress)
+    }
+
+    define void HandleRequest(NetworkPacket* Packet, ARPHeader* Header) {
+        ARPBodyIPV4* Body := Packet->Get(PROTOCOL_ARP_BODY)
+
+        this->PopulateCache(Body~>SenderHardwareAddress, Body->SenderProtocolAddress)
+
+        if (Body->TargetProtocolAddress = this->Interface->IP) {
+            this->Send(Body->SenderHardwareAddress, Body->SenderProtocolAddress)
+        }
+
+        if (Body~>SenderHardwareAddress->Equals(this->Interface->MAC)) {
+            this->Send(Body->SenderHardwareAddress, Body->SenderProtocolAddress)
+        }
+    }
+
+    define void HandleReply(NetworkPacket* Packet, ARPHeader* Header) {
+        ARPBodyIPV4* Body := Packet->Get(PROTOCOL_ARP_BODY)
+
+        this->PopulateCache(Body~>SenderHardwareAddress, Body->SenderProtocolAddress)
+    }
+
+    define void Ingest(NetworkPacket* Packet) {
+        Packet->DefineSection(PROTOCOL_ARP_HEADER, #ARPHeader)
+
+        EthernetHeader* Ethernet := Packet->Get(PROTOCOL_ETHERNET)
+        ARPHeader* Header := Packet->Get(PROTOCOL_ARP_HEADER)
+
+        if (Header->HardwareType != ARP_HARDWARE_TYPE_ETHERNET) {
+            Info("Bad ARP packet recieved from %mac, unknown hardware type %x\n", Ethernet->Source, Header->HardwareType)
+            return
+        }
+        else if (Header->HardwareSize != 6) {
+            Info("Bad ARP packet recieved from %mac, wrong hardware size %i\n", Ethernet->Source, Header->HardwareSize)
+            return
+        }
+        else if (Header->ProtocolType != ARP_PROTOCOL_TYPE_IPV4) {
+            Info("Bad ARP packet recieved from %mac, unknown protocol type %x\n", Ethernet->Source, Header->ProtocolType)
+            return
+        }
+        else if (Header->ProtocolSize != 4) {
+            Info("Bad ARP packet recieved from %mac, wrong protocol size %i\n", Ethernet->Source, Header->ProtocolSize)
+            return
+        }
+        else if (Header->Opcode != ARP_OPCODE_REPLY && Header->Opcode != ARP_OPCODE_REQUEST) {
+            Info("Bad ARP packet recieved from %mac, unknown opcode %x\n", Ethernet->Source, Header->Opcode)
+            return
+        }
+
+        if (Header->Opcode = ARP_OPCODE_REPLY) {
+            this->HandleReply(Packet, Header)
+        }
+        else if (Header->Opcode = ARP_OPCODE_REQUEST) {
+            this->HandleRequest(Packet, Header)
+        }
+    }
+
+    define i8 Probe(i32 ProtocolAddress) {
+        this->EvictProtocolAddress(ProtocolAddress)
+
+        for (i32 Index := 0, Index < 3, Index++) {
+            this->SendRequest(null, ProtocolAddress)
+
+            SchedulerYield()
+
+            if (this->LookupCachedEntry(ProtocolAddress) != null) {
+                return false
+            }
+        }
+    }
+
+    define MACAddress* Lookup(i32 ProtocolAddress) {
+        i64 Start := GetUptimeMS()
+
+        loop {
+            ARPTableEntry* Entry := this->LookupCachedEntry(ProtocolAddress)
+
+            if (Entry) {
+                return Entry->HardwareAddress
+            }
+
+            i64 Time := GetUptimeMS() - Start
+
+            if (Time % 300) {
+                this->SendRequest(null, ProtocolAddress)
+            }
+            else {
+                SchedulerYield()
+            }
+        }
+    }
+
+    define void Announce() {
+        this->SendRequest(this->Interface->MAC, this->Interface->IP)
+    }
+}

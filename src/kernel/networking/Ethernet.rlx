@@ -4,8 +4,8 @@
 i16 ETHERTYPE_ARP := 0x0806
 
 struct EthernetHeader {
-    i8[6] DestinationMAC
-    i8[6] SourceMAC
+    MACAddress Destination
+    MACAddress Source
     i16 EtherType
     i8[0] Payload
 
@@ -20,4 +20,54 @@ define EthernetHeader* EnterEthernetHeader(PacketBuffer* Buffer) {
 
 define void ExitEthernetHeader(PacketBuffer* Buffer, EthernetHeader* Header) {
     Header->FlipEndianess()
+}
+
+struct EthernetLayer {
+    NetworkInterface* Interface
+
+    AVLTree* EtherTypeHandlers ; <i16, NetworkProtocol>
+
+    define PacketBuffer* Enter(MACAddress* Destination) {
+        NetworkPacket* Packet := NetworkPacket:New(PAGE_SIZE)
+
+        EthernetHeader* Header := Packet->DefineSection(PROTOCOL_ETHERNET, #EthernetHeader)
+
+        Header->EtherType := EtherType
+        Header->Source->Set(this->Interface->MAC)
+        Header->Destination->Set(Destination)
+
+        return Packet
+    }
+
+    define void Send(PacketBuffer* Packet) {
+        EthernetHeader* Header := Packet->Get(PROTOCOL_ETHERNET)
+
+        Header->FlipEndianess()
+
+        this->Interface->Send(Packet->Data, Packet->Size)
+    }
+
+    define void Ingest(void* RawPacket, i32 Size) {
+        EthernetHeader* Header := RawPacket
+
+        Header->FlipEndianess()
+
+        if !(Header->Destination->Equals(Interface->MAC)) {
+            return
+        }
+
+        NetworkProtocol* Protocol := this->EtherTypeHandlers->GetPointer(Header->EtherType)
+
+        if !(Protocol) {
+            Info("Packet from %mac has unknown ethertype %x\n", Header->Source, Header->EtherType)
+            return
+        }
+
+        NetworkPacket* Packet := NetworkPacket:New(RawPacket, Size)
+
+        Packet->PushData(PROTOCOL_ETHERNET, #EthernetHeader)
+
+        Protocol->Ingest(Packet)
+    }
+
 }

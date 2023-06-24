@@ -3,6 +3,23 @@
 
 struct MACAddress {
     i8[6] Bytes
+
+    define i8 Equals(MACAddress* Other) {
+        return CompareMemory(this, Other, #self)
+    }
+
+    define i64 Hash() {
+        return *(this As i64*)
+    }
+
+    define void Set(MACAddress* Other) {
+        if (Other = null) {
+            FastSetMemory8(this, 0, #self)
+        }
+        else {
+            MoveMemory(this, Other, #self)
+        }
+    }
 }
 
 define void DoMACAddressPrint(PrintOutputAdapterPrototype* this, i8* Format, i32* FormatIndex, void* Parameters, i32 ParameterCount, i32* ParameterIndex) {
@@ -64,6 +81,37 @@ struct PacketBuffer {
     }
 }
 
+struct PacketData {
+    i32 ID
+    i32 Size
+    void* Data
+}
+
+struct NetworkPacket {
+    PacketData[10] Data
+
+    void* Buffer
+    void* Tail
+    i32 Size
+    i32 DataCount
+
+    static self* New(void* Buffer, i32 Size) {
+        self* this := Alloc(#self)
+
+        this->Buffer := Buffer
+        this->Tail := Tail
+    }
+
+    define void DefineSection(i32 ID, void* Size) {
+        PacketData* Data := this->Data[this->DataCount++]
+
+        Data->ID := ID
+        Data->Data := this->Tail
+        Data->Size := Size
+
+        this->Tail += Size
+    }
+}
 
 define i16 RFC1071Checksum(void* Data, i32 Size) {
     i64 Sum := 0

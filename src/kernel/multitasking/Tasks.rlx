@@ -85,12 +85,15 @@ struct Task {
 			RestoreFullContext(this~>Context)
 		}
 	}
-	
+
 	define void Yield() {
 		this->State := TASK_CAN_RUN
 	}
 	define void Block() {
 		this->State := TASK_BLOCKED
+	}
+	define void Unblock() {
+		this->State := TASK_CAN_RUN
 	}
 	define void End() {
 		this->State := TASK_KILLED

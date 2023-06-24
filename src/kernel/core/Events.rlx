@@ -110,3 +110,54 @@ struct Event {
 		}
 	}
 }
+
+/*
+struct Semaphore {
+	i32 Count
+	PointerArray* Waiters
+
+	static self* New() {
+		self* this := 
+	}
+
+	define void Wait() {
+		DisableInterrupts()
+
+		this->Count -= 1
+
+		if (this->Count < 0) {
+			this->Waiters->Push(CurrentTask)
+			SchedulerBlock()
+		}
+
+		EnableInterrupts()
+	}
+
+	define void WaitTimeout(i32 Timeout) {
+		DisableInterrupts()
+
+		this->Count -= 1
+
+		if (this->Count < 0) {
+			this->Waiters->Push(CurrentTask)
+			SchedulerBlock()
+		}
+
+		EnableInterrupts()
+	}
+
+	define void Signal() {
+		DisableInterrupts()
+
+		if (this->Count < 0) {
+			Task* Waiter := this->Waiters->Pop()
+
+			Waiter->Unblock()
+		}
+
+		this->Count += 1
+
+		EnableInterrupts()
+	}
+}
+*/
