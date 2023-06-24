@@ -43,6 +43,11 @@ define void* EFILoadELF(EFI_SYSTEM_TABLE* SystemTable, ELFHeader* Header) {
 
 			Print("Load... %i -> %x\n", Index, SectionMemory)
 
+			if (SectionMemory = null) {
+				Print("(skip)\n")
+				continue
+			}
+
 			if (Next->Flags & ELF_SEGMENT_FLAGS_EXECUTE) {
 				CodeVirtual := Next->VirtualAddress
 				CodePhysical := Next->PhysicalAddress

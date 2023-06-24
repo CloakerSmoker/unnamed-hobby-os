@@ -97,6 +97,12 @@ struct Heap {
 		;Info("AllocateBlock(%x) {\n", Size)
 		
 		HeapBlock* Block := this->FirstFreeBlock
+
+		if (Block = null) {
+			Info("PANIC!!!! SOMEBODY IS ALLOCATING MEMORY BEFORE THE HEAP IS INITIALIZED!\n%stackdump")
+			DisableInterrupts()
+			loop { asm { emit, 0xF4 } }
+		}
 		
 		loop {
 			;Info("\tBlock %x { Size %x, Free? %i }\n", Block, Block->Size, Block->IsFree)
