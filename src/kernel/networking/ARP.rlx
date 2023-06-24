@@ -65,60 +65,37 @@ struct ARPBodyIPV4 unaligned {
     i32 TargetProtocolAddress
     
     define void FlipEndianess() {
-        this->SPA := NetworkInt(this->SPA)
-        this->TPA := NetworkInt(this->TPA)
+        this->SenderProtocolAddress := NetworkInt(this->SenderProtocolAddress)
+        this->TargetProtocolAddress := NetworkInt(this->TargetProtocolAddress)
     }
 }
-
-define ARPHeader* EnterARPHeader(PacketBuffer* Buffer) {
-    return Buffer->Bump(#ARPHeader)
-}
-
-define void ExitARPHeader(PacketBuffer* Buffer, ARPHeader* Header) {
-    Header->FlipEndianess()
-}
-
-define void MakeARPToIPV4Announcement(PacketBuffer* Buffer, MACAddress* MyMAC, i32 MyIP) {
-    ARPHeader* ARP := EnterARPHeader(Buffer)
-
-	ARP->MakeIPV4()
-	
-	ARPBodyIPV4* Body := Buffer->Bump(#ARPBodyIPV4)
-
-	MoveMemory(Body~>SHA, MyMAC, 6)
-
-	Body->TPA := MyIP
-	Body->SPA := MyIP
-
-	Body->FlipEndianess()
-
-	ExitARPHeader(Buffer, ARP)
-}
-
-	/*
-	Ethernet->EtherType := ETHERTYPE_ARP
-
-	MakeARPToIPV4Announcement(Packet, MyMAC, MyIP)
-	*/
 
 struct ARPTableEntry {
     i32 ProtocolAddress
     MACAddress HardwareAddress
 }
 
+i32 PACKET_DATA_ARP_HEADER := RegisterPacketData("ARP Header")
+i32 PACKET_DATA_ARP_BODY := RegisterPacketData("ARP Body")
+
 struct ARPLayer {
-    NetworkLayer* LinkLayer
+    NetworkInterface* Interface
+    NetworkProtocol* LinkLayer
 
     AVLTree* Cache ; <i32, ARPTableEntry>
 
     define NetworkPacket* Enter(MACAddress* Destination, i16 Opcode) {
-        if (Destination->Hash = 0) {
+        if (Destination->Hash() = 0) {
             Destination := i8[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF] As MACAddress*
         }
 
-        NetworkPacket* Packet := this->LinkLayer->Enter(Destination)
+        NetworkPacket* Packet := this->LinkLayer->Enter()
 
-        ARPHeader* Header := Packet->DefineSection(PROTOCOL_ARP_HEADER, #ARPHeader)
+        EthernetHeader* Ethernet := Packet->Get(PACKET_DATA_ETHERNET)
+
+        Ethernet->Destination->Set(Destination)
+
+        ARPHeader* Header := Packet->Mark(PACKET_DATA_ARP_HEADER, #ARPHeader)
 
         Header->HardwareType := ARP_HARDWARE_TYPE_ETHERNET
         Header->HardwareSize := 6
@@ -126,14 +103,16 @@ struct ARPLayer {
         Header->ProtocolType := ARP_PROTOCOL_TYPE_IPV4
         Header->ProtocolSize := 4
 
-        Packet->DefineSection(PROTOCOL_ARP_BODY, #ARPBodyIPV4)
+        Packet->Mark(PACKET_DATA_ARP_BODY, #ARPBodyIPV4)
+
+        return Packet
     }
 
     define void Send(NetworkPacket* Packet) {
-        ARPHeader* Header := Packet->Get(PROTOCOL_ARP_HEADER)
+        ARPHeader* Header := Packet->Get(PACKET_DATA_ARP_HEADER)
         Header->FlipEndianess()
 
-        ARPBodyIPV4* Body := Packet->Get(PROTOCOL_ARP_BODY)
+        ARPBodyIPV4* Body := Packet->Get(PACKET_DATA_ARP_BODY)
         Body->FlipEndianess()
 
         this->LinkLayer->Send(Packet)
@@ -141,12 +120,12 @@ struct ARPLayer {
 
     define void SendRequest(MACAddress* TargetHardwareAddress, i32 TargetProtocolAddress) {
         NetworkPacket* Packet := this->Enter(TargetHardwareAddress, ARP_OPCODE_REQUEST)
-        ARPBodyIPV4* Body := Packet->Get(PROTOCOL_ARP_BODY)
+        ARPBodyIPV4* Body := Packet->Get(PACKET_DATA_ARP_BODY)
 
         Body->SenderHardwareAddress->Set(this->Interface->MAC)
         Body->SenderProtocolAddress := this->Interface->IP
 
-        Body->TargetHardwareAddress := TargetHardwareAddress
+        Body->TargetHardwareAddress->Set(TargetHardwareAddress)
         Body->TargetProtocolAddress := TargetProtocolAddress
 
         this->Send(Packet)
@@ -154,12 +133,12 @@ struct ARPLayer {
 
     define void SendReply(MACAddress* TargetHardwareAddress, i32 TargetProtocolAddress) {
         NetworkPacket* Packet := this->Enter(TargetHardwareAddress, ARP_OPCODE_REQUEST)
-        ARPBodyIPV4* Body := Packet->Get(PROTOCOL_ARP_BODY)
+        ARPBodyIPV4* Body := Packet->Get(PACKET_DATA_ARP_BODY)
 
         Body->SenderHardwareAddress->Set(this->Interface->MAC)
         Body->SenderProtocolAddress := this->Interface->IP
 
-        Body->TargetHardwareAddress := TargetHardwareAddress
+        Body->TargetHardwareAddress->Set(TargetHardwareAddress)
         Body->TargetProtocolAddress := TargetProtocolAddress
 
         this->Send(Packet)
@@ -192,30 +171,30 @@ struct ARPLayer {
     }
 
     define void HandleRequest(NetworkPacket* Packet, ARPHeader* Header) {
-        ARPBodyIPV4* Body := Packet->Get(PROTOCOL_ARP_BODY)
+        ARPBodyIPV4* Body := Packet->Get(PACKET_DATA_ARP_BODY)
 
         this->PopulateCache(Body~>SenderHardwareAddress, Body->SenderProtocolAddress)
 
         if (Body->TargetProtocolAddress = this->Interface->IP) {
-            this->Send(Body->SenderHardwareAddress, Body->SenderProtocolAddress)
+            this->SendReply(Body~>SenderHardwareAddress, Body->SenderProtocolAddress)
         }
 
         if (Body~>SenderHardwareAddress->Equals(this->Interface->MAC)) {
-            this->Send(Body->SenderHardwareAddress, Body->SenderProtocolAddress)
+            this->SendReply(Body~>SenderHardwareAddress, Body->SenderProtocolAddress)
         }
     }
 
     define void HandleReply(NetworkPacket* Packet, ARPHeader* Header) {
-        ARPBodyIPV4* Body := Packet->Get(PROTOCOL_ARP_BODY)
+        ARPBodyIPV4* Body := Packet->Get(PACKET_DATA_ARP_BODY)
 
         this->PopulateCache(Body~>SenderHardwareAddress, Body->SenderProtocolAddress)
     }
 
     define void Ingest(NetworkPacket* Packet) {
-        Packet->DefineSection(PROTOCOL_ARP_HEADER, #ARPHeader)
+        Packet->Mark(PACKET_DATA_ARP_HEADER, #ARPHeader)
 
-        EthernetHeader* Ethernet := Packet->Get(PROTOCOL_ETHERNET)
-        ARPHeader* Header := Packet->Get(PROTOCOL_ARP_HEADER)
+        EthernetHeader* Ethernet := Packet->Get(PACKET_DATA_ETHERNET)
+        ARPHeader* Header := Packet->Get(PACKET_DATA_ARP_HEADER)
 
         if (Header->HardwareType != ARP_HARDWARE_TYPE_ETHERNET) {
             Info("Bad ARP packet recieved from %mac, unknown hardware type %x\n", Ethernet->Source, Header->HardwareType)
@@ -246,7 +225,7 @@ struct ARPLayer {
         }
     }
 
-    define i8 Probe(i32 ProtocolAddress) {
+    define i8 ProbeIsAddressTaken(i32 ProtocolAddress) {
         this->EvictProtocolAddress(ProtocolAddress)
 
         for (i32 Index := 0, Index < 3, Index++) {
@@ -255,9 +234,11 @@ struct ARPLayer {
             SchedulerYield()
 
             if (this->LookupCachedEntry(ProtocolAddress) != null) {
-                return false
+                return true
             }
         }
+
+        return false
     }
 
     define MACAddress* Lookup(i32 ProtocolAddress) {
@@ -267,7 +248,7 @@ struct ARPLayer {
             ARPTableEntry* Entry := this->LookupCachedEntry(ProtocolAddress)
 
             if (Entry) {
-                return Entry->HardwareAddress
+                return Entry~>HardwareAddress
             }
 
             i64 Time := GetUptimeMS() - Start
@@ -279,6 +260,8 @@ struct ARPLayer {
                 SchedulerYield()
             }
         }
+
+        return null
     }
 
     define void Announce() {

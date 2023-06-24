@@ -29,7 +29,7 @@ struct IPV4Header {
         this->DestinationIP := NetworkInt(this->DestinationIP)
     }
 }
-
+/*
 define IPV4Header* EnterIPV4Header(PacketBuffer* Buffer) {
     IPV4Header* Result := Buffer->Bump(#IPV4Header)
 
@@ -46,3 +46,4 @@ define void ExitIPV4Header(PacketBuffer* Buffer, IPV4Header* Header) {
 
     Header->HeaderChecksum := Checksum
 }
+*/

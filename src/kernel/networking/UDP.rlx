@@ -13,6 +13,7 @@ struct UDPHeader {
     }
 }
 
+/*
 define UDPHeader* EnterUDPHeader(PacketBuffer* Buffer, IPV4Header* IPV4) {
     IPV4->Protocol := IPV4_PROTOCOL_UDP
 
@@ -29,3 +30,4 @@ define void ExitUDPHeader(PacketBuffer* Buffer, UDPHeader* Header) {
 
     ;Header->Checksum := Checksum
 }
+*/

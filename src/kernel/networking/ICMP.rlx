@@ -9,7 +9,7 @@ struct ICMPHeader {
     i8 Code
     i16 Checksum
 }
-
+/*
 define ICMPHeader* EnterICMPHeader(PacketBuffer* Buffer) {
     return Buffer->Bump(#ICMPHeader)
 }
@@ -20,7 +20,7 @@ define void ExitICMPHeader(PacketBuffer* Buffer, ICMPHeader* Header) {
 
     Header->Checksum := Checksum
 }
-
+*/
 struct ICMPEchoRequest {
     i16 Identifier
     i16 SequenceNumber

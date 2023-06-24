@@ -37,48 +37,39 @@ PrintFormatPrototype MACAddressFormatPrototype {
 
 i32 MAC_ADDRESS_FORMAT_PROTOTYPE_ID := AddPrintFormat(&MACAddressFormatPrototype)
 
-struct PacketBuffer {
-    void* Base
-    void* Tail
-    i32 Size
+struct PacketDataInfo {
+    i8* Name
+    i32 ID
 
-    define void Initialize(void* Base) {
-        this->Base := Base
-        this->Tail := Base
-        this->Size := 0
-    }
-    
-    define void* Bump(i32 Size) {
-        void* Result := this->Tail
+    PacketDataInfo* Next
 
-        this->Tail += Size
-        this->Size += Size
-        
-        return Result
+    static self* New(i8* Name) {
+        self* this := Alloc(#self)
+
+        this->Name := Name
+
+        return this
+    }
+}
+
+PacketDataInfo* FirstPacketData := null
+PacketDataInfo* LastPacketData := null
+
+define i32 RegisterPacketData(i8* Name) {
+    PacketDataInfo* Info := PacketDataInfo:New(Name)
+
+    if (FirstPacketData = null) {
+        Info->ID := 1
+        FirstPacketData := Info
+    }
+    else {
+        Info->ID := LastPacketData->ID + 1
+        LastPacketData->Next := Info
     }
 
-    define i16 Tell(void* Base) {
-        return ((this->Tail As i64) - (Base As i64)) As i16
-    }
+    LastPacketData := Info
 
-    define void WriteI32(i32 Number) {
-        i32* Where := this->Bump(4)
-
-        *Where := NetworkInt(Number)
-    }
-    define void WriteI16(i16 Number) {
-        i16* Where := this->Bump(2)
-
-        *Where := NetworkShort(Number)
-    }
-    define void WriteI8(i8 Number) {
-        i8* Where := this->Bump(1)
-
-        *Where := Number
-    }
-    define void Write(void* Buffer, i32 Size) {
-        MoveMemory(this->Bump(Size), Buffer, Size)
-    }
+    return Info->ID
 }
 
 struct PacketData {
@@ -99,10 +90,27 @@ struct NetworkPacket {
         self* this := Alloc(#self)
 
         this->Buffer := Buffer
-        this->Tail := Tail
+        this->Tail := Buffer
+        this->Size := Size
+
+        return this
     }
 
-    define void DefineSection(i32 ID, void* Size) {
+    static self* New(i32 Size) {
+        i32 Pages := Size / PAGE_SIZE
+
+        if (Size % PAGE_SIZE) {
+            Pages += 1
+        }
+
+        void* Buffer := KernelPageAllocator->AllocateVirtual(2)
+
+        return self:New(Buffer, Size)
+    }
+
+    define void* Mark(i32 ID, i32 Size) {
+        void* Result := this->Tail
+
         PacketData* Data := this->Data[this->DataCount++]
 
         Data->ID := ID
@@ -110,6 +118,51 @@ struct NetworkPacket {
         Data->Size := Size
 
         this->Tail += Size
+
+        return Result
+    }
+
+    define void* Get(i32 ID) {
+        for (i32 Index := 0, Index < this->DataCount, Index++) {
+            PacketData* Data := this->Data[Index]
+
+            if (Data->ID = ID) {
+                return Data->Data
+            }
+        }
+
+        return null
+    }
+}
+
+struct NetworkInterface {
+    MACAddress* MAC
+    i32 IP
+
+    define void Send(void* Buffer, i32 Size) {
+
+    }
+}
+
+struct NetworkProtocol {
+    void* State
+
+    void(void*, NetworkPacket*) _Ingest
+
+    define void Ingest(NetworkPacket* Packet) {
+        this->_Ingest(this->State, Packet)
+    }
+
+    NetworkPacket*(void*) _Enter
+
+    define NetworkPacket* Enter() {
+        return this->_Enter(this->State)
+    }
+
+    void(void*, NetworkPacket*) _Send
+
+    define void Send(NetworkPacket* Packet) {
+        this->_Send(this->State, Packet)
     }
 }
 

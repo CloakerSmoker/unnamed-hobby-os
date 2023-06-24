@@ -14,23 +14,19 @@ struct EthernetHeader {
     }
 }
 
-define EthernetHeader* EnterEthernetHeader(PacketBuffer* Buffer) {
-    return Buffer->Bump(#EthernetHeader)
-}
+i32 PACKET_DATA_ETHERNET := RegisterPacketData("Ethernet Header")
 
-define void ExitEthernetHeader(PacketBuffer* Buffer, EthernetHeader* Header) {
-    Header->FlipEndianess()
-}
+#Require "$/AVLTree.rlx"
 
 struct EthernetLayer {
     NetworkInterface* Interface
 
     AVLTree* EtherTypeHandlers ; <i16, NetworkProtocol>
 
-    define PacketBuffer* Enter(MACAddress* Destination) {
+    define NetworkPacket* Enter(MACAddress* Destination, i16 EtherType) {
         NetworkPacket* Packet := NetworkPacket:New(PAGE_SIZE)
 
-        EthernetHeader* Header := Packet->DefineSection(PROTOCOL_ETHERNET, #EthernetHeader)
+        EthernetHeader* Header := Packet->Mark(PACKET_DATA_ETHERNET, #EthernetHeader)
 
         Header->EtherType := EtherType
         Header->Source->Set(this->Interface->MAC)
@@ -39,8 +35,8 @@ struct EthernetLayer {
         return Packet
     }
 
-    define void Send(PacketBuffer* Packet) {
-        EthernetHeader* Header := Packet->Get(PROTOCOL_ETHERNET)
+    define void Send(NetworkPacket* Packet) {
+        EthernetHeader* Header := Packet->Get(PACKET_DATA_ETHERNET)
 
         Header->FlipEndianess()
 
@@ -52,7 +48,7 @@ struct EthernetLayer {
 
         Header->FlipEndianess()
 
-        if !(Header->Destination->Equals(Interface->MAC)) {
+        if !(Header->Destination->Equals(this->Interface->MAC)) {
             return
         }
 
@@ -65,7 +61,7 @@ struct EthernetLayer {
 
         NetworkPacket* Packet := NetworkPacket:New(RawPacket, Size)
 
-        Packet->PushData(PROTOCOL_ETHERNET, #EthernetHeader)
+        Packet->Mark(PACKET_DATA_ETHERNET, #EthernetHeader)
 
         Protocol->Ingest(Packet)
     }

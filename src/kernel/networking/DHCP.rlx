@@ -52,6 +52,7 @@ struct DHCPHeader {
     }
 }
 
+/*
 define DHCPHeader* EnterDHCPHeader(PacketBuffer* Buffer) {
     DHCPHeader* Result := Buffer->Bump(#DHCPHeader)
 
@@ -62,6 +63,7 @@ define DHCPHeader* EnterDHCPHeader(PacketBuffer* Buffer) {
 define void ExitDHCPHeader(PacketBuffer* Buffer, DHCPHeader* Header) {
     Header->FlipEndianess()
 }
+*/
 
 i8 DHCP_OPTION_PADDING := 0
 i8 DHCP_OPTION_SUBNET_MASK := 1
@@ -94,7 +96,7 @@ struct DHCPOption {
         return ((this->Data As i64) + this->Length) As void*
     }
 }
-
+/*
 define DHCPOption* EnterDHCPOption(PacketBuffer* Buffer) {
     return Buffer->Bump(#DHCPOption)
 }
@@ -146,3 +148,4 @@ define void DHCPTest(PacketBuffer* Buffer, EthernetHeader* Ethernet, IPV4Header*
     ExitDHCPHeader(Buffer, DHCP)
     ExitUDPHeader(Buffer, UDP)
 }
+*/
