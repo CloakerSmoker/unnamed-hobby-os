@@ -52,7 +52,7 @@ struct EthernetLayer {
     }
 
     define NetworkPacket* Enter(EthernetPacketOptions* Options) {
-        NetworkPacket* Packet := NetworkPacket:New(PAGE_SIZE)
+        NetworkPacket* Packet := NetworkPacket:New(PAGE_SIZE * 8)
 
         EthernetHeader* Header := Packet->Mark(PACKET_DATA_ETHERNET, #EthernetHeader)
 
@@ -66,13 +66,17 @@ struct EthernetLayer {
     }
 
     define void Send(NetworkPacket* Packet) {
-        EthernetHeader* Header := Packet->Get(PACKET_DATA_ETHERNET)
-
-        Header->FlipEndianess()
-
         Packet->End()
 
+        EthernetHeader* Header := Packet->Get(PACKET_DATA_ETHERNET)
+
+        Info("Sending Ethernet packet %mac -> %mac\n", Header~>Source, Header~>Destination)
+
+        Info("%hexdump\n", Packet->Buffer, Packet->Size)
+
+        Header->FlipEndianess()
         this->Interface->DoSend(Packet)
+        Header->FlipEndianess()
     }
 
     define void Ingest(NetworkPacket* Packet) {

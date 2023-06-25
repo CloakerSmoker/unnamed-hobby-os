@@ -7,15 +7,18 @@ define void SetupNetworking() {
     
     EthernetLayer* Ethernet := EthernetLayer:New(FirstNetworkInterface)
     ARPLayer* ARP := ARPLayer:New(FirstNetworkInterface, Ethernet->AsProtocol)
+    IPV4Layer* IP := IPV4Layer:New(FirstNetworkInterface, Ethernet->AsProtocol)
 
     FirstE1000->Setup()
 
     Print("SetupNetworking: E1000 MAC: %mac\n", FirstE1000~>MAC)
 
     LinkE1000NetworkProtocol(FirstNetworkInterface, FirstE1000)
+
+    FirstNetworkInterface->MTU := 1500
 }
 
-define void TestNetworking() {
+define void TestARP() {
     ARPLayer* ARP := FirstNetworkInterface->GetProtocol("ARP")->this
 
     i32 GatewayIP := PackIPV4(10, 0, 2, 2)
@@ -27,4 +30,24 @@ define void TestNetworking() {
     MACAddress* GatewayMAC := ARP->Lookup(GatewayIP)
 
     Print("Gateway is at %mac\n", GatewayMAC)
+}
+
+define void TestIPV4Fragmentation() {
+    IPV4Layer* IP := FirstNetworkInterface->GetProtocol("IPV4")->this
+
+    IPV4PacketOptions Options {
+        Destination: PackIPV4(10, 0, 2, 2)
+    }
+
+    NetworkPacket* Packet := IP->Enter(&Options)
+
+    Packet->Mark(PACKET_DATA_ARP_BODY, 20)
+
+    Packet->DumpMarkers()
+
+    IP->Send(Packet)
+}
+
+define void TestNetworking() {
+    TestIPV4Fragmentation()
 }

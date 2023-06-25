@@ -269,6 +269,10 @@ struct ARPLayer {
     }
 
     define MACAddress* Lookup(i32 ProtocolAddress) {
+        if (ProtocolAddress = 0xFF_FF_FF_FF) {
+            return MAC_BROADCAST
+        }
+
         i64 Start := GetUptimeMS()
 
         loop {

@@ -5,11 +5,36 @@ i8 IPV4_FLAG_DO_NOT_FRAGMENT := 2
 i8 IPV4_FLAG_HAS_FOLLOWING_FRAGMENTS := 4
 
 struct IPV4Header {
-    i8 Version_IHL
-    i8 DSCP_ECN
+    union {
+        bits As i8 {
+            [0:3] Version
+            [4:7] IHL
+        }
+
+        i8 Version_IHL
+    }
+
+    union {
+        bits As i8 {
+            [0:5] DSCP
+            [5:7] ECN
+        }
+
+        i8 DSCP_ECN
+    }
+
     i16 TotalLength
     i16 Identification
-    i16 Flags_FragmentOffset
+
+    union {
+        bits As i16 {
+            [0:2] Flags
+            [3:15] FragmentOffset
+        }
+
+        i16 Flags_FragmentOffset
+    }
+
     i8 TimeToLive
     i8 Protocol
     i16 HeaderChecksum
@@ -17,7 +42,9 @@ struct IPV4Header {
     i32 DestinationIP
 
     define void Initialize() {
-        this->Version_IHL := (5 | (4 << 4)) As i8
+        this->Version := 4
+        this->IHL := 5
+
         this->TimeToLive := 250 As i8
     }
 
@@ -29,6 +56,122 @@ struct IPV4Header {
         this->DestinationIP := NetworkInt(this->DestinationIP)
     }
 }
+
+i32 PACKET_DATA_IPV4_HEADER := RegisterPacketData("IPv4 Header")
+
+struct IPV4PacketOptions {
+    i32 Destination
+}
+
+declare NetworkProtocolPrototype* GetIPV4ProtocolPrototype()
+
+struct IPV4Layer {
+    NetworkInterface* Interface
+    NetworkProtocol* LinkLayer
+
+    ARPLayer* ARP
+
+    i16 NextPacketID
+
+    static self* New(NetworkInterface* Interface, NetworkProtocol* LinkLayer) {
+        self* this := Alloc(#self)
+
+        this->Interface := Interface
+        this->LinkLayer := LinkLayer
+
+        this->ARP := Interface->GetProtocol("ARP")->this
+
+        Interface->AddProtocol("IPV4", GetIPV4ProtocolPrototype(), this)
+
+        return this
+    }
+
+    define NetworkPacket* Enter(IPV4PacketOptions* Options) {
+        MACAddress* DestinationMAC := this->ARP->Lookup(Options->Destination)
+
+        EthernetPacketOptions EthernetOptions {
+            EtherType: ETHERTYPE_IPV4,
+            Destination: DestinationMAC
+        }
+
+        NetworkPacket* Packet := this->LinkLayer->Enter(&EthernetOptions)
+
+        IPV4Header* Header := Packet->Mark(PACKET_DATA_IPV4_HEADER, #IPV4Header)
+
+        ; FIXME: Compiler bug here.
+        ; Modifies `Header` itself instead of the `Version` field of `Header`
+        ; `Header` goes from 0x...E to 0x...4
+
+        Header->Version := 4
+        Header->IHL := 5
+
+        Header->TimeToLive := 64
+
+        Header->SourceIP := this->Interface->IP
+        Header->DestinationIP := Options->Destination
+
+        Header->Identification := this->NextPacketID++
+
+        return Packet
+    }
+
+    define void Send(NetworkPacket* Packet) {
+        Packet->End()
+
+        IPV4Header* Header := Packet->Get(PACKET_DATA_IPV4_HEADER)
+        i32 NonIPSize := Packet->GetOffset(PACKET_DATA_IPV4_HEADER)
+        i32 HeadersSize := Packet->GetEndOffset(PACKET_DATA_IPV4_HEADER)
+        
+        i16 MaximumFragmentDataSize := (this->Interface->MTU - #IPV4Header) As i16
+
+        i32 RemainingSize := Packet->Size - NonIPSize
+
+        void* Data := Packet->Buffer + HeadersSize
+        i32 FragmentOffset := 0
+
+        while (RemainingSize > this->Interface->MTU) {
+            ; While the packet is larger than the MTU
+
+            Header->Flags |= IPV4_FLAG_HAS_FOLLOWING_FRAGMENTS
+            Header->FragmentOffset := FragmentOffset As i16
+            
+            Packet->Size := HeadersSize + MaximumFragmentDataSize
+
+            Header->FlipEndianess()
+            this->LinkLayer->Send(Packet)
+            Header->FlipEndianess()
+
+            RemainingSize -= MaximumFragmentDataSize
+            FragmentOffset += MaximumFragmentDataSize
+            
+            MoveMemory(Data, Data + FragmentOffset, RemainingSize)
+        }
+
+        Header->Flags &= ~IPV4_FLAG_HAS_FOLLOWING_FRAGMENTS
+        Header->FragmentOffset := FragmentOffset As i16
+
+        Packet->Size := RemainingSize
+
+        Header->FlipEndianess()
+        this->LinkLayer->Send(Packet)
+        Header->FlipEndianess()
+    }
+
+    define void Ingest(NetworkPacket* Packet) {
+
+    }
+}
+
+NetworkProtocolPrototype IPV4ProtocolPrototype {
+    Enter: &IPV4Layer.Enter,
+    Send: &IPV4Layer.Send,
+    Ingest: &IPV4Layer.Ingest
+}
+
+define NetworkProtocolPrototype* GetIPV4ProtocolPrototype() {
+    return &IPV4ProtocolPrototype
+}
+
 /*
 define IPV4Header* EnterIPV4Header(PacketBuffer* Buffer) {
     IPV4Header* Result := Buffer->Bump(#IPV4Header)

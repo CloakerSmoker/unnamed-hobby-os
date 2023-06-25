@@ -101,20 +101,50 @@ struct NetworkPacket {
         return Result
     }
 
-    define void* Get(i32 ID) {
+    define PacketData* Find(i32 ID) {
         for (i32 Index := 0, Index < this->DataCount, Index++) {
             PacketData* Data := this->Data[Index]
 
             if (Data->ID = ID) {
-                return Data->Data
+                return Data
             }
         }
 
         return null
     }
 
+    define void* Get(i32 ID) {
+        return this->Find(ID)->Data
+    }
+
+    define i32 GetOffset(i32 ID) {
+        PacketData* Data := this->Find(ID)
+
+        return ((Data->Data As i64) - (this->Buffer As i64)) As i32
+    }
+
+    define i32 GetEndOffset(i32 ID) {
+        PacketData* Data := this->Find(ID)
+
+        i32 Offset := ((Data->Data As i64) - (this->Buffer As i64)) As i32
+
+        return Offset + Data->Size
+    }
+
     define void End() {
         this->Size := ((this->Tail As i64) - (this->Buffer As i64)) As i32
+    }
+
+    define void DumpMarkers() {
+        Print("Markers for %x byte packet:\n", this->Size)
+
+        for (i32 Index := 0, Index < this->DataCount, Index++) {
+            PacketData* Data := this->Data[Index]
+
+            i8* Name := PacketDataNames[Data->ID]
+
+            Print("%s (%x bytes):\n%hexdump\n", Name, Data->Size, Data->Data, Data->Size)
+        }
     }
 }
 
@@ -157,6 +187,7 @@ struct NetworkProtocol {
 struct NetworkInterface {
     MACAddress* MAC
     i32 IP
+    i32 MTU
 
     AVLTree* Protocols ; <FNV1A(Name), NetworkProtocol*>
 
