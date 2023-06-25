@@ -70,23 +70,28 @@ LIGHT_CLEAN_FILES+= $(BUILD)/Disk.img
 
 # GPTTool
 
-$(BUILD)/GPTTool.elf: $(shell cat $(BUILD)/GPTTool.d 2>/dev/null) $(BUILD)/GPTTool.d
+$(BUILD)/GPTTool.elf: $(RLX)
+$(BUILD)/GPTTool.elf: $(BUILD)/GPTTool.d
+$(BUILD)/GPTTool.elf: $(shell cat $(BUILD)/GPTTool.d 2>/dev/null)
 	$(RLX) -i ./src/host/GPTTool.rlx -o $@ ${ELF_RLX_FLAGS}
 
 secret-internal-deps: $(BUILD)/GPTTool.d
 
-$(BUILD)/GPTTool.d:
+$(BUILD)/GPTTool.d: $(RLX)
 	$(RLX) -i ./src/host/GPTTool.rlx -o $@ --makedep $(ELF_RLX_FLAGS)
 
 CLEAN_FILES+= $(BUILD)/GPTTool.elf $(BUILD)/GPTTool.d
 
 # FAT32Tool
 
-$(BUILD)/FAT32Tool.elf: $(shell cat $(BUILD)/FAT32Tool.d 2>/dev/null) $(BUILD)/FAT32Tool.d
+$(BUILD)/FAT32Tool.elf: $(RLX)
+$(BUILD)/FAT32Tool.elf: $(BUILD)/FAT32Tool.d
+$(BUILD)/FAT32Tool.elf: $(shell cat $(BUILD)/FAT32Tool.d 2>/dev/null)
 	$(RLX) -i ./src/host/FAT32Tool.rlx -o $@ ${ELF_RLX_FLAGS}
 
 secret-internal-deps: $(BUILD)/FAT32Tool.d
 
+$(BUILD)/FAT32Tool.d: $(RLX)
 $(BUILD)/FAT32Tool.d:
 	$(RLX) -i ./src/host/FAT32Tool.rlx -o $@ --makedep $(ELF_RLX_FLAGS)
 
@@ -94,48 +99,56 @@ CLEAN_FILES+= $(BUILD)/FAT32Tool.elf $(BUILD)/FAT32Tool.d
 
 # Ext2Tool
 
-$(BUILD)/Ext2Tool.elf: $(shell cat $(BUILD)/Ext2Tool.d 2>/dev/null) $(BUILD)/Ext2Tool.d
+$(BUILD)/Ext2Tool.elf: $(RLX)
+$(BUILD)/Ext2Tool.elf: $(BUILD)/Ext2Tool.d
+$(BUILD)/Ext2Tool.elf: $(shell cat $(BUILD)/Ext2Tool.d 2>/dev/null)
 	$(RLX) -i ./src/host/Ext2Tool.rlx -o $@ ${ELF_RLX_FLAGS}
 
 secret-internal-deps: $(BUILD)/Ext2Tool.d
 
-$(BUILD)/Ext2Tool.d:
+$(BUILD)/Ext2Tool.d: $(RLX)
 	$(RLX) -i ./src/host/Ext2Tool.rlx -o $@ --makedep $(ELF_RLX_FLAGS)
 
 CLEAN_FILES+= $(BUILD)/Ext2Tool.elf $(BUILD)/Ext2Tool.d
 
 # Bootloader
 
-$(BUILD)/Boot.efi: $(shell cat $(BUILD)/Boot.d 2>/dev/null) $(BUILD)/Boot.d
+$(BUILD)/Boot.efi: $(RLX)
+$(BUILD)/Boot.efi: $(BUILD)/Boot.d
+$(BUILD)/Boot.efi: $(shell cat $(BUILD)/Boot.d 2>/dev/null)
 	$(RLX) -i ./src/bootloader/EFIBoot.rlx -o $@ $(EFI_RLX_FLAGS)
 
 secret-internal-deps: $(BUILD)/Boot.d
 
-$(BUILD)/Boot.d:
+$(BUILD)/Boot.d: $(RLX)
 	$(RLX) -i ./src/bootloader/EFIBoot.rlx -o $@ --makedep $(EFI_RLX_FLAGS)
 
 LIGHT_CLEAN_FILES+= $(BUILD)/Boot.efi $(BUILD)/Boot.d
 
 # Kernel
 
-$(BUILD)/Kernel.elf: $(shell cat $(BUILD)/Kernel.d 2>/dev/null) $(BUILD)/Kernel.d
+$(BUILD)/Kernel.elf: $(RLX)
+$(BUILD)/Kernel.elf: $(BUILD)/Kernel.d
+$(BUILD)/Kernel.elf: $(shell cat $(BUILD)/Kernel.d 2>/dev/null)
 	$(RLX) -i ./src/kernel/Main.rlx -o $@ $(KERNEL_RLX_FLAGS)
 
 secret-internal-deps: $(BUILD)/Kernel.d
 
-$(BUILD)/Kernel.d:
+$(BUILD)/Kernel.d: $(RLX)
 	$(RLX) -i ./src/kernel/Main.rlx -o $@ --makedep $(KERNEL_RLX_FLAGS)
 
 LIGHT_CLEAN_FILES+= $(BUILD)/Kernel.elf $(BUILD)/Kernel.d
 
 # Userland
 
-$(BUILD)/Beep.elf: $(shell cat $(BUILD)/Beep.d 2>/dev/null) $(BUILD)/Beep.d
+$(BUILD)/Beep.elf: $(RLX)
+$(BUILD)/Beep.elf: $(BUILD)/Beep.d
+$(BUILD)/Beep.elf: $(shell cat $(BUILD)/Beep.d 2>/dev/null)
 	$(RLX) -i ./src/user/Beep.rlx -o $@ ${ELF_RLX_FLAGS}
 
 secret-internal-deps: $(BUILD)/Beep.d
 
-$(BUILD)/Beep.d:
+$(BUILD)/Beep.d: $(RLX)
 	$(RLX) -i ./src/user/Beep.rlx -o $@ --makedep $(ELF_RLX_FLAGS)
 
 LIGHT_CLEAN_FILES+= $(BUILD)/Beep.elf $(BUILD)/Beep.d
