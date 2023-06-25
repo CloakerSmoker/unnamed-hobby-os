@@ -22,6 +22,9 @@ struct MACAddress {
     }
 }
 
+MACAddress* MAC_NULL := i8[0, 0, 0, 0, 0, 0] As MACAddress*
+MACAddress* MAC_BROADCAST := i8[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF] As MACAddress*
+
 define void DoMACAddressPrint(PrintOutputAdapterPrototype* this, i8* Format, i32* FormatIndex, void* Parameters, i32 ParameterCount, i32* ParameterIndex) {
     MACAddress* Address := Parameters[*ParameterIndex] As void*
 
@@ -37,39 +40,15 @@ PrintFormatPrototype MACAddressFormatPrototype {
 
 i32 MAC_ADDRESS_FORMAT_PROTOTYPE_ID := AddPrintFormat(&MACAddressFormatPrototype)
 
-struct PacketDataInfo {
-    i8* Name
-    i32 ID
-
-    PacketDataInfo* Next
-
-    static self* New(i8* Name) {
-        self* this := Alloc(#self)
-
-        this->Name := Name
-
-        return this
-    }
-}
-
-PacketDataInfo* FirstPacketData := null
-PacketDataInfo* LastPacketData := null
+i8*[20] PacketDataNames
+i32 NextPacketDataID := 0
 
 define i32 RegisterPacketData(i8* Name) {
-    PacketDataInfo* Info := PacketDataInfo:New(Name)
+    i32 ID := NextPacketDataID++
 
-    if (FirstPacketData = null) {
-        Info->ID := 1
-        FirstPacketData := Info
-    }
-    else {
-        Info->ID := LastPacketData->ID + 1
-        LastPacketData->Next := Info
-    }
+    PacketDataNames[ID] := Name
 
-    LastPacketData := Info
-
-    return Info->ID
+    return ID
 }
 
 struct PacketData {
@@ -133,36 +112,83 @@ struct NetworkPacket {
 
         return null
     }
+
+    define void End() {
+        this->Size := ((this->Tail As i64) - (this->Buffer As i64)) As i32
+    }
+}
+
+struct NetworkProtocolPrototype {
+    NetworkPacket*(void*, void*) Enter
+    void(void*, NetworkPacket*) Send
+    void(void*, NetworkPacket*) Ingest
+}
+
+struct NetworkProtocol {
+    NetworkProtocolPrototype* Prototype
+
+    union {
+        void* State
+        void* this
+    }
+
+    static self* New(NetworkProtocolPrototype* Prototype, void* State) {
+        self* this := Alloc(#self)
+
+        this->Prototype := Prototype
+        this->State := State
+
+        return this
+    }
+
+    define NetworkPacket* Enter(void* Options) {
+        return this->Prototype->Enter(this->State, Options)
+    }
+
+    define void Send(NetworkPacket* Packet) {
+        this->Prototype->Send(this->State, Packet)
+    }
+
+    define void Ingest(NetworkPacket* Packet) {
+        this->Prototype->Ingest(this->State, Packet)
+    }
 }
 
 struct NetworkInterface {
     MACAddress* MAC
     i32 IP
 
-    define void Send(void* Buffer, i32 Size) {
+    AVLTree* Protocols ; <FNV1A(Name), NetworkProtocol*>
 
-    }
-}
+    NetworkProtocol* SendProtocol
+    NetworkProtocol* ReceiveProtocol
 
-struct NetworkProtocol {
-    void* State
+    static self* New() {
+        self* this := Alloc(#self)
 
-    void(void*, NetworkPacket*) _Ingest
+        this->Protocols := AVLTree:New(#void*)
 
-    define void Ingest(NetworkPacket* Packet) {
-        this->_Ingest(this->State, Packet)
-    }
-
-    NetworkPacket*(void*) _Enter
-
-    define NetworkPacket* Enter() {
-        return this->_Enter(this->State)
+        return this
     }
 
-    void(void*, NetworkPacket*) _Send
+    define NetworkProtocol* AddProtocol(i8* Name, NetworkProtocolPrototype* Prototype, void* State) {
+        NetworkProtocol* Protocol := NetworkProtocol:New(Prototype, State)
 
-    define void Send(NetworkPacket* Packet) {
-        this->_Send(this->State, Packet)
+        this->Protocols->InsertPointer(FNV1A(Name), Protocol)
+
+        return Protocol
+    }
+
+    define NetworkProtocol* GetProtocol(i8* Name) {
+        return this->Protocols->GetPointer(FNV1A(Name))
+    }
+
+    define void DoSend(NetworkPacket* Packet) {
+        this->SendProtocol->Ingest(Packet)
+    }
+
+    define void OnReceive(NetworkPacket* Packet) {
+        this->ReceiveProtocol->Ingest(Packet)
     }
 }
 

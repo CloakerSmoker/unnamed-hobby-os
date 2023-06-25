@@ -78,24 +78,48 @@ struct ARPTableEntry {
 i32 PACKET_DATA_ARP_HEADER := RegisterPacketData("ARP Header")
 i32 PACKET_DATA_ARP_BODY := RegisterPacketData("ARP Body")
 
+declare NetworkProtocolPrototype* GetARPProtocolPrototype()
+
 struct ARPLayer {
     NetworkInterface* Interface
     NetworkProtocol* LinkLayer
 
     AVLTree* Cache ; <i32, ARPTableEntry>
 
+    static self* New(NetworkInterface* Interface, NetworkProtocol* LinkLayer) {
+        self* this := Alloc(#self)
+
+        this->Interface := Interface
+        this->LinkLayer := LinkLayer
+
+        this->Cache := AVLTree:New(#ARPTableEntry)
+
+        NetworkProtocol* ThisProtocol := Interface->AddProtocol("ARP", GetARPProtocolPrototype(), this)
+
+        EthernetLayer* Ethernet := LinkLayer->this
+
+        Ethernet->AddEtherType(ETHERTYPE_ARP, ThisProtocol)
+
+        return this
+    }
+
     define NetworkPacket* Enter(MACAddress* Destination, i16 Opcode) {
         if (Destination->Hash() = 0) {
-            Destination := i8[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF] As MACAddress*
+            Destination := MAC_BROADCAST
         }
 
-        NetworkPacket* Packet := this->LinkLayer->Enter()
+        Info("Building ARP packet to %mac\n", Destination)
 
-        EthernetHeader* Ethernet := Packet->Get(PACKET_DATA_ETHERNET)
+        EthernetPacketOptions Options {
+            EtherType: ETHERTYPE_ARP,
+            Destination: Destination
+        }
 
-        Ethernet->Destination->Set(Destination)
+        NetworkPacket* Packet := this->LinkLayer->Enter(&Options)
 
         ARPHeader* Header := Packet->Mark(PACKET_DATA_ARP_HEADER, #ARPHeader)
+
+        Header->Opcode := Opcode
 
         Header->HardwareType := ARP_HARDWARE_TYPE_ETHERNET
         Header->HardwareSize := 6
@@ -122,10 +146,10 @@ struct ARPLayer {
         NetworkPacket* Packet := this->Enter(TargetHardwareAddress, ARP_OPCODE_REQUEST)
         ARPBodyIPV4* Body := Packet->Get(PACKET_DATA_ARP_BODY)
 
-        Body->SenderHardwareAddress->Set(this->Interface->MAC)
+        Body~>SenderHardwareAddress->Set(this->Interface->MAC)
         Body->SenderProtocolAddress := this->Interface->IP
 
-        Body->TargetHardwareAddress->Set(TargetHardwareAddress)
+        Body~>TargetHardwareAddress->Set(TargetHardwareAddress)
         Body->TargetProtocolAddress := TargetProtocolAddress
 
         this->Send(Packet)
@@ -135,10 +159,10 @@ struct ARPLayer {
         NetworkPacket* Packet := this->Enter(TargetHardwareAddress, ARP_OPCODE_REQUEST)
         ARPBodyIPV4* Body := Packet->Get(PACKET_DATA_ARP_BODY)
 
-        Body->SenderHardwareAddress->Set(this->Interface->MAC)
+        Body~>SenderHardwareAddress->Set(this->Interface->MAC)
         Body->SenderProtocolAddress := this->Interface->IP
 
-        Body->TargetHardwareAddress->Set(TargetHardwareAddress)
+        Body~>TargetHardwareAddress->Set(TargetHardwareAddress)
         Body->TargetProtocolAddress := TargetProtocolAddress
 
         this->Send(Packet)
@@ -191,31 +215,34 @@ struct ARPLayer {
     }
 
     define void Ingest(NetworkPacket* Packet) {
-        Packet->Mark(PACKET_DATA_ARP_HEADER, #ARPHeader)
-
         EthernetHeader* Ethernet := Packet->Get(PACKET_DATA_ETHERNET)
-        ARPHeader* Header := Packet->Get(PACKET_DATA_ARP_HEADER)
+
+        ARPHeader* Header := Packet->Mark(PACKET_DATA_ARP_HEADER, #ARPHeader)
+        Header->FlipEndianess()
 
         if (Header->HardwareType != ARP_HARDWARE_TYPE_ETHERNET) {
-            Info("Bad ARP packet recieved from %mac, unknown hardware type %x\n", Ethernet->Source, Header->HardwareType)
+            Info("Bad ARP packet recieved from %mac, unknown hardware type %x\n", Ethernet~>Source, Header->HardwareType)
             return
         }
         else if (Header->HardwareSize != 6) {
-            Info("Bad ARP packet recieved from %mac, wrong hardware size %i\n", Ethernet->Source, Header->HardwareSize)
+            Info("Bad ARP packet recieved from %mac, wrong hardware size %i\n", Ethernet~>Source, Header->HardwareSize)
             return
         }
         else if (Header->ProtocolType != ARP_PROTOCOL_TYPE_IPV4) {
-            Info("Bad ARP packet recieved from %mac, unknown protocol type %x\n", Ethernet->Source, Header->ProtocolType)
+            Info("Bad ARP packet recieved from %mac, unknown protocol type %x\n", Ethernet~>Source, Header->ProtocolType)
             return
         }
         else if (Header->ProtocolSize != 4) {
-            Info("Bad ARP packet recieved from %mac, wrong protocol size %i\n", Ethernet->Source, Header->ProtocolSize)
+            Info("Bad ARP packet recieved from %mac, wrong protocol size %i\n", Ethernet~>Source, Header->ProtocolSize)
             return
         }
         else if (Header->Opcode != ARP_OPCODE_REPLY && Header->Opcode != ARP_OPCODE_REQUEST) {
-            Info("Bad ARP packet recieved from %mac, unknown opcode %x\n", Ethernet->Source, Header->Opcode)
+            Info("Bad ARP packet recieved from %mac, unknown opcode %x\n", Ethernet~>Source, Header->Opcode)
             return
         }
+
+        ARPBodyIPV4* Body := Packet->Mark(PACKET_DATA_ARP_BODY, #ARPBodyIPV4)
+        Body->FlipEndianess()
 
         if (Header->Opcode = ARP_OPCODE_REPLY) {
             this->HandleReply(Packet, Header)
@@ -228,8 +255,8 @@ struct ARPLayer {
     define i8 ProbeIsAddressTaken(i32 ProtocolAddress) {
         this->EvictProtocolAddress(ProtocolAddress)
 
-        for (i32 Index := 0, Index < 3, Index++) {
-            this->SendRequest(null, ProtocolAddress)
+        for (i32 Index := 0, Index < 1, Index++) {
+            this->SendRequest(MAC_NULL, ProtocolAddress)
 
             SchedulerYield()
 
@@ -254,7 +281,7 @@ struct ARPLayer {
             i64 Time := GetUptimeMS() - Start
 
             if (Time % 300) {
-                this->SendRequest(null, ProtocolAddress)
+                this->SendRequest(MAC_NULL, ProtocolAddress)
             }
             else {
                 SchedulerYield()
@@ -267,4 +294,14 @@ struct ARPLayer {
     define void Announce() {
         this->SendRequest(this->Interface->MAC, this->Interface->IP)
     }
+}
+
+NetworkProtocolPrototype ARPProtocolPrototype {
+    Enter: null,
+    Send: null,
+    Ingest: &ARPLayer.Ingest
+}
+
+define NetworkProtocolPrototype* GetARPProtocolPrototype() {
+    return &ARPProtocolPrototype
 }

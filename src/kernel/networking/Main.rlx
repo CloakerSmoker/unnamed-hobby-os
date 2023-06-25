@@ -1,0 +1,30 @@
+
+
+NetworkInterface* FirstNetworkInterface := null
+
+define void SetupNetworking() {
+    FirstNetworkInterface := NetworkInterface:New()
+    
+    EthernetLayer* Ethernet := EthernetLayer:New(FirstNetworkInterface)
+    ARPLayer* ARP := ARPLayer:New(FirstNetworkInterface, Ethernet->AsProtocol)
+
+    FirstE1000->Setup()
+
+    Print("SetupNetworking: E1000 MAC: %mac\n", FirstE1000~>MAC)
+
+    LinkE1000NetworkProtocol(FirstNetworkInterface, FirstE1000)
+}
+
+define void TestNetworking() {
+    ARPLayer* ARP := FirstNetworkInterface->GetProtocol("ARP")->this
+
+    i32 GatewayIP := PackIPV4(10, 0, 2, 2)
+
+    i8 Result := ARP->ProbeIsAddressTaken(GatewayIP)
+
+    Print("10.0.2.2 is taken? %i\n", Result)
+
+    MACAddress* GatewayMAC := ARP->Lookup(GatewayIP)
+
+    Print("Gateway is at %mac\n", GatewayMAC)
+}

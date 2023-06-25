@@ -18,19 +18,49 @@ i32 PACKET_DATA_ETHERNET := RegisterPacketData("Ethernet Header")
 
 #Require "$/AVLTree.rlx"
 
+declare NetworkProtocolPrototype* GetEthernetProtocolPrototype()
+
+struct EthernetPacketOptions {
+    i16 EtherType
+    MACAddress* Destination
+}
+
 struct EthernetLayer {
     NetworkInterface* Interface
+    NetworkProtocol* AsProtocol
 
     AVLTree* EtherTypeHandlers ; <i16, NetworkProtocol>
 
-    define NetworkPacket* Enter(MACAddress* Destination, i16 EtherType) {
+    declare void Ingest(NetworkPacket*)
+
+    static self* New(NetworkInterface* Interface) {
+        self* this := Alloc(#self)
+
+        this->Interface := Interface
+
+        this->AsProtocol := Interface->AddProtocol("Ethernet", GetEthernetProtocolPrototype(), this)
+
+        Interface->ReceiveProtocol := this->AsProtocol
+
+        this->EtherTypeHandlers := AVLTree:New(#NetworkProtocol*)
+
+        return this
+    }
+
+    define void AddEtherType(i64 Type, NetworkProtocol* Protocol) {
+        this->EtherTypeHandlers->InsertPointer(Type, Protocol)
+    }
+
+    define NetworkPacket* Enter(EthernetPacketOptions* Options) {
         NetworkPacket* Packet := NetworkPacket:New(PAGE_SIZE)
 
         EthernetHeader* Header := Packet->Mark(PACKET_DATA_ETHERNET, #EthernetHeader)
 
-        Header->EtherType := EtherType
-        Header->Source->Set(this->Interface->MAC)
-        Header->Destination->Set(Destination)
+        Info("Building Ethernet packet %mac -> %mac\n", this->Interface->MAC, Options->Destination)
+
+        Header->EtherType := Options->EtherType
+        Header~>Source->Set(this->Interface->MAC)
+        Header~>Destination->Set(Options->Destination)
 
         return Packet
     }
@@ -40,15 +70,21 @@ struct EthernetLayer {
 
         Header->FlipEndianess()
 
-        this->Interface->Send(Packet->Data, Packet->Size)
+        Packet->End()
+
+        this->Interface->DoSend(Packet)
     }
 
-    define void Ingest(void* RawPacket, i32 Size) {
-        EthernetHeader* Header := RawPacket
+    define void Ingest(NetworkPacket* Packet) {
+        EthernetHeader* Header := Packet->Mark(PACKET_DATA_ETHERNET, #EthernetHeader)
 
         Header->FlipEndianess()
 
-        if !(Header->Destination->Equals(this->Interface->MAC)) {
+        Info("Received Ethernet packet %mac -> %mac\n", Header~>Source, Header~>Destination)
+
+        if !(Header~>Destination->Equals(this->Interface->MAC)) {
+            Info(" - Destination MAC is not our MAC, discarding\n")
+
             return
         }
 
@@ -59,11 +95,16 @@ struct EthernetLayer {
             return
         }
 
-        NetworkPacket* Packet := NetworkPacket:New(RawPacket, Size)
-
-        Packet->Mark(PACKET_DATA_ETHERNET, #EthernetHeader)
-
         Protocol->Ingest(Packet)
     }
+}
 
+NetworkProtocolPrototype EthernetProtocolPrototype {
+    Enter: &EthernetLayer.Enter,
+    Send: &EthernetLayer.Send,
+    Ingest: &EthernetLayer.Ingest
+}
+
+define NetworkProtocolPrototype* GetEthernetProtocolPrototype() {
+    return &EthernetProtocolPrototype
 }

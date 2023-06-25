@@ -134,6 +134,18 @@ define void* EarlyPhysicalToVirtual(void* Where) {
 ;  and the compiler automatically sets argc/argv when Main takes <=2 parameters
 
 define void Main(BootloaderInfo* RawInfo, i32 Dummy1, i32 Dummy2) {
+	; First, null out the IDT to allow for qemu to catch interrupts instead of TianoCore
+
+	asm {
+		xor, rax, rax
+		push, rax
+		push, rax
+		mov, rax, rsp
+		lidt, {rax} As i64*
+		pop, rax
+		pop, rax
+	}
+
 	MoveMemory(BootInfo, RawInfo, #BootloaderInfo)
 	MoveMemory(Kernel, RawInfo~>Kernel, #KernelInfo)
 	
@@ -200,7 +212,9 @@ define void Main(BootloaderInfo* RawInfo, i32 Dummy1, i32 Dummy2) {
 
 		void* VirtualMain := EarlyPhysicalToVirtual(&Main)
 
-		Info("Wiping globals (%x, %x), calling virtual main at %x\n", RawInfo->Data, RawInfo->Size, VirtualMain)
+		Info("Wiping globals (%x, %x)", RawInfo->Data, RawInfo->Size)
+		Info("(and then) Calling virtual main at %x\n", VirtualMain)
+		;breakpoint:()
 
 		; Zero all globals so everything reinitializes
 		FastSetMemory8(RawInfo->Data, 0, RawInfo->Size)
@@ -422,6 +436,8 @@ Task* KernelSetupTask := &_KernelSetupTask
 #Require "./src/kernel/networking/UDP.rlx"
 #Require "./src/kernel/networking/DHCP.rlx"
 
+#Require "./src/kernel/networking/Main.rlx"
+
 define void MainContinuation() {
 	CurrentTask := KernelSetupTask
 	
@@ -504,6 +520,14 @@ define void MainContinuation() {
 	
 	InitializePCIe(&VisitPCIeFunction)
 	;PCIEnumerateBusses(&VisitPCIFunction)
+
+	SetupNetworking()
+
+	Task* NetworkThread := Scheduler->AddLightTask(&TestNetworking)
+	
+	NetworkThread->State := TASK_CAN_RUN
+
+	StartScheduler()
 	
 	if !(DiskController->IsInitialized) {
 		Print("Didn't find disk controller, hanging\n")

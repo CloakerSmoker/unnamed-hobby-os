@@ -1,4 +1,4 @@
-
+#Require "./src/kernel/networking/Utility.rlx"
 
 i32 PCI_VENDOR_INTEL := 0x8086
 
@@ -308,7 +308,7 @@ struct E1000 {
 	}
 	
 	union {
-		i8[6] MAC
+		MACAddress MAC
 		i64 MACPadding
 	}
 	
@@ -515,12 +515,20 @@ struct E1000 {
 		;}
 	}
 
-	define void OnRecieve() {
+	define void Send(NetworkPacket* Packet) {
+		this->Send(Packet->Buffer, Packet->Size)
+	}
 
+	NetworkInterface* Interface
+
+	define void ServiceInterrupt() {
 		E1000ReceiveBuffer* Buffer := this->ReceiveBuffers[this->ReceiveIndex]
 
 		while (Buffer->Status & E1000_RECEIVE_STATUS_DONE) {
 			Buffer->Info()
+
+			void* VirtualBuffer := this->ReceiveBuffersVirtual[this->ReceiveIndex]
+			this->Interface->OnReceive(NetworkPacket:New(VirtualBuffer, Buffer->Length))
 
 			Buffer->Status := 0
 
@@ -531,11 +539,6 @@ struct E1000 {
 
 			Buffer := this->ReceiveBuffers[this->ReceiveIndex]
 		}
-	}
-
-	define void ServiceInterrupt() {
-		
-
 	}
 	
 	static void ServiceInterrupt() {
@@ -550,7 +553,7 @@ struct E1000 {
 		Print("E1000 Interrupt on %x\n", Current)
 		Print(" ICR: %x\n", ICR)
 
-		Current->OnRecieve()
+		Current->ServiceInterrupt()
 
 		if (ICR & E1000_IMS_RXT) {
 			;Info("%hexdump", Current->ReceiveBuffersVirtual[0], 0x100)
@@ -612,4 +615,15 @@ struct E1000 {
 			KernelAddressSpace->MapRange(this->MemoryBase, MMIOPhysicalPage, MMIOSize, PAGE_PRESENT | PAGE_WRITE)
 		}
 	}
+}
+
+NetworkProtocolPrototype E1000NetworkProtocolPrototype {
+	Ingest: &E1000.Send(NetworkPacket*)
+}
+
+define void LinkE1000NetworkProtocol(NetworkInterface* Interface, E1000* Device) {
+	Device->Interface := Interface
+	Interface->MAC := Device~>MAC
+
+	Interface->SendProtocol := Interface->AddProtocol("E1000", &E1000NetworkProtocolPrototype, Device)
 }
