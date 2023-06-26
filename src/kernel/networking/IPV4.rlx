@@ -1,14 +1,14 @@
 
 i16 ETHERTYPE_IPV4 := 0x800
 
+i8 IPV4_FLAG_HAS_FOLLOWING_FRAGMENTS := 1
 i8 IPV4_FLAG_DO_NOT_FRAGMENT := 2
-i8 IPV4_FLAG_HAS_FOLLOWING_FRAGMENTS := 4
 
 struct IPV4Header {
     union {
         bits As i8 {
-            [0:3] Version
-            [4:7] IHL
+            [4:7] Version
+            [0:3] IHL
         }
 
         i8 Version_IHL
@@ -28,8 +28,8 @@ struct IPV4Header {
 
     union {
         bits As i16 {
-            [0:2] Flags
-            [3:15] FragmentOffset
+            [13:15] Flags
+            [0:12] FragmentOffset
         }
 
         i16 Flags_FragmentOffset
@@ -38,8 +38,8 @@ struct IPV4Header {
     i8 TimeToLive
     i8 Protocol
     i16 HeaderChecksum
-    i32 SourceIP
-    i32 DestinationIP
+    i32 Source
+    i32 Destination
 
     define void Initialize() {
         this->Version := 4
@@ -52,15 +52,16 @@ struct IPV4Header {
         this->TotalLength := NetworkShort(this->TotalLength)
         this->Identification := NetworkShort(this->Identification)
         this->Flags_FragmentOffset := NetworkShort(this->Flags_FragmentOffset)
-        this->SourceIP := NetworkInt(this->SourceIP)
-        this->DestinationIP := NetworkInt(this->DestinationIP)
+        this->Source := NetworkInt(this->Source)
+        this->Destination := NetworkInt(this->Destination)
     }
 }
 
 i32 PACKET_DATA_IPV4_HEADER := RegisterPacketData("IPv4 Header")
 
 struct IPV4PacketOptions {
-    i32 Destination
+    i32 Destination,
+    i8 ProtocolNumber
 }
 
 declare NetworkProtocolPrototype* GetIPV4ProtocolPrototype()
@@ -69,9 +70,13 @@ struct IPV4Layer {
     NetworkInterface* Interface
     NetworkProtocol* LinkLayer
 
-    ARPLayer* ARP
+    NetworkProtocol* AsProtocol
 
+    ARPLayer* ARP
     i16 NextPacketID
+
+    AVLTree* InflightFragments ; <i16, PointerArray*>
+    AVLTree* ProtocolHandlers ; <i8, NetworkProtocol*>
 
     static self* New(NetworkInterface* Interface, NetworkProtocol* LinkLayer) {
         self* this := Alloc(#self)
@@ -79,11 +84,19 @@ struct IPV4Layer {
         this->Interface := Interface
         this->LinkLayer := LinkLayer
 
-        this->ARP := Interface->GetProtocol("ARP")->this
+        this->AsProtocol := Interface->AddProtocol("IPV4", GetIPV4ProtocolPrototype(), this)
 
-        Interface->AddProtocol("IPV4", GetIPV4ProtocolPrototype(), this)
+        this->ARP := Interface->GetProtocol("ARP")->this
+        this->NextPacketID := 0x1234
+
+        this->InflightFragments := AVLTree:New(#void*)
+        this->ProtocolHandlers := AVLTree:New(#void*)        
 
         return this
+    }
+
+    define void AddProtocol(i8 ProtocolNumber, NetworkProtocol* Handler) {
+        this->ProtocolHandlers->InsertPointer(ProtocolNumber, Handler)
     }
 
     define NetworkPacket* Enter(IPV4PacketOptions* Options) {
@@ -98,21 +111,30 @@ struct IPV4Layer {
 
         IPV4Header* Header := Packet->Mark(PACKET_DATA_IPV4_HEADER, #IPV4Header)
 
-        ; FIXME: Compiler bug here.
-        ; Modifies `Header` itself instead of the `Version` field of `Header`
-        ; `Header` goes from 0x...E to 0x...4
-
         Header->Version := 4
         Header->IHL := 5
 
         Header->TimeToLive := 64
 
-        Header->SourceIP := this->Interface->IP
-        Header->DestinationIP := Options->Destination
+        Header->Source := this->Interface->IP
+        Header->Destination := Options->Destination
 
         Header->Identification := this->NextPacketID++
 
+        Header->Protocol := Options->ProtocolNumber
+
         return Packet
+    }
+
+    define void SendSingle(NetworkPacket* Packet, IPV4Header* Header) {
+        Header->TotalLength := Packet->Size As i16
+
+        Header->FlipEndianess()
+
+        Header->HeaderChecksum := RFC1071Checksum(Header, #IPV4Header)
+        this->LinkLayer->Send(Packet)
+
+        Header->FlipEndianess()
     }
 
     define void Send(NetworkPacket* Packet) {
@@ -121,44 +143,129 @@ struct IPV4Layer {
         IPV4Header* Header := Packet->Get(PACKET_DATA_IPV4_HEADER)
         i32 NonIPSize := Packet->GetOffset(PACKET_DATA_IPV4_HEADER)
         i32 HeadersSize := Packet->GetEndOffset(PACKET_DATA_IPV4_HEADER)
-        
-        i16 MaximumFragmentDataSize := (this->Interface->MTU - #IPV4Header) As i16
 
-        i32 RemainingSize := Packet->Size - NonIPSize
+        i32 MTU := (this->Interface->MTU / 8) * 8
+        
+        i16 MaximumFragmentDataSize := (MTU - #IPV4Header) As i16
+        i16 MaximumFragmentSize := MTU As i16
+
+        Info("IPv4 Maximum Fragment Size: %x\n", MaximumFragmentDataSize)
+
+        i32 RemainingDataSize := Packet->Size - HeadersSize
+
+        Info("Packet Body Data Size: %x\n", RemainingDataSize)
 
         void* Data := Packet->Buffer + HeadersSize
         i32 FragmentOffset := 0
 
-        while (RemainingSize > this->Interface->MTU) {
+        while ((HeadersSize + RemainingDataSize) > this->Interface->MTU) {
             ; While the packet is larger than the MTU
 
             Header->Flags |= IPV4_FLAG_HAS_FOLLOWING_FRAGMENTS
-            Header->FragmentOffset := FragmentOffset As i16
+            Header->FragmentOffset := (FragmentOffset / 8) As i16
             
-            Packet->Size := HeadersSize + MaximumFragmentDataSize
+            Packet->Size := MaximumFragmentSize
 
-            Header->FlipEndianess()
-            this->LinkLayer->Send(Packet)
-            Header->FlipEndianess()
+            this->SendSingle(Packet, Header)
 
-            RemainingSize -= MaximumFragmentDataSize
+            Info("Send fragment [%x-%x]\n", FragmentOffset, FragmentOffset + MaximumFragmentDataSize)
+
+            RemainingDataSize -= MaximumFragmentDataSize
             FragmentOffset += MaximumFragmentDataSize
             
-            MoveMemory(Data, Data + FragmentOffset, RemainingSize)
+            MoveMemory(Data, Data + FragmentOffset, RemainingDataSize)
         }
 
         Header->Flags &= ~IPV4_FLAG_HAS_FOLLOWING_FRAGMENTS
-        Header->FragmentOffset := FragmentOffset As i16
+        Header->FragmentOffset := (FragmentOffset / 8) As i16
 
-        Packet->Size := RemainingSize
+        Packet->Size := RemainingDataSize
 
-        Header->FlipEndianess()
-        this->LinkLayer->Send(Packet)
-        Header->FlipEndianess()
+        Info("Send final fragment [%x-%x]\n", FragmentOffset, FragmentOffset + RemainingDataSize)
+
+        this->SendSingle(Packet, Header)
+    }
+
+    define NetworkPacket* AssembleFragments(PointerArray* PreviousFragments, NetworkPacket* FinalFragment) {
+        i32 TotalSize := 0
+
+        for (i32 Index := 0, Index < PreviousFragments->Count(), Index++) {
+            NetworkPacket* Fragment := PreviousFragments->At(Index)
+            IPV4Header* Header := Fragment->Get(PACKET_DATA_IPV4_HEADER)
+
+            i32 FragmentDataSize := Header->TotalLength - Fragment->GetEndOffset(PACKET_DATA_IPV4_HEADER)
+
+            TotalSize += FragmentDataSize
+        }
+
+        i32 Pages := TotalSize / PAGE_SIZE
+
+        if (TotalSize % PAGE_SIZE) {
+            Pages += 1
+        }
+
+        void* FullBuffer := KernelPageAllocator->AllocateVirtual(Pages)
+        i32 FragmentOffset := 0
+
+        for (i32 Index := 0, Index < PreviousFragments->Count(), Index++) {
+            NetworkPacket* Fragment := PreviousFragments->At(Index)
+
+            i32 DataOffset := Fragment->GetEndOffset(PACKET_DATA_IPV4_HEADER)
+            i32 DataSize := Fragment->Size - DataOffset
+
+            MoveMemory(FullBuffer + FragmentOffset, Fragment->Buffer + DataOffset, DataSize)
+
+            FragmentOffset += DataSize
+        }
+
+        PreviousFragments->Pop() ; remove the network interface owned "final" packet before freeing
+
+        for (i32 Index := 0, Index < PreviousFragments->Count(), Index++) {
+            NetworkPacket* Fragment := PreviousFragments->At(Index)
+
+            Fragment->Free()
+        }
+
+        PreviousFragments->Free()
+
+        return NetworkPacket:New(FullBuffer, FragmentOffset)
     }
 
     define void Ingest(NetworkPacket* Packet) {
+        IPV4Header* Header := Packet->Mark(PACKET_DATA_IPV4_HEADER, #IPV4Header)
+        Header->FlipEndianess()
 
+        PointerArray* PreviousFragments := this->InflightFragments->GetPointer(Header->Identification)
+
+        if (Header->Flags & IPV4_FLAG_HAS_FOLLOWING_FRAGMENTS) {
+            if (PreviousFragments = null) {
+                PreviousFragments := PointerArray:New()
+
+                this->InflightFragments->InsertPointer(Header->Identification, PreviousFragments)
+            }
+
+            PreviousFragments->Push(Packet->Clone())
+
+            return
+        }
+        
+        if (PreviousFragments != null) {
+            this->InflightFragments->Remove(Header->Identification)
+
+            Packet := this->AssembleFragments(PreviousFragments, Packet)
+        }
+
+        Header := Packet->Get(PACKET_DATA_IPV4_HEADER)
+        Packet->Seek(Packet->GetEndOffset(PACKET_DATA_IPV4_HEADER))
+
+        NetworkProtocol* Protocol := this->ProtocolHandlers->GetPointer(Header->Protocol)
+
+        if (Protocol = null) {
+            Info("IPv4: Unknown protocol %x in packet from %ipv4\n", Header->Source)
+            return
+        }
+
+        Protocol->Ingest(Packet)
     }
 }
 
@@ -171,6 +278,22 @@ NetworkProtocolPrototype IPV4ProtocolPrototype {
 define NetworkProtocolPrototype* GetIPV4ProtocolPrototype() {
     return &IPV4ProtocolPrototype
 }
+
+define void DoIPV4AddressPrint(PrintOutputAdapterPrototype* this, i8* Format, i32* FormatIndex, void* Parameters, i32 ParameterCount, i32* ParameterIndex) {
+    i32 Address := Parameters[*ParameterIndex] As i32
+    i8* Bytes := &Address As void*
+
+    this->Print("%i.%i.%i.%i", Bytes[3], Bytes[2], Bytes[1], Bytes[0])
+
+    *ParameterIndex += 1
+}
+
+PrintFormatPrototype IPV4AddressFormatPrototype {
+	Name: "ipv4",
+	Format: &DoIPV4AddressPrint
+}
+
+i32 IPV4_ADDRESS_FORMAT_PROTOTYPE_ID := AddPrintFormat(&IPV4AddressFormatPrototype)
 
 /*
 define IPV4Header* EnterIPV4Header(PacketBuffer* Buffer) {

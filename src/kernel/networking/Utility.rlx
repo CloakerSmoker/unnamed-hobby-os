@@ -117,6 +117,12 @@ struct NetworkPacket {
         return this->Find(ID)->Data
     }
 
+    define void* GetEnd(i32 ID) {
+        PacketData* Data := this->Find(ID)
+
+        return Data->Data + Data->Size
+    }
+
     define i32 GetOffset(i32 ID) {
         PacketData* Data := this->Find(ID)
 
@@ -131,8 +137,32 @@ struct NetworkPacket {
         return Offset + Data->Size
     }
 
+    define void Seek(i32 Offset) {
+        this->Tail := this->Buffer + Offset
+    }
+
+    define i32 Tell() {
+        return ((this->Tail As i64) - (this->Buffer As i64)) As i32
+    }
+
     define void End() {
-        this->Size := ((this->Tail As i64) - (this->Buffer As i64)) As i32
+        this->Size := this->Tell()
+    }
+
+    define self* Clone() {
+        this->End()
+
+        self* Clone := CloneMemory(this, #self)
+
+        Clone->Buffer := CloneMemory(this->Buffer, this->Size)
+        Clone->Tail := Clone->Buffer + this->Size
+
+        return Clone
+    }
+
+    define void Free() {
+        Free(this->Buffer)
+        Free(this)
     }
 
     define void DumpMarkers() {

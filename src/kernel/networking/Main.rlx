@@ -8,6 +8,7 @@ define void SetupNetworking() {
     EthernetLayer* Ethernet := EthernetLayer:New(FirstNetworkInterface)
     ARPLayer* ARP := ARPLayer:New(FirstNetworkInterface, Ethernet->AsProtocol)
     IPV4Layer* IP := IPV4Layer:New(FirstNetworkInterface, Ethernet->AsProtocol)
+    ICMPLayer* ICMP := ICMPLayer:New(FirstNetworkInterface, IP->AsProtocol)
 
     FirstE1000->Setup()
 
@@ -15,39 +16,59 @@ define void SetupNetworking() {
 
     LinkE1000NetworkProtocol(FirstNetworkInterface, FirstE1000)
 
-    FirstNetworkInterface->MTU := 1500
+    FirstNetworkInterface->MTU := 1000
 }
 
-define void TestARP() {
+define void SetIP() {
     ARPLayer* ARP := FirstNetworkInterface->GetProtocol("ARP")->this
 
-    i32 GatewayIP := PackIPV4(10, 0, 2, 2)
+    for (i32 Index := 2, Index < 255, Index++) {
+        i32 MyIP := PackIPV4(10, 0, 2, Index)
 
-    i8 Result := ARP->ProbeIsAddressTaken(GatewayIP)
+        i8 Result := ARP->ProbeIsAddressTaken(MyIP)
+        Print("%ipv4 is taken? %i\n", MyIP, Result)
 
-    Print("10.0.2.2 is taken? %i\n", Result)
+        if !(Result) {
+            FirstNetworkInterface->IP := MyIP
+            ARP->Announce()
 
-    MACAddress* GatewayMAC := ARP->Lookup(GatewayIP)
+            Print("Assigned %ipv4 to interface\n", MyIP)
 
-    Print("Gateway is at %mac\n", GatewayMAC)
+            return
+        }
+    }
+
+    Print("Couldn't find a free IP\n")
 }
 
 define void TestIPV4Fragmentation() {
     IPV4Layer* IP := FirstNetworkInterface->GetProtocol("IPV4")->this
 
     IPV4PacketOptions Options {
-        Destination: PackIPV4(10, 0, 2, 2)
+        Destination: PackIPV4(10, 0, 2, 2),
+        ProtocolNumber: 61
     }
 
     NetworkPacket* Packet := IP->Enter(&Options)
 
-    Packet->Mark(PACKET_DATA_ARP_BODY, 20)
+    Packet->Mark(PACKET_DATA_ARP_BODY, PAGE_SIZE)
 
-    Packet->DumpMarkers()
+    ;Packet->DumpMarkers()
 
     IP->Send(Packet)
 }
 
+define void TestICMPPing() {
+    ICMPLayer* ICMP := FirstNetworkInterface->GetProtocol("ICMP")->this
+
+    void* Data := KernelPageAllocator->AllocateVirtual(2)
+
+    ICMP->SendPing(PackIPV4(10, 0, 2, 2), Data, 1400)
+}
+
 define void TestNetworking() {
-    TestIPV4Fragmentation()
+    SetIP()
+
+    ;TestIPV4Fragmentation()
+    TestICMPPing()
 }

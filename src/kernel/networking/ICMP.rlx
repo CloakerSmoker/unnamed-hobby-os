@@ -26,6 +26,87 @@ struct ICMPEchoRequest {
     i16 SequenceNumber
 }
 
+i32 PACKET_DATA_ICMP_HEADER := RegisterPacketData("ICMP Header")
+i32 PACKET_DATA_ICMP_BODY := RegisterPacketData("ICMP Body")
+
+declare NetworkProtocolPrototype* GetICMPProtocolPrototype()
+
+struct ICMPPacketOptions {
+	i32 Destination
+	i8 Type
+	i8 Code
+}
+
+struct ICMPLayer {
+	NetworkInterface* Interface
+	NetworkProtocol* Transport
+
+	static self* New(NetworkInterface* Interface, NetworkProtocol* Transport) {
+		self* this := Alloc(#self)
+
+		this->Interface := Interface
+		this->Transport := Transport
+
+		Interface->AddProtocol("ICMP", GetICMPProtocolPrototype(), this)
+
+		return this
+	}
+
+	define NetworkPacket* Enter(ICMPPacketOptions* Options) {
+		IPV4PacketOptions IPOptions {
+			Destination: Options->Destination,
+			ProtocolNumber: IPV4_PROTOCOL_ICMP
+		}
+
+		NetworkPacket* Packet := this->Transport->Enter(&IPOptions)
+
+		ICMPHeader* Header := Packet->Mark(PACKET_DATA_ICMP_HEADER, #ICMPHeader)
+
+		Header->Type := Options->Type
+		Header->Code := Options->Code
+
+		return Packet
+	}
+
+	define void Send(NetworkPacket* Packet) {
+		this->Transport->Send(Packet)
+	}
+
+	define void Ingest(NetworkPacket* Packet) {
+
+	}
+
+	define void SendPing(i32 Destination, void* Data, i32 Size) {
+		ICMPPacketOptions Options {
+			Destination: Destination,
+			Type: ICMP_TYPE_ECHO_REQUEST,
+			Code: 0
+		}
+
+		NetworkPacket* Packet := this->Enter(&Options)
+
+		void* Buffer := Packet->Mark(PACKET_DATA_ICMP_BODY, Size + #ICMPEchoRequest)
+		ICMPEchoRequest* Echo := Buffer
+
+		Echo->Identifier := 0x1234
+		Echo->SequenceNumber := 1
+
+		MoveMemory(Buffer + #ICMPEchoRequest, Data, Size)
+
+		this->Send(Packet)
+	}
+}
+
+NetworkProtocolPrototype ICMPProtocolPrototype {
+	Enter: &ICMPLayer.Enter,
+	Send: &ICMPLayer.Send,
+	Ingest: &ICMPLayer.Ingest
+}
+
+define NetworkProtocolPrototype* GetICMPProtocolPrototype() {
+	return &ICMPProtocolPrototype
+}
+
 /*
 
 	IPV4->SourceIP := PackIPV4(1, 2, 3, 4)

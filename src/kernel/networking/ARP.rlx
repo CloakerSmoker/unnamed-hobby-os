@@ -177,9 +177,13 @@ struct ARPLayer {
             ProtocolAddress: ProtocolAddress
         }
 
+        Info("Cache %ipv4 -> %mac\n", ProtocolAddress, HardwareAddress)
+
         Entry~>HardwareAddress->Set(HardwareAddress)
 
         this->Cache->Insert(ProtocolAddress, &Entry)
+
+        this->Cache->Print()
     }
 
     define ARPTableEntry* LookupCachedEntry(i32 ProtocolAddress) {
@@ -187,6 +191,10 @@ struct ARPLayer {
     }
 
     define void EvictProtocolAddress(i32 ProtocolAddress) {
+        Info("Evict %ipv4\n", ProtocolAddress)
+
+        this->Cache->Print()
+
         this->Cache->Remove(ProtocolAddress)
     }
 

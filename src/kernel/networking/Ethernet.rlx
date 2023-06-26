@@ -72,7 +72,7 @@ struct EthernetLayer {
 
         Info("Sending Ethernet packet %mac -> %mac\n", Header~>Source, Header~>Destination)
 
-        Info("%hexdump\n", Packet->Buffer, Packet->Size)
+        ;Info("%hexdump\n", Packet->Buffer, Packet->Size)
 
         Header->FlipEndianess()
         this->Interface->DoSend(Packet)
