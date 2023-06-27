@@ -22,7 +22,7 @@ define void SetupNetworking() {
 define void SetIP() {
     ARPLayer* ARP := FirstNetworkInterface->GetProtocol("ARP")->this
 
-    for (i32 Index := 2, Index < 255, Index++) {
+    for (i32 Index := 15, Index < 255, Index++) {
         i32 MyIP := PackIPV4(10, 0, 2, Index)
 
         i8 Result := ARP->ProbeIsAddressTaken(MyIP)
@@ -45,7 +45,7 @@ define void TestIPV4Fragmentation() {
     IPV4Layer* IP := FirstNetworkInterface->GetProtocol("IPV4")->this
 
     IPV4PacketOptions Options {
-        Destination: PackIPV4(10, 0, 2, 2),
+        Destination: PackIPV4(10, 0, 2, 15),
         ProtocolNumber: 61
     }
 

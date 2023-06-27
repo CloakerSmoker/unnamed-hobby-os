@@ -95,7 +95,7 @@ struct EthernetLayer {
         NetworkProtocol* Protocol := this->EtherTypeHandlers->GetPointer(Header->EtherType)
 
         if !(Protocol) {
-            Info("Packet from %mac has unknown ethertype %x\n", Header->Source, Header->EtherType)
+            Info("Packet from %mac has unknown ethertype %x\n", Header~>Source, Header->EtherType)
             return
         }
 

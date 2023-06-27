@@ -89,6 +89,9 @@ struct IPV4Layer {
         this->ARP := Interface->GetProtocol("ARP")->this
         this->NextPacketID := 0x1234
 
+        EthernetLayer* Ethernet := Interface->GetProtocol("Ethernet")->this
+        Ethernet->AddEtherType(ETHERTYPE_IPV4, this->AsProtocol)
+
         this->InflightFragments := AVLTree:New(#void*)
         this->ProtocolHandlers := AVLTree:New(#void*)        
 
@@ -261,7 +264,7 @@ struct IPV4Layer {
         NetworkProtocol* Protocol := this->ProtocolHandlers->GetPointer(Header->Protocol)
 
         if (Protocol = null) {
-            Info("IPv4: Unknown protocol %x in packet from %ipv4\n", Header->Source)
+            Info("IPv4: Unknown protocol %x in packet from %ipv4\n", Header->Protocol, Header->Source)
             return
         }
 
