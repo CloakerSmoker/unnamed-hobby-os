@@ -44,6 +44,27 @@ struct Heap {
 	
 	HeapBlock* FirstFreeBlock
 	i32 Size
+
+	define i32 CalculateSize() {
+		i32 Sum := -#HeapBlock
+
+		HeapBlock* Block := this->FirstFreeBlock
+
+		loop {
+			if (Block->IsFree) {
+				Sum += Block->Size
+				Sum += #HeapBlock
+			}
+			
+			if (Block->IsEnd) {
+				break
+			}
+			
+			Block := Block->Next()
+		}
+
+		return Sum
+	}
 	
 	define void Initialize(void* Memory, i32 Size) {
 		FastSetMemory64(Memory, 0, Size / 8)
@@ -60,6 +81,8 @@ struct Heap {
 		this->Size := Size
 
 		this->End := Memory + Size
+
+		Info("Heap Size: %x\n", this->CalculateSize())
 	}
 
 	define void Print() {
@@ -160,6 +183,14 @@ struct Heap {
 		
 		if (DEBUG_HEAP_ALLOC_FREE) {
 			Info("Allocate(%l, %x) = %x\n", Tag, Size, Memory, GetRBP())
+
+			;i32 HeapSize := this->CalculateSize()
+
+			;if (HeapSize != this->Size) {
+			;	Info("Heap size is not right, got %x\n", HeapSize)
+			;	Info("%stackdump")
+			;	Exit(0)
+			;}
 		}
 		
 		for (i32 Index := 0, Index < Size, Index += 1) {

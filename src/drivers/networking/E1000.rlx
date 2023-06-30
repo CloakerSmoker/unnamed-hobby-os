@@ -525,10 +525,13 @@ struct E1000 {
 		E1000ReceiveBuffer* Buffer := this->ReceiveBuffers[this->ReceiveIndex]
 
 		while (Buffer->Status & E1000_RECEIVE_STATUS_DONE) {
-			Buffer->Info()
+			;Buffer->Info()
 
 			void* VirtualBuffer := this->ReceiveBuffersVirtual[this->ReceiveIndex]
-			this->Interface->OnReceive(NetworkPacket:New(VirtualBuffer, Buffer->Length))
+			NetworkPacket* Packet := NetworkPacket:New(VirtualBuffer, Buffer->Length)
+
+			this->Interface->OnReceive(Packet)
+			Free(Packet)
 
 			Buffer->Status := 0
 

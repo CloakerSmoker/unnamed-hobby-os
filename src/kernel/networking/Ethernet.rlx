@@ -84,10 +84,10 @@ struct EthernetLayer {
 
         Header->FlipEndianess()
 
-        Info("Received Ethernet packet %mac -> %mac\n", Header~>Source, Header~>Destination)
+        Info("Ethernet: Received %x byte packet from %mac to %mac\n", Packet->Size, Header~>Source, Header~>Destination)
 
         if !(Header~>Destination->Equals(this->Interface->MAC)) {
-            Info(" - Destination MAC is not our MAC, discarding\n")
+            Info("Ethernet: Dropping packet from %mac for bad destination MAC\n", Header~>Source)
 
             return
         }
@@ -95,7 +95,7 @@ struct EthernetLayer {
         NetworkProtocol* Protocol := this->EtherTypeHandlers->GetPointer(Header->EtherType)
 
         if !(Protocol) {
-            Info("Packet from %mac has unknown ethertype %x\n", Header~>Source, Header->EtherType)
+            Info("Ethernet: Dropping packet from %mac for unknown ethertype %x\n", Header~>Source, Header->EtherType)
             return
         }
 
