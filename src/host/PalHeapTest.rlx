@@ -1,0 +1,25 @@
+#Require "$/Console.rlx"
+
+#Require "./src/kernel/core/PalHeap.rlx"
+
+i32 BYTES_IN_2MB := 0x20_0000
+
+define void Main() {
+    PalHeap* H := Alloc(#PalHeap)
+
+    MapMemory(0x1_0000_0000 As void*, BYTES_IN_2MB, MMAP_PROTECTION_READ | MMAP_PROTECTION_WRITE, MMAP_FLAG_NO_RESERVE | MMAP_FLAG_SHARED | MMAP_FLAG_ANONYMOUS)
+
+    H->Initialize(0x1_0000_0000 As void*)
+
+    H->Allocate(2)
+    H->DumpRanks()
+    
+    H->Allocate(2)
+    H->Allocate(2)
+    H->Allocate(2)
+
+    H->DumpRanks()
+
+    H->Allocate(32)
+
+}
