@@ -9,17 +9,27 @@ define void Main() {
 
     MapMemory(0x1_0000_0000 As void*, BYTES_IN_2MB, MMAP_PROTECTION_READ | MMAP_PROTECTION_WRITE, MMAP_FLAG_NO_RESERVE | MMAP_FLAG_SHARED | MMAP_FLAG_ANONYMOUS)
 
-    H->Initialize(0x1_0000_0000 As void*)
+    H->Initialize(0x1_0000_0000 As void*, BYTES_IN_2MB)
 
-    H->Allocate(2)
+    H->Bootstrap()
     H->DumpRanks()
     
+    void* Buf := H->Allocate(2)
     H->Allocate(2)
-    H->Allocate(2)
-    H->Allocate(2)
-
     H->DumpRanks()
 
-    H->Allocate(32)
+    Print("Extend = %x\n", H->Extend(Buf, 24))
+    H->DumpAllocations()
+
+    H->Free(Buf)
+    H->DumpRanks()
+    
+    ;H->Allocate(2)
+    ;H->Allocate(2)
+    ;H->Allocate(2)
+
+    ;H->DumpRanks()
+
+   ; H->Allocate(0x1000)
 
 }
