@@ -43,21 +43,44 @@ define void PrintCharacters(i8* Character, i32 Count) {
 PixelBuffer* PrimaryDisplay := null
 
 #Require "./src/kernel/core/PageHeap.rlx"
-#Require "./src/kernel/core/Heap.rlx"
+;#Require "./src/kernel/core/Heap.rlx"
+#Require "./src/kernel/core/PalHeap.rlx"
 
-Heap RawKernelHeap
-Heap* KernelHeap := &RawKernelHeap
+PalHeap RawKernelHeap
+PalHeap* _KernelHeap := &RawKernelHeap
 
 PageHeap* KernelPageAllocator := null
 
 define void* KernelHeapAllocate(i64 Tag, i32 Size) {
-	return KernelHeap->Allocate(Tag, Size)
+	if (DEBUG_HEAP_ALLOC_FREE) {
+		Info("Allocate(%l, %x) = ", Tag, Size)
+		void* Result := _KernelHeap->Allocate(Size)
+		Info("%x\n", Result)
+		return Result
+	}
+	else {
+		return _KernelHeap->Allocate(Size)
+	}
 }
 define void* KernelHeapExtendAllocation(void* Memory, i32 Size) {
-	return KernelHeap->Extend(Memory, Size)
+	if (DEBUG_HEAP_ALLOC_FREE) {
+		Info("Extend(%x, %x) = ", Memory, Size)
+		void* Result := _KernelHeap->Extend(Memory, Size)
+		Info("%x\n", Result)
+		return Result
+	}
+	else {
+		return _KernelHeap->Extend(Memory, Size)
+	}
 }
 define void KernelHeapFree(void* Memory) {
-	KernelHeap->Free(Memory)
+	if (DEBUG_HEAP_ALLOC_FREE) {
+		Info("Free(%x)\n", Memory)
+		_KernelHeap->Free(Memory)
+	}
+	else {
+		_KernelHeap->Free(Memory)
+	}
 }
 
 #Require "./src/kernel/core/Descriptors.rlx"
@@ -459,7 +482,8 @@ define void MainContinuation() {
 	
 	Info("Mapped the framebuffer\n")
 	
-	KernelHeap->Initialize(ADDRESS_OF_KERNEL_HEAP, BYTES_IN_2MB)
+	_KernelHeap->Initialize(ADDRESS_OF_KERNEL_HEAP, BYTES_IN_2MB)
+	_KernelHeap->Bootstrap()
 	Info("Initialized heap\n")
 
 	PixelBuffer* FrameBuffer := Alloc(#PixelBuffer)
@@ -516,7 +540,7 @@ define void MainContinuation() {
 
 	;/*
 	
-	DiskController := KernelHeap->Allocate('IDE', #IDEDiskController)
+	DiskController := KernelHeapAllocate('IDE', #IDEDiskController)
 	
 	InitializePCIe(&VisitPCIeFunction)
 	;PCIEnumerateBusses(&VisitPCIFunction)

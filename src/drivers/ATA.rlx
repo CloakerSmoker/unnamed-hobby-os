@@ -337,7 +337,7 @@ define void UnBreakATAString(i8* In, i8* Out, i32 Size) {
 }
 
 define ATADevice* CreateATADevice(ATAChannel* Channel, i8 IsMasterOrSlave, void* IdentificationSpace) {
-	ATADevice* Device := KernelHeap->Allocate('ATA_DEV', #ATADevice)
+	ATADevice* Device := KernelHeapAllocate('ATA_DEV', #ATADevice)
 	
 	Device->Channel := Channel
 	
@@ -362,7 +362,7 @@ define ATADevice* CreateATADevice(ATAChannel* Channel, i8 IsMasterOrSlave, void*
 		Device->MaxLBA := *(IdentificationSpace As i32* + ATA_IDENTIFICATION_MAX_LBA_EXT)
 	}
 	else {
-		KernelHeap->Free(Device)
+		KernelHeapFree(Device)
 		
 		return null
 	}

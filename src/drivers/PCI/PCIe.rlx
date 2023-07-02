@@ -27,7 +27,7 @@ struct PCIeSegmentGroup {
     }
     
     static self* New(ACPI_MCFG_ENTRY* Entry) {
-        self* this := KernelHeap->Allocate('PCIe_SG', #self)
+        self* this := KernelHeapAllocate('PCIe_SG', #self)
 
         this->Entry := Entry
 

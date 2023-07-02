@@ -244,7 +244,8 @@ define void OnCommand(i8* CommandLine) {
 		KernelAddressSpace->PrintMappings()
 	}
 	else if (StringEquals(Command, "heap")) {
-		KernelHeap->Print()
+		_KernelHeap->DumpRanks()
+		_KernelHeap->DumpAllocations()
 	}
 	else if (StringEquals(Command, "exec")) {
 		i8* Path := CommandParameters[1]
