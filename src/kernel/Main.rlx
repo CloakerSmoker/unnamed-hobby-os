@@ -55,7 +55,16 @@ define void* KernelHeapAllocate(i64 Tag, i32 Size) {
 	if (DEBUG_HEAP_ALLOC_FREE) {
 		Info("Allocate(%l, %x) = ", Tag, Size)
 		void* Result := _KernelHeap->Allocate(Size)
-		Info("%x\n", Result)
+		Info("%x ", Result)
+
+		AllocatorUsage Usage
+		Usage.Zero()
+		_KernelHeap->GetUsage(&Usage)
+		
+		Info("(Usage Percent: %i%%)\n", GetUsagePercent(&Usage))
+
+		;_KernelHeap->DumpAllocations()
+
 		return Result
 	}
 	else {
@@ -484,7 +493,7 @@ define void MainContinuation() {
 	
 	_KernelHeap->Initialize(ADDRESS_OF_KERNEL_HEAP, BYTES_IN_2MB)
 	_KernelHeap->Bootstrap()
-	Info("Initialized heap\n")
+	Info("Initialized heap (%x - %x)\n", ADDRESS_OF_KERNEL_HEAP, ADDRESS_OF_KERNEL_HEAP + BYTES_IN_2MB)
 
 	PixelBuffer* FrameBuffer := Alloc(#PixelBuffer)
 	FrameBuffer->Initialize(ADDRESS_OF_FRAME_BUFFER, RGB32, SCREEN_WIDTH, SCREEN_HEIGHT)

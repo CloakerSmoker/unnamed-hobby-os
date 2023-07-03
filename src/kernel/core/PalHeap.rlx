@@ -24,6 +24,29 @@ Freeing a chunk will merge the chunk with it's buddy
 
 */
 
+struct AllocatorUsage {
+	i32 AllocatedBytes
+	i32 FreeBytes
+	i32 MetaBytes
+	i32 ReservedBytes
+	
+	define void Zero() {
+		this->AllocatedBytes := 0
+		this->FreeBytes := 0
+		this->MetaBytes := 0
+		this->ReservedBytes := 0
+	}
+}
+
+define i32 GetUsagePercent(AllocatorUsage* Usage) {
+    i64 Used := Usage->AllocatedBytes * 100
+    i64 Total := Usage->ReservedBytes
+
+    i64 Percent := Used / Total
+
+    return (Percent % 100) As i32
+}
+
 
 struct PalFreeListEntry {
     PalFreeListEntry* Next
@@ -35,6 +58,10 @@ struct PalFreeListEntry {
         this->Rank := Rank
 
         return this
+    }
+
+    define void Zero() {
+        
     }
 }
 
@@ -142,6 +169,8 @@ struct PalHeap {
                 *pCurrent := Entry->Next
                 break
             }
+
+            pCurrent := Entry~>Next
         }
     }
 
@@ -208,7 +237,7 @@ struct PalHeap {
 
             this->Ranks[Rank] := Result->Next
 
-            return Result As void*
+            return Result
         }
 
         i32 LowestFreeRank := this->FindLowestFreeRank(Rank)
@@ -228,8 +257,11 @@ struct PalHeap {
 
     define void AllocateEntry(PalFreeListEntry* Entry) {
         i32 Rank := Entry->Rank
+        i32 RankSize := this->RankSize(Rank)
 
         this->Ranks[Rank] := Entry->Next
+
+        FastSetMemory8(Entry As void*, 0, RankSize)
 
         PalAllocationMapEntry* MapEntry := this->GetAllocationMapEntry(Entry As void*)
 
@@ -242,7 +274,40 @@ struct PalHeap {
 
         this->AllocateEntry(Result)
 
-        return Result As void*
+        return Result
+    }
+
+    define PalFreeListEntry* JoinFreeBuddies(PalFreeListEntry* Root) {
+        for (i32 Rank := Root->Rank, Rank <= PAL_RANK_MAX, Rank++) {
+            i32 Size := this->RankSize(Rank)
+
+            void* Buddy := this->GetBuddy(Root, Size)
+            PalAllocationMapEntry* BuddyMapEntry := this->GetAllocationMapEntry(Buddy)
+
+            if (BuddyMapEntry->Allocated || BuddyMapEntry->Rank != Rank) {
+                break
+            }
+
+            PalFreeListEntry* Left := Root
+            PalFreeListEntry* Right := Buddy
+
+            if (Buddy < Root) {
+                Left := Buddy
+                Right := Root
+            }
+
+            this->RemoveFromRankFreeList(Left)
+            this->RemoveFromRankFreeList(Right)
+
+            Left->Rank += 1
+
+            Right->Rank := 0
+            Right->Next := null
+
+            Root := Left
+        }
+
+        return Root
     }
 
     define void Free(void* Where) {
@@ -252,24 +317,7 @@ struct PalHeap {
         MapEntry->Allocated := false
         Entry->Rank := MapEntry->Rank
 
-        for (i32 Rank := MapEntry->Rank, Rank <= PAL_RANK_MAX, Rank++) {
-            i32 Size := this->RankSize(Rank)
-
-            void* Buddy := this->GetBuddy(Where, Size)
-            PalAllocationMapEntry* BuddyMapEntry := this->GetAllocationMapEntry(Buddy)
-
-            if (BuddyMapEntry->Allocated) {
-                break
-            }
-
-            PalFreeListEntry* BuddyEntry := Buddy
-
-            this->RemoveFromRankFreeList(BuddyEntry)
-
-            Entry->Rank += 1
-        }
-
-        this->InsertToRankFreeList(Entry)
+        this->InsertToRankFreeList(this->JoinFreeBuddies(Entry))
     }
 
     define void* Extend(void* Where, i32 NewSize) {
@@ -289,7 +337,7 @@ struct PalHeap {
             void* Buddy := this->GetBuddy(Where, Size)
             PalAllocationMapEntry* BuddyMapEntry := this->GetAllocationMapEntry(Buddy)
 
-            if (BuddyMapEntry->Allocated) {
+            if (BuddyMapEntry->Allocated || Buddy < Where) {
                 void* NewBuffer := this->Allocate(NewSize)
                 MoveMemory(NewBuffer, Where, OldSize)
                 this->Free(Where)
@@ -300,6 +348,8 @@ struct PalHeap {
             PalFreeListEntry* BuddyEntry := Buddy
 
             this->RemoveFromRankFreeList(BuddyEntry)
+
+            FastSetMemory8(Buddy, 0, Size)
 
             MapEntry->Rank += 1
         }
@@ -341,9 +391,26 @@ struct PalHeap {
             if (Entry->Allocated) {
                 void* Address := this->Buffer + (Index * PAL_RANK_MINIMUM)
 
-                Print("%x: rank %i (%x bytes)\n", Address, Entry->Rank, this->RankSize(Entry->Rank))
+                Info("%x: rank %i (%x bytes)\n", Address, Entry->Rank, this->RankSize(Entry->Rank))
             }
 
         }
+    }
+
+    define void GetUsage(AllocatorUsage* Usage) {
+        Usage->ReservedBytes := this->RankSize(PAL_RANK_2M)
+
+        i32 MaxChunkIndex := this->Size / PAL_RANK_MINIMUM
+        Usage->MetaBytes := MaxChunkIndex
+
+        for (i32 Index := 0, Index < MaxChunkIndex, Index++) {
+            PalAllocationMapEntry* Entry := this->AllocationMap[Index]
+
+            if (Entry->Allocated) {
+                Usage->AllocatedBytes += this->RankSize(Entry->Rank)
+            }
+        }
+
+        Usage->FreeBytes := Usage->ReservedBytes - Usage->AllocatedBytes
     }
 }
