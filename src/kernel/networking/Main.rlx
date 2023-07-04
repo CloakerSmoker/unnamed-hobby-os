@@ -8,7 +8,9 @@ define void SetupNetworking() {
     EthernetLayer* Ethernet := EthernetLayer:New(FirstNetworkInterface)
     ARPLayer* ARP := ARPLayer:New(FirstNetworkInterface, Ethernet->AsProtocol)
     IPV4Layer* IP := IPV4Layer:New(FirstNetworkInterface, Ethernet->AsProtocol)
+
     ICMPLayer* ICMP := ICMPLayer:New(FirstNetworkInterface, IP->AsProtocol)
+    UDPLayer* UDP := UDPLayer:New(FirstNetworkInterface, IP->AsProtocol)
 
     FirstE1000->Setup()
 

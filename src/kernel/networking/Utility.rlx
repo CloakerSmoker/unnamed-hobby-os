@@ -256,9 +256,11 @@ struct NetworkInterface {
     }
 }
 
-define i16 RFC1071Checksum(void* Data, i32 Size) {
-    i64 Sum := 0
+define i64 RFC1071ChecksumStart() {
+    return 0
+}
 
+define i64 RFC1071ChecksumUpdate(i64 Sum, void* Data, i32 Size) {
     while (Size > 1) {
         i16 Word := NetworkShort(*(Data As i16*))
 
@@ -273,11 +275,19 @@ define i16 RFC1071Checksum(void* Data, i32 Size) {
         Sum += (Word As i32) & 0xFFFF
     }
 
+    return Sum
+}
+
+define i16 RFC1071ChecksumFinish(i64 Sum) {
     while (Sum > 0xFFFF) {
         Sum := (Sum >> 16) + (Sum & 0xFFFF)
     }
 
     return NetworkShort((~Sum) As i16)
+}
+
+define i16 RFC1071Checksum(void* Data, i32 Size) {
+    return RFC1071ChecksumFinish(RFC1071ChecksumUpdate(RFC1071ChecksumStart(), Data, Size))
 }
 
 define i32 PackIPV4(i32 A, i32 B, i32 C, i32 D) {

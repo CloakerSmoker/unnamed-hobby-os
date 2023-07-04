@@ -13,6 +13,109 @@ struct UDPHeader {
     }
 }
 
+struct UDPChecksumHeader {
+    i32 SourceIP
+    i32 DestinationIP
+    i8 Zero
+    i8 Protocol
+    i16 UDPLength
+}
+
+declare NetworkProtocolPrototype* GetUDPProtocolPrototype()
+
+i32 PACKET_DATA_UDP_HEADER := RegisterPacketData("UDP Header")
+
+struct UDPLayer {
+    NetworkInterface* Interface
+    NetworkProtocol* Transport
+
+    NetworkProtocol* AsProtocol
+
+    AVLTree* PortHandlers ; <i16, NetworkProtocol*>
+
+	static self* New(NetworkInterface* Interface, NetworkProtocol* Transport) {
+		self* this := Alloc(#self)
+
+		this->Interface := Interface
+		this->Transport := Transport
+
+		this->AsProtocol := Interface->AddProtocol("UDP", GetUDPProtocolPrototype(), this)
+
+        IPV4Layer* IPV4 := Transport->this
+
+        IPV4->AddProtocol(IPV4_PROTOCOL_UDP, this->AsProtocol)
+
+        this->PortHandlers := AVLTree:New(#NetworkProtocol*)
+
+		return this
+	}
+
+    define i16 Checksum(NetworkPacket* Packet) {
+        IPV4Header* IPV4 := Packet->Get(PACKET_DATA_IPV4_HEADER)
+        UDPHeader* UDP := Packet->Get(PACKET_DATA_UDP_HEADER)
+
+        UDPChecksumHeader PseudoHeader {
+            SourceIP: IPV4->Source,
+            DestinationIP: IPV4->Destination,
+            Zero: 0,
+            Protocol: IPV4->Protocol,
+            UDPLength: UDP->Length
+        }
+
+        Info("UDPLength: %x\n", UDP->Length)
+
+        i64 State := RFC1071ChecksumStart()
+
+        State := RFC1071ChecksumUpdate(State, &PseudoHeader, #UDPChecksumHeader)
+
+        i16 OldChecksum := UDP->Checksum
+        UDP->Checksum := 0
+
+        State := RFC1071ChecksumUpdate(State, UDP, #UDPHeader)
+
+        UDP->Checksum := OldChecksum
+
+        i32 Size := UDP->Length - #UDPHeader
+        void* Data := Packet->GetEnd(PACKET_DATA_UDP_HEADER)
+
+        State := RFC1071ChecksumUpdate(State, Data, Size)
+
+        return RFC1071ChecksumFinish(State)
+    }
+
+    define void ListenPort(i16 Port, NetworkProtocol* Handler) {
+        this->PortHandlers->Insert(Port, Handler)
+    }
+
+    define void Ingest(NetworkPacket* Packet) {
+        IPV4Header* IPV4 := Packet->Get(PACKET_DATA_IPV4_HEADER)
+        UDPHeader* UDP := Packet->Mark(PACKET_DATA_UDP_HEADER, #UDPHeader)
+
+        UDP->FlipEndianess()
+
+        NetworkProtocol* Handler := this->PortHandlers->Get(UDP->DestinationPort)
+
+        Info("UDP: Packet checksum: Given = %x, Calculated = %x\n", UDP->Checksum, this->Checksum(Packet))
+
+        if (Handler = null) {
+            Info("UDP: Dropping packet from %ipv4:%i -> %ipv4:%i due to unknown destination port\n", IPV4->Source, UDP->SourcePort, IPV4->Destination, UDP->DestinationPort)
+            return
+        }
+
+        Handler->Ingest(Packet)
+    }
+}
+
+NetworkProtocolPrototype UDPProtocolPrototype {
+    ;Enter: &UDPLayer.Enter,
+    ;Send: &UDPLayer.Send,
+    Ingest: &UDPLayer.Ingest
+}
+
+define NetworkProtocolPrototype* GetUDPProtocolPrototype() {
+    return &UDPProtocolPrototype
+}
+
 /*
 define UDPHeader* EnterUDPHeader(PacketBuffer* Buffer, IPV4Header* IPV4) {
     IPV4->Protocol := IPV4_PROTOCOL_UDP

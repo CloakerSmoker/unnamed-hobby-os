@@ -18,7 +18,10 @@ Freeing is faster due to it being a linear lookup.
 Entire heap is contained in a single buffer by allocating the "allocation bitmap"
  inside of the heap itself (at the very start). This "wastes" 1/16 of total space.
 
-Freeing a chunk will merge the chunk with it's buddy
+TODO:
+* Optimize removing random entries from free lists to speed up merging free buddies
+* In `Extend()`: Attempt to extend into the *left* buddy if extend is called on the *right* buddy
+* Rename helper methods
 
 
 
