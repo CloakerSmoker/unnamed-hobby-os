@@ -4,6 +4,8 @@ i16 ETHERTYPE_IPV4 := 0x800
 i8 IPV4_FLAG_HAS_FOLLOWING_FRAGMENTS := 1
 i8 IPV4_FLAG_DO_NOT_FRAGMENT := 2
 
+i32 IPV4_BROADCAST_ADDRESS := 0xFF_FF_FF_FF As i32
+
 struct IPV4HeaderHashable {
     i32 Source
     i32 Destination
@@ -201,7 +203,7 @@ struct IPV4Layer {
         Header->Flags &= ~IPV4_FLAG_HAS_FOLLOWING_FRAGMENTS
         Header->FragmentOffset := (FragmentOffset / 8) As i16
 
-        Packet->Size := RemainingDataSize
+        Packet->Size := RemainingDataSize + #IPV4Header
 
         Info("IPv4: Send final fragment [%x-%x]\n", FragmentOffset, FragmentOffset + RemainingDataSize)
 
