@@ -25,6 +25,12 @@ declare NetworkProtocolPrototype* GetUDPProtocolPrototype()
 
 i32 PACKET_DATA_UDP_HEADER := RegisterPacketData("UDP Header")
 
+struct UDPPacketOptions {
+    i32 Destination
+    i16 SourcePort
+    i16 DestinationPort
+}
+
 struct UDPLayer {
     NetworkInterface* Interface
     NetworkProtocol* Transport
@@ -49,6 +55,32 @@ struct UDPLayer {
 
 		return this
 	}
+
+    define NetworkPacket* Enter(UDPPacketOptions* Options) {
+        IPV4PacketOptions IPOptions {
+            Destination: Options->Destination,
+            ProtocolNumber: IPV4_PROTOCOL_UDP
+        }
+
+        NetworkPacket* Packet := this->Transport->Enter(&IPOptions)
+
+        UDPHeader* Header := Packet->Mark(PACKET_DATA_UDP_HEADER, #UDPHeader)
+
+        Header->SourcePort := Options->SourcePort
+        Header->DestinationPort := Options->DestinationPort
+
+        return Packet
+    }
+
+    define void Send(NetworkPacket* Packet) {
+        UDPHeader* Header := Packet->Get(PACKET_DATA_UDP_HEADER)
+
+        Header->Length := (Packet->Tell() - Packet->GetOffset(PACKET_DATA_UDP_HEADER)) As i16
+
+        Header->FlipEndianess()
+
+        this->Transport->Send(Packet)
+    }
 
     define i16 Checksum(NetworkPacket* Packet) {
         IPV4Header* IPV4 := Packet->Get(PACKET_DATA_IPV4_HEADER)
@@ -107,8 +139,8 @@ struct UDPLayer {
 }
 
 NetworkProtocolPrototype UDPProtocolPrototype {
-    ;Enter: &UDPLayer.Enter,
-    ;Send: &UDPLayer.Send,
+    Enter: &UDPLayer.Enter,
+    Send: &UDPLayer.Send,
     Ingest: &UDPLayer.Ingest
 }
 
