@@ -12,6 +12,8 @@ define void SetupNetworking() {
     ICMPLayer* ICMP := ICMPLayer:New(FirstNetworkInterface, IP->AsProtocol)
     UDPLayer* UDP := UDPLayer:New(FirstNetworkInterface, IP->AsProtocol)
 
+    DHCPClient* DHCP := DHCPClient:New(FirstNetworkInterface, UDP->AsProtocol)
+
     FirstE1000->Setup()
 
     Print("SetupNetworking: E1000 MAC: %mac\n", FirstE1000~>MAC)
@@ -69,8 +71,28 @@ define void TestICMPPing() {
 }
 
 define void TestNetworking() {
-    SetIP()
+    ;SetIP()
+
+    DHCPClient* DHCP := FirstNetworkInterface->GetProtocol("DHCP")->this
+
+    DHCP->SendDiscover(0)
+
+    /*
+    UDPLayer* UDP := FirstNetworkInterface->GetProtocol("UDP")->this
+
+    UDPPacketOptions Options {
+        Destination: PackIPV4(255, 255, 255, 255),
+        SourcePort: 60000 As i16,
+        DestinationPort: 60000 As i16
+    }
+
+    NetworkPacket* Packet := UDP->Enter(&Options)
+
+    Packet->Seek(Packet->Tell() + 100)
+
+    UDP->Send(Packet)
+    ;*/
 
     ;TestIPV4Fragmentation()
-    TestICMPPing()
+    ;TestICMPPing()
 }

@@ -1,4 +1,7 @@
 
+i16 DHCP_CLIENT_PORT := 68
+i16 DHCP_SERVER_PORT := 67
+
 i8 DHCP_OPERATION_REQUEST := 1
 i8 DHCP_OPERATION_REPLY := 2
 
@@ -23,7 +26,7 @@ struct DHCPHeader {
     i32 GatewayAddress
     
     union {
-        i8[6] ClientHardwareAddress
+        MACAddress ClientHardwareAddress
         i8[16] ClientHardwareAddressPadding
     }
 
@@ -31,13 +34,6 @@ struct DHCPHeader {
     i8[128] BootFileName
 
     i32 Magic
-
-    define void Initialize() {
-        this->HardwareAddressType := DHCP_HARDWARE_TYPE_ETHERNET
-        this->HardwareAddressLength := 6
-
-        this->Magic := DHCP_MAGIC
-    }
 
     define void FlipEndianess() {
         this->TransactionID := NetworkInt(this->TransactionID)
@@ -87,15 +83,138 @@ i8 DHCP_MESSAGE_TYPE_ACK := 5
 i8 DHCP_MESSAGE_TYPE_NACK := 6
 i8 DHCP_MESSAGE_TYPE_INFORM := 7
 
-struct DHCPOption {
-    i8 OptionCode
-    i8 Length
-    i8[0] Data
+namespace DHCPOption {
+    struct Header {
+        i8 OptionCode
+        i8 Length
+        i8[0] Data
 
-    define DHCPOption* Next() {
-        return ((this->Data As i64) + this->Length) As void*
+        define DHCPOption* Next() {
+            return ((this->Data As i64) + this->Length) As void*
+        }
+    }
+
+    struct MessageType {
+        Header Header
+        i8 Type
+    }
+
+    struct ParameterRequestList {
+        Header Header
+        i8[0] RequestedOptions
     }
 }
+
+i32 PACKET_DATA_DHCP_HEADER := RegisterPacketData("DHCP Header")
+i32 PACKET_DATA_DHCP_OPTIONS := RegisterPacketData("DHCP Options")
+
+declare NetworkProtocolPrototype* GetDHCPProtocolPrototype()
+
+struct DHCPClient {
+    NetworkInterface* Interface
+    NetworkProtocol* Transport
+
+    NetworkProtocol* AsProtocol
+
+	static self* New(NetworkInterface* Interface, NetworkProtocol* Transport) {
+		self* this := Alloc(#self)
+
+		this->Interface := Interface
+		this->Transport := Transport
+
+        UDPLayer* UDP := Transport->this
+
+        this->AsProtocol := Interface->AddProtocol("DHCP", GetDHCPProtocolPrototype(), this)
+
+        UDP->ListenPort(DHCP_CLIENT_PORT, this->AsProtocol)
+
+        return this
+    }
+
+    define NetworkPacket* Enter(i32 Destination) {
+        UDPPacketOptions Options {
+            Destination: Destination,
+            SourcePort: DHCP_CLIENT_PORT,
+            DestinationPort: DHCP_SERVER_PORT
+        }
+
+        NetworkPacket* Packet := this->Transport->Enter(&Options)
+
+        DHCPHeader* Header := Packet->Mark(PACKET_DATA_DHCP_HEADER, #DHCPHeader)
+
+        Header->HardwareAddressType := DHCP_HARDWARE_TYPE_ETHERNET
+        Header->HardwareAddressLength := 6
+
+        Header->Magic := DHCP_MAGIC
+
+        Header~>ClientHardwareAddress->Set(this->Interface->MAC)
+
+        Packet->Mark(PACKET_DATA_DHCP_OPTIONS, 0)
+
+        return Packet
+    }
+
+    define void* AddOption(NetworkPacket* Packet, i8 OptionCode, i32 Size) {
+        DHCPOption::Header* Option := Packet->Bump(Size)
+        Packet->Extend(PACKET_DATA_DHCP_OPTIONS, Size)
+
+        Option->OptionCode := OptionCode
+        Option->Length := (Size - #DHCPOption::Header) As i8
+
+        return Option As void*
+    }
+
+    define void Send(NetworkPacket* Packet) {
+        DHCPHeader* Header := Packet->Get(PACKET_DATA_DHCP_HEADER)
+
+        Header->FlipEndianess()
+
+        this->Transport->Send(Packet)
+    }
+
+    define void Ingest(NetworkPacket* Packet) {
+        IPV4Header* IP := Packet->Get(PACKET_DATA_IPV4_HEADER)
+        UDPHeader* UDP := Packet->Get(PACKET_DATA_UDP_HEADER)
+        DHCPHeader* DHCP := Packet->Mark(PACKET_DATA_DHCP_HEADER, #DHCPHeader)
+
+        DHCP->FlipEndianess()
+
+        Info("DHCP Packet from %ipv4:%i\n", IP->Source, UDP->SourcePort)
+    }
+
+    define void SendDiscover(i32 DesiredIP) {
+        NetworkPacket* Packet := this->Enter(IPV4_BROADCAST_ADDRESS)
+
+        DHCPHeader* Header := Packet->Get(PACKET_DATA_DHCP_HEADER)
+
+        Header->Operation := DHCP_OPERATION_REQUEST
+
+        DHCPOption::MessageType* MessageType := this->AddOption(Packet, DHCP_OPTION_MESSAGE_TYPE, #DHCPOption::MessageType)
+
+        MessageType->Type := DHCP_MESSAGE_TYPE_DISCOVER
+
+        DHCPOption::ParameterRequestList* RequestList := this->AddOption(Packet, DHCP_OPTION_PARAMETER_LIST, 3 + #DHCPOption::ParameterRequestList)
+
+        RequestList->RequestedOptions[0] := DHCP_OPTION_SUBNET_MASK
+        RequestList->RequestedOptions[1] := DHCP_OPTION_ROUTER
+        RequestList->RequestedOptions[2] := DHCP_OPTION_DOMAIN_NAME_SERVER
+
+        this->AddOption(Packet, DHCP_OPTION_END, 1)
+
+        this->Send(Packet)
+    }
+}
+
+NetworkProtocolPrototype DHCPProtocolPrototype {
+    ;Enter: &DHCPClient.Enter,
+    Send: &DHCPClient.Send,
+    Ingest: &DHCPClient.Ingest
+}
+
+define NetworkProtocolPrototype* GetDHCPProtocolPrototype() {
+    return &DHCPProtocolPrototype
+}
+
 /*
 define DHCPOption* EnterDHCPOption(PacketBuffer* Buffer) {
     return Buffer->Bump(#DHCPOption)

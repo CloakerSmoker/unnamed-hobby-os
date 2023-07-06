@@ -153,6 +153,24 @@ struct NetworkPacket {
         return this->Offset
     }
 
+    define void* GetBuffer(i32 Offset) {
+        return this->Buffer + Offset
+    }
+
+    define void* Bump(i32 Size) {
+        void* Result := this->Buffer + this->Offset
+
+        this->Offset += Size
+
+        return Result
+    }
+
+    define void Extend(i32 ID, i32 AddSize) {
+        NetworkPacketMarker* Marker := this->Find(ID)
+        
+        Marker->Size += AddSize
+    }
+
     define void End() {
         this->Size := this->Offset
     }
