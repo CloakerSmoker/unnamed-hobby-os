@@ -1,4 +1,5 @@
 
+#Require "./src/kernel/networking/UDPSocket.rlx"
 
 NetworkInterface* FirstNetworkInterface := null
 
@@ -73,9 +74,11 @@ define void TestICMPPing() {
 define void TestNetworking() {
     ;SetIP()
 
+    /*
     DHCPClient* DHCP := FirstNetworkInterface->GetProtocol("DHCP")->this
 
     DHCP->SendDiscover(0)
+    ;*/
 
     /*
     UDPLayer* UDP := FirstNetworkInterface->GetProtocol("UDP")->this

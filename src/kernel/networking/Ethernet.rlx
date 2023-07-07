@@ -86,7 +86,7 @@ struct EthernetLayer {
 
         Info("Ethernet: Received %x byte packet from %mac to %mac\n", Packet->Size, Header~>Source, Header~>Destination)
 
-        if !(Header~>Destination->Equals(this->Interface->MAC)) {
+        if !(Header~>Destination->Equals(this->Interface->MAC) || Header~>Destination->IsBroadcast?()) {
             Info("Ethernet: Dropping packet from %mac for bad destination MAC\n", Header~>Source)
 
             return

@@ -8,6 +8,10 @@ struct MACAddress {
         return CompareMemory(this, Other, #self)
     }
 
+    define i8 IsBroadcast?() {
+        return !!(this->Bytes[0] & 0x80)
+    }
+
     define i64 Hash() {
         return *(this As i64*)
     }
@@ -66,6 +70,8 @@ struct NetworkPacket {
     i32 Size
 
     i32 MarkerCount
+
+    i32 ReferenceCount
 
     declare i32 Tell()
 
@@ -181,6 +187,10 @@ struct NetworkPacket {
         return self:New(this, Buffer, this->Size)
     }
 
+    define void Release() {
+        this->ReferenceCount -= 1
+    }
+
     define void Free() {
         Free(this->Buffer)
         Free(this)
@@ -239,6 +249,7 @@ struct NetworkInterface {
     MACAddress* MAC
     i32 IP
     i32 MTU
+    i32 DNS
 
     AVLTree* Protocols ; <FNV1A(Name), NetworkProtocol*>
 
