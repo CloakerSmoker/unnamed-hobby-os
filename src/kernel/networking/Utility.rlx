@@ -272,6 +272,10 @@ struct NetworkInterface {
         return Protocol
     }
 
+    define NetworkProtocol* AddEphemeralProtocol(NetworkProtocolPrototype* Prototype, void* State) {
+        return NetworkProtocol:New(Prototype, State)
+    }
+
     define NetworkProtocol* GetProtocol(i8* Name) {
         return this->Protocols->GetPointer(FNV1A(Name))
     }

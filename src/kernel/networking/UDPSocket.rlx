@@ -1,11 +1,13 @@
 
-;declare NetworkProtocolPrototype* GetUDPSocketProtocolPrototype()
+declare NetworkProtocolPrototype* GetUDPSocketProtocolPrototype()
 
 i16 NextUDPConnectionPort := 49152 As i16
 
 struct UDPSocket {
     NetworkInterface* Interface
     NetworkProtocol* Transport
+
+    NetworkProtocol* AsProtocol
 
     i8 IsServer
     i16 LocalPort
@@ -24,18 +26,36 @@ struct UDPSocket {
         this->RemotePorts := AVLTree:New(#void*)
         this->ReceiveBuffers := AVLTree:New(#PointerArray*)
 
+        this->AsProtocol := Interface->AddEphemeralProtocol(GetUDPSocketProtocolPrototype(), this)
+
         return this
+    }
+
+    static self* New(NetworkInterface* Interface) {
+        NetworkProtocol* UDP := Interface->GetProtocol("UDP")
+
+        return self:New(Interface, UDP)
+    }
+
+    define void BindLocalPort() {
+        UDPLayer* UDP := this->Transport->this
+
+        UDP->ListenPort(this->LocalPort, this->AsProtocol)
     }
 
     define void Listen(i16 LocalPort) {
         this->IsServer := true
         this->LocalPort := LocalPort
+
+        this->BindLocalPort()
     }
 
     define void Bind(i16 RemotePort) {
         this->IsServer := false
         this->LocalPort := NextUDPConnectionPort++
         this->RemotePort := RemotePort
+
+        this->BindLocalPort()
     }
 
     define PointerArray* GetRecieveBufferForAddress(i32 Address) {
@@ -48,6 +68,14 @@ struct UDPSocket {
         }
 
         return Result
+    }
+
+    define void Ingest(NetworkPacket* Packet) {
+        IPV4Header* IP := Packet->Get(PACKET_DATA_IPV4_HEADER)
+
+        PointerArray* Received := this->GetRecieveBufferForAddress(IP->Source)
+
+        Received->Push(Packet->Clone())
     }
 
     define i16 GetDestinationPort(i32 Address) {
@@ -105,4 +133,12 @@ struct UDPSocket {
             return MaxSize
         }
     }
+}
+
+NetworkProtocolPrototype UDPSocketProtocolPrototype {
+    Ingest: &UDPSocket.Ingest
+}
+
+define NetworkProtocolPrototype* GetUDPSocketProtocolPrototype() {
+    return &UDPSocketProtocolPrototype
 }

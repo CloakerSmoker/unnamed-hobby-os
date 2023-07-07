@@ -1,0 +1,663 @@
+
+i16 DNS_PORT := 53
+
+i8 DNS_IS_QUERY := 0
+i8 DNS_IS_RESPONSE := 1
+
+i16 DNS_TYPE_A := 1
+i16 DNS_TYPE_NS := 2
+i16 DNS_TYPE_CNAME := 5
+i16 DNS_TYPE_PTR := 12
+i16 DNS_TYPE_TXT := 16
+i16 DNS_QUESTION_TYPE_ANY := 255
+
+define i8* DNSTypeName(i16 Type) {
+    if (Type = DNS_QUESTION_TYPE_ANY) {
+        return "*"
+    }
+    else if (1 <= Type && Type <= 16) {
+        i8*[17] Names {
+            "A", "NS", "MD", "MF", "CNAME", "SOA", "MB", "MG", "MR", "NULL", "WKS", "PTR", "HINFO", "MINFO", "MX", "TXT"
+        }
+
+        return Names[Type - 1]
+    }
+    else {
+        return "unknown"
+    }
+}
+
+i16 DNS_CLASS_IN := 1
+
+define i8* DNSClassName(i16 Class) {
+    if (Class = DNS_CLASS_IN) {
+        return "IN"
+    }
+    else {
+        return "unknown"
+    }
+}
+
+bits DNSHeaderPackedFields As i16 {
+    i8 [0:1] ShouldRecurse
+    i8 [1:2] TruncatedMessage
+    i8 [2:3] IsAuthoritativeAnswer
+    i8 [3:7] Opcode
+    i8 [7:8] QueryOrResponse
+    i8 [8:12] ResponseCode
+    i8 [12:13] CheckingDisabled
+    i8 [13:14] AuthenticatedData
+    i8 [14:15] Reserved
+    i8 [15:16] RecursionAvailable
+}
+
+struct DNSHeader {
+    i16 ID
+    DNSHeaderPackedFields Packed
+    i16 QuestionCount
+    i16 AnswerCount
+    i16 AuthoritativeCount
+    i16 AdditionalCount
+
+    define void FlipEndianess() {
+        this->ID := NetworkShort(this->ID)
+        this->QuestionCount := NetworkShort(this->QuestionCount)
+        this->AnswerCount := NetworkShort(this->AnswerCount)
+        this->AuthoritativeCount := NetworkShort(this->AuthoritativeCount)
+        this->AdditionalCount := NetworkShort(this->AdditionalCount)
+    }
+}
+
+struct DNSQuestion {
+    i16 Type
+    i16 Class
+
+    define void FlipEndianess() {
+        this->Type := NetworkShort(this->Type)
+        this->Class := NetworkShort(this->Class)
+    }
+}
+
+struct DNSResource {
+    i16 Type
+    i16 Class
+    i32 TimeToLive
+    i16 DataSize
+    void[0] Data
+
+    define void FlipEndianess() {
+        this->Type := NetworkShort(this->Type)
+        this->Class := NetworkShort(this->Class)
+        this->TimeToLive := NetworkInt(this->TimeToLive)
+        this->DataSize := NetworkShort(this->DataSize)
+    }
+}
+
+i32 DNS_PACKET_BUFFER_SIZE := 0x4000
+
+struct DNSClient {
+    UDPSocket* Socket
+    i32 ServerAddress
+
+    union {
+        void* Buffer
+        i8* CharacterBuffer
+        DNSHeader* Header
+    }
+
+    i32 Offset
+    i16 RequestID
+
+    static self* New(i32 ServerAddress) {
+        self* this := Alloc(#self)
+
+        this->Socket := UDPSocket:New(FirstNetworkInterface)
+        this->Socket->Bind(DNS_PORT)
+
+        this->ServerAddress := ServerAddress
+
+        this->Buffer := Alloc(DNS_PACKET_BUFFER_SIZE)
+        this->Offset := 0
+
+        return this
+    }
+
+    define void WriteRequestHeader() {
+        this->Offset := 0
+
+        DNSHeader* Header := this->Header
+
+        Header->ID := ++this->RequestID
+        Header->Packed.QueryOrResponse := DNS_IS_QUERY
+        Header->Packed.Opcode := 0
+        Header->Packed.IsAuthoritativeAnswer := false
+        Header->Packed.TruncatedMessage := false
+        Header->Packed.ShouldRecurse := true
+        Header->Packed.RecursionAvailable := false
+        Header->Packed.Reserved := 0
+        Header->Packed.AuthenticatedData := false
+        Header->Packed.CheckingDisabled := false
+        Header->Packed.ResponseCode := 0
+        Header->QuestionCount := 0
+        Header->AnswerCount := 0
+        Header->AuthoritativeCount := 0
+        Header->AdditionalCount := 0
+
+        this->Offset += #DNSHeader
+    }
+
+    define void WriteName(i8* Name) {
+        i8* CurrentLength := &this->CharacterBuffer[this->Offset++]
+
+        *CurrentLength := 0
+
+        i32 Length := StringLength(Name)
+
+        for (i32 Index := 0, Index < Length, Index++) {
+            if (Name[Index] = '.') {
+                CurrentLength := &this->CharacterBuffer[this->Offset++]
+                *CurrentLength := 0
+            }
+            else {
+                this->CharacterBuffer[this->Offset++] := Name[Index]
+                *CurrentLength += 1
+            }
+        }
+
+        this->CharacterBuffer[this->Offset++] := 0
+    }
+
+    define void WriteQuestion(i8* Name, i16 Class, i16 Type) {
+        this->WriteName(Name)
+
+        DNSQuestion* Question := this->Buffer + this->Offset
+        Question->Class := Class
+        Question->Type := Type
+        this->Offset += #DNSQuestion
+
+        Question->FlipEndianess()
+
+        this->Header->QuestionCount += 1
+    }
+
+    define void SendRequest() {
+        this->Header->FlipEndianess()
+
+        this->Socket->SendTo(this->ServerAddress, this->Buffer, this->Offset)
+    }
+
+    define void SendSingleQuestion(i8* Name, i16 Class, i16 Type) {
+        this->WriteRequestHeader()
+        this->WriteQuestion(Name, Class, Type)
+        this->SendRequest()
+    }
+
+    define i32 GetNameLength(i32 StartingOffset, i32* OutCharacterCount) {
+        i8 Jumped := false
+
+        if (OutCharacterCount) {
+            *OutCharacterCount := 0
+        }
+
+        i32 RelativeOffset := 0
+        i32 Offset := StartingOffset
+
+        loop {
+            i8 Next := this->CharacterBuffer[Offset++]
+
+            if !(Jumped) {
+                RelativeOffset += 1
+            }
+
+            if (Next = 0) {
+                break
+            }
+            else if (Next & 0b11_000000) {
+                i32 JumpOffset := ((Next & 0b00_111111) * 0xFF) + this->CharacterBuffer[Offset++]
+
+                if !(Jumped) {
+                    RelativeOffset += 1
+                }
+
+                Offset := JumpOffset
+                Jumped := true
+            }
+            else {
+                i32 LabelSize := Next
+
+                if (OutCharacterCount) {
+                    ; one extra for the implicit '.'
+
+                    *OutCharacterCount += LabelSize + 1
+                }
+
+                if !(Jumped) {
+                    RelativeOffset += LabelSize
+                }
+
+                Offset += LabelSize
+            }
+        }
+
+        return RelativeOffset
+    }
+
+    define i32 DecodeName(i32 StartingOffset, i8* Out) {
+        i32 Index := 0
+        i32 Offset := StartingOffset
+
+        loop {
+            i8 Next := this->CharacterBuffer[Offset++]
+
+            if (Next = 0) {
+                break
+            }
+            else if (Next & 0b11_000000) {
+                i32 JumpOffset := ((Next & 0b00_111111) * 0xFF) + this->CharacterBuffer[Offset++]
+
+                Offset := JumpOffset
+            }
+            else {
+                i32 LabelSize := Next
+
+                MoveMemory(&Out[Index], &this->CharacterBuffer[Offset], LabelSize)
+                Index += LabelSize
+                Out[Index++] := '.'
+
+                Offset += LabelSize
+            }
+        }
+
+        ; Remove the trailing dot
+
+        Out[--Index] := 0
+
+        return Index
+    }
+
+    i64 ReceiveSize
+
+    i32 QuestionCount
+    
+    i32 FirstAnswerOffset
+    i32 AnswerCount
+
+    i32 FirstAuthoritativeOffset
+    i32 AuthoritativeCount
+
+    i32 FirstAdditionalOffset
+    i32 AdditionalCount
+
+    define void ProcessResponse() {
+        this->QuestionCount := this->Header->QuestionCount
+        this->AnswerCount := this->Header->AnswerCount
+        this->AuthoritativeCount := this->Header->AuthoritativeCount
+        this->AdditionalCount := this->Header->AdditionalCount
+
+        this->Header->FlipEndianess()
+
+        this->Offset := #DNSHeader
+
+        for (i32 Index := 0, Index < this->QuestionCount, Index++) {
+            this->Offset += this->GetNameLength(this->Offset, null)
+
+            DNSQuestion* Question := this->Buffer + this->Offset
+            Question->FlipEndianess()
+
+            this->Offset += #DNSQuestion
+        }
+
+        this->FirstAnswerOffset := this->Offset
+
+        for (i32 Index := 0, Index < this->AnswerCount, Index++) {
+            this->Offset += this->GetNameLength(this->Offset, null)
+
+            DNSResource* Resource := this->Buffer + this->Offset
+            Resource->FlipEndianess()
+
+            this->Offset += #DNSResource
+            this->Offset += Resource->DataSize
+        }
+
+        this->FirstAuthoritativeOffset := this->Offset
+
+        for (i32 Index := 0, Index < this->AuthoritativeCount, Index++) {
+            this->Offset += this->GetNameLength(this->Offset, null)
+
+            DNSResource* Resource := this->Buffer + this->Offset
+            Resource->FlipEndianess()
+
+            this->Offset += #DNSResource
+            this->Offset += Resource->DataSize
+        }
+
+        this->FirstAdditionalOffset := this->Offset
+    }
+
+    define void WaitForResponse() {
+        loop {
+            this->ReceiveSize := this->Socket->ReceiveFrom(this->ServerAddress, this->Buffer, DNS_PACKET_BUFFER_SIZE)
+
+            this->Header->FlipEndianess()
+
+            if (this->Header->ID = this->RequestID) {
+                break
+            }
+        }
+
+        this->ProcessResponse()
+    }
+
+    define DNSQuestion* QuestionAt(i32 TargetIndex, i32* OutNameOffset) {
+        this->Offset := #DNSHeader
+
+        for (i32 Index := 0, Index < TargetIndex, Index++) {
+            this->Offset += this->GetNameLength(this->Offset, null)
+            this->Offset += #DNSQuestion
+        }
+
+        if (OutNameOffset) {
+            *OutNameOffset := this->Offset
+        }
+
+        this->Offset += this->GetNameLength(this->Offset, null)
+
+        return this->Buffer + this->Offset
+    }
+
+    define DNSResource* ResourceAt(i32 Offset, i32 TargetIndex, i32* OutNameOffset) {
+        this->Offset := Offset
+
+        for (i32 Index := 0, Index < TargetIndex, Index++) {
+            this->Offset += this->GetNameLength(this->Offset, null)
+
+            DNSResource* Resource := this->Buffer + this->Offset
+
+            this->Offset += #DNSResource
+            this->Offset += Resource->DataSize
+        }
+
+        if (OutNameOffset) {
+            *OutNameOffset := this->Offset
+        }
+
+        this->Offset += this->GetNameLength(this->Offset, null)
+
+        return this->Buffer + this->Offset
+    }
+    define DNSResource* AnswerAt(i32 TargetIndex, i32* OutNameOffset) {
+        return this->ResourceAt(this->FirstAnswerOffset, TargetIndex, OutNameOffset)
+    }
+    define DNSResource* AuthoritativeAt(i32 TargetIndex, i32* OutNameOffset) {
+        return this->ResourceAt(this->FirstAuthoritativeOffset, TargetIndex, OutNameOffset)
+    }
+    define DNSResource* AdditionalAt(i32 TargetIndex, i32* OutNameOffset) {
+        return this->ResourceAt(this->FirstAdditionalOffset, TargetIndex, OutNameOffset)
+    }
+
+    define i32 ResourceDataOffset(DNSResource* Resource) {
+        i32 ResourceOffset := ((Resource As i64) - (this->Buffer As i64)) As i32
+
+        return ResourceOffset + #DNSResource + Resource->DataSize
+    }
+    
+    define void Print() {
+        Print("Currently buffered request:\n")
+
+        i8[100] NameBuffer
+
+        for (i32 Index := 0, Index < this->QuestionCount, Index++) {
+            Print("Question %i:\n", Index)
+
+            i32 NameOffset := 0
+            DNSQuestion* Question := this->QuestionAt(Index, &NameOffset)
+            this->DecodeName(NameOffset, NameBuffer)
+
+            Print("\t%s %s %s\n", DNSClassName(Question->Class), DNSTypeName(Question->Type), NameBuffer)
+        }
+
+        for (i32 Index := 0, Index < this->AnswerCount, Index++) {
+            Print("Answer %i:\n", Index)
+
+            i32 NameOffset := 0
+            DNSResource* Answer := this->AnswerAt(Index, &NameOffset)
+            this->DecodeName(NameOffset, NameBuffer)
+
+            Print("\t%s %s %s: %i bytes, data hash %x\n", DNSClassName(Answer->Class), DNSTypeName(Answer->Type), NameBuffer, Answer->DataSize, FNV1A(Answer~>Data, Answer->DataSize))
+        }
+
+        for (i32 Index := 0, Index < this->AuthoritativeCount, Index++) {
+            Print("Authoritative %i:\n", Index)
+
+            i32 NameOffset := 0
+            DNSResource* Answer := this->AuthoritativeAt(Index, &NameOffset)
+            this->DecodeName(NameOffset, NameBuffer)
+
+            Print("\t%s %s %s: %i bytes, data hash %x\n", DNSClassName(Answer->Class), DNSTypeName(Answer->Type), NameBuffer, Answer->DataSize, FNV1A(Answer~>Data, Answer->DataSize))
+        }
+
+        for (i32 Index := 0, Index < this->AdditionalCount, Index++) {
+            Print("Additional %i:\n", Index)
+
+            i32 NameOffset := 0
+            DNSResource* Answer := this->AdditionalAt(Index, &NameOffset)
+            this->DecodeName(NameOffset, NameBuffer)
+
+            Print("\t%s %s %s: %i bytes, data hash %x\n", DNSClassName(Answer->Class), DNSTypeName(Answer->Type), NameBuffer, Answer->DataSize, FNV1A(Answer~>Data, Answer->DataSize))
+        }
+    }
+}
+
+#Require "$/AVLTree.rlx"
+
+define i32 EpochSeconds() {
+    ; lol 2038 (todo: proper time)
+
+    return GetUptimeMS() / 1000
+}
+
+struct DNSCacheEntry {
+    DNSResource Answer
+    i8* Name
+    void* Data
+    i32 Deadline
+
+    define void Free() {
+        Free(this->Name)
+        Free(this->Data)
+    }
+}
+
+struct DNSCache {
+    DNSClient* Client
+    AVLTree Cache ; <DNSCacheEntry>
+
+    i32 MinCacheSeconds
+    i32 MaxCacheSeconds
+
+    static self* New(DNSClient* Client, i32 MinCacheSeconds, i32 MaxCacheSeconds) {
+        self* this := Alloc(#self)
+
+        this~>Cache->ValueSize := #DNSCacheEntry
+        this->Client := Client
+
+        this->MinCacheSeconds := MinCacheSeconds
+        this->MaxCacheSeconds := MaxCacheSeconds
+
+        return this
+    }
+
+    define void Print() {
+        i32 Now := EpochSeconds()
+
+        Print("Cache status at %i\n", Now)
+
+        i32 Count := this~>Cache->Count()
+
+        for (i32 Index := 0, Index < Count, Index++) {
+            AVLTreeNode* AnswerNode := this~>Cache->NodeAt(Index)
+            DNSCacheEntry* Entry := AnswerNode~>Value
+            DNSResource* Answer := Entry~>Answer
+        
+            Print("%s:\n\tResource { %s, %s, %i seconds, ", Entry->Name, DNSClassName(Answer->Class), DNSTypeName(Answer->Type), Answer->TimeToLive)
+
+            if (Answer->Type = DNS_TYPE_CNAME) {
+                Print("canonical name -> %s }\n", Entry->Data)
+            }
+            else {
+                Print("%x byte value with hash %x }\n", Answer->DataSize, FNV1A(Entry->Data, Answer->DataSize))
+            }
+
+            if (Entry->Deadline <= Now) {
+                Print("\tSTALE, expired %i seconds ago\n", Now - Entry->Deadline)
+            }
+            else {
+                Print("\texpires in %i seconds\n", Entry->Deadline - Now)
+            }
+        }
+    }
+
+    define i64 Hash(i16 Class, i16 Type, i8* Name) {
+        return FNV1A(DNSClassName(Class)) + FNV1A(DNSTypeName(Type)) + FNV1A(Name)
+    }
+
+    define void Evict(i64 Key, DNSCacheEntry* Entry) {
+        Entry->Free()
+        this~>Cache->Remove(Key)
+    }
+
+    define i8 FlushSingle(i32 Now) {
+        for (i32 Index := 0, Index < this~>Cache->Count(), Index++) {
+            AVLTreeNode* AnswerNode := this~>Cache->NodeAt(Index)
+            DNSCacheEntry* Entry := AnswerNode~>Value
+
+            if (Entry->Deadline <= Now) {
+                this->Evict(AnswerNode->Key, Entry)
+                return true
+            }
+        }
+
+        return false
+    }
+
+    define i32 Flush() {
+        i32 Now := EpochSeconds()
+        i32 Count := 0
+        
+        while (this->FlushSingle(Now)) { Count++ }
+
+        return Count
+    }
+
+    define void CacheEntry(i64 Hash, DNSCacheEntry* Entry) {
+        this~>Cache->Insert(Hash, Entry)
+    }
+
+    define DNSCacheEntry* GetCached(i64 Hash) {
+        if (this~>Cache->Has(Hash)) {
+            return this~>Cache->Get(Hash)
+        }
+
+        return null
+    }
+
+    define i8* ReadName(i32 Offset) {
+        i32 Length := 0
+        this->Client->GetNameLength(Offset, &Length)
+
+        i8* Name := Alloc(Length + 2)
+        this->Client->DecodeName(Offset, Name)
+
+        return Name
+    }
+
+    define DNSCacheEntry* Query(i16 Class, i16 Type, i8* Name) {
+        i32 Now := EpochSeconds()
+
+        i64 QuestionHash := this->Hash(Class, Type, Name)
+        DNSCacheEntry* Existing := this->GetCached(QuestionHash)
+
+        if (Existing) {
+            if (Now <= Existing->Deadline) {
+                return Existing
+            }
+            else {
+                this->Evict(QuestionHash, Existing)
+            }
+        }
+
+        i64 CanonicalNameHash := this->Hash(Class, DNS_TYPE_CNAME, Name)
+        DNSCacheEntry* CanonicalName := this->GetCached(CanonicalNameHash)
+
+        if (CanonicalName) {
+            if (Now <= CanonicalName->Deadline) {
+                return this->Query(Class, Type, CanonicalName->Data)
+            }
+            else {
+                this->Evict(CanonicalNameHash, CanonicalName)
+            }
+        }
+
+        this->Client->SendSingleQuestion(Name, Class, Type)
+        this->Client->WaitForResponse()
+
+        i64 FirstAnswerHash := 0
+        i8 GotCanonicalName := false
+
+        for (i32 Index := 0, Index < this->Client->AnswerCount, Index++) {
+            i32 NameOffset := 0
+            DNSResource* Answer := this->Client->AnswerAt(Index, &NameOffset)
+            i8* AnswerName := this->ReadName(NameOffset)
+
+            DNSCacheEntry Entry {
+                Name: AnswerName,
+                Deadline: Now + Answer->TimeToLive
+            }
+
+            if (Answer->TimeToLive <= this->MinCacheSeconds) {
+                Entry->Deadline := Now + this->MinCacheSeconds
+            }
+            else if (Answer->TimeToLive >= this->MaxCacheSeconds) {
+                Entry->Deadline := Now + this->MaxCacheSeconds
+            }
+
+            if (Entry->Deadline < Now) {
+                continue
+            }
+
+            if (Answer->Type = DNS_TYPE_CNAME) {
+                GotCanonicalName := true
+
+                i32 CanonicalNameOffset := this->Client->ResourceDataOffset(Answer)
+
+                Entry->Data := this->ReadName(CanonicalNameOffset)
+            }
+            else {
+                Entry->Data := CloneMemory(Answer~>Data, Answer->DataSize)
+            }
+
+            i64 AnswerHash := this->Hash(Answer->Class, Answer->Type, AnswerName)
+
+            MoveMemory(Entry~>Answer, Answer, #DNSResource)
+            this~>Cache->Insert(AnswerHash, &Entry)
+
+            if (AnswerHash = QuestionHash && FirstAnswerHash = 0) {
+                FirstAnswerHash := AnswerHash
+            }
+        }
+
+        if (FirstAnswerHash) {
+            return this->GetCached(FirstAnswerHash)
+        }
+        else if (GotCanonicalName) {
+            return this->Query(Class, Type, Name)
+        }
+        else {
+            return null
+        }
+    }
+
+    define void WhyFail() {
+        this->Client->Print()
+    }
+}
