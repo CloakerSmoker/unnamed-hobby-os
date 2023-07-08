@@ -417,7 +417,8 @@ struct E1000 {
 	}
 	
 	define void EnableInterrupts() {
-		this->Write(E1000_REGISTER_IMS, E1000_IMS_LSC | E1000_IMS_RXO | E1000_IMS_TXQE | E1000_IMS_TXDW | E1000_IMS_RXT)
+		;this->Write(E1000_REGISTER_IMS, E1000_IMS_LSC | E1000_IMS_RXO | E1000_IMS_TXQE | E1000_IMS_TXDW | E1000_IMS_RXT)
+		this->Write(E1000_REGISTER_IMS, E1000_IMS_LSC | E1000_IMS_RXO | E1000_IMS_TXDW | E1000_IMS_RXT)
 		this->Read(E1000_REGISTER_ICR)
 		this->Read(E1000_REGISTER_ICR)
 	}
@@ -491,7 +492,11 @@ struct E1000 {
 	}
 	
 	define void Send(void* Data, i32 Size) {
-		DisableInterrupts()
+		i8 InterruptsEnabled := InterrupsAreEnabled()
+
+		if (InterruptsEnabled) {
+			DisableInterrupts()
+		}
 		
 		i32 Head := this->Read(E1000_REGISTER_TXDESCHEAD)
 		i32 Tail := this->Read(E1000_REGISTER_TXDESCTAIL)
@@ -508,7 +513,9 @@ struct E1000 {
 		
 		this->Write(E1000_REGISTER_TXDESCTAIL, Next)
 		
-		EnableInterrupts()
+		if (InterruptsEnabled) {
+			EnableInterrupts()
+		}
 		
 		;loop {
 		;	Info("Packet status %x, %x\n", Buffer->Status, Buffer->Command)
@@ -553,8 +560,8 @@ struct E1000 {
 
 		i32 ICR := Current->Read(E1000_REGISTER_ICR)
 		
-		Print("E1000 Interrupt on %x\n", Current)
-		Print(" ICR: %x\n", ICR)
+		;Print("E1000 Interrupt on %x\n", Current)
+		;Print(" ICR: %x\n", ICR)
 
 		Current->ServiceInterrupt()
 
