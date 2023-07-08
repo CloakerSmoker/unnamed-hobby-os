@@ -116,7 +116,7 @@ struct UDPLayer {
     }
 
     define void ListenPort(i16 Port, NetworkProtocol* Handler) {
-        this->PortHandlers->Insert(Port, Handler)
+        this->PortHandlers->InsertPointer(Port, Handler)
     }
 
     define void Ingest(NetworkPacket* Packet) {
@@ -125,7 +125,7 @@ struct UDPLayer {
 
         UDP->FlipEndianess()
 
-        NetworkProtocol* Handler := this->PortHandlers->Get(UDP->DestinationPort)
+        NetworkProtocol* Handler := this->PortHandlers->GetPointer(UDP->DestinationPort)
 
         Info("UDP: Packet checksum: Given = %x, Calculated = %x\n", UDP->Checksum, this->Checksum(Packet))
 

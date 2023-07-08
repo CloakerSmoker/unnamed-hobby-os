@@ -21,8 +21,8 @@ struct DHCPHeader {
     i16 Flags
 
     i32 ClientAddress
-    i32 YourIPAddress
-    i32 NextServerAddress
+    i32 YourAddress
+    i32 ServerAddress
     i32 GatewayAddress
     
     union {
@@ -41,7 +41,8 @@ struct DHCPHeader {
         this->Flags := NetworkShort(this->Flags)
 
         this->ClientAddress := NetworkInt(this->ClientAddress)
-        this->NextServerAddress := NetworkInt(this->NextServerAddress)
+        this->YourAddress := NetworkInt(this->YourAddress)
+        this->ServerAddress := NetworkInt(this->ServerAddress)
         this->GatewayAddress := NetworkInt(this->GatewayAddress)
 
         this->Magic := NetworkInt(this->Magic)
@@ -89,7 +90,7 @@ namespace DHCPOption {
         i8 Length
         i8[0] Data
 
-        define DHCPOption* Next() {
+        define Header* Next() {
             return ((this->Data As i64) + this->Length) As void*
         }
     }
@@ -102,6 +103,50 @@ namespace DHCPOption {
     struct ParameterRequestList {
         Header Header
         i8[0] RequestedOptions
+    }
+
+    struct RequestAddress unaligned {
+        Header Header
+        i32 Address
+    }
+
+    struct DNSServers unaligned {
+        Header Header
+        i32[0] Addresses
+
+        define i32 Count() {
+            return this~>Header->Length / 4
+        }
+
+        define i32 At(i32 Index) {
+            return NetworkInt(this->Addresses[Index])
+        }
+    }
+}
+
+struct DHCPOptions {
+    DHCPOption::Header FirstOption
+
+    define DHCPOption::Header* Find(i8 OptionCode) {
+        DHCPOption::Header* Current := this~>FirstOption
+
+        while (Current && Current->OptionCode != DHCP_OPTION_END) {
+            if (Current->OptionCode = OptionCode) {
+                return Current
+            }
+
+            Current := Current->Next()
+        }
+
+        return null
+    }
+
+    define i8 Has(i8 OptionCode) {
+        return this->Find(OptionCode) != null
+    }
+
+    define void* Get(i8 OptionCode) {
+        return this->Find(OptionCode) As void*
     }
 }
 
@@ -172,6 +217,8 @@ struct DHCPClient {
         this->Transport->Send(Packet)
     }
 
+    declare void SendRequest(i32, i32)
+
     define void Ingest(NetworkPacket* Packet) {
         IPV4Header* IP := Packet->Get(PACKET_DATA_IPV4_HEADER)
         UDPHeader* UDP := Packet->Get(PACKET_DATA_UDP_HEADER)
@@ -180,18 +227,44 @@ struct DHCPClient {
         DHCP->FlipEndianess()
 
         Info("DHCP Packet from %ipv4:%i\n", IP->Source, UDP->SourcePort)
+
+        DHCPOptions* Options := Packet->Mark(PACKET_DATA_DHCP_OPTIONS, #DHCPOption::Header)
+
+        DHCPOption::MessageType* MessageType := Options->Get(DHCP_OPTION_MESSAGE_TYPE)
+
+        if !(MessageType) {
+            Info("DHCP: Dropping packet from %ipv4:%i with no message type option\n", IP->Source, UDP->SourcePort)
+            return
+        }
+
+        if (MessageType->Type = DHCP_MESSAGE_TYPE_OFFER) {
+            Info("DHCP: Got offer from %ipv4 for address %ipv4\n", DHCP->ServerAddress, DHCP->YourAddress)
+
+            this->SendRequest(DHCP->ServerAddress, DHCP->YourAddress)
+        }
+        else if (MessageType->Type = DHCP_MESSAGE_TYPE_ACK) {
+            this->Interface->IP := DHCP->YourAddress
+
+            DHCPOption::DNSServers* DNS := Options->Get(DHCP_OPTION_DOMAIN_NAME_SERVER)
+
+            this->Interface->DNS := DNS->At(0)
+
+            ARPLayer* ARP := this->Interface->GetProtocol("ARP")->this
+
+            ARP->Announce()
+        }
     }
 
-    define void SendDiscover(i32 DesiredIP) {
+    define void Send(i32 ServerAddress, i32 DesiredAddress, i8 MessageType) {
         NetworkPacket* Packet := this->Enter(IPV4_BROADCAST_ADDRESS)
 
         DHCPHeader* Header := Packet->Get(PACKET_DATA_DHCP_HEADER)
 
         Header->Operation := DHCP_OPERATION_REQUEST
 
-        DHCPOption::MessageType* MessageType := this->AddOption(Packet, DHCP_OPTION_MESSAGE_TYPE, #DHCPOption::MessageType)
+        DHCPOption::MessageType* MessageTypeOption := this->AddOption(Packet, DHCP_OPTION_MESSAGE_TYPE, #DHCPOption::MessageType)
 
-        MessageType->Type := DHCP_MESSAGE_TYPE_DISCOVER
+        MessageTypeOption->Type := MessageType
 
         DHCPOption::ParameterRequestList* RequestList := this->AddOption(Packet, DHCP_OPTION_PARAMETER_LIST, 3 + #DHCPOption::ParameterRequestList)
 
@@ -199,15 +272,29 @@ struct DHCPClient {
         RequestList->RequestedOptions[1] := DHCP_OPTION_ROUTER
         RequestList->RequestedOptions[2] := DHCP_OPTION_DOMAIN_NAME_SERVER
 
+        if (DesiredAddress != 0) {
+            DHCPOption::RequestAddress* RequestAddress := this->AddOption(Packet, DHCP_OPTION_REQUESTED_IP, #DHCPOption::RequestAddress)
+
+            RequestAddress->Address := NetworkInt(DesiredAddress)
+        }
+
         this->AddOption(Packet, DHCP_OPTION_END, 1)
 
         this->Send(Packet)
+    }
+
+    define void SendDiscover(i32 DesiredIP) {
+        this->Send(IPV4_BROADCAST_ADDRESS, 0, DHCP_MESSAGE_TYPE_DISCOVER)
+    }
+
+    define void SendRequest(i32 ServerAddress, i32 DesiredAddress) {
+        this->Send(ServerAddress, DesiredAddress, DHCP_MESSAGE_TYPE_REQUEST)
     }
 }
 
 NetworkProtocolPrototype DHCPProtocolPrototype {
     ;Enter: &DHCPClient.Enter,
-    Send: &DHCPClient.Send,
+    ;Send: &DHCPClient.Send,
     Ingest: &DHCPClient.Ingest
 }
 

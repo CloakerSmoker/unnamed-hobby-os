@@ -74,7 +74,7 @@ define void TestICMPPing() {
 define void TestNetworking() {
     ;SetIP()
 
-    /*
+    ;/*
     DHCPClient* DHCP := FirstNetworkInterface->GetProtocol("DHCP")->this
 
     DHCP->SendDiscover(0)
