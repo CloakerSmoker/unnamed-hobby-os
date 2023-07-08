@@ -1,5 +1,6 @@
 
 #Require "./src/kernel/networking/UDPSocket.rlx"
+#Require "./src/kernel/networking/DNS.rlx"
 
 NetworkInterface* FirstNetworkInterface := null
 
@@ -14,6 +15,8 @@ define void SetupNetworking() {
     UDPLayer* UDP := UDPLayer:New(FirstNetworkInterface, IP->AsProtocol)
 
     DHCPClient* DHCP := DHCPClient:New(FirstNetworkInterface, UDP->AsProtocol)
+
+    DNSLayer* DNS := DNSLayer:New(FirstNetworkInterface)
 
     FirstE1000->Setup()
 
@@ -79,6 +82,22 @@ define void TestNetworking() {
 
     DHCP->SendDiscover(0)
     ;*/
+
+    while (FirstNetworkInterface->DNS = 0) {
+        SchedulerYield()
+    }
+
+    Print("DHCP: Leased: %ipv4. DNS: %ipv4\n", FirstNetworkInterface->IP, FirstNetworkInterface->DNS)
+
+    DNSLayer* DNS := FirstNetworkInterface->GetProtocol("DNS")->this
+
+    DNS->Enable()
+
+    i32 Result := DNS->Lookup("google.com")
+
+    Info("google.com: %ipv4\n", Result)
+
+    Print("DNS: google.com: %ipv4\n", Result)
 
     /*
     UDPLayer* UDP := FirstNetworkInterface->GetProtocol("UDP")->this

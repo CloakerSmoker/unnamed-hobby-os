@@ -108,10 +108,10 @@ struct DNSClient {
     i32 Offset
     i16 RequestID
 
-    static self* New(i32 ServerAddress) {
+    static self* New(NetworkInterface* Interface, i32 ServerAddress) {
         self* this := Alloc(#self)
 
-        this->Socket := UDPSocket:New(FirstNetworkInterface)
+        this->Socket := UDPSocket:New(Interface)
         this->Socket->Bind(DNS_PORT)
 
         this->ServerAddress := ServerAddress
@@ -453,7 +453,7 @@ struct DNSClient {
 define i32 EpochSeconds() {
     ; lol 2038 (todo: proper time)
 
-    return GetUptimeMS() / 1000
+    return (GetUptimeMS() / 1000) As i32
 }
 
 struct DNSCacheEntry {
@@ -659,5 +659,49 @@ struct DNSCache {
 
     define void WhyFail() {
         this->Client->Print()
+    }
+}
+
+NetworkProtocolPrototype DNSProtocolPrototype {
+    Enter: null,
+    Send: null,
+    Ingest: null
+}
+
+struct DNSLayer {
+    NetworkInterface* Interface
+
+    DNSClient* Client
+    DNSCache* Cache
+
+    static self* New(NetworkInterface* Interface) {
+        self* this := Alloc(#self)
+
+        this->Interface := Interface
+
+        Interface->AddProtocol("DNS", &DNSProtocolPrototype, this)
+
+        return this
+    }
+
+    define void Enable() {
+        this->Client := DNSClient:New(this->Interface, this->Interface->DNS)
+        this->Cache := DNSCache:New(this->Client, 30, 7 * 60 * 60 * 24)
+    }
+
+    define i32 Lookup(i8* Name) {
+        DNSCacheEntry* Entry := this->Cache->Query(DNS_CLASS_IN, DNS_TYPE_A, Name)
+
+        if (Entry) {
+            DNSResource* Answer := Entry~>Answer
+
+            if (Answer->Class = DNS_CLASS_IN && Answer->Type = DNS_TYPE_A) {
+                i32* pResult := Entry->Data
+
+                return NetworkInt(*pResult)
+            }
+        }
+
+        return 0
     }
 }
