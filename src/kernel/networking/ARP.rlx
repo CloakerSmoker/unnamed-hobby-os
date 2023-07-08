@@ -281,8 +281,6 @@ struct ARPLayer {
             return MAC_BROADCAST
         }
 
-        i64 Start := GetUptimeMS()
-
         loop {
             ARPTableEntry* Entry := this->LookupCachedEntry(ProtocolAddress)
 
@@ -290,12 +288,11 @@ struct ARPLayer {
                 return Entry~>HardwareAddress
             }
 
-            i64 Time := GetUptimeMS() - Start
+            this->SendRequest(MAC_NULL, ProtocolAddress)
 
-            if (Time % 300) {
-                this->SendRequest(MAC_NULL, ProtocolAddress)
-            }
-            else {
+            i32 Delay := 10
+
+            while (Delay-- > 0) {
                 SchedulerYield()
             }
         }

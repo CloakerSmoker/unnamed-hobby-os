@@ -333,7 +333,7 @@ define void DoIPV4AddressPrint(PrintOutputAdapterPrototype* this, i8* Format, i3
     i32 Address := Parameters[*ParameterIndex] As i32
     i8* Bytes := &Address As void*
 
-    this->Print("%i.%i.%i.%i", Bytes[3], Bytes[2], Bytes[1], Bytes[0])
+    this->Print("%i.%i.%i.%i", (Bytes[3] As i32) & 0xFF, (Bytes[2] As i32) & 0xFF, (Bytes[1] As i32) & 0xFF, (Bytes[0] As i32) & 0xFF)
 
     *ParameterIndex += 1
 }
