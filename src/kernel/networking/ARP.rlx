@@ -281,6 +281,8 @@ struct ARPLayer {
             return MAC_BROADCAST
         }
 
+        i32 Tries := 0
+
         loop {
             ARPTableEntry* Entry := this->LookupCachedEntry(ProtocolAddress)
 
@@ -294,6 +296,10 @@ struct ARPLayer {
 
             while (Delay-- > 0) {
                 SchedulerYield()
+            }
+
+            if (Tries++ > 3) {
+                return this->Interface->GatewayMAC
             }
         }
 

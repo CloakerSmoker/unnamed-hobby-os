@@ -1,6 +1,7 @@
 
 #Require "./src/kernel/networking/UDPSocket.rlx"
 #Require "./src/kernel/networking/DNS.rlx"
+#Require "./src/kernel/networking/TCP.rlx"
 
 NetworkInterface* FirstNetworkInterface := null
 
@@ -13,6 +14,7 @@ define void SetupNetworking() {
 
     ICMPLayer* ICMP := ICMPLayer:New(FirstNetworkInterface, IP->AsProtocol)
     UDPLayer* UDP := UDPLayer:New(FirstNetworkInterface, IP->AsProtocol)
+    TCPLayer* TCP := TCPLayer:New(FirstNetworkInterface, IP->AsProtocol)
 
     DHCPClient* DHCP := DHCPClient:New(FirstNetworkInterface, UDP->AsProtocol)
 
@@ -71,7 +73,7 @@ define void TestICMPPing() {
 
     void* Data := KernelPageAllocator->AllocateVirtual(2)
 
-    ICMP->SendPing(PackIPV4(10, 0, 2, 2), Data, 1400)
+    ;ICMP->SendPing(PackIPV4(10, 0, 2, 2), Data, 1400)
 }
 
 define void TestNetworking() {
@@ -89,6 +91,22 @@ define void TestNetworking() {
 
     Print("DHCP: Leased: %ipv4. DNS: %ipv4\n", FirstNetworkInterface->IP, FirstNetworkInterface->DNS)
 
+    ARPLayer* ARP := FirstNetworkInterface->GetProtocol("ARP")->this
+
+    FirstNetworkInterface->GatewayMAC := ARP->Lookup(FirstNetworkInterface->Gateway)
+
+    Print("DHCP: Gateway: %ipv4. Gateway MAC: %mac\n", FirstNetworkInterface->Gateway, FirstNetworkInterface->GatewayMAC)
+
+    NetworkProtocol* RawTCP := FirstNetworkInterface->GetProtocol("TCP")
+    TCPLayer* TCP := RawTCP->this
+
+    TCPSocket* Socket := TCPSocket:New(FirstNetworkInterface, RawTCP)
+
+    TCP->BindSocket(42830 As i16, Socket)
+
+    Socket->Connect(PackIPV4(1, 1, 1, 1), 80)
+
+    /*
     DNSLayer* DNS := FirstNetworkInterface->GetProtocol("DNS")->this
 
     DNS->Enable()
@@ -98,6 +116,7 @@ define void TestNetworking() {
     Info("google.com: %ipv4\n", Result)
 
     Print("DNS: google.com: %ipv4\n", Result)
+    */
 
     /*
     UDPLayer* UDP := FirstNetworkInterface->GetProtocol("UDP")->this

@@ -1,0 +1,234 @@
+
+i8 IPV4_PROTOCOL_TCP := 6
+
+struct TCPHeader {
+    i16 SourcePort
+    i16 DestinationPort
+
+    i32 SequenceNumber
+    i32 AcknowledgementNumber
+
+    bits As i8 {
+        [4:7] DataOffset
+        [0] AccurateECN
+    }
+
+    bits As i8 {
+        [0] Final
+        [1] Synchronize
+        [2] Reset
+        [3] Push
+        [4] Acknowledgement
+        [5] Urgent
+        [6] CongestionExperienced
+        [6] PeerSupportsECN
+        [7] CongestionWindowReduced
+    }
+
+    i16 WindowSize
+    i16 Checksum
+    i16 UrgentPointer
+
+    define void FlipEndianess() {
+        this->SourcePort := NetworkShort(this->SourcePort)
+        this->DestinationPort := NetworkShort(this->DestinationPort)
+        this->SequenceNumber := NetworkInt(this->SequenceNumber)
+        this->AcknowledgementNumber := NetworkInt(this->AcknowledgementNumber)
+        this->WindowSize := NetworkShort(this->WindowSize)
+        this->Checksum := NetworkShort(this->Checksum)
+        this->UrgentPointer := NetworkShort(this->UrgentPointer)
+    }
+}
+
+struct TCPPacketOptions {
+    i16 SourcePort
+
+    i32 Destination
+    i16 DestinationPort
+}
+
+i32 PACKET_DATA_TCP_HEADER := RegisterPacketData("TCP Header")
+
+declare NetworkProtocolPrototype* GetTCPSocketProtocolPrototype()
+
+struct TCPSocket {
+    ; Bidirectional
+
+    NetworkInterface* Interface
+    NetworkProtocol* Transport
+
+    i16 LocalPort
+
+    i32 RemoteAddress
+    i16 RemotePort
+
+    NetworkProtocol* AsProtocol
+
+    static self* New(NetworkInterface* Interface, NetworkProtocol* Transport) {
+        self* this := Alloc(#self)
+
+        this->Interface := Interface
+        this->Transport := Transport
+
+        this->AsProtocol := Interface->AddEphemeralProtocol(GetTCPSocketProtocolPrototype(), this)
+
+        return this
+    }
+
+    define NetworkPacket* Enter(void* Options) {
+        TCPPacketOptions TCPOptions {
+            SourcePort: this->LocalPort,
+            Destination: this->RemoteAddress,
+            DestinationPort: this->RemotePort
+        }
+
+        NetworkPacket* Packet := this->Transport->Enter(&TCPOptions)
+
+        return Packet
+    }
+
+    define void SendSingle(NetworkPacket* Packet) {
+        this->Transport->Send(Packet)
+
+    }
+
+    define void Send(NetworkPacket* Packet) {
+
+    }
+
+    define void Ingest(NetworkPacket* Packet) {
+
+    }
+
+    define void Connect(i32 RemoteAddress, i16 RemotePort) {
+        this->RemoteAddress := RemoteAddress
+        this->RemotePort := RemotePort
+
+        NetworkPacket* Synchronize := this->Enter(null)
+        TCPHeader* Header := Synchronize->Get(PACKET_DATA_TCP_HEADER)
+
+        Header->Synchronize := true
+        Header->WindowSize := 0x2000
+        
+        Header->SequenceNumber := 0x1000_0000
+
+        this->SendSingle(Synchronize)
+    }
+}
+
+NetworkProtocolPrototype TCPSocketProtocolPrototype {
+    Enter: &TCPSocket.Enter,
+    Send: &TCPSocket.Send,
+    Ingest: &TCPSocket.Ingest
+}
+
+define NetworkProtocolPrototype* GetTCPSocketProtocolPrototype() {
+    return &TCPSocketProtocolPrototype
+}
+
+/*
+struct TCPServer {
+    ; Unidirectional, accept()-s connections
+    ; Multiplexes multiple remote connections to the same port
+
+    AVLTree* Connections ; <i32 Peer, NetworkProtocol* Socket>
+
+
+    define void Ingest(NetworkPacket* Packet) {
+        IPV4Header* IP := Packet->Get(PACKET_DATA_IPV4_HEADER)
+        TCPHeader* TCP := Packet->Get(PACKET_DATA_TCP_HEADER)
+
+        i64 Hash := (IP->Source As i64) + ((TCP->DestinationPort As i64) << 32)
+
+        NetworkProtocol* ExistingSocket := this->Connections->GetPointer(Hash)
+
+        if (ExistingSocket = null) {
+            if (TCP->Synchronize) {
+                NetworkProtocol* NewSocket := 
+
+                NewSocket->State := TCP_SOCKET_STATE_ACCEPT_WAIT
+
+                this->Connections->InsertPointer(Hash, NewSocket)
+            }
+        }
+        else {
+            if (TCP->Acknowledgement && ExistingSocket->State = TCP_SOCKET_STATE_SYNCHRONIZE_RECEIVED) {
+                ExistingSocket->State := TCP_SOCKET_STATE_ESTABLISHED
+            }
+
+        }
+
+    }
+
+    define NetworkProtocol* Accept() {
+        NetworkProtocol* Socket := 
+
+        Socket->SendSynchronize()
+        Socket->State := TCP_SOCKET_STATE_SYNCHRONIZE_RECEIVED
+    }
+}
+*/
+
+declare NetworkProtocolPrototype* GetTCPLayerProtocolPrototype()
+
+struct TCPLayer {
+    NetworkInterface* Interface
+    NetworkProtocol* Transport
+
+    NetworkProtocol* AsProtocol
+
+	static self* New(NetworkInterface* Interface, NetworkProtocol* Transport) {
+		self* this := Alloc(#self)
+
+		this->Interface := Interface
+		this->Transport := Transport
+
+        this->AsProtocol := Interface->AddProtocol("TCP", GetTCPLayerProtocolPrototype(), this)
+
+        return this
+    }
+
+    define NetworkPacket* Enter(TCPPacketOptions* Options) {
+        IPV4PacketOptions IPOptions {
+            Destination: Options->Destination,
+            ProtocolNumber: IPV4_PROTOCOL_TCP
+        }
+
+        NetworkPacket* Packet := this->Transport->Enter(&IPOptions)
+
+        TCPHeader* Header := Packet->Mark(PACKET_DATA_TCP_HEADER, #TCPHeader)
+
+        Header->SourcePort := Options->SourcePort
+        Header->DestinationPort := Options->DestinationPort
+
+        Header->DataOffset := 5
+
+        return Packet
+    }
+
+    define void Send(NetworkPacket* Packet) {
+        TCPHeader* Header := Packet->Get(PACKET_DATA_TCP_HEADER)
+
+        Header->FlipEndianess()
+
+        this->Transport->Send(Packet)
+    }
+
+    define void Ingest(NetworkPacket* Packet) {
+
+    }
+
+    define void BindSocket(i16 LocalPort, TCPSocket* Socket) {
+        Socket->LocalPort := LocalPort
+    }
+}
+
+NetworkProtocolPrototype TCPLayerProtocolPrototype {
+    Enter: &TCPLayer.Enter,
+    Send: &TCPLayer.Send,
+    Ingest: &TCPLayer.Ingest
+}
+
+define NetworkProtocolPrototype* GetTCPLayerProtocolPrototype() {
+    return &TCPLayerProtocolPrototype
+}

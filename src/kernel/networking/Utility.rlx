@@ -247,6 +247,8 @@ struct NetworkProtocol {
 
 struct NetworkInterface {
     MACAddress* MAC
+    i32 Gateway
+    MACAddress* GatewayMAC
     i32 IP
     i32 MTU
     i32 DNS

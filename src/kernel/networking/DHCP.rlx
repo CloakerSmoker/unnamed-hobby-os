@@ -110,7 +110,7 @@ namespace DHCPOption {
         i32 Address
     }
 
-    struct DNSServers unaligned {
+    struct AddressList unaligned {
         Header Header
         i32[0] Addresses
 
@@ -245,8 +245,10 @@ struct DHCPClient {
         else if (MessageType->Type = DHCP_MESSAGE_TYPE_ACK) {
             this->Interface->IP := DHCP->YourAddress
 
-            DHCPOption::DNSServers* DNS := Options->Get(DHCP_OPTION_DOMAIN_NAME_SERVER)
+            DHCPOption::AddressList* Routers := Options->Get(DHCP_OPTION_ROUTER)
+            this->Interface->Gateway := Routers->At(0)
 
+            DHCPOption::AddressList* DNS := Options->Get(DHCP_OPTION_DOMAIN_NAME_SERVER)
             this->Interface->DNS := DNS->At(0)
 
             ARPLayer* ARP := this->Interface->GetProtocol("ARP")->this
