@@ -35,7 +35,6 @@ struct TCPHeader {
         this->SequenceNumber := NetworkInt(this->SequenceNumber)
         this->AcknowledgementNumber := NetworkInt(this->AcknowledgementNumber)
         this->WindowSize := NetworkShort(this->WindowSize)
-        this->Checksum := NetworkShort(this->Checksum)
         this->UrgentPointer := NetworkShort(this->UrgentPointer)
     }
 }
@@ -169,6 +168,22 @@ struct TCPServer {
 }
 */
 
+struct TCPPseudoHeader {
+    i32 Source
+    i32 Destination
+    i8 Padding
+    i8 Protocol
+    i16 Length
+
+    define void FlipEndianess() {
+        this->Padding := 0
+
+        this->Source := NetworkInt(this->Source)
+        this->Destination := NetworkInt(this->Destination)
+        this->Length := NetworkShort(this->Length)
+    }
+}
+
 declare NetworkProtocolPrototype* GetTCPLayerProtocolPrototype()
 
 struct TCPLayer {
@@ -206,8 +221,40 @@ struct TCPLayer {
         return Packet
     }
 
+    define i16 Checksum(NetworkPacket* Packet) {
+        IPV4Header* IP := Packet->Get(PACKET_DATA_IPV4_HEADER)
+        TCPHeader* TCP := Packet->Get(PACKET_DATA_TCP_HEADER)
+        void* Data := Packet->GetEnd(PACKET_DATA_TCP_HEADER)
+
+        i64 State := RFC1071ChecksumStart()
+
+        i32 DataSize := Packet->Tell() - Packet->GetEndOffset(PACKET_DATA_TCP_HEADER)
+        i32 TotalSize := DataSize + #TCPHeader
+
+        TCPPseudoHeader PseudoHeader {
+            Source: IP->Source,
+            Destination: IP->Destination,
+            Protocol: IP->Protocol,
+            Length: TotalSize As i16
+        }
+
+        PseudoHeader.FlipEndianess()
+        TCP->FlipEndianess()
+ 
+        State := RFC1071ChecksumUpdate(State, &PseudoHeader, #TCPPseudoHeader)
+        State := RFC1071ChecksumUpdate(State, TCP, #TCPHeader)
+        State := RFC1071ChecksumUpdate(State, Data, DataSize)
+
+        TCP->FlipEndianess()
+
+        return RFC1071ChecksumFinish(State)
+    }
+
     define void Send(NetworkPacket* Packet) {
         TCPHeader* Header := Packet->Get(PACKET_DATA_TCP_HEADER)
+
+        Header->Checksum := 0
+        Header->Checksum := this->Checksum(Packet)
 
         Header->FlipEndianess()
 

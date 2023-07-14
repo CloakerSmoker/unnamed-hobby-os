@@ -104,7 +104,9 @@ define void TestNetworking() {
 
     TCP->BindSocket(42830 As i16, Socket)
 
-    Socket->Connect(PackIPV4(1, 1, 1, 1), 80)
+    Socket->Connect(PackIPV4(10, 2, 30, 3), 80)
+
+    loop {}
 
     /*
     DNSLayer* DNS := FirstNetworkInterface->GetProtocol("DNS")->this
