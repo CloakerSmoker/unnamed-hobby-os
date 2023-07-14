@@ -189,11 +189,17 @@ define void _SchedulerYield() {
 	Scheduler->YieldCurrent()
 }
 define void SchedulerYield() asm {
+	emit, 0x48
+	emit, 0x9C ; PUSHFQ
+
 	cli
 	
 	call, @GetCurrentTaskContext
 	mov, rdi, rax      ; Parameter = CurrentTaskContext
 	call, @SaveContext ; Capure interrupted context, with anything extra cleaned up below
+
+	pop, rbx ; save pre-`cli` eflags
+	mov, {rdi + AMD64Context.Flags} As i64*, rbx
 	
 	pop, rbx ; grab return address, store into context
 	mov, {rdi} As i64*, rbx        ; Context.RIP = rax
@@ -207,12 +213,18 @@ define void _SchedulerBlock() {
 	Scheduler->BlockCurrent()
 }
 define void SchedulerBlock() asm {
+	emit, 0x48
+	emit, 0x9C ; PUSHFQ
+
 	cli
 	
 	call, @GetCurrentTaskContext
 	mov, rdi, rax      ; Parameter = CurrentTaskContext
 	call, @SaveContext ; Capure interrupted context, with anything extra cleaned up below
 	
+	pop, rbx ; save pre-`cli` eflags
+	mov, {rdi + AMD64Context.Flags} As i64*, rbx
+
 	pop, rbx ; grab return address, store into context
 	mov, {rdi} As i64*, rbx        ; Context.RIP = rax
 	mov, {rdi + 0x20} As i64*, rsp ; Fix RSP, original capture is off by 8 because of our
