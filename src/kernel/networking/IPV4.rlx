@@ -173,11 +173,11 @@ struct IPV4Layer {
         i16 MaximumFragmentDataSize := (MTU - #IPV4Header) As i16
         i16 MaximumFragmentSize := MTU As i16
 
-        Info("IPv4: Maximum Fragment Size: %x\n", MaximumFragmentDataSize)
+        ;Info("IPv4: Maximum Fragment Size: %x\n", MaximumFragmentDataSize)
 
         i32 RemainingDataSize := Packet->Size - HeadersSize
 
-        Info("IPv4: Packet Body Data Size: %x\n", RemainingDataSize)
+        ;Info("IPv4: Packet Body Data Size: %x\n", RemainingDataSize)
 
         void* Data := Packet->Buffer + HeadersSize
         i32 FragmentOffset := 0
@@ -192,7 +192,7 @@ struct IPV4Layer {
 
             this->SendSingle(Packet, Header)
 
-            Info("IPv4: Send fragment [%x-%x]\n", FragmentOffset, FragmentOffset + MaximumFragmentDataSize)
+            ;Info("IPv4: Send fragment [%x-%x]\n", FragmentOffset, FragmentOffset + MaximumFragmentDataSize)
 
             RemainingDataSize -= MaximumFragmentDataSize
             FragmentOffset += MaximumFragmentDataSize
@@ -205,7 +205,7 @@ struct IPV4Layer {
 
         Packet->Size := RemainingDataSize + #IPV4Header
 
-        Info("IPv4: Send final fragment [%x-%x]\n", FragmentOffset, FragmentOffset + RemainingDataSize)
+        ;Info("IPv4: Send final fragment [%x-%x]\n", FragmentOffset, FragmentOffset + RemainingDataSize)
 
         this->SendSingle(Packet, Header)
     }

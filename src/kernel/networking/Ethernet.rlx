@@ -56,7 +56,7 @@ struct EthernetLayer {
 
         EthernetHeader* Header := Packet->Mark(PACKET_DATA_ETHERNET, #EthernetHeader)
 
-        Info("Building Ethernet packet %mac -> %mac\n", this->Interface->MAC, Options->Destination)
+        ;Info("Building Ethernet packet %mac -> %mac\n", this->Interface->MAC, Options->Destination)
 
         Header->EtherType := Options->EtherType
         Header~>Source->Set(this->Interface->MAC)
@@ -70,7 +70,7 @@ struct EthernetLayer {
 
         EthernetHeader* Header := Packet->Get(PACKET_DATA_ETHERNET)
 
-        Info("Sending Ethernet packet %mac -> %mac\n", Header~>Source, Header~>Destination)
+        Info("Ethernet: Send %mac -> %mac\n", Header~>Source, Header~>Destination)
 
         ;Info("%hexdump\n", Packet->Buffer, Packet->Size)
 
