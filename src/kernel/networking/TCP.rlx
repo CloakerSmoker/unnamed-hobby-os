@@ -18,11 +18,12 @@ struct TCPHeader {
         [1] Synchronize
         [2] Reset
         [3] Push
-        [4] Acknowledgement
+        [4] Acknowledge
         [5] Urgent
         [6] CongestionExperienced
         [6] PeerSupportsECN
         [7] CongestionWindowReduced
+        [0:7] Flags
     }
 
     i16 WindowSize
@@ -50,6 +51,28 @@ i32 PACKET_DATA_TCP_HEADER := RegisterPacketData("TCP Header")
 
 declare NetworkProtocolPrototype* GetTCPSocketProtocolPrototype()
 
+
+i8 TCP_SOCKET_STATE_LISTEN := 1
+i8 TCP_SOCKET_STATE_SYNCHRONIZE_SENT := 2
+i8 TCP_SOCKET_STATE_SYNCHRONIZE_RECEIVED := 3
+i8 TCP_SOCKET_STATE_ESTABLISHED := 4
+
+
+struct TCPFrame {
+    void* Data
+    i32 Size
+
+    i32 SegmentNumber
+
+    i8 Sent
+    i8 Dropped
+    i8 Acknowledged
+
+    i32 SentAtWindowSize
+
+    TCPFrame* Next
+}
+
 struct TCPSocket {
     ; Bidirectional
 
@@ -61,7 +84,21 @@ struct TCPSocket {
     i32 RemoteAddress
     i16 RemotePort
 
+    i32 SendSequenceBase
+    i32 PhantomSent
+    i32 DataSent
+    i32 RemoteReceived
+    
+
+    i32 ReceiveSequenceBase
+    i32 PhantomReceived
+    i32 DataReceived
+
+
+
     NetworkProtocol* AsProtocol
+
+    NetworkPacket* TemplatePacket
 
     static self* New(NetworkInterface* Interface, NetworkProtocol* Transport) {
         self* this := Alloc(#self)
@@ -86,22 +123,153 @@ struct TCPSocket {
         return Packet
     }
 
-    define void SendSingle(NetworkPacket* Packet) {
+    define i32 SendSingle(NetworkPacket* Packet) {
+        TCPHeader* TCP := Packet->Get(PACKET_DATA_TCP_HEADER)
+
+        i32 DataSize := Packet->Tell() - Packet->GetEndOffset(PACKET_DATA_TCP_HEADER)
+        i32 PhantomSize := TCP->Acknowledge || TCP->Synchronize
+        i32 RemoteSequence := this->RemoteSequenceBase + DataSize + PhantomSize + 1
+
         this->Transport->Send(Packet)
+
+        return TCP
+    }
+
+    define TCPFrame* SendDataSingle(TCPFrame** pNext, void* Data, i32 Size) {
+        TCPHeader* TCP := this->TemplatePacket->Get(PACKET_DATA_TCP_HEADER)
+
+        TCP->Flags := 0
+        TCP->Acknowledge := 1
+        TCP->AcknowledgementNumber := 
+
+        TCPFrame* Result := TCPFrame:New(Data, Size)
+
+        this->NeedsAcknowledgement(Result)
+
+        *pNext := Result
+        return Result
+    }
+
+    define void SendPump() {
+        ; First: figure out what the remote has gotten
+        ; Second: figure out what we can send
+        ; Third: send it
+
+        TCPFrame* Current := this->FirstInFlight
+
+        while (Current) {
+            if (Current->SegmentNumber < this->RemoteSegmentNumber) {
+                Current->Acknowledged := true
+
+                Current := Current->Next
+            }
+            else {
+                break
+            }
+        }
+
+        this->FirstInFlight := Current
+
+        i32 Now := GetUptimeMS()
+
+        while (Current) {
+            i32 Timeout := Current->SentAt + TCP_TIMEOUT_MS
+
+            if (Timeout < Now) {
+                Current->Dropped := true
+            }
+        }
+
+        i32 Budget := this->RemoteWindowSize
+        TCPFrame* Current := this->FirstUnsent
+
+        while (Current && Budget != 0) {
+            if (Current->Size <= Budget) {
+                this->SendDataSingle(Current->Data, Current->Size)
+            }
+        }
 
     }
 
-    define void Send(NetworkPacket* Packet) {
+    define void SendData(void* Data, i32 Size) {
 
+        while (Size) {
+            i32 WindowSegments := this->CongestionWindow / this->MaximumSegmentSize
+            i32 DataSegments := Size / this->MaximumSegmentSize
+
+            i32 Segments := WindowSegments
+            i32 LastSegmentSize := this->MaximumSegmentSize
+
+            if (DataSegments < WindowSegments) {
+                ; We have less data to send than the sliding window 
+
+                Segments := DataSegments
+                LastSegmentSize := Size % this->MaximumSegmentSize
+            }
+
+            TCPFrame* FirstSegment := null
+            TCPFrame** pNext := &FirstSegment
+
+            for (i32 SegmentIndex := 0, SegmentIndex < Segments, SegmentIndex++) {
+                void* SegmentData := Data + (SegmentIndex * this->MaximumSegmentSize)
+
+                i32 SegmentSize := this->MaximumSegmentSize
+
+                if (Index + 1 = Segments) {
+                    SegmentDataSize := LastSegmentSize
+                }
+
+                TCPFrame* Current := this->SendDataSingle(pNext, SegmentData, SegmentSize)
+
+                pNext := Current~>Next
+            }
+
+            for (i32 SegmentIndex := 0, SegmentIndex < Segments, SegmentIndex++) {
+                void* SegmentData := Data + (SegmentIndex * this->MaximumSegmentSize)
+
+                i32 SegmentSize := this->MaximumSegmentSize
+
+                if (Index + 1 = Segments) {
+                    SegmentDataSize := LastSegmentSize
+                }
+
+                TCPFrame* Current := this->SendDataSingle(pNext, SegmentData, SegmentSize)
+
+                pNext := Current~>Next
+            }
+        }
     }
 
     define void Ingest(NetworkPacket* Packet) {
+        TCPHeader* TCP := Packet->Get(PACKET_DATA_TCP_HEADER)
+
+        i32 ExpectedAcknowledgement := this->PhantomSent + this->DataSent
+
+        if (this->State = TCP_SOCKET_STATE_SYNCHRONIZE_SENT) {
+            if (TCP->Synchronize && TCP->Acknowledge) {
+                
+            }
+
+        }
+        else if (this->State = TCP_SOCKET_STATE_ESTABLISHED) {
+
+            if (TCP->Acknowledge) {
+                this->RemoteReceived := TCP->AcknowledgementNumber - this->SendSequenceBase
+            }
+
+            if ()
+        }
+    }
+
+    define void Quantum() {
 
     }
 
     define void Connect(i32 RemoteAddress, i16 RemotePort) {
         this->RemoteAddress := RemoteAddress
         this->RemotePort := RemotePort
+
+        this->State := TCP_SOCKET_STATE_SYNCHRONIZE_SENT
 
         NetworkPacket* Synchronize := this->Enter(null)
         TCPHeader* Header := Synchronize->Get(PACKET_DATA_TCP_HEADER)
@@ -192,6 +360,8 @@ struct TCPLayer {
 
     NetworkProtocol* AsProtocol
 
+    AVLTree* Sockets ; <i16, NetworkProtocol*>
+
 	static self* New(NetworkInterface* Interface, NetworkProtocol* Transport) {
 		self* this := Alloc(#self)
 
@@ -199,6 +369,11 @@ struct TCPLayer {
 		this->Transport := Transport
 
         this->AsProtocol := Interface->AddProtocol("TCP", GetTCPLayerProtocolPrototype(), this)
+
+        IPV4Layer* IPV4 := Transport->this
+        IPV4->AddProtocol(IPV4_PROTOCOL_TCP, this->AsProtocol)
+
+        this->Sockets := AVLTree:New(#void*)
 
         return this
     }
@@ -262,11 +437,25 @@ struct TCPLayer {
     }
 
     define void Ingest(NetworkPacket* Packet) {
+        IPV4Header* IPV4 := Packet->Get(PACKET_DATA_IPV4_HEADER)
+        TCPHeader* TCP := Packet->Mark(PACKET_DATA_TCP_HEADER, #TCPHeader)
 
+        TCP->FlipEndianess()
+
+        NetworkProtocol* Handler := this->Sockets->GetPointer(TCP->DestinationPort)
+
+        if (Handler = null) {
+            Info("TCP: Dropping packet from %ipv4:%i -> :%i\n", IPV4->Source, TCP->SourcePort, TCP->DestinationPort)
+            return
+        }
+
+        Handler->Ingest(Packet)
     }
 
     define void BindSocket(i16 LocalPort, TCPSocket* Socket) {
         Socket->LocalPort := LocalPort
+
+        this->Sockets->InsertPointer(LocalPort, Socket->AsProtocol)
     }
 }
 

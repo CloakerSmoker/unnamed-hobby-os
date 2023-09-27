@@ -1,7 +1,7 @@
 
 #Require "./src/kernel/networking/UDPSocket.rlx"
 #Require "./src/kernel/networking/DNS.rlx"
-#Require "./src/kernel/networking/TCP.rlx"
+;#Require "./src/kernel/networking/TCP.rlx"
 
 NetworkInterface* FirstNetworkInterface := null
 
@@ -14,7 +14,7 @@ define void SetupNetworking() {
 
     ICMPLayer* ICMP := ICMPLayer:New(FirstNetworkInterface, IP->AsProtocol)
     UDPLayer* UDP := UDPLayer:New(FirstNetworkInterface, IP->AsProtocol)
-    TCPLayer* TCP := TCPLayer:New(FirstNetworkInterface, IP->AsProtocol)
+    ;TCPLayer* TCP := TCPLayer:New(FirstNetworkInterface, IP->AsProtocol)
 
     DHCPClient* DHCP := DHCPClient:New(FirstNetworkInterface, UDP->AsProtocol)
 
@@ -97,16 +97,16 @@ define void TestNetworking() {
 
     Print("DHCP: Gateway: %ipv4. Gateway MAC: %mac\n", FirstNetworkInterface->Gateway, FirstNetworkInterface->GatewayMAC)
 
-    NetworkProtocol* RawTCP := FirstNetworkInterface->GetProtocol("TCP")
-    TCPLayer* TCP := RawTCP->this
+    ;NetworkProtocol* RawTCP := FirstNetworkInterface->GetProtocol("TCP")
+    ;TCPLayer* TCP := RawTCP->this
 
-    TCPSocket* Socket := TCPSocket:New(FirstNetworkInterface, RawTCP)
+    ;TCPSocket* Socket := TCPSocket:New(FirstNetworkInterface, RawTCP)
 
-    TCP->BindSocket(42830 As i16, Socket)
+    ;TCP->BindSocket(42830 As i16, Socket)
 
-    Socket->Connect(PackIPV4(10, 2, 30, 3), 80)
+    ;Socket->Connect(PackIPV4(10, 2, 30, 3), 80)
 
-    loop {}
+    ;loop {}
 
     /*
     DNSLayer* DNS := FirstNetworkInterface->GetProtocol("DNS")->this
