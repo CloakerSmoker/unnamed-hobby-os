@@ -414,6 +414,8 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	if (KernelSize % 0x1000) {
 		KernelPageCount += 1
 	}
+
+	Print("Kernel is %i bytes (%x pages)\n", KernelStatus.Size, KernelPageCount)
 	
 	void* KernelFile := SystemTable->BootServices->AllocatePages(KernelPageCount)
 	
@@ -422,6 +424,8 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	KernelHandle->Read(KernelFile, KernelSize)
 	
 	Print("\nDone\n")
+
+	Print("Kernel read to %x\n", KernelFile)
 	
 	KernelHandle->Close()
 	

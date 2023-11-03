@@ -17,6 +17,14 @@ BUILD=./build
 CLEAN_FILES=
 LIGHT_CLEAN_FILES=
 
+# Preprocess
+
+%.rlx: %.prlx
+# Replace '#'->'\a', '%'->'#'
+# Run CPP (%define -> #define)
+# Replace '\a'->'#' (\aRequires -> #Requires)
+	cat $^ | tr "#%" "\a#" | cpp -P -o - | tr "\a" "#" > $@
+
 # qcow2 "release" image
 
 Disk.qcow2: $(BUILD)/Disk.img
@@ -180,3 +188,6 @@ all: Disk.qcow2
 
 boot: Disk.qcow2
 	qemu-system-x86_64 -bios OVMF.fd -hda Disk.qcow2 -serial stdio --cpu max,la57=off -s $(QEMU_FLAGS)
+
+pull-compiler:
+	cd compiler/; git pull upstream +master; cd ..
