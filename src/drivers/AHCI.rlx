@@ -1,4 +1,39 @@
 namespace AHCI {
+    enum DeviceType {
+        None
+        SATA
+        SATAPI
+        EnclosureBridge
+        PortMultiplier
+    }
+
+    enum DeviceSignature {
+        ATA := 0x101
+        ATAPI := 0xEB140101
+        SEMB := 0xC33C0101
+        PM := 0x96690101
+    }
+
+    enum PowerManagementState {
+        DeviceNotPresent := 0
+        Active := 1
+        Partial := 2
+        Slumber := 6
+    }
+
+    enum InterfaceSpeed {
+        DeviceNotPresent := 0
+        Generation1 := 1
+        Generation2 := 2
+    }
+
+    enum DeviceDetection {
+        DeviceNotPresent := 0
+        NoPhyCommunication := 1
+        DevicePresent := 3
+        PhyOffline := 4
+    }
+
     namespace HBA {
         struct PortControl {
             i32 CommandListBaseAddressLow
@@ -17,7 +52,16 @@ namespace AHCI {
             i32 TaskFileData
             i32 Signature
 
-            i32 SATA_Status
+            union {
+                i32 SATA_Status
+
+                bits As i32 {
+                    PowerManagementState [8:11] InterfacePowerManagement
+                    InterfaceSpeed [4:7] InterfaceSpeed
+                    DeviceDetection [0:3] DeviceDetection
+                }
+            }
+
             i32 SATA_Control
             i32 SATA_Error
             i32 SATA_Active
@@ -31,13 +75,35 @@ namespace AHCI {
             i8[0x2c] Reserved2
 
             i8[0x10] VendorSpecific
+
+            define DeviceType GuessType() {
+                if (this->DeviceDetection != DeviceDetection::DevicePresent) {
+                    return DeviceType::None
+                }
+                else if (this->InterfacePowerManagement != PowerManagementState::Active) {
+                    return DeviceType::None
+                }
+                
+                if (this->Signature = DeviceSignature::ATAPI) {
+                    return DeviceType::SATAPI
+                }
+                else if (this->Signature = DeviceSignature::SEMB) {
+                    return DeviceType::EnclosureBridge
+                }
+                else if (this->Signature = DeviceSignature::PM) {
+                    return DeviceType::PortMultiplier
+                }
+                else {
+                    return DeviceType::SATA
+                }
+            }
         }
 
         struct HostControl {
             i32 HostCapability
             i32 GlobalHostControl
             i32 InterruptStatus
-            i32 PortImplemented
+            i32 PortsImplemented
             i32 Version
             i32 CommandCompletionCoalescingControl
             i32 CommandCompletionCoalescingPorts
@@ -53,31 +119,25 @@ namespace AHCI {
         }
 
         struct CommandHeader {
-            struct {
-                bits As i16 {
-                    [0:4] DWORDCount
-                    [5] UseATAPI
-                    [6] Direction
-                    [7] Prefetchable
-                    [8] Reset
-                    [9] SelfTest
-                    [10] ClearBusy
-                    [12:15] PortMultiplierPort
-                }
-
-                i16 PhysicalDescriptorTableLength
-
-                i32 PhysicalDescriptorBytesTransferred
-
-                i32 CommandTableDescriptorBaseAddressLow
-                i32 CommandTableDescriptorBaseAddressHigh
-
-                i32[4] Reserved
+            bits As i16 {
+                [0:4] DWORDCount
+                [5] UseATAPI
+                [6] Direction
+                [7] Prefetchable
+                [8] Reset
+                [9] SelfTest
+                [10] ClearBusy
+                [12:15] PortMultiplierPort
             }
-        }
 
-        struct CommandList {
-            CommandTable[32] Commands
+            i16 PhysicalDescriptorTableLength
+
+            i32 PhysicalDescriptorBytesTransferred
+
+            i32 CommandTableDescriptorBaseAddressLow
+            i32 CommandTableDescriptorBaseAddressHigh
+
+            i32[4] Reserved
         }
 
         struct PhysicalRegionDescriptor {
@@ -100,6 +160,10 @@ namespace AHCI {
             i8[0x30] Reserved
 
             PhysicalRegionDescriptor[0] PhysicalRegions
+        }
+
+        struct CommandList {
+            CommandTable[32] Commands
         }
     }
 
@@ -354,13 +418,13 @@ namespace AHCI {
 
     }
 
-    struct Port {
+    struct aPort {
         HBA::PortControl* IO
 
         DefaultCommandList* Commands
 
 
-        static self* New(HBA::PortControl IO) {
+        static self* New(HBA::PortControl* IO) {
             self* this := Alloc(#self)
 
             this->IO := IO
@@ -376,6 +440,8 @@ namespace AHCI {
     struct Controller {
         PCIeDevice* Device
 
+        void* MemoryBase
+
         HBA::HostControl* HostControl
         HBA::PortControl* RawPorts
 
@@ -384,13 +450,41 @@ namespace AHCI {
         define void Initialize(PCIeDevice* Device) {
             this->Device := Device
 
-            Info("AHCI_HBA_HOST_CONTROL: %x\n", #HBA::HostControl)
+            /*Info("AHCI_HBA_HOST_CONTROL: %x\n", #HBA::HostControl)
             Info("AHCI_HBA_PORT_CONTROL: %x\n", #HBA::PortControl)
             Info("AHCI_HBA_COMMAND_HEADER: %x\n", #HBA::CommandHeader)
             Info("AHCI_HBA_COMMAND_TABLE: %x\n", #HBA::CommandTable)
             Info("AHCI_HBA_PHYSICAL_REGION_DESCRIPTOR: %x\n", #HBA::PhysicalRegionDescriptor)
+            */
 
+            i64 ControllerPhysicalAddress := Device->ReadBAR(5) & 0xFFFF_FFFF
+            i32 Size := Device->GetBARSize(5)
 
+            this->MemoryBase := ControllerPhysicalAddress As void*
+
+            i64 MMIOPage := (ControllerPhysicalAddress & PCI_BAR_MEMORY_MASK) / PAGE_SIZE
+            i32 MMIOSize := Size / PAGE_SIZE
+
+            KernelAddressSpace->MapRange(this->MemoryBase, MMIOPage, MMIOSize, PAGE_PRESENT | PAGE_WRITE)
+
+            this->HostControl := this->MemoryBase
+
+            Info("AHCI Version %x\n", this->HostControl->Version)
+            Info("AHCI Ports Implemented %b\n", this->HostControl->PortsImplemented)
+
+            for (i32 Index := 0, Index < 32, Index++) {
+                i32 Mask := 1 << (Index As i8)
+
+                if (this->HostControl->PortsImplemented & Mask) {
+                    Info("Port %i Present\n", Index)
+
+                    HBA::PortControl* Port := this->HostControl->Ports[Index]
+
+                    DeviceType PortType := Port->GuessType()
+
+                    Info("Type %i\n", PortType)
+                }
+            }
         }
     }
 }

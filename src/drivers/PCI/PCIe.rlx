@@ -353,13 +353,18 @@ struct PCIeDevice {
         this~>Type0->BAR[Index] := Value
     }
     define i32 ReadBAR(i32 Index) {
-        Print("ReadBar %i @ %x\n", Index, (&this~>Type0->BAR[Index]) - (this As i64))
+        ;Print("ReadBar %i @ %x\n", Index, (&this~>Type0->BAR[Index]) - (this As i64))
 
         return this~>Type0->BAR[Index]
     }
     define i32 GetBARSize(i32 Index) {
+        i32 Original := this->ReadBAR(Index)
+
         this->WriteBAR(Index, -1)
-        return -this->ReadBAR(Index)
+        i32 Result := -this->ReadBAR(Index)
+
+        this->WriteBAR(Index, Original)
+        return Result
     }
 
     define i8 IsPresent() {

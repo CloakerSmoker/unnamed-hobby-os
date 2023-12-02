@@ -295,9 +295,9 @@ E1000* FirstE1000 := null
 #Require "./src/drivers/networking/E1000.rlx"
 
 
-;#Require "./src/drivers/AHCI.rlx"
+#Require "./src/drivers/AHCI.rlx"
 
-;;AHCI::Controller* FirstSATAController := null
+AHCI::Controller* FirstSATAController := null
 
 define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Device) {
 	Print("%x/%x/%x: ", Bus, Slot, Function)
@@ -373,12 +373,22 @@ define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Devic
 	}
 
 	if (Device->ClassCode = PCI_CLASS_CODE_MASS_STORAGE_CONTROLLER && Device->SubClass = PCI_SUBCLASS_SATA_CONTROLLER) {
-		Info("%hexdump\n", Device, 0x40)
+		Info("SATA Controller found:\n%hexdump\n", Device, 0x40)
 
-		;FirstSATAController := Alloc(#AHCI::Controller)
+		Info("SATA Controller %x:%x\n", Device->VendorID, Device->DeviceID)
+		Info("SATA MAP: %b\n", *((Device + 0x90) As i16*))
 
-		
-		;FirstSATAController->Initialize(Device)
+		PCIeDevice* NullDevice := null
+
+		Info("Bar5 Offset: %x\n", &NullDevice~>Type0->BAR[5])
+
+		i32 Size := Device->GetBARSize(5)
+		Info("Bar5 Size: %x\n", Size)
+
+		Info("Bar5: %x\n", Device->ReadBAR(5))
+
+		FirstSATAController := Alloc(#AHCI::Controller)
+		FirstSATAController->Initialize(Device)
 
 
 	}
@@ -554,7 +564,7 @@ define void MainContinuation() {
 	InitializePCIe(&VisitPCIeFunction)
 	;PCIEnumerateBusses(&VisitPCIFunction)
 
-	SetupNetworking()
+	/*SetupNetworking()
 
 	Task* NetworkThread := Scheduler->AddLightTask(&TestNetworking)
 	
@@ -590,7 +600,7 @@ define void MainContinuation() {
 			Print("not present\n")
 		}
 	}
-	;*/
+	*/
 	
 	/*
 
