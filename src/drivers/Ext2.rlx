@@ -1186,6 +1186,38 @@ struct Ext2 {
 		
 		this->DirectoryAppendEntry(At, Path, TargetNodeNumber, TargetEntryType)
 	}
+
+	define i32 CreateINode(Ext2INode** pResult) {
+		i32 NodeNumber := this->AllocateINode()
+		Ext2INode* NewNode := this->ReadINode(NodeNumber)
+
+		NewNode->SetFieldDefaults()
+		*pResult := NewNode
+
+		return NodeNumber
+	}
+	define i32 CreateDirectory() {
+		Ext2INode* Node := null
+		i32 Result := this->CreateINode(&Node)
+
+		Node->MakeDirectory()
+		this->WriteINode(Node)
+
+		return Result
+	}
+	define i32 CreateFile() {
+		Ext2INode* Node := null
+		i32 Result := this->CreateINode(&Node)
+
+		Node->MakeFile()
+		this->WriteINode(Node)
+
+		return Result
+	}
+
+	define void CreateDirectoryEntry(Ext2INode* Directory, i8* EntryName, i32 TargetINode, i8 Flags) {
+		this->DirectoryAppendEntry(Directory, EntryName, TargetINode, Flags)
+	}
 	
 	define i8* StartReserveInBitmap(i32 BitmapBlock) {
 		return this->ReadBlock(BitmapBlock)

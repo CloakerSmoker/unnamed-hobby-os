@@ -1,0 +1,204 @@
+#Require "$/Memory.rlx"
+
+declare IVirtualDirectoryPrototype* GetVFSOverlayDirectoryPrototype()
+
+struct VFSOverlayDirectoryEnumerateState {
+    i32 Count
+    i32 Index
+    VirtualDirectoryEntry[0] Entries
+}
+
+enum VFSOverlayWriteMode {
+    AllToOverlay,
+    OnlyEphemeralToOverlay
+}
+
+struct VFSOverlayDirectory {
+    #Include "./src/kernel/file-system/VFS/IVirtualDirectory.rlx"
+    
+    IVirtualDirectory* Base
+    IVirtualDirectory* Overlay
+
+    VFSOverlayWriteMode WriteMode
+
+    define i32 Count() {
+        i32 Result := this->Base->Count()
+
+        void* State := this->Overlay->Enumerate()
+        VirtualDirectoryEntry OverlayEntry
+
+        while (this->Overlay->Next(&State, &OverlayEntry)) {
+            VirtualDirectoryEntry BaseEntry
+
+            if (this->Base->Lookup(OverlayEntry.Name, &BaseEntry)) {
+                if (OverlayEntry.Type = VirtualDirectoryEntryType::Hole) {
+                    ; Hole entry, removes a result
+
+                    Result -= 1
+                }
+                
+                ; Else, shadowed entry. Don't adjust count
+            }
+            else if (OverlayEntry.Type != VirtualDirectoryEntryType::Hole) {
+                ; Unique (existing) entry, +1 result
+
+                Result += 1
+            }
+        }
+        
+        return Result
+    }
+    define i8 Lookup(i8* Name, VirtualDirectoryEntry* Result) {
+        if (this->Overlay->Lookup(Name, Result)) {
+            return true
+        }
+        else if (this->Base->Lookup(Name, Result)) {
+            return true
+        }
+
+        return false
+    }
+
+    define void* Enumerate() {
+        i32 BaseCount := this->Base->Count()
+        i32 OverlayCount := this->Overlay->Count()
+
+        i32 Size := #VFSOverlayDirectoryEnumerateState + ((BaseCount + OverlayCount) * #VirtualDirectoryEntry)
+        VFSOverlayDirectoryEnumerateState* State := Alloc(Size)
+
+        void* BaseState := this->Base->Enumerate()
+        VirtualDirectoryEntry Source
+
+        while (this->Base->Next(&BaseState, &Source)) {
+            VirtualDirectoryEntry* Destination := State->Entries[State->Count]
+            
+            MoveMemory(Destination, &Source, #VirtualDirectoryEntry)
+            State->Count += 1
+        }
+
+        void* OverlayState := this->Overlay->Enumerate()
+        
+        while (this->Overlay->Next(&OverlayState, &Source)) {
+            i8 ReplacedBaseEntry := false
+
+            for (i32 Index := 0, Index < BaseCount, Index++) {
+                VirtualDirectoryEntry* Base := State->Entries[Index]
+
+                if (StringEquals(Source.Name, Base->Name)) {
+                    MoveMemory(Base, &Source, #VirtualDirectoryEntry)
+                    ReplacedBaseEntry := true
+                    break
+                }
+            }
+
+            if !(ReplacedBaseEntry) {
+                VirtualDirectoryEntry* Destination := State->Entries[State->Count]
+
+                MoveMemory(Destination, &Source, #VirtualDirectoryEntry)
+                State->Count += 1
+            }
+        }
+
+        return State
+    }
+    define i8 Next(void** RawState, VirtualDirectoryEntry* Result) {
+        VFSOverlayDirectoryEnumerateState* State := *RawState
+        i32 Index := State->Index
+
+        if (Index < State->Count) {
+            VirtualDirectoryEntry* Entry := State->Entries[Index]
+            State->Index += 1
+
+            if (Entry->Type = VirtualDirectoryEntryType::Hole) {
+                return this->Next(RawState, Result)
+            }
+
+            MoveMemory(Result, Entry, #VirtualDirectoryEntry)
+
+            return true
+        }
+        else {
+            return false
+        }
+    }
+
+    define i8 IsEphemeral() {
+        return this->Overlay->IsEphemeral()
+    }
+
+    define IVirtualDirectory* CreateDirectory() {
+        if (this->WriteMode = VFSOverlayWriteMode::OnlyEphemeralToOverlay) {
+            return this->Base->CreateDirectory()
+        }
+        else if (this->WriteMode = VFSOverlayWriteMode::AllToOverlay) {
+            return this->Overlay->CreateDirectory()
+        }
+
+        return null
+    }
+
+    define i8 Insert(VirtualDirectoryEntry* Entry) {
+        if (this->WriteMode = VFSOverlayWriteMode::OnlyEphemeralToOverlay) {
+            if (Entry->IsEphemeral()) {
+                return this->Overlay->Insert(Entry)
+            }
+            else {
+                return this->Base->Insert(Entry)
+            }
+        }
+
+        return this->Overlay->Insert(Entry)
+    }
+    define i8 Remove(i8* Name) {
+        VirtualDirectoryEntry Entry
+
+        if (this->Overlay->Lookup(Name, &Entry)) {
+            return this->Overlay->Remove(Name)
+        }
+        else if (this->Base->Lookup(Name, &Entry)) {
+            VirtualDirectoryEntry HoleEntry {
+                Name: Name,
+                Type: VirtualDirectoryEntryType::Hole
+            }
+
+            return this->Overlay->Insert(&HoleEntry)
+        }
+        else {
+            return false
+        }
+    }
+
+    static IVirtualDirectory* New(IVirtualDirectory* Base, IVirtualDirectory* Overlay, VFSOverlayWriteMode WriteMode) {
+        self* this := Alloc(#self)
+
+        this->Prototype := GetVFSOverlayDirectoryPrototype()
+        this->Base := Base
+        this->Overlay := Overlay
+        this->WriteMode := WriteMode
+
+        return this As IVirtualDirectory*
+    }
+
+    static IVirtualDirectory* New(IVirtualDirectory* Base, IVirtualDirectory* Overlay) {
+        return self:New(Base, Overlay, VFSOverlayWriteMode::AllToOverlay)
+    }
+}
+
+IVirtualDirectoryPrototype VFSOverlayDirectoryPrototype {
+    Count: &VFSOverlayDirectory.Count,
+    Lookup: &VFSOverlayDirectory.Lookup,
+
+    Enumerate: &VFSOverlayDirectory.Enumerate,
+    Next: &VFSOverlayDirectory.Next,
+
+    IsEphemeral: &VFSOverlayDirectory.IsEphemeral,
+
+    CreateDirectory: &VFSOverlayDirectory.CreateDirectory,
+
+    Insert: &VFSOverlayDirectory.Insert,
+    Remove: &VFSOverlayDirectory.Remove
+}
+
+define IVirtualDirectoryPrototype* GetVFSOverlayDirectoryPrototype() {
+    return &VFSOverlayDirectoryPrototype
+}

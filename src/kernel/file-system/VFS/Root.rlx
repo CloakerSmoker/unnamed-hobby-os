@@ -1,0 +1,170 @@
+IVirtualDirectory* VFSRootDirectory := null
+
+define void MountRoot(IVirtualDirectory* NewRoot) {
+    IVirtualDirectory* RootOverlay := VFSDirectory:New()
+    IVirtualDirectory* Root := VFSOverlayDirectory:New(NewRoot, RootOverlay, VFSOverlayWriteMode::OnlyEphemeralToOverlay)
+
+    VFSRootDirectory := Root
+}
+
+define i32 SplitPath(i8* Path, i8** Into, i32 Max) {
+	i32 Count := 0
+	i32 Start := 0
+	
+	for (i32 Index := 0, Path[Index] != 0, Index += 1) {
+		if (Path[Index] = '/') {
+			Into[Count] := Path + Start
+			Count += 1
+			
+			if (Count = Max) {
+				return Count
+			}
+			
+			Path[Index] := 0
+			Start := Index + 1
+		}
+	}
+	
+	Into[Count] := Path + Start
+	Count += 1
+	
+	return Count
+}
+
+define i8 Lookup(i8** PathParts, i32 Count, VirtualDirectoryEntry* Result) {
+    IVirtualDirectory* Current := VFSRootDirectory
+
+    if (Count <= 0) {
+        Result->Type := VirtualDirectoryEntryType::Directory
+        Result->Name := "/"
+        Result->Directory := Current
+
+        return true
+    }
+
+    for (i32 Index := 0, Index < Count - 1, Index++) {
+        i8* Part := PathParts[Index]
+
+        VirtualDirectoryEntry Next
+        
+        if !(Current->Lookup(Part, &Next)) {
+            return false
+        }
+
+        if (Next.Type != VirtualDirectoryEntryType::Directory) {
+            return false
+        }
+        
+        Current := Next.Directory
+    }
+
+    return Current->Lookup(PathParts[Count - 1], Result)
+}
+
+define i8 Lookup(i8* Path, VirtualDirectoryEntry* Result) {
+    i8*[10] PathParts
+    i32 Count := SplitPath(Path, PathParts, 10)
+
+    return Lookup(PathParts, Count, Result)
+}
+
+define i8 Mount(i8* Where, IVirtualDirectory* Root) {
+    IVirtualDirectory* Current := VFSRootDirectory As void*
+
+    i8*[10] PathParts
+    i32 Count := SplitPath(Where, PathParts, 10)
+
+    for (i32 Index := 0, Index < Count - 1, Index++) {
+        i8* Part := PathParts[Index]
+        i8 ShouldCreateNew := true
+
+        VirtualDirectoryEntry Next
+        if (Current->Lookup(Part, &Next)) {
+            if (Next.Type != VirtualDirectoryEntryType::Hole) {
+                ShouldCreateNew := false
+            }
+        }
+
+        if (ShouldCreateNew) {
+            IVirtualDirectory* NewChild := VFSDirectory:New()
+
+            VirtualDirectoryEntry NewChildEntry {
+                Type: VirtualDirectoryEntryType::Directory,
+                Name: Part,
+                Directory: NewChild
+            }
+
+            Current->Insert(&NewChildEntry)
+
+            Current := NewChild
+        }
+        else {
+            ; Entry exists, but we need to make sure it is ephemeral
+
+            IVirtualDirectory* Entry := Next.Directory
+
+            if (Entry->IsEphemeral()) {
+                Current := Entry
+            }
+            else {
+                ; Entry isn't ephemeral, we need to replace it with an overlay based on itself
+
+                IVirtualDirectory* Base := Entry
+                IVirtualDirectory* Overlay := VFSDirectory:New()
+                IVirtualDirectory* Replacement := VFSOverlayDirectory:New(Base, Overlay, VFSOverlayWriteMode::OnlyEphemeralToOverlay)
+
+                VirtualDirectoryEntry OverlayEntry {
+                    Type: VirtualDirectoryEntryType::Directory,
+                    Name: Part,
+                    Directory: Replacement
+                }
+
+                Current->Insert(&OverlayEntry)
+
+                Current := Replacement
+            }
+        }
+    }
+
+    VirtualDirectoryEntry NewEntry {
+        Type: VirtualDirectoryEntryType::Directory,
+        Name: PathParts[Count - 1],
+        Directory: Root
+    }
+
+    return Current->Insert(&NewEntry)
+}
+
+define IVirtualDirectory* LookupParentDirectory(i8* Path, i8** Remainder) {
+    i8*[10] PathParts
+    i32 Count := SplitPath(Path, PathParts, 10)
+
+    *Remainder := PathParts[Count - 1]
+
+    VirtualDirectoryEntry ParentEntry
+    if !(Lookup(PathParts, Count - 1, &ParentEntry)) {
+        return null
+    }
+
+    if (ParentEntry.Type != VirtualDirectoryEntryType::Directory) {
+        return null
+    }
+
+    return ParentEntry.Directory
+}
+
+define IVirtualDirectory* CreateDirectory(i8* Path) {
+    i8* DirectoryName := null
+    IVirtualDirectory* Parent := LookupParentDirectory(Path, &DirectoryName)
+    IVirtualDirectory* Result := Parent->CreateDirectory()
+
+    VirtualDirectoryEntry Entry {
+        Type: VirtualDirectoryEntryType::Directory,
+        Name: DirectoryName,
+        Directory: Result
+    }
+
+    Parent->Insert(&Entry)
+
+    return Result
+}

@@ -1,0 +1,92 @@
+#Require "$/AVLTree.rlx"
+
+declare IVirtualDirectoryPrototype* GetVFSDirectoryPrototype()
+
+struct VFSDirectoryEnumerateState {
+    i32 Index
+    i32 Count
+}
+
+struct VFSDirectory {
+    #Include "./src/kernel/file-system/VFS/IVirtualDirectory.rlx"
+
+    AVLTree* Children ; <VFSDirectoryEntry*>
+
+    define i32 Count() {
+        return this->Children->Count()
+    }
+    define i8 Lookup(i8* Name, VirtualDirectoryEntry* Result) {
+        VirtualDirectoryEntry* Found := this->Children->Get(FNV1A(Name))
+
+        if (Found) {
+            MoveMemory(Result, Found, #VirtualDirectoryEntry)
+            return true
+        }
+        else {
+            return false
+        }
+    }
+
+    define void* Enumerate() {
+        VFSDirectoryEnumerateState State {
+            Count: this->Count(),
+            Index: 0
+        }
+
+        return *(&State As i64*) As void*
+    }
+    define i8 Next(void** RawState, VirtualDirectoryEntry* Result) {
+        VFSDirectoryEnumerateState* State := RawState As void*
+        i32 Index := State->Index
+
+        if (Index < State->Count) {
+            VirtualDirectoryEntry* Entry := this->Children->At(Index)
+
+            MoveMemory(Result, Entry, #VirtualDirectoryEntry)
+            
+            State->Index += 1
+
+            return true
+        }
+        else {
+            return false
+        }
+    }
+
+    define i8 IsEphemeral() {
+        return true
+    }
+    define i8 Insert(VirtualDirectoryEntry* Entry) {
+        this->Children->Insert(FNV1A(Entry->Name), Entry)
+
+        return true
+    }
+    define i8 Remove(i8* Name) {
+        this->Children->Remove(FNV1A(Name))
+
+        return true
+    }
+
+    static IVirtualDirectory* New() {
+        self* this := Alloc(#self)
+
+        this->Prototype := GetVFSDirectoryPrototype()
+        this->Children := AVLTree:New(#VirtualDirectoryEntry)
+
+        return this As IVirtualDirectory*
+    }
+}
+
+IVirtualDirectoryPrototype VFSDirectoryPrototype {
+    Count: &VFSDirectory.Count,
+    Lookup: &VFSDirectory.Lookup,
+    Enumerate: &VFSDirectory.Enumerate,
+    Next: &VFSDirectory.Next,
+    IsEphemeral: &VFSDirectory.IsEphemeral,
+    Insert: &VFSDirectory.Insert,
+    Remove: &VFSDirectory.Remove
+}
+
+define IVirtualDirectoryPrototype* GetVFSDirectoryPrototype() {
+    return &VFSDirectoryPrototype
+}

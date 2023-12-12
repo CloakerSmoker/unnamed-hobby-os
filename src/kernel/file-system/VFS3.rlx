@@ -1,0 +1,191 @@
+#Require "$/Console.rlx"
+#Require "$/AVLTree.rlx"
+
+define void SchedulerYield() {}
+
+define void Info(i8* Format, ... Args) {
+    RawPrint(Format, Args)
+}
+
+#Require "./src/kernel/file-system/VFS/VFS.rlx"
+#Require "./src/kernel/file-system/VFS/VFSDirectory.rlx"
+#Require "./src/kernel/file-system/VFS/VFSOverlayDirectory.rlx"
+
+#Require "./src/kernel/file-system/VFS/Ext2.rlx"
+#Require "./src/kernel/file-system/VFS/FAT32.rlx"
+
+#Require "./src/kernel/file-system/VFS/Root.rlx"
+
+define void ls(IVirtualDirectory* Directory) {
+    Print("\nListing %i entries:\n", Directory->Count())
+
+    void* State := Directory->Enumerate()
+    i32 Count := 0
+    VirtualDirectoryEntry Entry
+
+    while (Directory->Next(&State, &Entry)) {
+        if (Entry.Type = VirtualDirectoryEntryType::Directory) {
+            Print("%i %s/\n", Count, Entry.Name)
+        }
+        else if (Entry.Type = VirtualDirectoryEntryType::File) {
+            Print("%i %s\n", Count, Entry.Name)
+        }
+        else if (Entry.Type = VirtualDirectoryEntryType::Hole) {
+            Print("%i %s (hole)\n", Count, Entry.Name)
+        }
+
+        Count += 1
+    }
+}
+
+define void TreeIndent(i32 Depth) {
+    for (i32 Index := 0, Index < Depth, Index++) {
+        Print("    ")
+    }
+}
+
+define void tree(IVirtualDirectory* Directory, i32 Depth) {
+    void* State := Directory->Enumerate()
+    VirtualDirectoryEntry Entry
+    i32 Count := 0
+
+    while (Directory->Next(&State, &Entry)) {
+        TreeIndent(Depth)
+
+        if (Entry.Type = VirtualDirectoryEntryType::Directory) {
+            Print("%i %s/\n", Count, Entry.Name)
+
+            if (Entry.Name[0] != '.') {
+                tree(Entry.Directory, Depth + 1)
+            }
+        }
+        else if (Entry.Type = VirtualDirectoryEntryType::File) {
+            Print("%i %s\n", Count, Entry.Name)
+        }
+        else if (Entry.Type = VirtualDirectoryEntryType::Hole) {
+            Print("%i %s (hole)\n", Count, Entry.Name)
+        }
+
+        Count += 1
+    }
+}
+
+define void tree(IVirtualDirectory* Directory) {
+    tree(Directory, 0)
+}
+
+#Require "./src/drivers/block-device/BlockDevice.rlx"
+#Require "./src/drivers/block-device/FileBlockDevice.rlx"
+#Require "./src/drivers/block-device/GPTBlockDevice.rlx"
+
+define IVirtualDirectory* OpenFAT32(i8* Path) {
+    BlockDevice* Device := InstantiateBlockDeviceChainFromPath(Path)
+
+	FAT32Device* FATDevice := Alloc(#FAT32Device)
+	FATDevice->Initialize(Device)
+
+	FATDevice->ReadHeader()
+
+    return FAT32Directory:New(FATDevice, FATDevice->Header->RootDirectoryCluster)
+}
+
+define IVirtualDirectory* OpenExt2(i8* Path) {
+    BlockDevice* Device := InstantiateBlockDeviceChainFromPath(Path)
+
+    Ext2* FS := Alloc(#Ext2)
+	FS->Device := Device
+	
+	void* SB := Alloc(2048)
+	void* TI := Alloc(1024)
+	void* TB1 := Alloc(1024)
+	void* TB2 := Alloc(1024)
+	void* BMP := Alloc(1024)
+	
+	FS->Initialize(SB, TI, TB1, TB2, BMP)
+
+    Ext2INode* RootINode := CloneMemory(FS->ReadINode(2), #Ext2INode)
+    return VFSExt2Directory:New(FS, RootINode)
+}
+
+define void Main(i32 ArgC, i8** ArgV) {
+    
+    IVirtualDirectory* FAT32Root := OpenFAT32(ArgV[1])
+    IVirtualDirectory* Ext2Root := OpenExt2(ArgV[2])
+
+    ;tree(FAT32Root)
+
+    MountRoot(Ext2Root)
+
+    VirtualDirectoryEntry EFIEntry
+    FAT32Root->Lookup("EFI", &EFIEntry)
+
+    Mount("efi", EFIEntry.Directory)
+
+    CreateDirectory("nuts")
+
+    ;Mount("bin/mount/nuts", VFSExt2Directory:New(FS, RootINode))
+
+    ;ls(VFSRootDirectory)
+
+    VirtualDirectoryEntry Entry
+    ;Lookup("bin/mount", &Entry)
+
+    ;Print("%s, %i\n", Entry.Name, Entry.Type)
+
+
+    tree(VFSRootDirectory)
+
+/*    ls(RootDirectory)
+
+    VirtualDirectoryEntry Result
+    RootDirectory->Lookup("nuts.elf", &Result)
+
+    ls(RootDirectory)
+
+    Print("Cache size: %i\n", (RootDirectory As VFSExt2Directory*)->Cache->Count())*/
+
+/*    IVirtualDirectory* Base := VFSDirectory:New()
+    IVirtualDirectory* Overlay := VFSDirectory:New()
+
+    VirtualDirectoryEntry Entry {
+        Name: "nuts",
+        Type: VirtualDirectoryEntryType::File,
+        File: IVirtualFile:New("test file 1")
+    }
+
+    Print("Type: %x\n", Entry.Type)
+
+    Base->Insert(&Entry)
+
+    IVirtualDirectory* Directory := VFSOverlayDirectory:New(Base, Overlay)
+
+    ls(Directory)
+
+    VirtualDirectoryEntry NegativeEntry {
+        Name: "nuts",
+        Type: VirtualDirectoryEntryType::Hole
+    }
+
+    Overlay->Insert(&NegativeEntry)
+
+    ls(Directory)
+
+    VirtualDirectoryEntry Entry2 {
+        Name: "nuts",
+        Type: VirtualDirectoryEntryType::File,
+        File: IVirtualFile:New("override test file")
+    }
+
+    Overlay->Insert(&Entry2)
+
+    ls(Directory)
+
+    Overlay->Remove("nuts")
+
+    ls(Directory)
+
+    Directory->Remove("nuts")
+
+    ls(Directory)
+    ls(Base)*/
+}

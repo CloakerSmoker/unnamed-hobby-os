@@ -1,0 +1,100 @@
+struct IVirtualDirectoryPrototype {
+    i32(void*) Count
+    i8(void*, i8*, VirtualDirectoryEntry*) Lookup
+
+    void*(void*) Enumerate
+    i8(void*, void**, VirtualDirectoryEntry*) Next
+
+    i8(void*) IsEphemeral
+
+    IVirtualDirectory*(void*) CreateDirectory
+    IVirtualFile*(void*) CreateFile
+
+    i8(void*, VirtualDirectoryEntry*) Insert
+    i8(void*, i8*) Remove
+}
+
+struct IVirtualDirectory {
+    #Include "./src/kernel/file-system/VFS/IVirtualDirectory.rlx"
+
+    define i32 Count() {
+        return this->Prototype->Count(this)
+    }
+    define i8 Lookup(i8* Name, VirtualDirectoryEntry* Result) {
+        return this->Prototype->Lookup(this, Name, Result)
+    }
+
+    define void* Enumerate() {
+        return this->Prototype->Enumerate(this)
+    }
+    define i8 Next(void** State, VirtualDirectoryEntry* Result) {
+        return this->Prototype->Next(this, State, Result)
+    }
+
+    define i8 IsEphemeral() {
+        return this->Prototype->IsEphemeral(this)
+    }
+
+    define IVirtualDirectory* CreateDirectory() {
+        return this->Prototype->CreateDirectory(this)
+    }
+    define IVirtualFile* CreateFile() {
+        return this->Prototype->CreateFile(this)
+    }
+    
+    define i8 Insert(VirtualDirectoryEntry* Entry) {
+        return this->Prototype->Insert(this, Entry)
+    }
+    define i8 Remove(i8* Name) {
+        return this->Prototype->Remove(this, Name)
+    }
+}
+
+struct IVirtualFilePrototype {
+    i8(void*) IsEphemeral
+    FileHandle*(void*) Open
+}
+
+struct IVirtualFile {
+    IVirtualFilePrototype* Prototype
+
+    define i8 IsEphemeral() {
+        return this->Prototype->IsEphemeral(this)
+    }
+
+    define FileHandle* Open() {
+        return this->Prototype->Open()
+    }
+}
+
+enum VirtualDirectoryEntryType {
+    Directory,
+    File,
+    Hole
+}
+
+struct VirtualDirectoryEntry {
+    i8* Name
+    
+    union {
+        IVirtualDirectory* Directory
+        IVirtualFile* File
+        void* Value
+    }
+
+    VirtualDirectoryEntryType Type
+
+    define i8 IsEphemeral() {
+        if (this->Type = VirtualDirectoryEntryType::File) {
+            return this->File->IsEphemeral()
+        }
+        else if (this->Type = VirtualDirectoryEntryType::Directory) {
+            return this->Directory->IsEphemeral()
+        }
+        else if (this->Type = VirtualDirectoryEntryType::Hole) {
+            return true
+        }
+
+        return true
+    }
+}
