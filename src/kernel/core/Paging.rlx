@@ -544,3 +544,10 @@ struct AddressSpaceManager {
 
 AddressSpaceManager RawKernelAddressSpace
 AddressSpaceManager* KernelAddressSpace := &RawKernelAddressSpace
+
+define i64 VirtualToPhysical(void* RawVirtual) {
+	i64 Virtual := RawVirtual As i64
+	i64 Lower := Virtual & 0xFFF
+
+	return KernelAddressSpace->VirtualToPhysical(RawVirtual) | Lower
+}

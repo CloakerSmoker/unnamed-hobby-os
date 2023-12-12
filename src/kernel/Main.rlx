@@ -323,14 +323,6 @@ define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Devic
 			Current := Device->NextPCICapability(Current)
 		}
 
-		PCICapability* RawMSI := Device->FindPCICapability(PCI_CAPABILITY_ID_MSI)
-
-		Info("MSI @ %x\n", RawMSI)
-
-		PCIMSICapability64Bit* MSI := RawMSI As void*
-		
-		MSI->Info()
-
 		;Print("%x %x\n", Device->ClassCode, Device->SubClass)
 
 		if (Device->ClassCode = PCI_CLASS_CODE_NETWORK_CONTROLLER && Device->SubClass = PCI_SUBCLASS_NETWORK_ETHERNET) {
@@ -339,60 +331,25 @@ define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Devic
 			if (Device->VendorID = PCI_VENDOR_INTEL && Device->DeviceID = PCI_DEVICE_INTEL_82574L) {
 				Print("Found E1000\n")
 
-				AMD64MessageAddressRegister Address := 0 As AMD64MessageAddressRegister
-
-				Address.Magic := AMD64_MSI_ADDRESS_MAGIC
-				Address.DestinationID := LocalAPIC->ID As i8
-
-				MSI->MessageAddressLow := Address.Value
-				
-				AMD64MessageAddressData Data := 0 As AMD64MessageAddressData
-
-				Data.Vector := 19
-				Data.DeliveryMode := AMD64_MSI_DELIVERY_MODE_FIXED
-				Data.TriggerMode := AMD64_MSI_DATA_TRIGGER_EDGE
-
-				MSI->MessageData := Data.Value
-
-				PCIMSIControlRegister Control := MSI->Control
-
-				Control.Enable := true
-
-				MSI->Control := Control
-
-				MSI->Info()
+				Device->EnableMSI(19)
 
 				FirstE1000 := Alloc('E1000', #E1000)
 				
 				FirstE1000->Initialize(Device)
 			}
 		}
+		else if (Device->ClassCode = PCI_CLASS_CODE_MASS_STORAGE_CONTROLLER && Device->SubClass = PCI_SUBCLASS_SATA_CONTROLLER) {
+			Info("SATA Controller found:\n%hexdump\n", Device, 0x40)
 
-		;Info("%x/%x/%x\n", Bus, Slot, Function)
-		;Info("%hexdump\n", Device, 0x40)
+			Info("SATA Controller %x:%x\n", Device->VendorID, Device->DeviceID)
+			Info("Supports MSI? %i\n", Device->CanUseMSI())
+
+			Info("SATA MAP: %b\n", *((Device + 0x90) As i16*))
+
+			FirstSATAController := Alloc(#AHCI::Controller)
+			FirstSATAController->Initialize(Device)
+		}
 	}
-
-	if (Device->ClassCode = PCI_CLASS_CODE_MASS_STORAGE_CONTROLLER && Device->SubClass = PCI_SUBCLASS_SATA_CONTROLLER) {
-		Info("SATA Controller found:\n%hexdump\n", Device, 0x40)
-
-		Info("SATA Controller %x:%x\n", Device->VendorID, Device->DeviceID)
-		Info("SATA MAP: %b\n", *((Device + 0x90) As i16*))
-
-		PCIeDevice* NullDevice := null
-
-		Info("Bar5 Offset: %x\n", &NullDevice~>Type0->BAR[5])
-
-		i32 Size := Device->GetBARSize(5)
-		Info("Bar5 Size: %x\n", Size)
-
-		Info("Bar5: %x\n", Device->ReadBAR(5))
-
-		FirstSATAController := Alloc(#AHCI::Controller)
-		FirstSATAController->Initialize(Device)
-
-
-	}
-
 }
 
 define void VisitPCIFunction(i32 Bus, i32 Slot, i32 Function) {

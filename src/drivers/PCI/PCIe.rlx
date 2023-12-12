@@ -408,6 +408,36 @@ struct PCIeDevice {
             }
         }
     }
+
+    define i8 CanUseMSI() {
+        return this->FindPCICapability(PCI_CAPABILITY_ID_MSI) != null
+    }
+
+    define void EnableMSI(i8 Vector) {
+        PCICapability* RawMSI := this->FindPCICapability(PCI_CAPABILITY_ID_MSI)
+        PCIMSICapability64Bit* MSI := RawMSI As void*
+
+        AMD64MessageAddressRegister Address := 0 As AMD64MessageAddressRegister
+
+        Address.Magic := AMD64_MSI_ADDRESS_MAGIC
+        Address.DestinationID := LocalAPIC->ID As i8
+
+        MSI->MessageAddressLow := Address.Value
+        
+        AMD64MessageAddressData Data := 0 As AMD64MessageAddressData
+
+        Data.Vector := Vector
+        Data.DeliveryMode := AMD64_MSI_DELIVERY_MODE_FIXED
+        Data.TriggerMode := AMD64_MSI_DATA_TRIGGER_EDGE
+
+        MSI->MessageData := Data.Value
+
+        PCIMSIControlRegister Control := MSI->Control
+
+        Control.Enable := true
+
+        MSI->Control := Control
+    }
 }
 
 define void InitializePCIe(void(i32, i32, i32, PCIeDevice*) Visitor) {
@@ -430,3 +460,18 @@ define void InitializePCIe(void(i32, i32, i32, PCIeDevice*) Visitor) {
 
 	Root->EnumerateAsBus(0, Visitor)
 }
+
+define void DoPCIeDevicePrint(PrintOutputAdapterPrototype* this, i8* Format, i32* FormatIndex, void* Parameters, i32 ParameterCount, i32* ParameterIndex) {
+    PCIeDevice* Device := Parameters[*ParameterIndex] As PCIeDevice*
+    
+    this->Print("%X/%X", Device->VendorID & 0xFFFF, Device->DeviceID & 0xFFFF)
+
+    *ParameterIndex += 1
+}
+
+PrintFormatPrototype PCIeDeviceFormatPrototype {
+	Name: "pcie",
+	Format: &DoPCIeDevicePrint
+}
+
+i32 PCIE_DEVICE_FORMAT_PROTOTYPE_ID := AddPrintFormat(&PCIeDeviceFormatPrototype)
