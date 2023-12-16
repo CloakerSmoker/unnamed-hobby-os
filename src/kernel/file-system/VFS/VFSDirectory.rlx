@@ -12,6 +12,15 @@ struct VFSDirectory {
 
     AVLTree* Children ; <VFSDirectoryEntry*>
 
+    static IVirtualDirectory* New() {
+        self* this := Alloc(#self)
+
+        this->Prototype := GetVFSDirectoryPrototype()
+        this->Children := AVLTree:New(#VirtualDirectoryEntry)
+
+        return this As IVirtualDirectory*
+    }
+
     define i32 Count() {
         return this->Children->Count()
     }
@@ -56,6 +65,11 @@ struct VFSDirectory {
     define i8 IsEphemeral() {
         return true
     }
+
+    define IVirtualDirectory* CreateDirectory() {
+        return VFSDirectory:New()
+    }
+
     define i8 Insert(VirtualDirectoryEntry* Entry) {
         this->Children->Insert(FNV1A(Entry->Name), Entry)
 
@@ -65,15 +79,6 @@ struct VFSDirectory {
         this->Children->Remove(FNV1A(Name))
 
         return true
-    }
-
-    static IVirtualDirectory* New() {
-        self* this := Alloc(#self)
-
-        this->Prototype := GetVFSDirectoryPrototype()
-        this->Children := AVLTree:New(#VirtualDirectoryEntry)
-
-        return this As IVirtualDirectory*
     }
 }
 

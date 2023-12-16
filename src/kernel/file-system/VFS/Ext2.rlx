@@ -4,8 +4,41 @@ i8 DEBUG_EXT2_OPTIMIZATION := false
 
 #Require "./src/drivers/Ext2.rlx"
 
+declare IVirtualFilePrototype* GetVFSExt2FilePrototype()
+
 struct VFSExt2File {
-    i8 Dummy
+    #Include "./src/kernel/file-system/VFS/IVirtualFile.rlx"
+
+    Ext2* FS
+    Ext2INode Node
+
+    static IVirtualFile* New(Ext2* FS, Ext2INode* Node) {
+        self* this := Alloc(#self)
+
+        this->Prototype := GetVFSExt2FilePrototype()
+
+        this->FS := FS
+        MoveMemory(this~>Node, Node, #Ext2INode)
+
+        return this
+    }
+
+    define i8 IsEphemeral() {
+        return false
+    }
+
+    define FileHandle* Open() {
+        return Ext2OpenINode(this->FS, this~>Node)
+    }
+}
+
+IVirtualFilePrototype VFSExt2FilePrototype {
+    IsEphemeral: &VFSExt2File.IsEphemeral,
+    Open: &VFSExt2File.Open
+}
+
+define IVirtualFilePrototype* GetVFSExt2FilePrototype() {
+    return &VFSExt2FilePrototype
 }
 
 declare IVirtualDirectoryPrototype* GetVFSExt2DirectoryPrototype()
@@ -147,6 +180,11 @@ struct VFSExt2Directory {
         i32 DirectoryNodeNumber := this->FS->CreateDirectory()
 
         return VFSExt2Directory:New(this->FS, this->FS->ReadINode(DirectoryNodeNumber))
+    }
+    define IVirtualFile* CreateFile() {
+        i32 FileNodeNumber := this->FS->CreateDirectory()
+
+        return VFSExt2File:New(this->FS, this->FS->ReadINode(FileNodeNumber))
     }
 
     define i8 Insert(VirtualDirectoryEntry* Entry) {

@@ -132,7 +132,14 @@ define i8 Mount(i8* Where, IVirtualDirectory* Root) {
         Directory: Root
     }
 
-    return Current->Insert(&NewEntry)
+    if (Current->Is(GetVFSOverlayDirectoryPrototype())) {
+        ; NOTE: Horrible hack
+
+        return (Current As VFSOverlayDirectory*)->Overlay->Insert(&NewEntry)
+    }
+    else {
+        return Current->Insert(&NewEntry)
+    }
 }
 
 define IVirtualDirectory* LookupParentDirectory(i8* Path, i8** Remainder) {
@@ -162,6 +169,22 @@ define IVirtualDirectory* CreateDirectory(i8* Path) {
         Type: VirtualDirectoryEntryType::Directory,
         Name: DirectoryName,
         Directory: Result
+    }
+
+    Parent->Insert(&Entry)
+
+    return Result
+}
+
+define IVirtualFile* CreateFile(i8* Path) {
+    i8* FileName := null
+    IVirtualDirectory* Parent := LookupParentDirectory(Path, &FileName)
+    IVirtualFile* Result := Parent->CreateFile()
+
+    VirtualDirectoryEntry Entry {
+        Type: VirtualDirectoryEntryType::File,
+        Name: FileName,
+        File: Result
     }
 
     Parent->Insert(&Entry)

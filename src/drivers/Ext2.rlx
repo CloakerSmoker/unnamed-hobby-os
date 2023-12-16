@@ -654,7 +654,10 @@ struct Ext2 {
 	}
 	
 	define i32 StartWalkDirectory(Ext2INode* DirectoryNode) {
-		this->ReadINodeData(this->TempBlock, DirectoryNode, 0)
+		if (DirectoryNode->FileSizeLow > 0) {
+			this->ReadINodeData(this->TempBlock, DirectoryNode, 0)
+		}
+		
 		return 0
 	}
 	define Ext2DirectoryEntry* WalkDirectoryNext(Ext2INode* DirectoryNode, i32* pWalkHandle) {

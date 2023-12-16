@@ -60,10 +60,6 @@ namespace AHCI {
             
             union {
                 i32 InterruptStatus
-
-                bits As i32 {
-                    
-                }
             }
 
             i32 InterruptEnable

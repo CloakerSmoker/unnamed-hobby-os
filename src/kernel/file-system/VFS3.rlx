@@ -1,5 +1,6 @@
 #Require "$/Console.rlx"
 #Require "$/AVLTree.rlx"
+#Require "$/Debug.rlx"
 
 define void SchedulerYield() {}
 
@@ -108,7 +109,8 @@ define IVirtualDirectory* OpenExt2(i8* Path) {
 }
 
 define void Main(i32 ArgC, i8** ArgV) {
-    
+    Print("Hello!\n")
+
     IVirtualDirectory* FAT32Root := OpenFAT32(ArgV[1])
     IVirtualDirectory* Ext2Root := OpenExt2(ArgV[2])
 
@@ -121,17 +123,24 @@ define void Main(i32 ArgC, i8** ArgV) {
 
     Mount("efi", EFIEntry.Directory)
 
-    CreateDirectory("nuts")
+    tree(VFSRootDirectory)
 
     ;Mount("bin/mount/nuts", VFSExt2Directory:New(FS, RootINode))
 
     ;ls(VFSRootDirectory)
 
     VirtualDirectoryEntry Entry
-    ;Lookup("bin/mount", &Entry)
+    if !(Lookup("nuts", &Entry)) {
+        ;CreateDirectory("nuts")
+    }
 
+    Mount("mount", Ext2Root)
+ 
     ;Print("%s, %i\n", Entry.Name, Entry.Type)
 
+    CreateDirectory("mount/123test")
+
+    Print("Final State:\n")
 
     tree(VFSRootDirectory)
 
