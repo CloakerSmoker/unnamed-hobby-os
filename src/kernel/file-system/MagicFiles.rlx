@@ -33,7 +33,8 @@ struct MagicFilePrototype {
 	MagicFilePrototype* Next
 	
 	define void Status(FileStatus* Out) {
-		Out->Mode := 0o777 | FILE_STATUS_MODE_IS_CHARACTER_DEVICE
+		Out->Mode := 0o777
+		Out->Type := FileStatusType::CharacterDevice
 		
 		; TODO: this is a FileHandlePrototype and not a MagicFilePrototype so below won't work
 		;Out->Device := ((this->Major As i64) << 32) | this->Minor

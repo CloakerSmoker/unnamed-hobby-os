@@ -1,0 +1,219 @@
+#Require "$/AVLTree.rlx"
+#Require "$/Directory.rlx"
+
+declare IVirtualFilePrototype* GetVFSHostFilePrototype()
+
+struct VFSHostFile {
+    #Include "./src/kernel/file-system/VFS/IVirtualFile.rlx"
+
+    i64 Handle
+
+    static IVirtualFile* New(i64 Handle) {
+        self* this := Alloc(#self)
+
+        this->Prototype := GetVFSHostFilePrototype()
+
+        this->Handle := Handle
+
+        return this As void*
+    }
+
+    define i8 IsEphemeral() {
+        return false
+    }
+
+    define FileHandle* Open() {
+        return null
+    }
+}
+
+IVirtualFilePrototype VFSHostFilePrototype {
+    IsEphemeral: &VFSHostFile.IsEphemeral,
+    Open: &VFSHostFile.Open
+}
+
+define IVirtualFilePrototype* GetVFSHostFilePrototype() {
+    return &VFSHostFilePrototype
+}
+
+declare IVirtualDirectoryPrototype* GetVFSHostDirectoryPrototype()
+
+struct VFSHostDirectory {
+    #Include "./src/kernel/file-system/VFS/IVirtualDirectory.rlx"
+
+    i64 Handle
+
+    AVLTree* Cache ; <i8*, VirtualDirectoryEntry>
+
+    static IVirtualDirectory* New(i64 Handle) {
+        self* this := Alloc(#self)
+
+        this->Prototype := GetVFSHostDirectoryPrototype()
+        
+        this->Handle := Handle
+
+        this->Cache := AVLTree:New(#VirtualDirectoryEntry)
+
+        return this As void*
+    }
+
+    define i32 Count() {
+        i32 Result := 0
+
+        void* State := StartWalkDirectory(this->Handle)
+        DirectoryEntry Entry
+
+        while (WalkDirectoryNext(&State, &Entry)) {
+            Result += 1
+        }
+
+        return Result
+    }
+
+    define VirtualDirectoryEntry* FindOrCacheEntry(i8* Name, DirectoryEntry* ExistingEntry) {
+        i64 NameHash := FNV1A(Name)
+        VirtualDirectoryEntry* ExistingCacheEntry := this->Cache->Get(NameHash)
+
+        if (ExistingCacheEntry) {
+            return ExistingCacheEntry
+        }
+        
+        i64 Handle := FileOpenAt(this->Handle, Name, FILE_READ)
+
+        if (Handle <= 0) {
+            return null
+        }
+
+        VirtualDirectoryEntryType Type := VirtualDirectoryEntryType::Hole
+
+        if (ExistingEntry) {
+            if (ExistingEntry->Type = DirectoryEntryType::File) {
+                Type := VirtualDirectoryEntryType::File
+            }
+            else if (ExistingEntry->Type = DirectoryEntryType::Directory) {
+                Type := VirtualDirectoryEntryType::Directory
+            }
+        }
+        else {
+            FileStatus Status
+            FileGetStatus(Handle, &Status)
+
+            if (Status.Type = FileStatusType::File) {
+                Type := VirtualDirectoryEntryType::File
+            }
+            else if (Status.Type = FileStatusType::Directory) {
+                Type := VirtualDirectoryEntryType::Directory
+            }
+        }
+
+        VirtualDirectoryEntry NewCacheEntry {
+            Name: CloneMemory(Name, StringLength(Name) + 1),
+            Type: Type
+        }
+
+        if (Type = VirtualDirectoryEntryType::File) {
+            NewCacheEntry.File := VFSHostFile:New(Handle)
+        }
+        else if (Type = VirtualDirectoryEntryType::Directory) {
+            NewCacheEntry.Directory := VFSHostDirectory:New(Handle)
+        }
+
+        this->Cache->Insert(NameHash, &NewCacheEntry)
+
+        return this->Cache->Get(NameHash)
+    }
+
+    define VirtualDirectoryEntry* FindOrCacheEntry(i8* Name) {
+        return this->FindOrCacheEntry(Name, null)
+    }
+
+    define i8 Lookup(i8* Name, VirtualDirectoryEntry* Result) {
+        VirtualDirectoryEntry* Entry := this->FindOrCacheEntry(Name)
+
+        if (Entry) {
+            MoveMemory(Result, Entry, #VirtualDirectoryEntry)
+            return true
+        }
+        
+        return false
+    }
+
+    define void* Enumerate() {
+        return StartWalkDirectory(this->Handle)
+    }
+    define i8 Next(void** RawState, VirtualDirectoryEntry* Result) {
+        DirectoryEntry Entry
+
+        if (WalkDirectoryNext(RawState, &Entry)) {
+            VirtualDirectoryEntry* Cached := this->FindOrCacheEntry(Entry.Name, &Entry)
+
+            if (Cached) {
+                MoveMemory(Result, Cached, #VirtualDirectoryEntry)
+                return true
+            }
+        }
+
+        return false
+    }
+
+    define i8 IsEphemeral() {
+        return false
+    }
+
+    define IVirtualDirectory* CreateDirectory() {
+        ;i32 DirectoryNodeNumber := this->FS->CreateDirectory()
+
+        ;return VFSHostDirectory:New(this->FS, this->FS->ReadINode(DirectoryNodeNumber))
+
+        return null
+    }
+    define IVirtualFile* CreateFile() {
+        ;i32 FileNodeNumber := this->FS->CreateDirectory()
+
+        ;return VFSHostFile:New(this->FS, this->FS->ReadINode(FileNodeNumber))
+
+        return null
+    }
+
+    define i8 Insert(VirtualDirectoryEntry* Entry) {
+        ;this->Children->Insert(FNV1A(Entry->Name), Entry)
+
+        ;if (Entry->Type = VirtualDirectoryEntryType::Directory) {
+        ;    if (Entry->Directory->Is(GetVFSHostDirectoryPrototype())) {
+        ;        VFSHostDirectory* Child := Entry->Directory As void*
+
+        ;       i32 ChildNodeNumber := Child~>Node->INodeNumber
+
+        ;        this->FS->CreateDirectoryEntry(this~>Node, Entry->Name, ChildNodeNumber, DIRECTORY_ENTRY_DIRECTORY)
+
+        ;        this->Cache->Insert(FNV1A(Entry->Name), Entry)
+        ;    }
+        ;}
+
+        return false
+    }
+    define i8 Remove(i8* Name) {
+        ;this->Children->Remove(FNV1A(Name))
+
+        return false
+    }
+}
+
+IVirtualDirectoryPrototype VFSHostDirectoryPrototype {
+    Count: &VFSHostDirectory.Count,
+    Lookup: &VFSHostDirectory.Lookup,
+
+    Enumerate: &VFSHostDirectory.Enumerate,
+    Next: &VFSHostDirectory.Next,
+
+    IsEphemeral: &VFSHostDirectory.IsEphemeral,
+
+    CreateDirectory: &VFSHostDirectory.CreateDirectory,
+
+    Insert: &VFSHostDirectory.Insert,
+    Remove: &VFSHostDirectory.Remove
+}
+
+define IVirtualDirectoryPrototype* GetVFSHostDirectoryPrototype() {
+    return &VFSHostDirectoryPrototype
+}

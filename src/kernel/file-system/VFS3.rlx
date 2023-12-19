@@ -14,6 +14,7 @@ define void Info(i8* Format, ... Args) {
 
 #Require "./src/kernel/file-system/VFS/Ext2.rlx"
 #Require "./src/kernel/file-system/VFS/FAT32.rlx"
+#Require "./src/kernel/file-system/VFS/Host.rlx"
 
 #Require "./src/kernel/file-system/VFS/Root.rlx"
 
@@ -108,11 +109,18 @@ define IVirtualDirectory* OpenExt2(i8* Path) {
     return VFSExt2Directory:New(FS, RootINode)
 }
 
+define IVirtualDirectory* OpenHostDirectory(i8* Path) {
+    i64 Handle := FileOpen(Path, FILE_READ)
+
+    return VFSHostDirectory:New(Handle)
+}
+
 define void Main(i32 ArgC, i8** ArgV) {
     Print("Hello!\n")
 
     IVirtualDirectory* FAT32Root := OpenFAT32(ArgV[1])
     IVirtualDirectory* Ext2Root := OpenExt2(ArgV[2])
+    IVirtualDirectory* HostRoot := OpenHostDirectory(ArgV[3])
 
     ;tree(FAT32Root)
 
@@ -124,6 +132,8 @@ define void Main(i32 ArgC, i8** ArgV) {
     Mount("efi", EFIEntry.Directory)
 
     tree(VFSRootDirectory)
+
+    Mount("host", HostRoot)
 
     ;Mount("bin/mount/nuts", VFSExt2Directory:New(FS, RootINode))
 

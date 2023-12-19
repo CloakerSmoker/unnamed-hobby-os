@@ -2,7 +2,9 @@
 #Require "$/MemoryBase.rlx"
 #Require "./src/utility/x64.rlx"
 
-#Require "./src/kernel/file-system/FileSystem.rlx"
+;#Require "./src/kernel/file-system/FileSystem.rlx"
+#Require "./src/kernel/file-system/Handle.rlx"
+#Require "./src/kernel/file-system/MagicFiles.rlx"
 
 i16 EXT2_SUPER_MAGIC := 0xEF53 As i16
 
@@ -1593,10 +1595,10 @@ struct Ext2 {
 		Out->Mode := 0
 		
 		if (Node->IsFile()) {
-			Out->Mode |= FILE_STATUS_MODE_IS_FILE
+			Out->Type := FileStatusType::File
 		}
 		else if (Node->IsDirectory()) {
-			Out->Mode |= FILE_STATUS_MODE_IS_DIRECTORY
+			Out->Type := FileStatusType::Directory
 		}
 		
 		Out->Mode |= 0o777
@@ -1702,7 +1704,7 @@ struct Ext2DirectoryInstance {
 	}
 	
 	define i32 Read(DirectoryEntry* Out, i32 Count) {
-		i32 EntriesRead := 0
+		/*i32 EntriesRead := 0
 		i32 WalkHandle := this->NextEntryIndex
 		
 		for (i32 Index := 0, Index < Count, Index++) {
@@ -1726,7 +1728,9 @@ struct Ext2DirectoryInstance {
 		
 		this->NextEntryIndex := WalkHandle
 		
-		return EntriesRead
+		return EntriesRead*/
+		
+		return 0
 	}
 	
 	define FileHandle* OpenOrCreate(i8* Path, i8 Flags) {

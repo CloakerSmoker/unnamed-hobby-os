@@ -20,7 +20,7 @@ struct VFSExt2File {
         this->FS := FS
         MoveMemory(this~>Node, Node, #Ext2INode)
 
-        return this
+        return this As void*
     }
 
     define i8 IsEphemeral() {
