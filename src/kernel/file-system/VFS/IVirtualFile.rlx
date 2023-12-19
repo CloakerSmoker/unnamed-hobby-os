@@ -4,6 +4,6 @@
         return this->Prototype = Prototype
     }
 
-    define IVirtualDirectory* AsIVirtualFile() {
+    define IVirtualFile* AsIVirtualFile() {
         return this As void*
     }

@@ -53,6 +53,7 @@ struct IVirtualDirectory {
 struct IVirtualFilePrototype {
     i8(void*) IsEphemeral
     FileHandle*(void*) Open
+    void(void*, FileHandle*) Close
 }
 
 struct IVirtualFile {
@@ -64,6 +65,9 @@ struct IVirtualFile {
 
     define FileHandle* Open() {
         return this->Prototype->Open()
+    }
+    define void Close(FileHandle* Target) {
+        this->Prototype->Close(Target)
     }
 }
 

@@ -1,6 +1,57 @@
 #Require "$/AVLTree.rlx"
 #Require "$/Directory.rlx"
 
+declare FileHandlePrototype* GetHostFileHandlePrototype()
+
+struct HostFileInstance {
+    #Include "./src/kernel/file-system/HandleInstance.rlx"
+
+    IVirtualFile* VFS
+    i64 Handle
+
+    static FileHandle* New(IVirtualFile* VFS, i64 Handle) {
+        self* this := Alloc(#self)
+        
+        this->Prototype := GetHostFileHandlePrototype()
+
+        this->VFS := VFS
+        this->Handle := Handle
+
+        return this As void*
+    }
+
+    define void Status(FileStatus* Out) {
+        FileGetStatus(this->Handle, Out)
+    }
+    define i32 Read(void* Buffer, i32 Size) {
+        return FileRead(this->Handle, Buffer, Size)
+    }
+    define i32 Write(void* Buffer, i32 Size) {
+        return FileWrite(this->Handle, Buffer, Size)
+    }
+    define void Seek(i32 Destination, SeekMode Mode) {
+        FileSeek(this->Handle, Destination, Mode As i32)
+    }
+    define i32 Tell() {
+        return FileTell(this->Handle)
+    }
+    define void Close() {
+        this->VFS->Close(this->AsFileHandle())
+    }
+}
+
+FileHandlePrototype HostFileHandlePrototype {
+	Status: &HostFileInstance.Status,
+	Read: &HostFileInstance.Read,
+	Write: &HostFileInstance.Write,
+	Seek: &HostFileInstance.Seek,
+	Tell: &HostFileInstance.Tell
+}
+
+define FileHandlePrototype* GetHostFileHandlePrototype() {
+    return &HostFileHandlePrototype
+}
+
 declare IVirtualFilePrototype* GetVFSHostFilePrototype()
 
 struct VFSHostFile {
@@ -23,13 +74,17 @@ struct VFSHostFile {
     }
 
     define FileHandle* Open() {
-        return null
+        return HostFileInstance:New(this->AsIVirtualFile(), this->Handle)
+    }
+    define void Close(FileHandle* Handle) {
+        Free(Handle)
     }
 }
 
 IVirtualFilePrototype VFSHostFilePrototype {
     IsEphemeral: &VFSHostFile.IsEphemeral,
-    Open: &VFSHostFile.Open
+    Open: &VFSHostFile.Open,
+    Close: &VFSHostFile.Close
 }
 
 define IVirtualFilePrototype* GetVFSHostFilePrototype() {

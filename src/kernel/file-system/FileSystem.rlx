@@ -1,23 +1,34 @@
 ; Magically compatible with Linux, don't change unless replacing with something that translates back to
 ;  LinuxFileStatus
 
-i32 FILE_STATUS_MODE_IS_CHARACTER_DEVICE := 0o02_0000
-i32 FILE_STATUS_MODE_IS_DIRECTORY        := 0o04_0000
-i32 FILE_STATUS_MODE_IS_BLOCK_DEVICE     := 0o06_0000
-i32 FILE_STATUS_MODE_IS_FILE             := 0o10_0000
+enum FileStatusType {
+    FIFO := 1,
+    CharacterDevice := 2,
+    Directory := 4,
+    BlockDevice := 6,
+    File := 8,
+    SymbolicLink := 10,
+    Socket := 12
+}
 
 struct FileStatus {
 	i64 Device
 	i64 INodeNumber
 	i64 LinkCount
 	
-	i32 Mode
-	
+    union {
+	    i32 Mode
+
+        bits As i32 {
+            FileStatusType [12:16] Type
+        }
+    }
+
 	define i8 IsFile() {
-		return (this->Mode & FILE_STATUS_MODE_IS_FILE) != 0
+		return this->Type = FileStatusType::File
 	}
 	define i8 IsDirectory() {
-		return (this->Mode & FILE_STATUS_MODE_IS_DIRECTORY) != 0
+		return this->Type = FileStatusType::Directory
 	}
 	
 	i32 UserID
@@ -27,10 +38,10 @@ struct FileStatus {
 	i64 RepresentedDevice
 	
 	union {
-		i32 Size
 		i64 FullSize
+		i32 Size ; ugggggggggggg
 	}
-	
+
 	i64 BlockSize
 	i64 BlockCount
 	
