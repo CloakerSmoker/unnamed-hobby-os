@@ -1,0 +1,9 @@
+    IVirtualFilePrototype* Prototype
+
+    define i8 Is(IVirtualFilePrototype* Prototype) {
+        return this->Prototype = Prototype
+    }
+
+    define IVirtualDirectory* AsIVirtualFile() {
+        return this As void*
+    }
