@@ -1,0 +1,59 @@
+
+i32 LOOP_DEVICE_BLOCK_SIZE := 512
+
+declare BlockDevicePrototype* GetLoopBlockDevicePrototype()
+
+struct LoopBlockDevice {
+	#Include "./src/drivers/block-device/BlockDeviceInstance.rlx"
+	
+	FileHandle* Backing
+
+    define i32 Translate(i64 Block) {
+        return (Block As i32) * LOOP_DEVICE_BLOCK_SIZE
+    }
+	
+	define void Read(i64 FirstBlock, i64 BlockCount, void* Buffer) {
+		this->Backing->Seek(this->Translate(FirstBlock), SeekMode::Set)
+        this->Backing->Read(Buffer, this->Translate(BlockCount))
+	}
+	define void Write(i64 FirstBlock, i64 BlockCount, void* Buffer) {
+		this->Backing->Seek(this->Translate(FirstBlock), SeekMode::Set)
+		this->Backing->Write(Buffer, this->Translate(BlockCount))
+	}
+	define i64 GetBytesPerBlock() {
+		return LOOP_DEVICE_BLOCK_SIZE
+	}
+	define void Initialize(i8** Options, i32 OptionCount) {
+		this->Backing := Options[0] As void*
+	}
+
+    static BlockDevice* New(FileHandle* Backing) {
+        self* this := Alloc(#self)
+
+        this->Prototype := GetLoopBlockDevicePrototype()
+        
+        this->Backing := Backing
+
+        return this As void*
+    }
+}
+
+BlockDevicePrototype LoopBlockDevicePrototype {
+	DataSize: #LoopBlockDevice,
+	
+	Read: &LoopBlockDevice.Read,
+	Write: &LoopBlockDevice.Write,
+	GetBytesPerBlock: &LoopBlockDevice.GetBytesPerBlock,
+	Initialize: &LoopBlockDevice.Initialize,
+	
+	IsRoot: false,
+	IsLeaf: false,
+	
+	Name: "LOOP"
+}
+
+i32 LOOP_BLOCK_DEVICE_PROTOTYPE_ID := RegisterBlockDevicePrototype(&LoopBlockDevicePrototype)
+
+define BlockDevicePrototype* GetLoopBlockDevicePrototype() {
+    return &LoopBlockDevicePrototype
+}

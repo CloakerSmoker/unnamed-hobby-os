@@ -1,0 +1,121 @@
+declare FileHandlePrototype* GetBlockDeviceFileHandlePrototype()
+
+struct BlockDeviceFileHandle {
+    #Include "./src/kernel/file-system/HandleInstance.rlx"
+
+    BlockDevice* Device
+    i32 BlockSize
+
+    i32 Offset
+
+    static FileHandle* New(BlockDevice* Device) {
+        self* this := Alloc(#self)
+        
+        this->Prototype := GetBlockDeviceFileHandlePrototype()
+
+        this->Device := Device
+        this->BlockSize := Device->GetBytesPerBlock() As i32
+
+        return this As void*
+    }
+
+    define void Status(FileStatus* Out) {
+        ;FileGetStatus(this->Handle, Out)
+    }
+
+    define i32 Read(void* Buffer, i32 Size) {
+        if (Size % this->BlockSize != 0) {
+            Throw(HANDLE_ERROR_BAD_PARAMETER)
+        }
+
+        i32 BlockCount := Size / this->BlockSize
+
+        this->Device->Read(this->Offset, BlockCount, Buffer)
+        this->Offset += BlockCount
+
+        return Size
+    }
+    define i32 Write(void* Buffer, i32 Size) {
+        if (Size % this->BlockSize != 0) {
+            Throw(HANDLE_ERROR_BAD_PARAMETER)
+        }
+
+        i32 BlockCount := Size / this->BlockSize
+
+        this->Device->Write(this->Offset, BlockCount, Buffer)
+        this->Offset += BlockCount
+
+        return Size
+    }
+    define void Seek(i32 Destination, SeekMode Mode) {
+        if (Destination % this->BlockSize != 0) {
+            Throw(HANDLE_ERROR_BAD_PARAMETER)
+        }
+
+        i32 Block := Destination / this->BlockSize
+
+        if (Mode = SeekMode::Set) {
+            this->Offset := Block
+        }
+        else if (Mode = SeekMode::Offset) {
+            this->Offset += Block
+        }
+    }
+    define i32 Tell() {
+        return this->Offset
+    }
+    define void Close() {
+        
+    }
+}
+
+FileHandlePrototype BlockDeviceFileHandlePrototype {
+	Status: &BlockDeviceFileHandle.Status,
+	Read: &BlockDeviceFileHandle.Read,
+	Write: &BlockDeviceFileHandle.Write,
+	Seek: &BlockDeviceFileHandle.Seek,
+	Tell: &BlockDeviceFileHandle.Tell
+}
+
+define FileHandlePrototype* GetBlockDeviceFileHandlePrototype() {
+    return &BlockDeviceFileHandlePrototype
+}
+
+declare IVirtualFilePrototype* GetVFSBlockDeviceFilePrototype()
+
+struct VFSBlockDeviceFile {
+    #Include "./src/kernel/file-system/VFS/IVirtualFile.rlx"
+
+    FileHandle* Handle
+
+    static IVirtualFile* New(FileHandle* Handle) {
+        self* this := Alloc(#self)
+
+        this->Prototype := GetVFSBlockDeviceFilePrototype()
+
+        this->Handle := Handle
+
+        return this As void*
+    }
+
+    define i8 IsEphemeral() {
+        return false
+    }
+
+    define FileHandle* Open() {
+        return this->Handle
+    }
+    define void Close(FileHandle* Handle) {
+        
+    }
+}
+
+IVirtualFilePrototype VFSBlockDeviceFilePrototype {
+    IsEphemeral: &VFSBlockDeviceFile.IsEphemeral,
+    Open: &VFSBlockDeviceFile.Open,
+    Close: &VFSBlockDeviceFile.Close
+}
+
+define IVirtualFilePrototype* GetVFSBlockDeviceFilePrototype() {
+    return &VFSBlockDeviceFilePrototype
+}
