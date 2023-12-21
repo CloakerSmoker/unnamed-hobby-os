@@ -87,13 +87,13 @@ define void ExecuteLS(i64 ArgC, i8** ArgV) {
         i8* Path := ArgV[1]
 
         VirtualDirectoryEntry Entry
-        if !(Lookup(Path, &Entry)) {
-            Print("'%s' does not exist\n")
+        if !(Lookup(CurrentDirectory, Path, &Entry)) {
+            Print("'%s' does not exist\n", Path)
             return
         }
 
         if (Entry.Type != VirtualDirectoryEntryType::Directory) {
-            Print("'%s' not a directory\n")
+            Print("'%s' not a directory\n", Path)
             return
         }
 
@@ -128,7 +128,7 @@ define void ExecuteCD(i64 ArgC, i8** ArgV) {
         i8* Path := ArgV[1]
 
         VirtualDirectoryEntry Entry
-        if !(CurrentDirectory->Lookup(Path, &Entry)) {
+        if !(Lookup(CurrentDirectory, Path, &Entry)) {
             Print("'%s' does not exist\n", Path)
             return
         }
@@ -184,13 +184,17 @@ define void ExecuteLoop(i64 ArgC, i8** ArgV) {
     if (StringEquals(Verb, "open")) {
         i8* Path := ArgV[2]
 
+        Print("Opening '%s' as a loop device\n", Path)
+
         VirtualDirectoryEntry Entry
-        if !(CurrentDirectory->Lookup(Path, &Entry)) {
+        if !(Lookup(CurrentDirectory, Path, &Entry)) {
             Print("'%s' not found\n", Path)
+            return
         }
 
         if (Entry.Type != VirtualDirectoryEntryType::File) {
             Print("'%s' not a file\n", Path)
+            return
         }
 
         ActiveLoopDevice* Device := ActiveLoopDevice:New()
@@ -230,9 +234,9 @@ define void Main() {
     MountRoot(Root)
 
     DevicesDirectory := VFSDirectory:New()
-    Mount("dev", DevicesDirectory)
+    Mount(Root, "/dev", DevicesDirectory)
 
-    Mount("host", OpenHostDirectory("."))
+    Mount(Root, "/host", OpenHostDirectory("."))
 
     CurrentDirectory := VFSRootDirectory
 
