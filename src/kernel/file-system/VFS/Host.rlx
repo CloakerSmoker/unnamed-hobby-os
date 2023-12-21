@@ -112,6 +112,10 @@ struct VFSHostDirectory {
         return this As void*
     }
 
+    define void Reset() {
+        FileSeek(this->Handle, 0, SEEK_SET)
+    }
+
     define i32 Count() {
         i32 Result := 0
 
@@ -121,6 +125,8 @@ struct VFSHostDirectory {
         while (WalkDirectoryNext(&State, &Entry)) {
             Result += 1
         }
+
+        this->Reset()
 
         return Result
     }
@@ -206,6 +212,9 @@ struct VFSHostDirectory {
                 MoveMemory(Result, Cached, #VirtualDirectoryEntry)
                 return true
             }
+        }
+        else {
+            this->Reset()
         }
 
         return false

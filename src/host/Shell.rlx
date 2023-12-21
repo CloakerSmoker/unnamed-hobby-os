@@ -1,0 +1,258 @@
+#Require "$/Console.rlx"
+#Require "$/AVLTree.rlx"
+#Require "$/Debug.rlx"
+
+define void SchedulerYield() {}
+
+define void Info(i8* Format, ... Args) {
+    RawPrint(Format, Args)
+}
+
+#Require "./src/drivers/block-device/BlockDevice.rlx"
+#Require "./src/drivers/block-device/FileBlockDevice.rlx"
+#Require "./src/drivers/block-device/GPTBlockDevice.rlx"
+
+#Require "./src/kernel/file-system/VFS/VFS.rlx"
+#Require "./src/kernel/file-system/VFS/VFSDirectory.rlx"
+#Require "./src/kernel/file-system/VFS/VFSOverlayDirectory.rlx"
+
+#Require "./src/kernel/file-system/VFS/Ext2.rlx"
+#Require "./src/kernel/file-system/VFS/FAT32.rlx"
+#Require "./src/kernel/file-system/VFS/Host.rlx"
+
+#Require "./src/kernel/file-system/VFS/Root.rlx"
+
+define IVirtualDirectory* OpenFAT32(BlockDevice* Device) {
+	FAT32Device* FATDevice := Alloc(#FAT32Device)
+	FATDevice->Initialize(Device)
+
+	FATDevice->ReadHeader()
+
+    return FAT32Directory:New(FATDevice, FATDevice->Header->RootDirectoryCluster)
+}
+
+define IVirtualDirectory* OpenExt2(BlockDevice* Device) {
+    Ext2* FS := Alloc(#Ext2)
+	FS->Device := Device
+	
+	void* SB := Alloc(2048)
+	void* TI := Alloc(1024)
+	void* TB1 := Alloc(1024)
+	void* TB2 := Alloc(1024)
+	void* BMP := Alloc(1024)
+	
+	FS->Initialize(SB, TI, TB1, TB2, BMP)
+
+    Ext2INode* RootINode := CloneMemory(FS->ReadINode(2), #Ext2INode)
+    return VFSExt2Directory:New(FS, RootINode)
+}
+
+define IVirtualDirectory* OpenHostDirectory(i8* Path) {
+    i64 Handle := FileOpen(Path, FILE_READ)
+
+    return VFSHostDirectory:New(Handle)
+}
+
+IVirtualDirectory* CurrentDirectory := null
+IVirtualDirectory* DevicesDirectory := null
+
+#Require "$/AVLTree.rlx"
+
+struct ShellCommand {
+    i8* Name,
+    void(i64, i8**) Callback
+}
+
+AVLTree* Commands := AVLTree:New(#ShellCommand)
+
+define i32 RegisterCommand(i8* Name, void(i64, i8**) Callback) {
+    ShellCommand Command {
+        Name: Name,
+        Callback: Callback
+    }
+
+    Commands->Insert(FNV1A(Name), &Command)
+
+    return Commands->Count()
+}
+
+define ShellCommand* LookupCommand(i8* Name) {
+    return Commands->Get(FNV1A(Name))
+}
+
+define void ExecuteLS(i64 ArgC, i8** ArgV) {
+    IVirtualDirectory* Target := CurrentDirectory
+
+    if (ArgC = 2) {
+        i8* Path := ArgV[1]
+
+        VirtualDirectoryEntry Entry
+        if !(Lookup(Path, &Entry)) {
+            Print("'%s' does not exist\n")
+            return
+        }
+
+        if (Entry.Type != VirtualDirectoryEntryType::Directory) {
+            Print("'%s' not a directory\n")
+            return
+        }
+
+        Target := Entry.Directory
+    }
+
+    Print("\nListing %i entries:\n", Target->Count())
+
+    void* State := Target->Enumerate()
+    i32 Count := 0
+    VirtualDirectoryEntry Entry
+
+    while (Target->Next(&State, &Entry)) {
+        if (Entry.Type = VirtualDirectoryEntryType::Directory) {
+            Print("%i %s/\n", Count, Entry.Name)
+        }
+        else if (Entry.Type = VirtualDirectoryEntryType::File) {
+            Print("%i %s\n", Count, Entry.Name)
+        }
+        else if (Entry.Type = VirtualDirectoryEntryType::Hole) {
+            Print("%i %s (hole)\n", Count, Entry.Name)
+        }
+
+        Count += 1
+    }
+}
+
+i32 LS_COMMAND_ID := RegisterCommand("ls", &ExecuteLS)
+
+define void ExecuteCD(i64 ArgC, i8** ArgV) {
+    if (ArgC = 2) {
+        i8* Path := ArgV[1]
+
+        VirtualDirectoryEntry Entry
+        if !(CurrentDirectory->Lookup(Path, &Entry)) {
+            Print("'%s' does not exist\n", Path)
+            return
+        }
+
+        if (Entry.Type != VirtualDirectoryEntryType::Directory) {
+            Print("'%s' is not a directory\n", Path)
+            return
+        }
+
+        CurrentDirectory := Entry.Directory
+    }
+}
+
+i32 CD_COMMAND_ID := RegisterCommand("cd", &ExecuteCD)
+
+#Require "$/PointerArray.rlx"
+
+#Require "./src/kernel/file-system/VFS/LoopBlockDevice.rlx"
+#Require "./src/kernel/file-system/VFS/BlockDeviceFileHandle.rlx"
+
+struct ActiveLoopDevice {
+    i8* Path,
+
+    union {
+        LoopBlockDevice* BlockDevice,
+        BlockDevice* RawBlockDevice
+    }
+
+    union {
+        BlockDeviceFileHandle* Handle,
+        FileHandle* RawHandle
+    }
+
+    union {
+        VFSBlockDeviceFile* File,
+        IVirtualFile* RawFile
+    }
+
+    static self* New() {
+        return Alloc(#self)
+    }
+}
+
+PointerArray* LoopDevices := PointerArray:New() ; <IVirtualFile*>
+
+define void ExecuteLoop(i64 ArgC, i8** ArgV) {
+    if (ArgC < 2) {
+        return
+    }
+
+    i8* Verb := ArgV[1]
+
+    if (StringEquals(Verb, "open")) {
+        i8* Path := ArgV[2]
+
+        VirtualDirectoryEntry Entry
+        if !(CurrentDirectory->Lookup(Path, &Entry)) {
+            Print("'%s' not found\n", Path)
+        }
+
+        if (Entry.Type != VirtualDirectoryEntryType::File) {
+            Print("'%s' not a file\n", Path)
+        }
+
+        ActiveLoopDevice* Device := ActiveLoopDevice:New()
+
+        Device->Path := Path
+        Device->RawBlockDevice := LoopBlockDevice:New(Entry.File->Open())
+        Device->RawHandle := BlockDeviceFileHandle:New(Device->RawBlockDevice)
+        Device->RawFile := VFSBlockDeviceFile:New(Device->RawHandle)
+
+        VirtualDirectoryEntry NewEntry {
+            Name: FormatString("loop%i", LoopDevices->Count()),
+            Type: VirtualDirectoryEntryType::File,
+            File: Device->RawFile
+        }
+
+        DevicesDirectory->Insert(&NewEntry)
+
+        LoopDevices->Push(Device)
+    }
+    else if (StringEquals(Verb, "list")) {
+        i32 Count := LoopDevices->Count()
+
+        Print("%i active loop devices\n", Count)
+
+        for (i32 Index := 0, Index < Count, Index++) {
+            ActiveLoopDevice* Device := LoopDevices->At(Index)
+
+            Print("/dev/loop%i: %s\n", Index, Device->Path)
+        }
+    }
+}
+
+i32 LOOP_COMMAND_ID := RegisterCommand("loop", &ExecuteLoop)
+
+define void Main() {
+    IVirtualDirectory* Root := VFSDirectory:New()
+    MountRoot(Root)
+
+    DevicesDirectory := VFSDirectory:New()
+    Mount("dev", DevicesDirectory)
+
+    Mount("host", OpenHostDirectory("."))
+
+    CurrentDirectory := VFSRootDirectory
+
+    loop {
+        Print(">")
+        i8* Line := ReadLine()
+
+        i64 ArgC := 0
+        i8** ArgV := null
+        
+        ParseCommandLine(Line, &ArgC, &ArgV)
+        i8* CommandName := ArgV[0]
+
+        ShellCommand* Command := LookupCommand(CommandName)
+
+        if (Command = null) {
+            Print("'%s' command not found\n", CommandName)
+        }
+        else {
+            Command->Callback(ArgC, ArgV)
+        }
+    }
+}
