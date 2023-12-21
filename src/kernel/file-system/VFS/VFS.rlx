@@ -57,17 +57,17 @@ struct IVirtualFilePrototype {
 }
 
 struct IVirtualFile {
-    IVirtualFilePrototype* Prototype
+    #Include "./src/kernel/file-system/VFS/IVirtualFile.rlx"
 
     define i8 IsEphemeral() {
         return this->Prototype->IsEphemeral(this)
     }
 
     define FileHandle* Open() {
-        return this->Prototype->Open()
+        return this->Prototype->Open(this)
     }
     define void Close(FileHandle* Target) {
-        this->Prototype->Close(Target)
+        this->Prototype->Close(this, Target)
     }
 }
 

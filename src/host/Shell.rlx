@@ -197,10 +197,13 @@ define void ExecuteLoop(i64 ArgC, i8** ArgV) {
             return
         }
 
+        IVirtualFile* File := Entry.File
+        FileHandle* Handle := File->Open()
+
         ActiveLoopDevice* Device := ActiveLoopDevice:New()
 
         Device->Path := Path
-        Device->RawBlockDevice := LoopBlockDevice:New(Entry.File->Open())
+        Device->RawBlockDevice := LoopBlockDevice:New(Handle)
         Device->RawHandle := BlockDeviceFileHandle:New(Device->RawBlockDevice)
         Device->RawFile := VFSBlockDeviceFile:New(Device->RawHandle)
 
@@ -228,6 +231,55 @@ define void ExecuteLoop(i64 ArgC, i8** ArgV) {
 }
 
 i32 LOOP_COMMAND_ID := RegisterCommand("loop", &ExecuteLoop)
+
+define void ExecuteMount(i64 ArgC, i8** ArgV) {
+    if (ArgC != 4) {
+        return
+    }
+
+    i8* Type := ArgV[1]
+    i8* DevicePath := ArgV[2]
+    i8* DestinationPath := ArgV[3]
+
+    VirtualDirectoryEntry Entry
+    if !(Lookup(CurrentDirectory, DevicePath, &Entry)) {
+        Print("'%s' does not exist\n", DevicePath)
+        return
+    }
+
+    if (Entry.Type != VirtualDirectoryEntryType::File) {
+        Print("'%s' not a file\n", DevicePath)
+        return
+    }
+
+    IVirtualFile* File := Entry.File
+
+    if !(File->Is(GetVFSBlockDeviceFilePrototype())) {
+        Print("'%s' not a block device", DevicePath)
+        return
+    }
+
+    VFSBlockDeviceFile* BlockDeviceFile := File As void*
+    BlockDeviceFileHandle* BlockDeviceHandle := BlockDeviceFile->Handle As void*
+    BlockDevice* Device := BlockDeviceHandle->Device
+
+    IVirtualDirectory* DeviceRoot := null
+
+    if (StringEquals(Type, "ext2")) {
+        DeviceRoot := OpenExt2(Device)
+    }
+    else if (StringEquals(Type, "fat32")) {
+        DeviceRoot := OpenFAT32(Device)
+    }
+    else {
+        Print("'%s' unknown FS type\n", DevicePath)
+        return
+    }
+
+    Mount(CurrentDirectory, DestinationPath, DeviceRoot)
+}
+
+i32 MOUNT_COMMAND_ID := RegisterCommand("mount", &ExecuteMount)
 
 define void Main() {
     IVirtualDirectory* Root := VFSDirectory:New()
