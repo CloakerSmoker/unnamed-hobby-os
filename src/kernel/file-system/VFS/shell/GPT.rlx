@@ -1,0 +1,306 @@
+
+define void PrintGUID(i8* this) {
+	Print("{")
+	
+	for (i32 Index := 0, Index < 4, Index++) {
+        Print("%B", this[Index])
+	}
+	
+	Print("-")
+	
+	for (i32 Index := 4, Index < 6, Index++) {
+		Print("%B", this[Index])
+	}
+	
+	Print("-")
+	
+	for (i32 Index := 6, Index < 8, Index++) {
+		Print("%B", this[Index])
+	}
+	
+	Print("-")
+	
+	for (i32 Index := 8, Index < 10, Index++) {
+		Print("%B", this[Index])
+	}
+	
+	Print("-")
+	
+	for (i32 Index := 10, Index < 16, Index++) {
+		Print("%B", this[Index])
+	}
+	
+	Print("}")
+}
+
+define void PrintGPTPartitionTableHeader(GPTPartitionTableHeader* this) {
+	Print("GPTPartitionTableHeader {\n")
+	Print("\tSignature                  : %s\n", this~>Signature)
+	Print("\tVersion                    : %x\n", this->Version)
+	Print("\tHeaderSize                 : %x\n", this->HeaderSize)
+	Print("\tChecksum                   : %i\n", this->Checksum)
+	
+	Print("\tThisHeaderLBA              : %x\n", this->ThisHeaderLBA)
+	Print("\tAlternateHeaderLBA         : %x\n", this->AlternateHeaderLBA)
+	
+	Print("\tFirstUsableBlock           : %x\n", this->FirstUsableBlock)
+	Print("\tLastUsableBlock            : %x\n", this->LastUsableBlock)
+	
+	Print("\tDiskGUID                   : ")
+	PrintGUID(this->DiskGUID)
+	Print("\n")
+	
+	Print("\tPartitionEntryArrayLBA     : %x\n", this->PartitionEntryArrayLBA)
+	Print("\tPartitionEntryCount        : %x (%i)\n", this->PartitionEntryCount, this->PartitionEntryCount)
+	Print("\tPartitionEntrySize         : %x\n", this->PartitionEntrySize)
+	Print("\tPartitionEntryArrayChecksum: %i\n", this->PartitionEntryArrayChecksum)
+	Print("}\n")
+}
+
+define void PrintGPTPartitionEntryAttributes(i64 Attributes) {
+	if (Attributes & GPT_PARTITION_ATTRIBUTE_REQUIRED) {
+		Print("[required] ")
+	}
+	
+	if (Attributes & GPT_PARTITION_ATTRIBUTE_NOT_BLOCK) {
+		Print("[not block] ")
+	}
+	
+	Attributes &= ~(GPT_PARTITION_ATTRIBUTE_REQUIRED | GPT_PARTITION_ATTRIBUTE_NOT_BLOCK)
+	
+	if (Attributes) {
+		Print("[unknown %x] ", Attributes)
+	}
+}
+
+define void PrintGPTPartitionEntry(GPTPartitionEntry* this) {
+	if (this->StartingLBA = 0 && this->EndingLBA = 0) {
+		return
+	}
+	
+	Print("GPTPartitionEntry {\n")
+	
+	Print("\tPartitionTypeGUID: ")
+	
+	if (CompareMemory(this->PartitionTypeGUID, GPT_PARTITION_TYPE_SYSTEM, 16)) {
+		Print("[EFI system] ")
+	}
+	else if (CompareMemory(this->PartitionTypeGUID, GPT_PARTITION_TYPE_CUSTOM, 16)) {
+		Print("[Custom] ")
+	}
+	
+	PrintGUID(this->PartitionTypeGUID)
+	Print("\n")
+	
+	Print("\tPartitionGUID    : ")
+	PrintGUID(this->PartitionGUID)
+	Print("\n")
+	
+	Print("\tStartingLBA      : %x\n", this->StartingLBA)
+	Print("\tEndingLBA        : %x\n", this->EndingLBA)
+	Print("\tAttributes       : ")
+	PrintGPTPartitionEntryAttributes(this->Attributes)
+	Print("\n")
+	
+	Print("\tName             : %s\n", WToA(this~>PartitionName))
+	Print("}\n")
+}
+
+define void ExecuteGPT(i64 ArgC, i8** ArgV) {
+    if (ArgC = 2) {
+        return
+    }
+
+    i8* DevicePath := ArgV[1]
+    i8* Verb := ArgV[2]
+
+    VirtualDirectoryEntry Entry
+    if !(Lookup(CurrentDirectory, DevicePath, &Entry)) {
+        Print("'%s' does not exist\n", DevicePath)
+        return
+    }
+
+    if (Entry.Type != VirtualDirectoryEntryType::File) {
+        Print("'%s' not a file\n", DevicePath)
+        return
+    }
+
+    IVirtualFile* File := Entry.File
+
+    if !(File->Is(GetVFSBlockDeviceFilePrototype())) {
+        Print("'%s' not a block device", DevicePath)
+        return
+    }
+
+    VFSBlockDeviceFile* BlockDeviceFile := File As void*
+    BlockDeviceFileHandle* BlockDeviceHandle := BlockDeviceFile->Handle As void*
+    BlockDevice* RawDevice := BlockDeviceHandle->Device
+
+    GPTDevice* Device := FindGPTDeviceBinding(RawDevice)
+
+    if (Device = null) {
+        Device := GPTDevice:New(RawDevice)
+
+        AddGPTDeviceBinding(RawDevice, Device)
+    }
+
+    Device->ReadHeader(1)
+
+    i8 Formatted := CompareMemory(Device->Header->Signature, "EFI PART", 8)
+
+    if (StringEquals(Verb, "format")) {
+        ; gpt /dev/loop0 format 128 m
+
+        i64 Size := ParseBlockCount(ArgV[3], ArgV[4])
+
+        Device->Format(Size)
+        Device->ReadHeader(1)
+        PrintGPTPartitionTableHeader(Device->Header)
+
+        return
+    }
+    else if !(Formatted) {
+        Print("'%s' is not formatted as a GPT device\n", DevicePath)
+        return
+    }
+
+    if (StringEquals(Verb, "scan")) {
+        for (i32 Index := 0, Index < Device->Header->PartitionEntryCount, Index++) {
+            GPTPartitionEntry* NextPartition := Device->ReadPartitionEntry(Index)
+
+            if (NextPartition->StartingLBA = 0 && NextPartition->EndingLBA = 0) {
+                continue
+            }
+            
+            BlockDevice* PartitionDevice := GPTBlockDevice:New(RawDevice, NextPartition)
+            FileHandle* PartitionHandle := BlockDeviceFileHandle:New(PartitionDevice)
+            IVirtualFile* PartitionFile := VFSBlockDeviceFile:New(PartitionHandle)
+
+            i8* FileName := FormatString("%sp%i", Entry.Name, Index)
+
+            VirtualDirectoryEntry PartitionEntry {
+                Type: VirtualDirectoryEntryType::File,
+                Name: FileName,
+                File: PartitionFile
+            }
+
+            DevicesDirectory->Insert(&PartitionEntry)
+
+            Print("/dev/%s\n", FileName)
+        }
+    }
+    else if (StringEquals(Verb, "show")) {
+        i8* Noun := ArgV[3]
+
+        if (StringEquals(Noun, "headers")) {
+            Device->ReadHeader(1)
+            Print("Primary GPT Header:\n")
+            PrintGPTPartitionTableHeader(Device->Header)
+
+            Device->ReadHeader(Device->Header->AlternateHeaderLBA)
+            Print("Alternative GPT Header:\n")
+            PrintGPTPartitionTableHeader(Device->Header)
+        }
+        else if (StringEquals(Noun, "header")) {
+            i64 HeaderLBA := 1
+
+            if (ArgC = 5) {
+                ; gpt /dev/loop0 show header (primary|alternative)
+
+                i8* HeaderName := ArgV[4]
+
+                if (StringEquals(HeaderName, "alternative")) {
+                    HeaderLBA := Device->Header->AlternateHeaderLBA
+                }
+            }
+
+            Device->ReadHeader(HeaderLBA)
+            PrintGPTPartitionTableHeader(Device->Header)
+        }
+        else if (StringEquals(Noun, "partitions")) {
+            for (i32 Index := 0, Index < Device->Header->PartitionEntryCount, Index++) {
+                GPTPartitionEntry* NextPartition := Device->ReadPartitionEntry(Index)
+
+                if (NextPartition->StartingLBA = 0 && NextPartition->EndingLBA = 0) {
+                    continue
+                }
+                
+                Print("Partition %i:\n", Index)
+                PrintGPTPartitionEntry(NextPartition)
+            }
+        }
+        else if (StringEquals(Noun, "partition")) {
+            ; gpt /dev/loop0 show partition 3
+
+            i32 PartitionNumber := AToI(ArgV[4]) As i32
+
+            if (PartitionNumber < 0 || PartitionNumber > Device->Header->PartitionEntryCount) {
+                Print("'%s' has no partition number '%i'\n", DevicePath, PartitionNumber)
+            }
+
+            GPTPartitionEntry* Partition := Device->ReadPartitionEntry(PartitionNumber)
+
+            Print("Partition %i:\n", PartitionNumber)
+            PrintGPTPartitionEntry(Partition)
+        }
+    }
+    else if (StringEquals(Verb, "create")) {
+        ; gpt /dev/loop0 create 0
+
+        GPTPartitionEntry* NewEntry := Alloc(#GPTPartitionEntry)
+
+        GenerateGUID(NewEntry->PartitionGUID)
+
+        i32 Index := Device->AddPartition(NewEntry)
+		
+		Free(NewEntry)
+		
+		if (Index = -1) {
+			Print("Could not add entry, partition entry table has no free slots\n")
+		}
+		else {
+			Print("Added entry in slot %i\n", Index)
+		}
+    }
+    else if (StringEquals(Verb, "set")) {
+        ; gpt /dev/loop0 set 0 start 32
+        i32 PartitionNumber := AToI(ArgV[3]) As i32
+        GPTPartitionEntry* Partition := Device->ReadPartitionEntry(PartitionNumber)
+
+        i8* Property := ArgV[4]
+
+        if (StringEquals(Property, "start")) {
+            Partition->StartingLBA := ParseBlockCount(ArgV[5], ArgV[6])
+        }
+        else if (StringEquals(Property, "end")) {
+            Partition->EndingLBA := ParseBlockCount(ArgV[5], ArgV[6])
+        }
+        else if (StringEquals(Property, "name")) {
+            i8* Name := ArgV[5]
+            i32 NameLength := StringLength(Name)
+			
+			MoveMemory(Partition~>PartitionName, AToW(Name, NameLength), NameLength * 2)
+        }
+        else if (StringEquals(Property, "type")) {
+            i8* Type := ArgV[5]
+
+			if (StringEquals(Type, "system")) {
+				MoveMemory(Partition~>PartitionTypeGUID, GPT_PARTITION_TYPE_SYSTEM, 16)
+			}
+			else if (StringEquals(Type, "custom")) {
+				MoveMemory(Partition~>PartitionTypeGUID, GPT_PARTITION_TYPE_CUSTOM, 16)
+			}
+			else if (StringEquals(Type, "none")) {
+				MoveMemory(Partition~>PartitionTypeGUID, GPT_PARTITION_TYPE_NONE, 16)
+			}
+        }
+
+        Device->WritePartitionEntry(PartitionNumber, Partition)
+    }
+}
+
+; gpt /dev/loop0 format 1M
+; gpt /dev/loop0 show headers
+; gpt /dev/loop0 show partition 0
+
+i32 GPT_COMMAND_ID := RegisterCommand("gpt", &ExecuteGPT)

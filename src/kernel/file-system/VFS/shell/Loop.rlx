@@ -1,0 +1,87 @@
+#Require "$/PointerArray.rlx"
+
+#Require "./src/kernel/file-system/VFS/LoopBlockDevice.rlx"
+#Require "./src/kernel/file-system/VFS/BlockDeviceFileHandle.rlx"
+
+struct ActiveLoopDevice {
+    i8* Path,
+
+    union {
+        LoopBlockDevice* BlockDevice,
+        BlockDevice* RawBlockDevice
+    }
+
+    union {
+        BlockDeviceFileHandle* Handle,
+        FileHandle* RawHandle
+    }
+
+    union {
+        VFSBlockDeviceFile* File,
+        IVirtualFile* RawFile
+    }
+
+    static self* New() {
+        return Alloc(#self)
+    }
+}
+
+PointerArray* LoopDevices := PointerArray:New() ; <IVirtualFile*>
+
+define void ExecuteLoop(i64 ArgC, i8** ArgV) {
+    if (ArgC < 2) {
+        return
+    }
+
+    i8* Verb := ArgV[1]
+
+    if (StringEquals(Verb, "open")) {
+        i8* Path := ArgV[2]
+
+        Print("Opening '%s' as a loop device\n", Path)
+
+        VirtualDirectoryEntry Entry
+        if !(Lookup(CurrentDirectory, Path, &Entry)) {
+            Print("'%s' not found\n", Path)
+            return
+        }
+
+        if (Entry.Type != VirtualDirectoryEntryType::File) {
+            Print("'%s' not a file\n", Path)
+            return
+        }
+
+        IVirtualFile* File := Entry.File
+        FileHandle* Handle := File->Open()
+
+        ActiveLoopDevice* Device := ActiveLoopDevice:New()
+
+        Device->Path := Path
+        Device->RawBlockDevice := LoopBlockDevice:New(Handle)
+        Device->RawHandle := BlockDeviceFileHandle:New(Device->RawBlockDevice)
+        Device->RawFile := VFSBlockDeviceFile:New(Device->RawHandle)
+
+        VirtualDirectoryEntry NewEntry {
+            Name: FormatString("loop%i", LoopDevices->Count()),
+            Type: VirtualDirectoryEntryType::File,
+            File: Device->RawFile
+        }
+
+        DevicesDirectory->Insert(&NewEntry)
+
+        LoopDevices->Push(Device)
+    }
+    else if (StringEquals(Verb, "list")) {
+        i32 Count := LoopDevices->Count()
+
+        Print("%i active loop devices\n", Count)
+
+        for (i32 Index := 0, Index < Count, Index++) {
+            ActiveLoopDevice* Device := LoopDevices->At(Index)
+
+            Print("/dev/loop%i: %s\n", Index, Device->Path)
+        }
+    }
+}
+
+i32 LOOP_COMMAND_ID := RegisterCommand("loop", &ExecuteLoop)

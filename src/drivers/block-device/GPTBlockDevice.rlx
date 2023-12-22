@@ -1,6 +1,8 @@
 #Require "./src/drivers/GPT.rlx"
 #Require "$/StringBase.rlx"
 
+declare BlockDevicePrototype* GetGPTPartitionBlockDevicePrototype()
+
 struct GPTPartitionBlockDeviceInstance {
 	#Include "./src/drivers/block-device/BlockDeviceInstance.rlx"
 	
@@ -50,6 +52,24 @@ struct GPTPartitionBlockDeviceInstance {
 		
 		this->GPTParent := GPTParent
 	}
+	
+	static BlockDevice* New(BlockDevice* Parent, GPTPartitionEntry* Entry) {
+		self* this := Alloc(#self)
+
+		this->Prototype := GetGPTPartitionBlockDevicePrototype()
+		this->Parent := Parent
+		this->GPTParent := FindGPTDeviceBinding(Parent)
+
+		MoveMemory(this~>Entry, Entry, #GPTPartitionEntry)
+
+		return this As void*
+	}
+}
+
+struct GPTBlockDevice {
+	static BlockDevice* New(BlockDevice* Parent, GPTPartitionEntry* Entry) {
+		return GPTPartitionBlockDeviceInstance:New(Parent, Entry)
+	}
 }
 
 BlockDevicePrototype GPTPartitionBlockDevicePrototype {
@@ -64,6 +84,10 @@ BlockDevicePrototype GPTPartitionBlockDevicePrototype {
 	IsLeaf: false,
 	
 	Name: "GPT"
+}
+
+define BlockDevicePrototype* GetGPTPartitionBlockDevicePrototype() {
+	return &GPTPartitionBlockDevicePrototype
 }
 
 i32 GPT_PARTITION_BLOCK_DEVICE_PROTOTYPE_ID := RegisterBlockDevicePrototype(&GPTPartitionBlockDevicePrototype)

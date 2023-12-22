@@ -1,0 +1,63 @@
+define void ExecuteLS(i64 ArgC, i8** ArgV) {
+    IVirtualDirectory* Target := CurrentDirectory
+
+    if (ArgC = 2) {
+        i8* Path := ArgV[1]
+
+        VirtualDirectoryEntry Entry
+        if !(Lookup(CurrentDirectory, Path, &Entry)) {
+            Print("'%s' does not exist\n", Path)
+            return
+        }
+
+        if (Entry.Type != VirtualDirectoryEntryType::Directory) {
+            Print("'%s' not a directory\n", Path)
+            return
+        }
+
+        Target := Entry.Directory
+    }
+
+    Print("\nListing %i entries:\n", Target->Count())
+
+    void* State := Target->Enumerate()
+    i32 Count := 0
+    VirtualDirectoryEntry Entry
+
+    while (Target->Next(&State, &Entry)) {
+        if (Entry.Type = VirtualDirectoryEntryType::Directory) {
+            Print("%i %s/\n", Count, Entry.Name)
+        }
+        else if (Entry.Type = VirtualDirectoryEntryType::File) {
+            Print("%i %s\n", Count, Entry.Name)
+        }
+        else if (Entry.Type = VirtualDirectoryEntryType::Hole) {
+            Print("%i %s (hole)\n", Count, Entry.Name)
+        }
+
+        Count += 1
+    }
+}
+
+i32 LS_COMMAND_ID := RegisterCommand("ls", &ExecuteLS)
+
+define void ExecuteCD(i64 ArgC, i8** ArgV) {
+    if (ArgC = 2) {
+        i8* Path := ArgV[1]
+
+        VirtualDirectoryEntry Entry
+        if !(Lookup(CurrentDirectory, Path, &Entry)) {
+            Print("'%s' does not exist\n", Path)
+            return
+        }
+
+        if (Entry.Type != VirtualDirectoryEntryType::Directory) {
+            Print("'%s' is not a directory\n", Path)
+            return
+        }
+
+        CurrentDirectory := Entry.Directory
+    }
+}
+
+i32 CD_COMMAND_ID := RegisterCommand("cd", &ExecuteCD)

@@ -54,6 +54,10 @@ i8* GPT_PARTITION_GUID_TEMPLATE := i8[0xDB, 0x5B, 0xD6, 0xDA, 0x7D, 0x88, 0x45, 
 
 i32 GUIDCounter := 0
 
+define void GPTSeedRandom(i32 Value) {
+	GUIDCounter := Value
+}
+
 define void GenerateGUID(i8* Out) {
 	MoveMemory(Out, GPT_PARTITION_GUID_TEMPLATE, 16)
 	
@@ -233,6 +237,14 @@ struct GPTDevice {
 				}
 			}
 		}
+	}
+
+	static self* New(BlockDevice* Parent) {
+		self* this := Alloc(#self)
+
+		this->Device := Parent
+
+		return this
 	}
 }
 
