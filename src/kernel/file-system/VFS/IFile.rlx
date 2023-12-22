@@ -1,0 +1,9 @@
+    IFilePrototype* Prototype
+
+    define i8 Is(IFilePrototype* Prototype) {
+        return this->Prototype = Prototype
+    }
+
+    define IFile* AsFile() {
+        return this As void*
+    }

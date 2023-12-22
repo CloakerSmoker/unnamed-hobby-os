@@ -1,16 +1,16 @@
 define void ExecuteLS(i64 ArgC, i8** ArgV) {
-    IVirtualDirectory* Target := CurrentDirectory
+    IDirectory* Target := CurrentDirectory
 
     if (ArgC = 2) {
         i8* Path := ArgV[1]
 
-        VirtualDirectoryEntry Entry
+        VFSDirectoryEntry Entry
         if !(Lookup(CurrentDirectory, Path, &Entry)) {
             Print("'%s' does not exist\n", Path)
             return
         }
 
-        if (Entry.Type != VirtualDirectoryEntryType::Directory) {
+        if (Entry.Type != VFSDirectoryEntryType::Directory) {
             Print("'%s' not a directory\n", Path)
             return
         }
@@ -22,16 +22,16 @@ define void ExecuteLS(i64 ArgC, i8** ArgV) {
 
     void* State := Target->Enumerate()
     i32 Count := 0
-    VirtualDirectoryEntry Entry
+    VFSDirectoryEntry Entry
 
     while (Target->Next(&State, &Entry)) {
-        if (Entry.Type = VirtualDirectoryEntryType::Directory) {
+        if (Entry.Type = VFSDirectoryEntryType::Directory) {
             Print("%i %s/\n", Count, Entry.Name)
         }
-        else if (Entry.Type = VirtualDirectoryEntryType::File) {
+        else if (Entry.Type = VFSDirectoryEntryType::File) {
             Print("%i %s\n", Count, Entry.Name)
         }
-        else if (Entry.Type = VirtualDirectoryEntryType::Hole) {
+        else if (Entry.Type = VFSDirectoryEntryType::Hole) {
             Print("%i %s (hole)\n", Count, Entry.Name)
         }
 
@@ -45,13 +45,13 @@ define void ExecuteCD(i64 ArgC, i8** ArgV) {
     if (ArgC = 2) {
         i8* Path := ArgV[1]
 
-        VirtualDirectoryEntry Entry
+        VFSDirectoryEntry Entry
         if !(Lookup(CurrentDirectory, Path, &Entry)) {
             Print("'%s' does not exist\n", Path)
             return
         }
 
-        if (Entry.Type != VirtualDirectoryEntryType::Directory) {
+        if (Entry.Type != VFSDirectoryEntryType::Directory) {
             Print("'%s' is not a directory\n", Path)
             return
         }
@@ -61,3 +61,36 @@ define void ExecuteCD(i64 ArgC, i8** ArgV) {
 }
 
 i32 CD_COMMAND_ID := RegisterCommand("cd", &ExecuteCD)
+
+define void ExecuteTouch(i64 ArgC, i8** ArgV) {
+    if (ArgC != 2) {
+        return
+    }
+
+    i8* RawPath := ArgV[1]
+
+    FilePath Path
+    ParsePath(RawPath, &Path)
+
+    
+    IDirectory* ParentDirectory := LookupParentDirectory(CurrentDirectory, &Path)
+
+    if !(ParentDirectory) {
+        Print("'%s' not found\n", RawPath)
+        return
+    }
+
+    VFSDirectoryEntry OldEntry
+    if (ParentDirectory->Lookup(Path.FileName, &OldEntry)) {
+        Print("'%s' already exists\n", RawPath)
+        return
+    }
+
+    VFSDirectoryEntry NewEntry {
+        Type: VFSDirectoryEntryType::File,
+        Name: CloneString(Path.FileName),
+        File: ParentDirectory->CreateFile()
+    }
+}
+
+i32 TOUCH_COMMAND_ID := RegisterCommand("touch", &ExecuteCD)

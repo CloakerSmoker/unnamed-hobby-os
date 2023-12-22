@@ -1,6 +1,6 @@
 #Require "$/AVLTree.rlx"
 
-declare IVirtualDirectoryPrototype* GetVFSDirectoryPrototype()
+declare IDirectoryPrototype* GetVFSDirectoryPrototype()
 
 struct VFSDirectoryEnumerateState {
     i32 Index
@@ -8,27 +8,27 @@ struct VFSDirectoryEnumerateState {
 }
 
 struct VFSDirectory {
-    #Include "./src/kernel/file-system/VFS/IVirtualDirectory.rlx"
+    #Include "./src/kernel/file-system/VFS/IDirectory.rlx"
 
     AVLTree* Children ; <VFSDirectoryEntry*>
 
-    static IVirtualDirectory* New() {
+    static IDirectory* New() {
         self* this := Alloc(#self)
 
         this->Prototype := GetVFSDirectoryPrototype()
-        this->Children := AVLTree:New(#VirtualDirectoryEntry)
+        this->Children := AVLTree:New(#VFSDirectoryEntry)
 
-        return this As IVirtualDirectory*
+        return this As IDirectory*
     }
 
     define i32 Count() {
         return this->Children->Count()
     }
-    define i8 Lookup(i8* Name, VirtualDirectoryEntry* Result) {
-        VirtualDirectoryEntry* Found := this->Children->Get(FNV1A(Name))
+    define i8 Lookup(i8* Name, VFSDirectoryEntry* Result) {
+        VFSDirectoryEntry* Found := this->Children->Get(FNV1A(Name))
 
         if (Found) {
-            MoveMemory(Result, Found, #VirtualDirectoryEntry)
+            MoveMemory(Result, Found, #VFSDirectoryEntry)
             return true
         }
         else {
@@ -44,14 +44,14 @@ struct VFSDirectory {
 
         return *(&State As i64*) As void*
     }
-    define i8 Next(void** RawState, VirtualDirectoryEntry* Result) {
+    define i8 Next(void** RawState, VFSDirectoryEntry* Result) {
         VFSDirectoryEnumerateState* State := RawState As void*
         i32 Index := State->Index
 
         if (Index < State->Count) {
-            VirtualDirectoryEntry* Entry := this->Children->At(Index)
+            VFSDirectoryEntry* Entry := this->Children->At(Index)
 
-            MoveMemory(Result, Entry, #VirtualDirectoryEntry)
+            MoveMemory(Result, Entry, #VFSDirectoryEntry)
             
             State->Index += 1
 
@@ -66,11 +66,11 @@ struct VFSDirectory {
         return true
     }
 
-    define IVirtualDirectory* CreateDirectory() {
+    define IDirectory* CreateDirectory() {
         return VFSDirectory:New()
     }
 
-    define i8 Insert(VirtualDirectoryEntry* Entry) {
+    define i8 Insert(VFSDirectoryEntry* Entry) {
         this->Children->Insert(FNV1A(Entry->Name), Entry)
 
         return true
@@ -82,7 +82,7 @@ struct VFSDirectory {
     }
 }
 
-IVirtualDirectoryPrototype VFSDirectoryPrototype {
+IDirectoryPrototype VFSDirectoryPrototype {
     Count: &VFSDirectory.Count,
     Lookup: &VFSDirectory.Lookup,
     Enumerate: &VFSDirectory.Enumerate,
@@ -92,6 +92,6 @@ IVirtualDirectoryPrototype VFSDirectoryPrototype {
     Remove: &VFSDirectory.Remove
 }
 
-define IVirtualDirectoryPrototype* GetVFSDirectoryPrototype() {
+define IDirectoryPrototype* GetVFSDirectoryPrototype() {
     return &VFSDirectoryPrototype
 }

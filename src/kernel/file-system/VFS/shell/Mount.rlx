@@ -7,18 +7,18 @@ define void ExecuteMount(i64 ArgC, i8** ArgV) {
     i8* DevicePath := ArgV[2]
     i8* DestinationPath := ArgV[3]
 
-    VirtualDirectoryEntry Entry
+    VFSDirectoryEntry Entry
     if !(Lookup(CurrentDirectory, DevicePath, &Entry)) {
         Print("'%s' does not exist\n", DevicePath)
         return
     }
 
-    if (Entry.Type != VirtualDirectoryEntryType::File) {
+    if (Entry.Type != VFSDirectoryEntryType::File) {
         Print("'%s' not a file\n", DevicePath)
         return
     }
 
-    IVirtualFile* File := Entry.File
+    IFile* File := Entry.File
 
     if !(File->Is(GetVFSBlockDeviceFilePrototype())) {
         Print("'%s' not a block device", DevicePath)
@@ -29,7 +29,7 @@ define void ExecuteMount(i64 ArgC, i8** ArgV) {
     BlockDeviceFileHandle* BlockDeviceHandle := BlockDeviceFile->Handle As void*
     BlockDevice* Device := BlockDeviceHandle->Device
 
-    IVirtualDirectory* DeviceRoot := null
+    IDirectory* DeviceRoot := null
 
     if (StringEquals(Type, "ext2")) {
         DeviceRoot := OpenExt2(Device)

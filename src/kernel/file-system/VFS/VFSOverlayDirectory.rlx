@@ -1,11 +1,11 @@
 #Require "$/Memory.rlx"
 
-declare IVirtualDirectoryPrototype* GetVFSOverlayDirectoryPrototype()
+declare IDirectoryPrototype* GetVFSOverlayDirectoryPrototype()
 
 struct VFSOverlayDirectoryEnumerateState {
     i32 Count
     i32 Index
-    VirtualDirectoryEntry[0] Entries
+    VFSDirectoryEntry[0] Entries
 }
 
 enum VFSOverlayWriteMode {
@@ -14,10 +14,10 @@ enum VFSOverlayWriteMode {
 }
 
 struct VFSOverlayDirectory {
-    #Include "./src/kernel/file-system/VFS/IVirtualDirectory.rlx"
+    #Include "./src/kernel/file-system/VFS/IDirectory.rlx"
     
-    IVirtualDirectory* Base
-    IVirtualDirectory* Overlay
+    IDirectory* Base
+    IDirectory* Overlay
 
     VFSOverlayWriteMode WriteMode
 
@@ -25,13 +25,13 @@ struct VFSOverlayDirectory {
         i32 Result := this->Base->Count()
 
         void* State := this->Overlay->Enumerate()
-        VirtualDirectoryEntry OverlayEntry
+        VFSDirectoryEntry OverlayEntry
 
         while (this->Overlay->Next(&State, &OverlayEntry)) {
-            VirtualDirectoryEntry BaseEntry
+            VFSDirectoryEntry BaseEntry
 
             if (this->Base->Lookup(OverlayEntry.Name, &BaseEntry)) {
-                if (OverlayEntry.Type = VirtualDirectoryEntryType::Hole) {
+                if (OverlayEntry.Type = VFSDirectoryEntryType::Hole) {
                     ; Hole entry, removes a result
 
                     Result -= 1
@@ -39,7 +39,7 @@ struct VFSOverlayDirectory {
                 
                 ; Else, shadowed entry. Don't adjust count
             }
-            else if (OverlayEntry.Type != VirtualDirectoryEntryType::Hole) {
+            else if (OverlayEntry.Type != VFSDirectoryEntryType::Hole) {
                 ; Unique (existing) entry, +1 result
 
                 Result += 1
@@ -48,7 +48,7 @@ struct VFSOverlayDirectory {
         
         return Result
     }
-    define i8 Lookup(i8* Name, VirtualDirectoryEntry* Result) {
+    define i8 Lookup(i8* Name, VFSDirectoryEntry* Result) {
         if (this->Overlay->Lookup(Name, Result)) {
             return true
         }
@@ -63,16 +63,16 @@ struct VFSOverlayDirectory {
         i32 BaseCount := this->Base->Count()
         i32 OverlayCount := this->Overlay->Count()
 
-        i32 Size := #VFSOverlayDirectoryEnumerateState + ((BaseCount + OverlayCount) * #VirtualDirectoryEntry)
+        i32 Size := #VFSOverlayDirectoryEnumerateState + ((BaseCount + OverlayCount) * #VFSDirectoryEntry)
         VFSOverlayDirectoryEnumerateState* State := Alloc(Size)
 
         void* BaseState := this->Base->Enumerate()
-        VirtualDirectoryEntry Source
+        VFSDirectoryEntry Source
 
         while (this->Base->Next(&BaseState, &Source)) {
-            VirtualDirectoryEntry* Destination := State->Entries[State->Count]
+            VFSDirectoryEntry* Destination := State->Entries[State->Count]
             
-            MoveMemory(Destination, &Source, #VirtualDirectoryEntry)
+            MoveMemory(Destination, &Source, #VFSDirectoryEntry)
             State->Count += 1
         }
 
@@ -82,38 +82,38 @@ struct VFSOverlayDirectory {
             i8 ReplacedBaseEntry := false
 
             for (i32 Index := 0, Index < BaseCount, Index++) {
-                VirtualDirectoryEntry* Base := State->Entries[Index]
+                VFSDirectoryEntry* Base := State->Entries[Index]
 
                 if (StringEquals(Source.Name, Base->Name)) {
-                    MoveMemory(Base, &Source, #VirtualDirectoryEntry)
+                    MoveMemory(Base, &Source, #VFSDirectoryEntry)
                     ReplacedBaseEntry := true
                     break
                 }
             }
 
             if !(ReplacedBaseEntry) {
-                VirtualDirectoryEntry* Destination := State->Entries[State->Count]
+                VFSDirectoryEntry* Destination := State->Entries[State->Count]
 
-                MoveMemory(Destination, &Source, #VirtualDirectoryEntry)
+                MoveMemory(Destination, &Source, #VFSDirectoryEntry)
                 State->Count += 1
             }
         }
 
         return State
     }
-    define i8 Next(void** RawState, VirtualDirectoryEntry* Result) {
+    define i8 Next(void** RawState, VFSDirectoryEntry* Result) {
         VFSOverlayDirectoryEnumerateState* State := *RawState
         i32 Index := State->Index
 
         if (Index < State->Count) {
-            VirtualDirectoryEntry* Entry := State->Entries[Index]
+            VFSDirectoryEntry* Entry := State->Entries[Index]
             State->Index += 1
 
-            if (Entry->Type = VirtualDirectoryEntryType::Hole) {
+            if (Entry->Type = VFSDirectoryEntryType::Hole) {
                 return this->Next(RawState, Result)
             }
 
-            MoveMemory(Result, Entry, #VirtualDirectoryEntry)
+            MoveMemory(Result, Entry, #VFSDirectoryEntry)
 
             return true
         }
@@ -126,7 +126,7 @@ struct VFSOverlayDirectory {
         return this->Overlay->IsEphemeral()
     }
 
-    define IVirtualDirectory* CreateDirectory() {
+    define IDirectory* CreateDirectory() {
         if (this->WriteMode = VFSOverlayWriteMode::OnlyEphemeralToOverlay) {
             return this->Base->CreateDirectory()
         }
@@ -137,7 +137,7 @@ struct VFSOverlayDirectory {
         return null
     }
 
-    define i8 Insert(VirtualDirectoryEntry* Entry) {
+    define i8 Insert(VFSDirectoryEntry* Entry) {
         if (this->WriteMode = VFSOverlayWriteMode::OnlyEphemeralToOverlay) {
             if (Entry->IsEphemeral()) {
                 return this->Overlay->Insert(Entry)
@@ -150,15 +150,15 @@ struct VFSOverlayDirectory {
         return this->Overlay->Insert(Entry)
     }
     define i8 Remove(i8* Name) {
-        VirtualDirectoryEntry Entry
+        VFSDirectoryEntry Entry
 
         if (this->Overlay->Lookup(Name, &Entry)) {
             return this->Overlay->Remove(Name)
         }
         else if (this->Base->Lookup(Name, &Entry)) {
-            VirtualDirectoryEntry HoleEntry {
+            VFSDirectoryEntry HoleEntry {
                 Name: Name,
-                Type: VirtualDirectoryEntryType::Hole
+                Type: VFSDirectoryEntryType::Hole
             }
 
             return this->Overlay->Insert(&HoleEntry)
@@ -168,7 +168,7 @@ struct VFSOverlayDirectory {
         }
     }
 
-    static IVirtualDirectory* New(IVirtualDirectory* Base, IVirtualDirectory* Overlay, VFSOverlayWriteMode WriteMode) {
+    static IDirectory* New(IDirectory* Base, IDirectory* Overlay, VFSOverlayWriteMode WriteMode) {
         self* this := Alloc(#self)
 
         this->Prototype := GetVFSOverlayDirectoryPrototype()
@@ -176,15 +176,15 @@ struct VFSOverlayDirectory {
         this->Overlay := Overlay
         this->WriteMode := WriteMode
 
-        return this As IVirtualDirectory*
+        return this As IDirectory*
     }
 
-    static IVirtualDirectory* New(IVirtualDirectory* Base, IVirtualDirectory* Overlay) {
+    static IDirectory* New(IDirectory* Base, IDirectory* Overlay) {
         return self:New(Base, Overlay, VFSOverlayWriteMode::AllToOverlay)
     }
 }
 
-IVirtualDirectoryPrototype VFSOverlayDirectoryPrototype {
+IDirectoryPrototype VFSOverlayDirectoryPrototype {
     Count: &VFSOverlayDirectory.Count,
     Lookup: &VFSOverlayDirectory.Lookup,
 
@@ -199,6 +199,6 @@ IVirtualDirectoryPrototype VFSOverlayDirectoryPrototype {
     Remove: &VFSOverlayDirectory.Remove
 }
 
-define IVirtualDirectoryPrototype* GetVFSOverlayDirectoryPrototype() {
+define IDirectoryPrototype* GetVFSOverlayDirectoryPrototype() {
     return &VFSOverlayDirectoryPrototype
 }

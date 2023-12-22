@@ -18,7 +18,7 @@ struct ActiveLoopDevice {
 
     union {
         VFSBlockDeviceFile* File,
-        IVirtualFile* RawFile
+        IFile* RawFile
     }
 
     static self* New() {
@@ -26,7 +26,7 @@ struct ActiveLoopDevice {
     }
 }
 
-PointerArray* LoopDevices := PointerArray:New() ; <IVirtualFile*>
+PointerArray* LoopDevices := PointerArray:New() ; <IFile*>
 
 define void ExecuteLoop(i64 ArgC, i8** ArgV) {
     if (ArgC < 2) {
@@ -40,18 +40,18 @@ define void ExecuteLoop(i64 ArgC, i8** ArgV) {
 
         Print("Opening '%s' as a loop device\n", Path)
 
-        VirtualDirectoryEntry Entry
+        VFSDirectoryEntry Entry
         if !(Lookup(CurrentDirectory, Path, &Entry)) {
             Print("'%s' not found\n", Path)
             return
         }
 
-        if (Entry.Type != VirtualDirectoryEntryType::File) {
+        if (Entry.Type != VFSDirectoryEntryType::File) {
             Print("'%s' not a file\n", Path)
             return
         }
 
-        IVirtualFile* File := Entry.File
+        IFile* File := Entry.File
         FileHandle* Handle := File->Open()
 
         ActiveLoopDevice* Device := ActiveLoopDevice:New()
@@ -61,9 +61,9 @@ define void ExecuteLoop(i64 ArgC, i8** ArgV) {
         Device->RawHandle := BlockDeviceFileHandle:New(Device->RawBlockDevice)
         Device->RawFile := VFSBlockDeviceFile:New(Device->RawHandle)
 
-        VirtualDirectoryEntry NewEntry {
+        VFSDirectoryEntry NewEntry {
             Name: FormatString("loop%i", LoopDevices->Count()),
-            Type: VirtualDirectoryEntryType::File,
+            Type: VFSDirectoryEntryType::File,
             File: Device->RawFile
         }
 

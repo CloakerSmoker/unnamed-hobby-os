@@ -1,27 +1,27 @@
 #Require "./src/drivers/FAT32.rlx"
 
-declare IVirtualDirectoryPrototype* GetFAT32DirectoryPrototype()
+declare IDirectoryPrototype* GetFAT32DirectoryPrototype()
 
 struct FAT32DirectoryEnumerateState {
     i32 Handle
 }
 
 struct FAT32Directory {
-    #Include "./src/kernel/file-system/VFS/IVirtualDirectory.rlx"
+    #Include "./src/kernel/file-system/VFS/IDirectory.rlx"
 
     FAT32Device* FS
     i32 Cluster
 
-    AVLTree* Cache ; <i8*, VirtualDirectoryEntry>
+    AVLTree* Cache ; <i8*, VFSDirectoryEntry>
 
-    static IVirtualDirectory* New(FAT32Device* FS, i32 Cluster) {
+    static IDirectory* New(FAT32Device* FS, i32 Cluster) {
         self* this := Alloc(#self)
 
         this->Prototype := GetFAT32DirectoryPrototype()
 
         this->FS := FS
         this->Cluster := Cluster
-        this->Cache := AVLTree:New(#VirtualDirectoryEntry)
+        this->Cache := AVLTree:New(#VFSDirectoryEntry)
         
         return this As void*
     }
@@ -43,9 +43,9 @@ struct FAT32Directory {
         return Count
     }
 
-    define VirtualDirectoryEntry* FindOrCacheEntry(i8* Name, FAT32DirectoryEntry* ExistingEntry) {
+    define VFSDirectoryEntry* FindOrCacheEntry(i8* Name, FAT32DirectoryEntry* ExistingEntry) {
         i64 NameHash := FNV1A(Name)
-        VirtualDirectoryEntry* ExistingCacheEntry := this->Cache->Get(NameHash)
+        VFSDirectoryEntry* ExistingCacheEntry := this->Cache->Get(NameHash)
 
         if (ExistingCacheEntry) {
             return ExistingCacheEntry
@@ -57,20 +57,20 @@ struct FAT32Directory {
             Entry := this->FS->FindDirectoryEntryByName(this->Cluster, Name)
         }
 
-        VirtualDirectoryEntry NewCacheEntry {
+        VFSDirectoryEntry NewCacheEntry {
             Name: CloneMemory(Name, StringLength(Name) + 1)
         }
 
         if (Entry = null) {
-            NewCacheEntry.Type := VirtualDirectoryEntryType::Hole
+            NewCacheEntry.Type := VFSDirectoryEntryType::Hole
         }
         else {
             if (Entry->IsDirectory()) {
-                NewCacheEntry.Type := VirtualDirectoryEntryType::Directory
+                NewCacheEntry.Type := VFSDirectoryEntryType::Directory
                 NewCacheEntry.Directory := FAT32Directory:New(this->FS, Entry->GetFirstCluster())
             }
             else if (Entry->IsFile()) {
-                NewCacheEntry.Type := VirtualDirectoryEntryType::File
+                NewCacheEntry.Type := VFSDirectoryEntryType::File
             }
             else {
                 return null
@@ -82,16 +82,16 @@ struct FAT32Directory {
         return this->Cache->Get(NameHash)
     }
 
-    define VirtualDirectoryEntry* FindOrCacheEntry(i8* Name) {
+    define VFSDirectoryEntry* FindOrCacheEntry(i8* Name) {
         return this->FindOrCacheEntry(Name, null)
     }
 
-    define i8 Lookup(i8* Name, VirtualDirectoryEntry* Result) {
-        VirtualDirectoryEntry* Entry := this->FindOrCacheEntry(Name)
+    define i8 Lookup(i8* Name, VFSDirectoryEntry* Result) {
+        VFSDirectoryEntry* Entry := this->FindOrCacheEntry(Name)
 
         if (Entry) {
-            if (Entry->Type != VirtualDirectoryEntryType::Hole) {
-                MoveMemory(Result, Entry, #VirtualDirectoryEntry)
+            if (Entry->Type != VFSDirectoryEntryType::Hole) {
+                MoveMemory(Result, Entry, #VFSDirectoryEntry)
                 return true
             }
         }
@@ -106,7 +106,7 @@ struct FAT32Directory {
 
         return *(&State As i64*) As void*
     }
-    define i8 Next(void** RawState, VirtualDirectoryEntry* Result) {
+    define i8 Next(void** RawState, VFSDirectoryEntry* Result) {
         FAT32DirectoryEnumerateState* State := RawState As void*
 
         FAT32DirectoryEntry* Next := this->FS->WalkDirectoryNext(this->Cluster, State~>Handle)
@@ -115,14 +115,14 @@ struct FAT32Directory {
             i8[128] NameBuffer
             Next->GetName(NameBuffer)
 
-            VirtualDirectoryEntry* Cached := this->FindOrCacheEntry(NameBuffer, Next)
+            VFSDirectoryEntry* Cached := this->FindOrCacheEntry(NameBuffer, Next)
 
             if (Cached) {
-                if (Cached->Type = VirtualDirectoryEntryType::Hole) {
+                if (Cached->Type = VFSDirectoryEntryType::Hole) {
                     return this->Next(RawState, Result)
                 }
                 else {
-                    MoveMemory(Result, Cached, #VirtualDirectoryEntry)
+                    MoveMemory(Result, Cached, #VFSDirectoryEntry)
                     return true
                 }
             }
@@ -134,7 +134,7 @@ struct FAT32Directory {
     define i8 IsEphemeral() {
         return false
     }
-    define i8 Insert(VirtualDirectoryEntry* Entry) {
+    define i8 Insert(VFSDirectoryEntry* Entry) {
         ;this->Children->Insert(FNV1A(Entry->Name), Entry)
 
         Print("PANIC: FAT32 WRITE\n")
@@ -148,7 +148,7 @@ struct FAT32Directory {
     }
 }
 
-IVirtualDirectoryPrototype FAT32DirectoryPrototype {
+IDirectoryPrototype FAT32DirectoryPrototype {
     Count: &FAT32Directory.Count,
     Lookup: &FAT32Directory.Lookup,
     Enumerate: &FAT32Directory.Enumerate,
@@ -158,6 +158,6 @@ IVirtualDirectoryPrototype FAT32DirectoryPrototype {
     Remove: &FAT32Directory.Remove
 }
 
-define IVirtualDirectoryPrototype* GetFAT32DirectoryPrototype() {
+define IDirectoryPrototype* GetFAT32DirectoryPrototype() {
     return &FAT32DirectoryPrototype
 }

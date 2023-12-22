@@ -1,33 +1,33 @@
-struct IVirtualDirectoryPrototype {
+struct IDirectoryPrototype {
     i32(void*) Count
-    i8(void*, i8*, VirtualDirectoryEntry*) Lookup
+    i8(void*, i8*, VFSDirectoryEntry*) Lookup
 
     void*(void*) Enumerate
-    i8(void*, void**, VirtualDirectoryEntry*) Next
+    i8(void*, void**, VFSDirectoryEntry*) Next
 
     i8(void*) IsEphemeral
 
-    IVirtualDirectory*(void*) CreateDirectory
-    IVirtualFile*(void*) CreateFile
+    IDirectory*(void*) CreateDirectory
+    IFile*(void*) CreateFile
 
-    i8(void*, VirtualDirectoryEntry*) Insert
+    i8(void*, VFSDirectoryEntry*) Insert
     i8(void*, i8*) Remove
 }
 
-struct IVirtualDirectory {
-    #Include "./src/kernel/file-system/VFS/IVirtualDirectory.rlx"
+struct IDirectory {
+    #Include "./src/kernel/file-system/VFS/IDirectory.rlx"
 
     define i32 Count() {
         return this->Prototype->Count(this)
     }
-    define i8 Lookup(i8* Name, VirtualDirectoryEntry* Result) {
+    define i8 Lookup(i8* Name, VFSDirectoryEntry* Result) {
         return this->Prototype->Lookup(this, Name, Result)
     }
 
     define void* Enumerate() {
         return this->Prototype->Enumerate(this)
     }
-    define i8 Next(void** State, VirtualDirectoryEntry* Result) {
+    define i8 Next(void** State, VFSDirectoryEntry* Result) {
         return this->Prototype->Next(this, State, Result)
     }
 
@@ -35,14 +35,14 @@ struct IVirtualDirectory {
         return this->Prototype->IsEphemeral(this)
     }
 
-    define IVirtualDirectory* CreateDirectory() {
+    define IDirectory* CreateDirectory() {
         return this->Prototype->CreateDirectory(this)
     }
-    define IVirtualFile* CreateFile() {
+    define IFile* CreateFile() {
         return this->Prototype->CreateFile(this)
     }
     
-    define i8 Insert(VirtualDirectoryEntry* Entry) {
+    define i8 Insert(VFSDirectoryEntry* Entry) {
         return this->Prototype->Insert(this, Entry)
     }
     define i8 Remove(i8* Name) {
@@ -50,14 +50,14 @@ struct IVirtualDirectory {
     }
 }
 
-struct IVirtualFilePrototype {
+struct IFilePrototype {
     i8(void*) IsEphemeral
     FileHandle*(void*) Open
     void(void*, FileHandle*) Close
 }
 
-struct IVirtualFile {
-    #Include "./src/kernel/file-system/VFS/IVirtualFile.rlx"
+struct IFile {
+    #Include "./src/kernel/file-system/VFS/IFile.rlx"
 
     define i8 IsEphemeral() {
         return this->Prototype->IsEphemeral(this)
@@ -71,31 +71,31 @@ struct IVirtualFile {
     }
 }
 
-enum VirtualDirectoryEntryType {
+enum VFSDirectoryEntryType {
     Directory,
     File,
     Hole
 }
 
-struct VirtualDirectoryEntry {
+struct VFSDirectoryEntry {
     i8* Name
     
     union {
-        IVirtualDirectory* Directory
-        IVirtualFile* File
+        IDirectory* Directory
+        IFile* File
         void* Value
     }
 
-    VirtualDirectoryEntryType Type
+    VFSDirectoryEntryType Type
 
     define i8 IsEphemeral() {
-        if (this->Type = VirtualDirectoryEntryType::File) {
+        if (this->Type = VFSDirectoryEntryType::File) {
             return this->File->IsEphemeral()
         }
-        else if (this->Type = VirtualDirectoryEntryType::Directory) {
+        else if (this->Type = VFSDirectoryEntryType::Directory) {
             return this->Directory->IsEphemeral()
         }
-        else if (this->Type = VirtualDirectoryEntryType::Hole) {
+        else if (this->Type = VFSDirectoryEntryType::Hole) {
             return true
         }
 

@@ -6,10 +6,10 @@ declare FileHandlePrototype* GetHostFileHandlePrototype()
 struct HostFileInstance {
     #Include "./src/kernel/file-system/HandleInstance.rlx"
 
-    IVirtualFile* VFS
+    IFile* VFS
     i64 Handle
 
-    static FileHandle* New(IVirtualFile* VFS, i64 Handle) {
+    static FileHandle* New(IFile* VFS, i64 Handle) {
         self* this := Alloc(#self)
         
         this->Prototype := GetHostFileHandlePrototype()
@@ -52,14 +52,14 @@ define FileHandlePrototype* GetHostFileHandlePrototype() {
     return &HostFileHandlePrototype
 }
 
-declare IVirtualFilePrototype* GetVFSHostFilePrototype()
+declare IFilePrototype* GetVFSHostFilePrototype()
 
 struct VFSHostFile {
-    #Include "./src/kernel/file-system/VFS/IVirtualFile.rlx"
+    #Include "./src/kernel/file-system/VFS/IFile.rlx"
 
     i64 Handle
 
-    static IVirtualFile* New(i64 Handle) {
+    static IFile* New(i64 Handle) {
         self* this := Alloc(#self)
 
         this->Prototype := GetVFSHostFilePrototype()
@@ -74,40 +74,40 @@ struct VFSHostFile {
     }
 
     define FileHandle* Open() {
-        return HostFileInstance:New(this->AsIVirtualFile(), this->Handle)
+        return HostFileInstance:New(this->AsFile(), this->Handle)
     }
     define void Close(FileHandle* Handle) {
         Free(Handle)
     }
 }
 
-IVirtualFilePrototype VFSHostFilePrototype {
+IFilePrototype VFSHostFilePrototype {
     IsEphemeral: &VFSHostFile.IsEphemeral,
     Open: &VFSHostFile.Open,
     Close: &VFSHostFile.Close
 }
 
-define IVirtualFilePrototype* GetVFSHostFilePrototype() {
+define IFilePrototype* GetVFSHostFilePrototype() {
     return &VFSHostFilePrototype
 }
 
-declare IVirtualDirectoryPrototype* GetVFSHostDirectoryPrototype()
+declare IDirectoryPrototype* GetVFSHostDirectoryPrototype()
 
 struct VFSHostDirectory {
-    #Include "./src/kernel/file-system/VFS/IVirtualDirectory.rlx"
+    #Include "./src/kernel/file-system/VFS/IDirectory.rlx"
 
     i64 Handle
 
-    AVLTree* Cache ; <i8*, VirtualDirectoryEntry>
+    AVLTree* Cache ; <i8*, VFSDirectoryEntry>
 
-    static IVirtualDirectory* New(i64 Handle) {
+    static IDirectory* New(i64 Handle) {
         self* this := Alloc(#self)
 
         this->Prototype := GetVFSHostDirectoryPrototype()
         
         this->Handle := Handle
 
-        this->Cache := AVLTree:New(#VirtualDirectoryEntry)
+        this->Cache := AVLTree:New(#VFSDirectoryEntry)
 
         return this As void*
     }
@@ -131,9 +131,9 @@ struct VFSHostDirectory {
         return Result
     }
 
-    define VirtualDirectoryEntry* FindOrCacheEntry(i8* Name, DirectoryEntry* ExistingEntry) {
+    define VFSDirectoryEntry* FindOrCacheEntry(i8* Name, DirectoryEntry* ExistingEntry) {
         i64 NameHash := FNV1A(Name)
-        VirtualDirectoryEntry* ExistingCacheEntry := this->Cache->Get(NameHash)
+        VFSDirectoryEntry* ExistingCacheEntry := this->Cache->Get(NameHash)
 
         if (ExistingCacheEntry) {
             return ExistingCacheEntry
@@ -145,14 +145,14 @@ struct VFSHostDirectory {
             return null
         }
 
-        VirtualDirectoryEntryType Type := VirtualDirectoryEntryType::Hole
+        VFSDirectoryEntryType Type := VFSDirectoryEntryType::Hole
 
         if (ExistingEntry) {
             if (ExistingEntry->Type = DirectoryEntryType::File) {
-                Type := VirtualDirectoryEntryType::File
+                Type := VFSDirectoryEntryType::File
             }
             else if (ExistingEntry->Type = DirectoryEntryType::Directory) {
-                Type := VirtualDirectoryEntryType::Directory
+                Type := VFSDirectoryEntryType::Directory
             }
         }
         else {
@@ -160,22 +160,22 @@ struct VFSHostDirectory {
             FileGetStatus(Handle, &Status)
 
             if (Status.Type = FileStatusType::File) {
-                Type := VirtualDirectoryEntryType::File
+                Type := VFSDirectoryEntryType::File
             }
             else if (Status.Type = FileStatusType::Directory) {
-                Type := VirtualDirectoryEntryType::Directory
+                Type := VFSDirectoryEntryType::Directory
             }
         }
 
-        VirtualDirectoryEntry NewCacheEntry {
+        VFSDirectoryEntry NewCacheEntry {
             Name: CloneMemory(Name, StringLength(Name) + 1),
             Type: Type
         }
 
-        if (Type = VirtualDirectoryEntryType::File) {
+        if (Type = VFSDirectoryEntryType::File) {
             NewCacheEntry.File := VFSHostFile:New(Handle)
         }
-        else if (Type = VirtualDirectoryEntryType::Directory) {
+        else if (Type = VFSDirectoryEntryType::Directory) {
             NewCacheEntry.Directory := VFSHostDirectory:New(Handle)
         }
 
@@ -184,15 +184,15 @@ struct VFSHostDirectory {
         return this->Cache->Get(NameHash)
     }
 
-    define VirtualDirectoryEntry* FindOrCacheEntry(i8* Name) {
+    define VFSDirectoryEntry* FindOrCacheEntry(i8* Name) {
         return this->FindOrCacheEntry(Name, null)
     }
 
-    define i8 Lookup(i8* Name, VirtualDirectoryEntry* Result) {
-        VirtualDirectoryEntry* Entry := this->FindOrCacheEntry(Name)
+    define i8 Lookup(i8* Name, VFSDirectoryEntry* Result) {
+        VFSDirectoryEntry* Entry := this->FindOrCacheEntry(Name)
 
         if (Entry) {
-            MoveMemory(Result, Entry, #VirtualDirectoryEntry)
+            MoveMemory(Result, Entry, #VFSDirectoryEntry)
             return true
         }
         
@@ -202,14 +202,14 @@ struct VFSHostDirectory {
     define void* Enumerate() {
         return StartWalkDirectory(this->Handle)
     }
-    define i8 Next(void** RawState, VirtualDirectoryEntry* Result) {
+    define i8 Next(void** RawState, VFSDirectoryEntry* Result) {
         DirectoryEntry Entry
 
         if (WalkDirectoryNext(RawState, &Entry)) {
-            VirtualDirectoryEntry* Cached := this->FindOrCacheEntry(Entry.Name, &Entry)
+            VFSDirectoryEntry* Cached := this->FindOrCacheEntry(Entry.Name, &Entry)
 
             if (Cached) {
-                MoveMemory(Result, Cached, #VirtualDirectoryEntry)
+                MoveMemory(Result, Cached, #VFSDirectoryEntry)
                 return true
             }
         }
@@ -224,14 +224,14 @@ struct VFSHostDirectory {
         return false
     }
 
-    define IVirtualDirectory* CreateDirectory() {
+    define IDirectory* CreateDirectory() {
         ;i32 DirectoryNodeNumber := this->FS->CreateDirectory()
 
         ;return VFSHostDirectory:New(this->FS, this->FS->ReadINode(DirectoryNodeNumber))
 
         return null
     }
-    define IVirtualFile* CreateFile() {
+    define IFile* CreateFile() {
         ;i32 FileNodeNumber := this->FS->CreateDirectory()
 
         ;return VFSHostFile:New(this->FS, this->FS->ReadINode(FileNodeNumber))
@@ -239,10 +239,10 @@ struct VFSHostDirectory {
         return null
     }
 
-    define i8 Insert(VirtualDirectoryEntry* Entry) {
+    define i8 Insert(VFSDirectoryEntry* Entry) {
         ;this->Children->Insert(FNV1A(Entry->Name), Entry)
 
-        ;if (Entry->Type = VirtualDirectoryEntryType::Directory) {
+        ;if (Entry->Type = VFSDirectoryEntryType::Directory) {
         ;    if (Entry->Directory->Is(GetVFSHostDirectoryPrototype())) {
         ;        VFSHostDirectory* Child := Entry->Directory As void*
 
@@ -263,7 +263,7 @@ struct VFSHostDirectory {
     }
 }
 
-IVirtualDirectoryPrototype VFSHostDirectoryPrototype {
+IDirectoryPrototype VFSHostDirectoryPrototype {
     Count: &VFSHostDirectory.Count,
     Lookup: &VFSHostDirectory.Lookup,
 
@@ -278,6 +278,6 @@ IVirtualDirectoryPrototype VFSHostDirectoryPrototype {
     Remove: &VFSHostDirectory.Remove
 }
 
-define IVirtualDirectoryPrototype* GetVFSHostDirectoryPrototype() {
+define IDirectoryPrototype* GetVFSHostDirectoryPrototype() {
     return &VFSHostDirectoryPrototype
 }

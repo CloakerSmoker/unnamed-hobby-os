@@ -114,18 +114,18 @@ define void ExecuteGPT(i64 ArgC, i8** ArgV) {
     i8* DevicePath := ArgV[1]
     i8* Verb := ArgV[2]
 
-    VirtualDirectoryEntry Entry
+    VFSDirectoryEntry Entry
     if !(Lookup(CurrentDirectory, DevicePath, &Entry)) {
         Print("'%s' does not exist\n", DevicePath)
         return
     }
 
-    if (Entry.Type != VirtualDirectoryEntryType::File) {
+    if (Entry.Type != VFSDirectoryEntryType::File) {
         Print("'%s' not a file\n", DevicePath)
         return
     }
 
-    IVirtualFile* File := Entry.File
+    IFile* File := Entry.File
 
     if !(File->Is(GetVFSBlockDeviceFilePrototype())) {
         Print("'%s' not a block device", DevicePath)
@@ -174,12 +174,12 @@ define void ExecuteGPT(i64 ArgC, i8** ArgV) {
             
             BlockDevice* PartitionDevice := GPTBlockDevice:New(RawDevice, NextPartition)
             FileHandle* PartitionHandle := BlockDeviceFileHandle:New(PartitionDevice)
-            IVirtualFile* PartitionFile := VFSBlockDeviceFile:New(PartitionHandle)
+            IFile* PartitionFile := VFSBlockDeviceFile:New(PartitionHandle)
 
             i8* FileName := FormatString("%sp%i", Entry.Name, Index)
 
-            VirtualDirectoryEntry PartitionEntry {
-                Type: VirtualDirectoryEntryType::File,
+            VFSDirectoryEntry PartitionEntry {
+                Type: VFSDirectoryEntryType::File,
                 Name: FileName,
                 File: PartitionFile
             }

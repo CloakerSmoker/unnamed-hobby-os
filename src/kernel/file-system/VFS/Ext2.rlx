@@ -4,15 +4,15 @@ i8 DEBUG_EXT2_OPTIMIZATION := false
 
 #Require "./src/drivers/Ext2.rlx"
 
-declare IVirtualFilePrototype* GetVFSExt2FilePrototype()
+declare IFilePrototype* GetVFSExt2FilePrototype()
 
 struct VFSExt2File {
-    #Include "./src/kernel/file-system/VFS/IVirtualFile.rlx"
+    #Include "./src/kernel/file-system/VFS/IFile.rlx"
 
     Ext2* FS
     Ext2INode Node
 
-    static IVirtualFile* New(Ext2* FS, Ext2INode* Node) {
+    static IFile* New(Ext2* FS, Ext2INode* Node) {
         self* this := Alloc(#self)
 
         this->Prototype := GetVFSExt2FilePrototype()
@@ -32,37 +32,37 @@ struct VFSExt2File {
     }
 }
 
-IVirtualFilePrototype VFSExt2FilePrototype {
+IFilePrototype VFSExt2FilePrototype {
     IsEphemeral: &VFSExt2File.IsEphemeral,
     Open: &VFSExt2File.Open
 }
 
-define IVirtualFilePrototype* GetVFSExt2FilePrototype() {
+define IFilePrototype* GetVFSExt2FilePrototype() {
     return &VFSExt2FilePrototype
 }
 
-declare IVirtualDirectoryPrototype* GetVFSExt2DirectoryPrototype()
+declare IDirectoryPrototype* GetVFSExt2DirectoryPrototype()
 
 struct VFSExt2DirectoryEnumerateState {
     i32 Handle
 }
 
 struct VFSExt2Directory {
-    #Include "./src/kernel/file-system/VFS/IVirtualDirectory.rlx"
+    #Include "./src/kernel/file-system/VFS/IDirectory.rlx"
 
     Ext2* FS
     Ext2INode Node
 
-    AVLTree* Cache ; <i8*, VirtualDirectoryEntry>
+    AVLTree* Cache ; <i8*, VFSDirectoryEntry>
 
-    static IVirtualDirectory* New(Ext2* FS, Ext2INode* Node) {
+    static IDirectory* New(Ext2* FS, Ext2INode* Node) {
         self* this := Alloc(#self)
 
         this->Prototype := GetVFSExt2DirectoryPrototype()
         this->FS := FS
         MoveMemory(this~>Node, Node, #Ext2INode)
 
-        this->Cache := AVLTree:New(#VirtualDirectoryEntry)
+        this->Cache := AVLTree:New(#VFSDirectoryEntry)
 
         return this As void*
     }
@@ -85,9 +85,9 @@ struct VFSExt2Directory {
         return Result
     }
 
-    define VirtualDirectoryEntry* FindOrCacheEntry(i8* Name, Ext2DirectoryEntry* ExistingEntry) {
+    define VFSDirectoryEntry* FindOrCacheEntry(i8* Name, Ext2DirectoryEntry* ExistingEntry) {
         i64 NameHash := FNV1A(Name)
-        VirtualDirectoryEntry* ExistingCacheEntry := this->Cache->Get(NameHash)
+        VFSDirectoryEntry* ExistingCacheEntry := this->Cache->Get(NameHash)
 
         if (ExistingCacheEntry) {
             return ExistingCacheEntry
@@ -99,22 +99,22 @@ struct VFSExt2Directory {
             Entry := this->FS->FindDirectoryEntryByName(this~>Node, Name)
         }
 
-        VirtualDirectoryEntry NewCacheEntry {
+        VFSDirectoryEntry NewCacheEntry {
             Name: CloneMemory(Name, StringLength(Name) + 1)
         }
 
         if (Entry = null) {
-            NewCacheEntry.Type := VirtualDirectoryEntryType::Hole
+            NewCacheEntry.Type := VFSDirectoryEntryType::Hole
         }
         else {
             Ext2INode* Node := this->FS->ReadINode(Entry->INode)
 
             if (Node->IsDirectory()) {
-                NewCacheEntry.Type := VirtualDirectoryEntryType::Directory
+                NewCacheEntry.Type := VFSDirectoryEntryType::Directory
                 NewCacheEntry.Directory := VFSExt2Directory:New(this->FS, Node)
             }
             else if (Node->IsFile()) {
-                NewCacheEntry.Type := VirtualDirectoryEntryType::File
+                NewCacheEntry.Type := VFSDirectoryEntryType::File
             }
             else {
                 return null
@@ -126,16 +126,16 @@ struct VFSExt2Directory {
         return this->Cache->Get(NameHash)
     }
 
-    define VirtualDirectoryEntry* FindOrCacheEntry(i8* Name) {
+    define VFSDirectoryEntry* FindOrCacheEntry(i8* Name) {
         return this->FindOrCacheEntry(Name, null)
     }
 
-    define i8 Lookup(i8* Name, VirtualDirectoryEntry* Result) {
-        VirtualDirectoryEntry* Entry := this->FindOrCacheEntry(Name)
+    define i8 Lookup(i8* Name, VFSDirectoryEntry* Result) {
+        VFSDirectoryEntry* Entry := this->FindOrCacheEntry(Name)
 
         if (Entry) {
-            if (Entry->Type != VirtualDirectoryEntryType::Hole) {
-                MoveMemory(Result, Entry, #VirtualDirectoryEntry)
+            if (Entry->Type != VFSDirectoryEntryType::Hole) {
+                MoveMemory(Result, Entry, #VFSDirectoryEntry)
                 return true
             }
         }
@@ -150,20 +150,20 @@ struct VFSExt2Directory {
 
         return *(&State As i64*) As void*
     }
-    define i8 Next(void** RawState, VirtualDirectoryEntry* Result) {
+    define i8 Next(void** RawState, VFSDirectoryEntry* Result) {
         VFSExt2DirectoryEnumerateState* State := RawState As void*
 
         Ext2DirectoryEntry* Next := this->FS->WalkDirectoryNext(this~>Node, State~>Handle)
 
         if (Next) {
-            VirtualDirectoryEntry* Cached := this->FindOrCacheEntry(Next->Name, Next)
+            VFSDirectoryEntry* Cached := this->FindOrCacheEntry(Next->Name, Next)
 
             if (Cached) {
-                if (Cached->Type = VirtualDirectoryEntryType::Hole) {
+                if (Cached->Type = VFSDirectoryEntryType::Hole) {
                     return this->Next(RawState, Result)
                 }
                 else {
-                    MoveMemory(Result, Cached, #VirtualDirectoryEntry)
+                    MoveMemory(Result, Cached, #VFSDirectoryEntry)
                     return true
                 }
             }
@@ -176,21 +176,21 @@ struct VFSExt2Directory {
         return false
     }
 
-    define IVirtualDirectory* CreateDirectory() {
+    define IDirectory* CreateDirectory() {
         i32 DirectoryNodeNumber := this->FS->CreateDirectory()
 
         return VFSExt2Directory:New(this->FS, this->FS->ReadINode(DirectoryNodeNumber))
     }
-    define IVirtualFile* CreateFile() {
+    define IFile* CreateFile() {
         i32 FileNodeNumber := this->FS->CreateDirectory()
 
         return VFSExt2File:New(this->FS, this->FS->ReadINode(FileNodeNumber))
     }
 
-    define i8 Insert(VirtualDirectoryEntry* Entry) {
+    define i8 Insert(VFSDirectoryEntry* Entry) {
         ;this->Children->Insert(FNV1A(Entry->Name), Entry)
 
-        if (Entry->Type = VirtualDirectoryEntryType::Directory) {
+        if (Entry->Type = VFSDirectoryEntryType::Directory) {
             if (Entry->Directory->Is(GetVFSExt2DirectoryPrototype())) {
                 VFSExt2Directory* Child := Entry->Directory As void*
 
@@ -211,7 +211,7 @@ struct VFSExt2Directory {
     }
 }
 
-IVirtualDirectoryPrototype VFSExt2DirectoryPrototype {
+IDirectoryPrototype VFSExt2DirectoryPrototype {
     Count: &VFSExt2Directory.Count,
     Lookup: &VFSExt2Directory.Lookup,
 
@@ -226,6 +226,6 @@ IVirtualDirectoryPrototype VFSExt2DirectoryPrototype {
     Remove: &VFSExt2Directory.Remove
 }
 
-define IVirtualDirectoryPrototype* GetVFSExt2DirectoryPrototype() {
+define IDirectoryPrototype* GetVFSExt2DirectoryPrototype() {
     return &VFSExt2DirectoryPrototype
 }

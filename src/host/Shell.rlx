@@ -22,7 +22,7 @@ define void Info(i8* Format, ... Args) {
 
 #Require "./src/kernel/file-system/VFS/Root.rlx"
 
-define IVirtualDirectory* OpenFAT32(BlockDevice* Device) {
+define IDirectory* OpenFAT32(BlockDevice* Device) {
 	FAT32Device* FATDevice := Alloc(#FAT32Device)
 	FATDevice->Initialize(Device)
 
@@ -31,7 +31,7 @@ define IVirtualDirectory* OpenFAT32(BlockDevice* Device) {
     return FAT32Directory:New(FATDevice, FATDevice->Header->RootDirectoryCluster)
 }
 
-define IVirtualDirectory* OpenExt2(BlockDevice* Device) {
+define IDirectory* OpenExt2(BlockDevice* Device) {
     Ext2* FS := Alloc(#Ext2)
 	FS->Device := Device
 	
@@ -47,14 +47,14 @@ define IVirtualDirectory* OpenExt2(BlockDevice* Device) {
     return VFSExt2Directory:New(FS, RootINode)
 }
 
-define IVirtualDirectory* OpenHostDirectory(i8* Path) {
+define IDirectory* OpenHostDirectory(i8* Path) {
     i64 Handle := FileOpen(Path, FILE_READ)
 
     return VFSHostDirectory:New(Handle)
 }
 
-IVirtualDirectory* CurrentDirectory := null
-IVirtualDirectory* DevicesDirectory := null
+IDirectory* CurrentDirectory := null
+IDirectory* DevicesDirectory := null
 
 #Require "$/AVLTree.rlx"
 
@@ -108,7 +108,7 @@ define i64 ParseBlockCount(i8* ValueString, i8* Scale) {
 #Require "./src/kernel/file-system/VFS/shell/GPT.rlx"
 
 define void Main() {
-    IVirtualDirectory* Root := VFSDirectory:New()
+    IDirectory* Root := VFSDirectory:New()
     MountRoot(Root)
 
     DevicesDirectory := VFSDirectory:New()

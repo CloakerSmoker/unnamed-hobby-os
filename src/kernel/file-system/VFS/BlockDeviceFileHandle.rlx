@@ -81,14 +81,14 @@ define FileHandlePrototype* GetBlockDeviceFileHandlePrototype() {
     return &BlockDeviceFileHandlePrototype
 }
 
-declare IVirtualFilePrototype* GetVFSBlockDeviceFilePrototype()
+declare IFilePrototype* GetVFSBlockDeviceFilePrototype()
 
 struct VFSBlockDeviceFile {
-    #Include "./src/kernel/file-system/VFS/IVirtualFile.rlx"
+    #Include "./src/kernel/file-system/VFS/IFile.rlx"
 
     FileHandle* Handle
 
-    static IVirtualFile* New(FileHandle* Handle) {
+    static IFile* New(FileHandle* Handle) {
         self* this := Alloc(#self)
 
         this->Prototype := GetVFSBlockDeviceFilePrototype()
@@ -110,12 +110,12 @@ struct VFSBlockDeviceFile {
     }
 }
 
-IVirtualFilePrototype VFSBlockDeviceFilePrototype {
+IFilePrototype VFSBlockDeviceFilePrototype {
     IsEphemeral: &VFSBlockDeviceFile.IsEphemeral,
     Open: &VFSBlockDeviceFile.Open,
     Close: &VFSBlockDeviceFile.Close
 }
 
-define IVirtualFilePrototype* GetVFSBlockDeviceFilePrototype() {
+define IFilePrototype* GetVFSBlockDeviceFilePrototype() {
     return &VFSBlockDeviceFilePrototype
 }
