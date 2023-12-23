@@ -139,10 +139,14 @@ struct VFSHostDirectory {
             return ExistingCacheEntry
         }
         
-        i64 Handle := FileOpenAt(this->Handle, Name, FILE_READ)
+        i64 Handle := FileOpenAt(this->Handle, Name, FILE_READ_WRITE)
 
         if (Handle <= 0) {
-            return null
+            Handle := FileOpenAt(this->Handle, Name, FILE_READ)
+
+            if (Handle <= 0) {
+                return null
+            }
         }
 
         VFSDirectoryEntryType Type := VFSDirectoryEntryType::Hole
@@ -254,7 +258,17 @@ struct VFSHostDirectory {
         ;    }
         ;}
 
-        return false
+        if (Entry->Type = VFSDirectoryEntryType::File) {
+            FileClose(FileOpenAt(this->Handle, Entry->Name, FILE_CREATE_NEW))
+        }
+        else if (Entry->Type = VFSDirectoryEntryType::Directory) {
+            MakeDirectoryAt(this->Handle, Entry->Name)
+        }
+        else {
+            return false
+        }
+
+        return true
     }
     define i8 Remove(i8* Name) {
         ;this->Children->Remove(FNV1A(Name))
@@ -273,6 +287,7 @@ IDirectoryPrototype VFSHostDirectoryPrototype {
     IsEphemeral: &VFSHostDirectory.IsEphemeral,
 
     CreateDirectory: &VFSHostDirectory.CreateDirectory,
+    CreateFile: &VFSHostDirectory.CreateFile,
 
     Insert: &VFSHostDirectory.Insert,
     Remove: &VFSHostDirectory.Remove

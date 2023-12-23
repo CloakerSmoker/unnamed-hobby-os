@@ -67,12 +67,17 @@ define void ExecuteTouch(i64 ArgC, i8** ArgV) {
         return
     }
 
+    VFSDirectoryEntryType Type := VFSDirectoryEntryType::File
+
+    if (StringEquals(ArgV[0], "mkdir")) {
+        Type := VFSDirectoryEntryType::Directory
+    }
+
     i8* RawPath := ArgV[1]
 
     FilePath Path
     ParsePath(RawPath, &Path)
 
-    
     IDirectory* ParentDirectory := LookupParentDirectory(CurrentDirectory, &Path)
 
     if !(ParentDirectory) {
@@ -87,10 +92,122 @@ define void ExecuteTouch(i64 ArgC, i8** ArgV) {
     }
 
     VFSDirectoryEntry NewEntry {
-        Type: VFSDirectoryEntryType::File,
-        Name: CloneString(Path.FileName),
-        File: ParentDirectory->CreateFile()
+        Type: Type,
+        Name: CloneString(Path.FileName)
     }
+
+    if (Type = VFSDirectoryEntryType::File) {
+        NewEntry.File := ParentDirectory->CreateFile()
+    }
+    else if (Type = VFSDirectoryEntryType::Directory) {
+        NewEntry.Directory := ParentDirectory->CreateDirectory()
+    }
+
+    ParentDirectory->Insert(&NewEntry)
 }
 
-i32 TOUCH_COMMAND_ID := RegisterCommand("touch", &ExecuteCD)
+i32 TOUCH_COMMAND_ID := RegisterCommand("touch", &ExecuteTouch)
+i32 MKDIR_COMMAND_ID := RegisterCommand("mkdir", &ExecuteTouch)
+
+define void ExecuteDD(i64 ArgC, i8** ArgV) {
+    ; dd bs=512 if=/dev/loop0p1 of=/host/p1.bin count=512
+
+    i32 InputBase := 0
+    i32 OutputBase := 0
+
+    i32 BlockSize := -1
+    i32 BlockCount := -1
+
+    i8* InputFilePath := null
+    i8* OutputFilePath := null
+
+    for (i32 OptionIndex := 1, OptionIndex < ArgC, OptionIndex++) {
+        
+        i8* Option := ArgV[OptionIndex]
+
+        i8* Name := Option
+        i8* Value := null
+
+        for (i32 Index := 0, Index < StringLength(Option), Index++) {
+            if (Option[Index] = '=') {
+                Option[Index] := 0
+                Value := &Option[Index + 1]
+                break
+            }
+        }
+
+        if (Value != null) {
+            if (StringEquals(Name, "bs")) {
+                BlockSize := AToI(Value) As i32
+            }
+            else if (StringEquals(Name, "count")) {
+                BlockCount := AToI(Value) As i32
+            }
+            else if (StringEquals(Name, "skip")) {
+                InputBase := AToI(Value) As i32
+            }
+            else if (StringEquals(Name, "seek")) {
+                OutputBase := AToI(Value) As i32
+            }
+            else if (StringEquals(Name, "if")) {
+                InputFilePath := Value
+            }
+            else if (StringEquals(Name, "of")) {
+                OutputFilePath := Value
+            }
+        }
+    }
+
+    if (BlockSize = -1 || BlockCount = -1) {
+        Print("Block size and count must be specified\n")
+        return
+    }
+    else if (InputFilePath = null || OutputFilePath = null) {
+        Print("Input/output files must be specified\n")
+        return
+    }
+
+    VFSDirectoryEntry InputEntry
+    if !(Lookup(CurrentDirectory, InputFilePath, &InputEntry)) {
+        Print("'%s' not found\n", InputFilePath)
+        return
+    }
+
+    if (InputEntry.Type != VFSDirectoryEntryType::File) {
+        Print("'%s' not a file\n", InputFilePath)
+        return
+    }
+
+    IFile* InputFile := InputEntry.File
+    FileHandle* Input := InputFile->Open()
+    Input->Seek(InputBase * BlockSize, SeekMode::Set)
+
+    VFSDirectoryEntry OutputEntry
+    if !(Lookup(CurrentDirectory, OutputFilePath, &OutputEntry)) {
+        i8*[2] FakeTouch {"touch", OutputFilePath}
+        ExecuteTouch(2, FakeTouch)
+
+        Lookup(CurrentDirectory, OutputFilePath, &OutputEntry)
+    }
+
+    if (OutputEntry.Type != VFSDirectoryEntryType::File) {
+        Print("'%s' not a file\n", OutputFilePath)
+        return
+    }
+
+    IFile* OutputFile := OutputEntry.File
+    FileHandle* Output := OutputFile->Open()
+    Output->Seek(OutputBase * BlockSize, SeekMode::Set)
+
+    void* BlockBuffer := Alloc(BlockSize)
+
+    for (i32 Index := 0, Index < BlockCount, Index++) {
+        Input->Read(BlockBuffer, BlockSize)
+        Output->Write(BlockBuffer, BlockSize)
+    }
+
+    Input->Close()
+    Output->Close()
+}
+
+i32 DD_COMMAND_ID := RegisterCommand("dd", &ExecuteDD)

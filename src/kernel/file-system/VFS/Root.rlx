@@ -22,6 +22,16 @@ struct FilePath {
 
     i8* FileName
 
+    define void Shift() {
+        this->Count -= 1
+        this->FileName := this->Parts[this->Count - 1]
+    }
+
+    define void UnShift() {
+        this->Count += 1
+        this->FileName := this->Parts[this->Count - 1]
+    }
+
     define void Zero() {
         FastSetMemory8(this, 0, #self)
     }
@@ -208,14 +218,23 @@ define i8 Mount(IDirectory* At, i8* RawPath, IDirectory* Root) {
 }
 
 define IDirectory* LookupParentDirectory(IDirectory* At, FilePath* Path) {
-    Path->Count -= 1
+    if (Path->Count = 1) {
+        if (Path->Anchor = FilePathAnchor::Root) {
+            return VFSRootDirectory
+        }
+        else {
+            return At
+        }
+    }
+
+    Path->Shift()
 
     VFSDirectoryEntry ParentEntry
     if !(Lookup(At, Path, &ParentEntry)) {
         return null
     }
 
-    Path->Count += 1
+    Path->UnShift()
 
     if (ParentEntry.Type != VFSDirectoryEntryType::Directory) {
         return null
