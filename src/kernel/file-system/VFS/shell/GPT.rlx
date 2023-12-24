@@ -136,6 +136,8 @@ define void ExecuteGPT(i64 ArgC, i8** ArgV) {
     BlockDeviceFileHandle* BlockDeviceHandle := BlockDeviceFile->Handle As void*
     BlockDevice* RawDevice := BlockDeviceHandle->Device
 
+    i32 BlockSize := RawDevice->GetBytesPerBlock() As i32
+
     GPTDevice* Device := FindGPTDeviceBinding(RawDevice)
 
     if (Device = null) {
@@ -149,9 +151,9 @@ define void ExecuteGPT(i64 ArgC, i8** ArgV) {
     i8 Formatted := CompareMemory(Device->Header->Signature, "EFI PART", 8)
 
     if (StringEquals(Verb, "format")) {
-        ; gpt /dev/loop0 format 128 m
+        ; gpt /dev/loop0 format 128m
 
-        i64 Size := ParseBlockCount(ArgV[3], ArgV[4])
+        i64 Size := ParseDataSize(ArgV[3])
 
         Device->Format(Size)
         Device->ReadHeader(1)
@@ -268,12 +270,19 @@ define void ExecuteGPT(i64 ArgC, i8** ArgV) {
         GPTPartitionEntry* Partition := Device->ReadPartitionEntry(PartitionNumber)
 
         i8* Property := ArgV[4]
+        i8* Value := ArgV[5]
 
         if (StringEquals(Property, "start")) {
-            Partition->StartingLBA := ParseBlockCount(ArgV[5], ArgV[6])
+            DataSize Start
+            ParseDataSize(Value, &Start)
+
+            Partition->StartingLBA := Start.AsBlocksOf(BlockSize)
         }
         else if (StringEquals(Property, "end")) {
-            Partition->EndingLBA := ParseBlockCount(ArgV[5], ArgV[6])
+            DataSize End
+            ParseDataSize(Value, &End)
+
+            Partition->EndingLBA := End.AsBlocksOf(BlockSize)
         }
         else if (StringEquals(Property, "name")) {
             i8* Name := ArgV[5]

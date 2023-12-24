@@ -48,7 +48,7 @@ $(BUILD)/Disk.img:
 		"create start 71 m end 119 m name \"Boot\" type custom" \
 		"quit"
 	
-	$(BUILD)/FAT32Tool.elf "File($(BUILD)/FAT32.img,512)" \
+	$(BUILD)/FAT32Tool.elf "File($@,512)>GPT(0)" \
 		"format 64 m" \
 		"mkdir EFI" \
 		"cd EFI" \
@@ -57,7 +57,7 @@ $(BUILD)/Disk.img:
 		"import $(BUILD)/Boot.efi BOOTX64.EFI" \
 		"quit"
 	
-	$(BUILD)/Ext2Tool.elf "File($(BUILD)/Ext2.img,512)" \
+	$(BUILD)/Ext2Tool.elf "File($@,512)>GPT(1)" \
 		"format 32 m" \
 		"import $(BUILD)/Kernel.elf Kernel.elf" \
 		"import-all $(ROOT_EXTRA)" \

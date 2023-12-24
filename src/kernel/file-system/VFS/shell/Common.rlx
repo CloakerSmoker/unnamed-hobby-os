@@ -121,6 +121,8 @@ define void ExecuteDD(i64 ArgC, i8** ArgV) {
     i8* InputFilePath := null
     i8* OutputFilePath := null
 
+    i8 DryRun := false
+
     for (i32 OptionIndex := 1, OptionIndex < ArgC, OptionIndex++) {
         
         i8* Option := ArgV[OptionIndex]
@@ -138,16 +140,25 @@ define void ExecuteDD(i64 ArgC, i8** ArgV) {
 
         if (Value != null) {
             if (StringEquals(Name, "bs")) {
-                BlockSize := AToI(Value) As i32
+                BlockSize := ParseDataSize(Value) As i32
             }
             else if (StringEquals(Name, "count")) {
-                BlockCount := AToI(Value) As i32
+                DataSize TransferSize
+                ParseDataSize(Value, &TransferSize)
+
+                if (TransferSize.Scale = DataScale::Count) {
+                    BlockCount := TransferSize.Value As i32
+                }
+                else {
+                    BlockCount := TransferSize.Get() As i32
+                    BlockCount /= BlockSize
+                }
             }
             else if (StringEquals(Name, "skip")) {
-                InputBase := AToI(Value) As i32
+                InputBase := ParseDataSize(Value) As i32
             }
             else if (StringEquals(Name, "seek")) {
-                OutputBase := AToI(Value) As i32
+                OutputBase := ParseDataSize(Value) As i32
             }
             else if (StringEquals(Name, "if")) {
                 InputFilePath := Value
@@ -156,14 +167,25 @@ define void ExecuteDD(i64 ArgC, i8** ArgV) {
                 OutputFilePath := Value
             }
         }
+
+        if (StringEquals(Name, "dry")) {
+            DryRun := true
+        }
     }
 
-    if (BlockSize = -1 || BlockCount = -1) {
+    ;Print("%i, %i\n", BlockSize, BlockCount)
+
+    if (BlockSize < 0 || BlockCount < 0) {
         Print("Block size and count must be specified\n")
         return
     }
     else if (InputFilePath = null || OutputFilePath = null) {
         Print("Input/output files must be specified\n")
+        return
+    }
+
+    if (DryRun) {
+        Print("Would transfer %i blocks of %x bytes from '%s' to '%s'\n", BlockCount, BlockSize, InputFilePath, OutputFilePath)
         return
     }
 

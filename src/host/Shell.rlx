@@ -102,10 +102,14 @@ define i64 ParseBlockCount(i8* ValueString, i8* Scale) {
 	return Value
 }
 
+#Require "./src/kernel/file-system/VFS/shell/Utilities.rlx"
+
 #Require "./src/kernel/file-system/VFS/shell/Common.rlx"
 #Require "./src/kernel/file-system/VFS/shell/Loop.rlx"
 #Require "./src/kernel/file-system/VFS/shell/Mount.rlx"
 #Require "./src/kernel/file-system/VFS/shell/GPT.rlx"
+
+#Require "./src/kernel/file-system/VFS/ZeroDevice.rlx"
 
 define void Main() {
     IDirectory* Root := VFSDirectory:New()
@@ -113,6 +117,14 @@ define void Main() {
 
     DevicesDirectory := VFSDirectory:New()
     Mount(Root, "/dev", DevicesDirectory)
+
+    VFSDirectoryEntry Entry {
+        Type: VFSDirectoryEntryType::File,
+        Name: "zero",
+        File: ZeroDeviceFile:New()
+    }
+
+    DevicesDirectory->Insert(&Entry)
 
     Mount(Root, "/host", OpenHostDirectory("."))
 
