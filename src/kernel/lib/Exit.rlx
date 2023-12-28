@@ -1,4 +1,10 @@
 declare void Info(i8*, ...)
+declare void DisableInterrupts()
+
+define void Hang() {
+    DisableInterrupts()
+    loop {asm {emit, 0xF4}}
+}
 
 define void Exit(i32 Code) {
     Info("EXIT CALLED\n%stackdump\nHALTING")
@@ -7,5 +13,5 @@ define void Exit(i32 Code) {
 
 define void Panic(i8* Reason) {
     Info("PANIC: %s\n%stackdump\nHALTING\n", Reason)
-    loop {}
+    Hang()
 }

@@ -1,0 +1,250 @@
+
+define void SplitLowHigh(i64 Value, i32* Low, i32* High) {
+    Low[0] := (Value & 0xFFFF_FFFF) As i32
+    High[0] := ((Value >> 32) & 0xFFFF_FFFF) As i32
+}
+
+define void SplitLowHigh(void* RawValue, i32* Low, i32* High) {
+    SplitLowHigh(VirtualToPhysical(RawValue), Low, High)
+}
+
+namespace ATA {
+    enum Command As i8 {
+        DEVICE_RESET := 0x08,
+        READ_DMA_EXT := 0x25,
+        WRITE_DMA_EXT := 0x35,
+        IDENTIFY_DEVICE := 0xEC,
+        IDENTIFY_DEVICE_DMA := 0xEE
+    }
+}
+
+namespace SATA {
+    enum DeviceType {
+        None
+        SATA
+        SATAPI
+        EnclosureBridge
+        PortMultiplier
+    }
+
+    namespace FIS {
+        enum Type As i8 {
+            HostToDevice := 0x27
+            DeviceToHost := 0x34
+            ActivateDMA := 0x39
+            SetupDMA := 0x41
+            Data := 0x46
+            SelfTest := 0x58
+            SetupPIO := 0x5F
+            SetDeviceBits := 0xA1
+        }
+
+        enum CommandControl {
+            Control := 0,
+            Command := 1
+        }
+
+        struct SetDeviceRegisters {
+            ; DWORD0
+
+            Type Type
+
+            bits as i8 {
+                [0:3] PortMultiplier
+                CommandControl [7] CommandOrControl
+            }
+
+            ATA::Command Command
+            i8 FeatureLow
+
+            ; DWORD1
+
+            bits as i32 {
+                [0:23] LBALow
+                [24:31] Device
+            }
+
+            ; DWORD2
+
+            bits as i32 {
+                [0:23] LBAHigh
+                [24:31] FeatureHigh
+            }
+
+            ; DWORD3
+
+            i16 Count
+            i8 IsochronousCommandCompletion
+            i8 Control
+
+            ; DWORD4
+
+            i32 _
+
+            define void SetLBA(i64 Block) {
+                this->LBALow := (Block & 0xFF_FF_FF) As i32
+                this->LBAHigh := ((Block >> 24) & 0xFF_FF_FF) As i32
+            }
+        }
+
+        struct GetDeviceRegisters {
+            ; DWORD0
+
+            Type Type
+
+            bits as i8 {
+                [0:3] PortMultiplier
+                [5] InterruptBit
+            }
+
+            i8 Status
+            i8 Error
+
+            ; DWORD1
+
+            bits as i32 {
+                [0:23] LBALow
+                [24:31] Device
+            }
+
+            ; DWORD2
+
+            bits as i32 {
+                [0:23] LBAHigh
+            }
+
+            ; DWORD3
+
+            i16 Count
+            i16 _
+
+            ; DWORD4
+
+            i32 _
+        }
+
+        struct Data {
+            ; DWORD0
+
+            Type Type
+
+            bits as i8 {
+                [0:3] PortMultiplier
+            }
+
+            i16 _
+
+            ; DWORD1 - N
+            i32[0] Data
+        }
+
+        struct PIOSetup {
+            ; DWORD0
+
+            Type Type
+
+            bits as i8 {
+                [0:3] PortMultiplier
+                [5] TransferDirection
+                [6] InterruptBit
+            }
+
+            i8 Status
+            i8 Error
+
+            ; DWORD1
+
+            bits as i32 {
+                [0:23] LBALow
+                [24:31] Device
+            }
+
+            ; DWORD2
+
+            bits as i32 {
+                [0:23] LBAHigh
+            }
+
+            ; DWORD3
+
+            i16 Count
+            i8 _
+            i8 NewStatus
+
+            ; DWORD4
+
+            i16 TransferCount
+            i16 _
+        }
+
+        struct DMASetup {
+            ; DWORD0
+
+            Type Type
+
+            bits as i8 {
+                [0:3] PortMultiplier
+                [5] TransferDirection
+                [6] InterruptBit
+                [7] AutoActivate
+            }
+
+            i16 _
+
+            ; DWORD1 + DWORD2
+
+            i32 DMABufferIDLow
+            i32 DMABufferIDHigh
+
+            ; DWORD3
+
+            i32 _
+
+            ; DWORD4
+
+            i32 DMABufferOffset
+
+            ; DWORD5
+
+            i32 TransferCount
+
+            ; DWORD6
+
+            i32 _
+        }
+
+        struct SetDeviceBits {
+            ; DWORD0
+
+            Type Type
+
+            bits as i8 {
+                [0:3] PortMultiplier
+
+                [6] InterruptPending
+                [7] NotificationPending
+            }
+
+            bits as i8 {
+                [0:2] StatusLow
+                [4:6] StatusHigh
+            }
+
+            i8 Error
+
+            ; DWORD1
+
+            i32 _
+        }
+
+        struct ReceivedFIS {
+            ; 0x0 - 0x20
+
+            DMASetup DMA
+            i8[4] _
+
+            PIOSetup PIO
+            i32[12] _
+        }
+    }
+}

@@ -295,9 +295,9 @@ E1000* FirstE1000 := null
 #Require "./src/drivers/networking/E1000.rlx"
 
 
-#Require "./src/drivers/AHCI.rlx"
+#Require "./src/drivers/ICH9/AHCI.rlx"
 
-AHCI::Controller* FirstSATAController := null
+ICH9::AHCI::Controller* SATAController := null
 
 define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Device) {
 	Print("%x/%x/%x: ", Bus, Slot, Function)
@@ -346,93 +346,8 @@ define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Devic
 
 			Info("SATA MAP: %b\n", *((Device + 0x90) As i16*))
 
-			FirstSATAController := Alloc(#AHCI::Controller)
-			FirstSATAController->Initialize(Device)
-
-			i32 PopulatedPortCount := FirstSATAController->Ports->Count()
-
-			for (i32 Index := 0, Index < PopulatedPortCount, Index++) {
-				AHCI::DevicePort* Port := FirstSATAController->Ports->At(Index)
-
-				if (Port->Type = AHCI::DeviceType::SATA) {
-					Port->EnableInterrupts()
-					Port->StartCommands()
-
-					Port->Identify()
-
-					Print("SATA Device %i is a %s, SN: %s\n", Index, Port->Model, Port->SerialNumber)
-				}
-			}
-		}
-	}
-}
-
-define void VisitPCIFunction(i32 Bus, i32 Slot, i32 Function) {
-	Print("%x/%x/%x: ", Bus, Slot, Function)
-	
-	i32 Class := PCIReadConfig(Bus, Slot, Function, PCI_HEADER_CLASS_CODE)
-	i32 SubClass := PCIReadConfig(Bus, Slot, Function, PCI_HEADER_SUBCLASS)
-	i32 Interface := PCIReadConfig(Bus, Slot, Function, PCI_HEADER_INTERFACE)
-	
-	PCIClassCodes->Print(Class, SubClass, Interface)
-	
-	Print("\n")
-
-	if (Bus = 0 && Slot = 1 && Function = 3) {
-		Print("ISA bridge\n")
-		for (i32 Index := 0, Index < 4, Index++) {
-			i32 Interrupt := PCIReadConfig(Bus, Slot, Function, 0x60 + Index)
-
-			Print("Int %c = %i\n", 'A' + Index, Interrupt)
-		}
-	}
-	
-	if (Class = PCI_CLASS_CODE_MASS_STORAGE_CONTROLLER 
-	 && SubClass = PCI_SUBCLASS_IDE_INTERFACE) {
-		i32 PrimaryIOBase      := IDE_LEGACY_PRIMARY_IO_BASE
-		i32 PrimaryControlBase := IDE_LEGACY_PRIMARY_CONTROL_BASE
-		
-		if (Interface & PCI_IDE_INTERFACE_PRIMARY_PCI_NATIVE) {
-			PrimaryIOBase      := PCIReadConfig(Bus, Slot, Function, PCI_HEADER_BASE_ADDRESS_0)
-			PrimaryControlBase := PCIReadConfig(Bus, Slot, Function, PCI_HEADER_BASE_ADDRESS_1)
-		}
-		
-		i32 SecondaryIOBase      := IDE_LEGACY_SECONDARY_IO_BASE
-		i32 SecondaryControlBase := IDE_LEGACY_SECONDARY_CONTROL_BASE
-		
-		if (Interface & PCI_IDE_INTERFACE_SECONDARY_PCI_NATIVE) {
-			SecondaryIOBase      := PCIReadConfig(Bus, Slot, Function, PCI_HEADER_BASE_ADDRESS_2)
-			SecondaryControlBase := PCIReadConfig(Bus, Slot, Function, PCI_HEADER_BASE_ADDRESS_3)
-		}
-		
-		DiskController->Initialize(PrimaryIOBase, PrimaryControlBase, SecondaryIOBase, SecondaryControlBase)
-		
-		Print("Found IDE controller\n")
-		Print("\tPCI address: %x/%x/%x\n", Bus, Slot, Function)
-		Print("\tports: %x-%x %x-%x\n", PrimaryIOBase, PrimaryControlBase, SecondaryIOBase, SecondaryControlBase)
-	}
-	else if (Class = PCI_CLASS_CODE_NETWORK_CONTROLLER 
-	     && SubClass = PCI_SUBCLASS_NETWORK_ETHERNET) {
-		 
-		PCIDevice NetworkDevice {
-			Bus: Bus,
-			Slot: Slot,
-			Function: Function
-		}
-		
-		i32 Vendor := NetworkDevice.Read(PCI_HEADER_VENDOR_ID)
-		i32 Device := NetworkDevice.Read(PCI_HEADER_DEVICE_ID)
-		
-		NetworkDevice.DumpConfigurationSpace()
-		
-		;Print("MSI: %x\n", NetworkDevice.FindCapability(5))
-		
-		Print("Network interface %x:%x\n", Vendor, Device)
-		
-		if (Vendor = PCI_VENDOR_INTEL && Device = PCI_DEVICE_INTEL_E1000) {
-			FirstE1000 := Alloc('E1000', #E1000)
-			
-			;FirstE1000->Initialize(Bus, Slot, Function)
+			SATAController := Alloc(#ICH9::AHCI::Controller)
+			SATAController->Initialize(Device)
 		}
 	}
 }
@@ -529,12 +444,26 @@ define void MainContinuation() {
 	
 	SetupSystemCalls()
 
-	;/*
-	
-	DiskController := KernelHeapAllocate('IDE', #IDEDiskController)
-	
 	InitializePCIe(&VisitPCIeFunction)
-	;PCIEnumerateBusses(&VisitPCIFunction)
+
+	if (SATAController = null) {
+		Panic("No SATA disk controller detected, hanging...\n")
+	}
+
+	i32 PopulatedPortCount := SATAController->Ports->Count()
+
+	for (i32 Index := 0, Index < PopulatedPortCount, Index++) {
+		ICH9::AHCI::DevicePort* Port := SATAController->Ports->At(Index)
+
+		if (Port->Type = SATA::DeviceType::SATA) {
+			Port->EnableInterrupts()
+			Port->StartCommands()
+
+			Port->Identify()
+
+			Print("SATA Device %i is a %s, SN: %s\n", Port->Index, Port->Model, Port->SerialNumber)
+		}
+	}
 
 	/*SetupNetworking()
 
@@ -666,4 +595,5 @@ define void MainContinuation() {
 
 	*/
 	
+	Panic("Kernel returned from Main()")
 }
