@@ -1,3 +1,13 @@
+
+define void SplitLowHigh(i64 Value, i32* Low, i32* High) {
+    Low[0] := (Value & 0xFFFF_FFFF) As i32
+    High[0] := ((Value >> 32) & 0xFFFF_FFFF) As i32
+}
+
+define void SplitLowHigh(void* RawValue, i32* Low, i32* High) {
+    SplitLowHigh(VirtualToPhysical(RawValue), Low, High)
+}
+
 namespace AHCI {
     enum DeviceType {
         None
@@ -37,6 +47,7 @@ namespace AHCI {
     namespace HBA {
         bits PortControlCommand As i32 {
             [0] Start
+            [3] CommandListOverride
             [4] RecieveEnabled
         }
 
@@ -45,10 +56,20 @@ namespace AHCI {
             [14] RecieveRunning
         }
 
-        bits _TaskFileData As i32 {
+        bits PortInterruptStatus As i32 {
+            [30] TaskFileError
+        }
+
+        bits TaskFileData As i32 {
             [0] Error
             [3] DataRequest
             [7] Busy
+        }
+
+        bits SATAStatus As i32 {
+            PowerManagementState [8:11] InterfacePowerManagement
+            InterfaceSpeed [4:7] InterfaceSpeed
+            DeviceDetection [0:3] DeviceDetection
         }
 
         struct PortControl {
@@ -59,7 +80,7 @@ namespace AHCI {
             i32 FISBaseAddressHigh
             
             union {
-                i32 InterruptStatus
+                PortInterruptStatus InterruptStatus
             }
 
             i32 InterruptEnable
@@ -74,19 +95,15 @@ namespace AHCI {
 
             union {
                 i32 RawTaskFileData
-                _TaskFileData TaskFileData
+                TaskFileData TaskFileData
             }
 
             i32 Signature
 
             union {
-                i32 SATA_Status
+                i32 RawSATA_Status
 
-                bits As i32 {
-                    PowerManagementState [8:11] InterfacePowerManagement
-                    InterfaceSpeed [4:7] InterfaceSpeed
-                    DeviceDetection [0:3] DeviceDetection
-                }
+                SATAStatus SATAStatus
             }
 
             i32 SATA_Control
@@ -104,20 +121,24 @@ namespace AHCI {
             i8[0x10] VendorSpecific
 
             define DeviceType GuessType() {
-                if (this->DeviceDetection != DeviceDetection::DevicePresent) {
+                SATAStatus Status := this->SATAStatus
+
+                if (Status->DeviceDetection != DeviceDetection::DevicePresent) {
                     return DeviceType::None
                 }
-                else if (this->InterfacePowerManagement != PowerManagementState::Active) {
+                else if (Status->InterfacePowerManagement != PowerManagementState::Active) {
                     return DeviceType::None
                 }
                 
-                if (this->Signature = DeviceSignature::ATAPI) {
+                i32 Signature := this->Signature
+
+                if (Signature = DeviceSignature::ATAPI) {
                     return DeviceType::SATAPI
                 }
-                else if (this->Signature = DeviceSignature::SEMB) {
+                else if (Signature = DeviceSignature::SEMB) {
                     return DeviceType::EnclosureBridge
                 }
-                else if (this->Signature = DeviceSignature::PM) {
+                else if (Signature = DeviceSignature::PM) {
                     return DeviceType::PortMultiplier
                 }
                 else {
@@ -157,11 +178,16 @@ namespace AHCI {
             PortControl[32] Ports
         }
 
+        enum TransferDirection {
+            DeviceToHost := 0,
+            HostToDevice := 1
+        }
+
         struct CommandHeader {
             bits As i16 {
                 [0:4] DWORDCount
                 [5] UseATAPI
-                [6] Direction
+                TransferDirection [6] Direction
                 [7] Prefetchable
                 [8] Reset
                 [9] SelfTest
@@ -183,6 +209,11 @@ namespace AHCI {
             i32 BaseAddressLow
             i32 BaseAddressHigh
 
+            define void SetBaseAddress(i64 Address) {
+                this->BaseAddressLow := (Address & 0xFFFF_FFFF) As i32
+                this->BaseAddressHigh := ((Address >> 32) & 0xFFFF_FFFF) As i32
+            }
+
             i32 Reserved
 
             bits As i32 {
@@ -192,7 +223,7 @@ namespace AHCI {
         }
 
         struct CommandTable {
-            i8[0x40] CommandFIS
+            i8[0x40] FIS
 
             i8[0x10] ATAPICommand
 
@@ -204,6 +235,14 @@ namespace AHCI {
         struct CommandList {
             CommandTable[32] Commands
         }
+    }
+
+
+    enum ATACommand As i8 {
+        DEVICE_RESET := 0x08,
+        READ_DMA_EXT := 0x25,
+        IDENTIFY_DEVICE := 0xEC,
+        IDENTIFY_DEVICE_DMA := 0xEE
     }
 
     ; MMIO -
@@ -240,6 +279,11 @@ namespace AHCI {
             SetDeviceBits := 0xA1
         }
 
+        enum CommandControl {
+            Control := 0,
+            Command := 1
+        }
+
         struct SetDeviceRegisters {
             ; DWORD0
 
@@ -247,10 +291,10 @@ namespace AHCI {
 
             bits as i8 {
                 [0:3] PortMultiplier
-                [7] CommandOrControl
+                CommandControl [7] CommandOrControl
             }
 
-            i8 Command
+            ATACommand Command
             i8 FeatureLow
 
             ; DWORD1
@@ -276,6 +320,11 @@ namespace AHCI {
             ; DWORD4
 
             i32 _
+
+            define void SetLBA(i64 Block) {
+                this->LBALow := (Block & 0xFF_FF_FF) As i32
+                this->LBAHigh := ((Block >> 24) & 0xFF_FF_FF) As i32
+            }
         }
 
         struct GetDeviceRegisters {
@@ -442,6 +491,10 @@ namespace AHCI {
     struct CommandTableEntry {
         HBA::CommandTable Command
         HBA::PhysicalRegionDescriptor[8] RegionDescriptors
+
+        define void Zero() {
+            FastZeroMemory(this, #self)
+        }
     }
 
     struct CommandTable {
@@ -450,6 +503,79 @@ namespace AHCI {
 
     struct CommandHeaderList {
         HBA::CommandHeader[32] Headers
+    }
+
+    struct DeviceCommand {
+        i32 Slot
+        HBA::CommandHeader* Header
+        CommandTableEntry* Table
+        HBA::PhysicalRegionDescriptor* Regions
+
+        i32 RegionCount
+
+        union {
+            void* RawFIS
+            FIS::SetDeviceRegisters* SetDeviceRegisters
+        }
+
+        define void MakeTransfer(HBA::TransferDirection Direction, ATACommand Command) {
+            this->Header->Direction := Direction
+
+            FIS::SetDeviceRegisters* SDR := this->SetDeviceRegisters
+            
+            SDR->Type := FIS::Type::HostToDevice
+            SDR->CommandOrControl := FIS::CommandControl::Command
+
+            SDR->Command := Command
+        }
+
+        define void SetTransferSize(i64 RawBlockCount) {
+            i32 BlockCount := RawBlockCount As i32
+
+            i32 BYTES_PER_PRDT := 0x40_0000 ; 2 ** 22
+
+            i32 ByteCount := BlockCount * 512
+            i32 RegionCount := ByteCount / BYTES_PER_PRDT
+
+            for (i32 Index := 0, Index < RegionCount, Index++) {
+                HBA::PhysicalRegionDescriptor* Region := this->Regions[Index]
+
+                Region->ByteCount := BYTES_PER_PRDT - 1
+            }
+
+            if (ByteCount % BYTES_PER_PRDT) {
+                HBA::PhysicalRegionDescriptor* LastRegion := this->Regions[RegionCount++]
+
+                LastRegion->ByteCount := ByteCount % BYTES_PER_PRDT
+            }
+
+            this->Header->PhysicalDescriptorTableLength := RegionCount As i16
+            this->SetDeviceRegisters->Count := BlockCount As i16
+        }
+
+        define void SetTransferDeviceLocation(i64 Base) {
+            FIS::SetDeviceRegisters* SDR := this->SetDeviceRegisters
+
+            SDR->SetLBA(Base)
+        }
+
+        define void SetTransferHostLocation(void* Where) {
+            i32 BYTES_PER_PRDT := 0x40_0000 ; 2 ** 22
+
+            i64 WherePhysical := VirtualToPhysical(Where)
+
+            i32 RegionCount := this->Header->PhysicalDescriptorTableLength
+
+            for (i32 Index := 0, Index < RegionCount, Index++) {
+                HBA::PhysicalRegionDescriptor* Region := this->Regions[Index]
+
+                Region->SetBaseAddress(WherePhysical + (Index * BYTES_PER_PRDT))
+            }
+
+            HBA::PhysicalRegionDescriptor* LastRegion := this->Regions[this->RegionCount - 1]
+
+            LastRegion->InterruptOnCompletion := true
+        }
     }
 
     struct DevicePort {
@@ -463,8 +589,18 @@ namespace AHCI {
         FIS::ReceivedFIS* ReceivedFIS
         i64 PhysicalRecievedFIS
 
-        CommandTable* Commands
+        CommandTableEntry* CommandTables
         i64 PhysicalCommands
+
+        DeviceCommand[32] Commands
+
+        union {
+            i8[512] IdentifySector
+            ATAIdentificationSpace IdentifyData
+        }
+
+        i8[30] Model
+        i8[50] SerialNumber
 
         static self* New(i32 Index, HBA::PortControl* Control) {
             self* this := Alloc(#self)
@@ -476,11 +612,207 @@ namespace AHCI {
             return this
         }
 
-        define void StartCommands() {
-            while (this->Control->Status.ControllerRunning) {}
+        define void EnableInterrupts() {
+            this->Control->InterruptEnable := -1
+        }
+        define void DisableInterrupts() {
+            this->Control->InterruptEnable := 0
+        }
 
-            this->Control->Command.RecieveEnabled := true
-            this->Control->Command.Start := true
+        define void DumpTaskFileData() {
+            HBA::TaskFileData TFD := this->Control->TaskFileData
+
+            if (TFD->Error) {
+                Info("[Error] ")
+            }
+            
+            if (TFD->DataRequest) {
+                Info("[DataRequest] ")
+            }
+
+            if (TFD->Busy) {
+                Info("[Busy] ")
+            }
+        }
+
+        define void DumpCommandIssue() {
+            i32 CI := this->Control->CommandIssue
+
+            for (i32 Index := 0, Index < 32, Index++) {
+                i32 Mask := 1 << Index
+
+                if (CI & Mask) {
+                    Info("1")
+                }
+                else {
+                    Info("0")
+                }
+            }
+        }
+
+        define void Dump() {
+            Info("TFD: ")
+            this->DumpTaskFileData()
+            Info("\n")
+
+            Info("CI: ")
+            this->DumpCommandIssue()
+            Info("\n")
+        }
+
+        define i32 FindFreeCommandSlot() {
+            i32 Allocated := this->Control->CommandIssue | this->Control->SATA_Active
+
+            for (i32 Slot := 0, Slot < 32, Slot++) {
+                i32 Bit := 1 << Slot
+
+                if !(Allocated & Bit) {
+                    return Slot
+                }
+            }
+
+            Panic("Could not find free AHCI command slot")
+            return 0
+        }
+
+        define void SpinUntilNotBusy() {
+            i32 Count := 0
+
+            HBA::PortControl* Control := this->Control
+
+            while (Control->TaskFileData->Busy || Control->TaskFileData->DataRequest) {
+                Count++
+
+                if (Count >= 0x1_0000) {
+                    Panic("AHCI Port is hung")
+                    return
+                }
+            }
+        }
+
+        define DeviceCommand* PrepareCommand() {
+            i32 Slot := this->FindFreeCommandSlot()
+
+            HBA::CommandHeader* CommandHeader := this->CommandHeaderList->Headers[Slot]
+
+            CommandHeader->DWORDCount := ((#HBA::CommandHeader) / 4) As i8
+
+            ; Set up command table
+            CommandTableEntry* Table := this->CommandTables[Slot]
+
+            Table->Zero()
+
+            ; Set up physical regions
+
+            HBA::PhysicalRegionDescriptor* Descriptor := Table->RegionDescriptors[0]
+
+            DeviceCommand* Out := this->Commands[Slot]
+            
+            Out->Slot := Slot
+            Out->Header := CommandHeader
+            Out->Table := Table
+            Out->Regions := Descriptor
+            Out->RawFIS := Table~>Command->FIS As void*
+
+            return Out
+        }
+
+        define void IssueCommand(DeviceCommand* Command) {
+            this->SpinUntilNotBusy()
+            
+            Info("Issue FIS:\n%hexdump\n", Command->RawFIS, 0x40)
+
+            i32 SlotMask := 1 << Command->Slot
+            this->Control->CommandIssue := SlotMask
+
+            i32 Spin := 0
+
+            loop {
+                Spin++
+
+                if !(this->Control->CommandIssue & SlotMask) {
+                    break
+                }
+
+                if (this->Control->InterruptStatus->TaskFileError) {
+                    Panic("AHCI command error\n")
+                    return
+                }
+
+                if (Spin > 0x20) {
+                    Panic("AHCI command timeout\n")
+                    return
+                }
+            }
+        }
+
+        define void Reset() {
+            DeviceCommand* Command := this->PrepareCommand()
+
+            Command->MakeTransfer(HBA::TransferDirection::DeviceToHost, FIS::ATACommand::DEVICE_RESET)
+
+            this->IssueCommand(Command)
+        }
+
+        define void DecodeIdentityString(i8* In, i32 Size, i8* Out) {
+            for (i32 CopyIndex := 0, CopyIndex < Size, CopyIndex += 2) {
+                Out[CopyIndex] := In[CopyIndex + 1]
+                Out[CopyIndex + 1] := In[CopyIndex]
+            }
+            
+            Out[Size] := 0
+            
+            for (i32 Index := Size - 1, Index >= 0, Index--) {
+                if (Out[Index] = ' ') {
+                    Out[Index] := 0
+                }
+                else {
+                    break
+                }
+            }
+        }
+
+        define void Identify() {
+            ;this->Control->InterruptStatus := 0xFF_FF_FF_FF
+
+            DeviceCommand* Command := this->PrepareCommand()
+
+            Command->MakeTransfer(HBA::TransferDirection::DeviceToHost, FIS::ATACommand::IDENTIFY_DEVICE)
+            Command->SetTransferSize(1)
+            Command->SetTransferHostLocation(this->IdentifySector)
+
+            this->IssueCommand(Command)
+
+            this->DecodeIdentityString(this->IdentifyData->Model, 40, this->Model)
+            this->DecodeIdentityString(this->IdentifyData->SerialNumber, 40, this->SerialNumber)
+
+        }
+
+        define void Read(i64 StartBlock, i64 BlockCount, void* Buffer) {
+            ;this->Control->InterruptStatus := 0xFF_FF_FF_FF
+
+            DeviceCommand* Command := this->PrepareCommand()
+
+            Command->MakeTransfer(HBA::TransferDirection::DeviceToHost, FIS::ATACommand::READ_DMA_EXT)
+            Command->SetTransferSize(BlockCount)
+            Command->SetTransferDeviceLocation(StartBlock)
+            Command->SetTransferHostLocation(Buffer)
+
+            Command->SetDeviceRegisters->Device := (1 << 6) As i8 ; READ_DMA_EXT specifies bit 6 must be set
+
+            this->IssueCommand(Command)
+        }
+
+        define void StartCommands() {
+            HBA::PortControlCommand Command
+
+            Command.Start := true
+            Command.CommandListOverride := true
+            Command.RecieveEnabled := true
+
+            Info("PxCMD: %b\n", Command)
+            
+            this->Control->Command := Command
         }
         
         define void StopCommands() {
@@ -516,51 +848,40 @@ namespace AHCI {
             Buffer[Length] := 0
 
             Info("%pcie: ICH9: %s\n", this->Device, Buffer)
+            Print("ICH9: SATA: %s\n", Buffer)
         }
 
-        define i8* GetDeviceTypeString(DeviceType Type) {
-            i8*[5] Strings {
-                "None", "SATA", "SATAPI", "EnclosureBridge", "PortMultiplier"
-            }
+        static void ServiceInterrupt() {
+            Info("AHCI INTERRUPT!!!\n")
 
-            return Strings[Type]
+            LocalAPIC->EOI()
+        }
+
+        static void OnInterrupt() asm {
+            call, @InterruptSetup
+		    call, @self:ServiceInterrupt
+		    jmp, @InterruptReturn
         }
 
         define void InitializePorts() {
             i32 Count := this->Ports->Count()
 
-            i32 SizeOfHeaders := Count * #CommandHeaderList
-            i32 SizeOfFIS := Count * #FIS::ReceivedFIS
-            i32 SizeOfCommands := Count * #CommandTable
-
-            i32 Total := SizeOfHeaders + SizeOfFIS + SizeOfCommands
-
-            void* Buffer := KernelPageAllocator->AllocateVirtual(SizeToPageCount(Total))
-            i64 PhysicalBuffer := KernelAddressSpace->VirtualToPhysical(Buffer)
-
-            CommandHeaderList* CommandHeaderLists := Buffer
-            FIS::ReceivedFIS* FIS := Buffer + SizeOfHeaders
-            CommandTable* Commands := Buffer + SizeOfHeaders + SizeOfFIS
-
             for (i32 Index := 0, Index < Count, Index++) {
                 DevicePort* Port := this->Ports->At(Index)
 
-                Port->CommandHeaderList := CommandHeaderLists[Index]
-                Port->Control->CommandListBaseAddressLow := VirtualToPhysical(Port->CommandHeaderList) As i32
-                Port->Control->CommandListBaseAddressHigh := 0
+                Port->CommandHeaderList := KernelPageAllocator->AllocateVirtual(1)
+                SplitLowHigh(Port->CommandHeaderList, Port->Control~>CommandListBaseAddressLow, Port->Control~>CommandListBaseAddressHigh)
 
-                Port->ReceivedFIS := FIS[Index]
-                Port->Control->FISBaseAddressLow := VirtualToPhysical(Port->ReceivedFIS) As i32
-                Port->Control->FISBaseAddressHigh := 0
+                Port->ReceivedFIS := KernelPageAllocator->AllocateVirtual(1)
+                SplitLowHigh(Port->ReceivedFIS, Port->Control~>FISBaseAddressLow, Port->Control~>FISBaseAddressHigh)
 
-                Port->Commands := Commands[Index * 32]
+                Port->CommandTables := KernelPageAllocator->AllocateVirtual(1)
 
                 for (i32 CommandIndex := 0, CommandIndex < 32, CommandIndex++) {
                     HBA::CommandHeader* Header := Port->CommandHeaderList->Headers[CommandIndex]
 
                     Header->PhysicalDescriptorTableLength := 8
-                    Header->CommandTableDescriptorBaseAddressLow := VirtualToPhysical(Port->Commands[CommandIndex]) As i32
-                    Header->CommandTableDescriptorBaseAddressHigh := 0
+                    SplitLowHigh(Port->CommandTables[CommandIndex], Header~>CommandTableDescriptorBaseAddressLow, Header~>CommandTableDescriptorBaseAddressHigh)
                 }
             }
         }
@@ -575,6 +896,12 @@ namespace AHCI {
             Info("AHCI_HBA_PHYSICAL_REGION_DESCRIPTOR: %x\n", #HBA::PhysicalRegionDescriptor)
             */
 
+            DisableInterrupts()
+            Device->EnableMSI(20)
+            InsertIDTEntry(IRQToIDT(20), &self:OnInterrupt, true)
+            EnablePICLine(20, true)
+            EnableInterrupts()
+
             i64 ControllerPhysicalAddress := Device->ReadBAR(5) & 0xFFFF_FFFF
             i32 Size := Device->GetBARSize(5)
 
@@ -587,31 +914,39 @@ namespace AHCI {
 
             this->HostControl := this->MemoryBase
 
-            this->HostControl->GlobalHostControl.ControllerReset := true
-            this->HostControl->GlobalHostControl.AHCIEnable := true
-
             this->Log("Version %x", this->HostControl->Version)
 
             i32 DeviceCount := 0
             this->Ports := PointerArray:New()
 
-            for (i32 Index := 0, Index < 32, Index++) {
-                i32 Mask := 1 << (Index As i8)
+            i32 PortsImplemented := this->HostControl->PortsImplemented
 
-                if (this->HostControl->PortsImplemented & Mask) {
-                    HBA::PortControl* Port := this->HostControl->Ports[Index]
+            for (i32 Index := 0, Index < 32, Index++) {
+                i32 Mask := 1 << Index
+
+                if (PortsImplemented & Mask) {
+                    HBA::HostControl* HostControl := this->HostControl
+                    HBA::PortControl* Ports := HostControl->Ports
+                    HBA::PortControl* Port := Ports[Index]
+
+                    Info("SZ: %x\n", #HBA::PortControl)
+                    Info("Port %x\n", (Port As i64) - (this->HostControl As i64))
 
                     DeviceType Type := Port->GuessType()
-
-                    this->Log("Port %i present, %s type device", Index, this->GetDeviceTypeString(Type))
 
                     if (Type != DeviceType::None) {
                         this->Ports->Push(DevicePort:New(Index, Port))
                     }
+
+                    this->Log("Port %i present, %s type device", Index, nameof:(Type))
                 }
             }
 
             this->InitializePorts()
+
+            this->HostControl->GlobalHostControl.ControllerReset := true
+            this->HostControl->GlobalHostControl.AHCIEnable := true
+            this->HostControl->GlobalHostControl.InterruptEnable := true
         }
     }
 }

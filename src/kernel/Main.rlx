@@ -348,6 +348,21 @@ define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Devic
 
 			FirstSATAController := Alloc(#AHCI::Controller)
 			FirstSATAController->Initialize(Device)
+
+			i32 PopulatedPortCount := FirstSATAController->Ports->Count()
+
+			for (i32 Index := 0, Index < PopulatedPortCount, Index++) {
+				AHCI::DevicePort* Port := FirstSATAController->Ports->At(Index)
+
+				if (Port->Type = AHCI::DeviceType::SATA) {
+					Port->EnableInterrupts()
+					Port->StartCommands()
+
+					Port->Identify()
+
+					Print("SATA Device %i is a %s, SN: %s\n", Index, Port->Model, Port->SerialNumber)
+				}
+			}
 		}
 	}
 }
