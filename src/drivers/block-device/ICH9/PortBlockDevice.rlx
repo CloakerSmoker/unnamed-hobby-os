@@ -1,0 +1,44 @@
+
+declare BlockDevicePrototype* GetICH9SATABlockDevicePrototype()
+
+namespace ICH9::AHCI {
+    struct PortBlockDevice {
+        #Include "./src/drivers/block-device/BlockDeviceInstance.rlx"
+
+        DevicePort* Port
+
+        define void Read(i64 FirstBlock, i64 BlockCount, void* Buffer) {
+            this->Port->Read(FirstBlock, BlockCount, Buffer)
+        }
+        define void Write(i64 FirstBlock, i64 BlockCount, void* Buffer) {
+            this->Port->Write(FirstBlock, BlockCount, Buffer)
+        }
+        define i64 GetBytesPerBlock() {
+            return 512
+        }
+
+        static BlockDevice* New(DevicePort* Port) {
+            self* this := Alloc(#self)
+
+            this->Prototype := GetICH9SATABlockDevicePrototype()
+
+            this->Port := Port
+
+            return this As void*
+        }
+    }
+}
+
+BlockDevicePrototype ICH9SATABlockDevicePrototype {
+	DataSize: #ICH9::AHCI::PortBlockDevice,
+	
+	Read: &ICH9::AHCI::PortBlockDevice.Read,
+	Write: &ICH9::AHCI::PortBlockDevice.Write,
+	GetBytesPerBlock: &ICH9::AHCI::PortBlockDevice.GetBytesPerBlock,
+	
+	Name: "SATA"
+}
+
+define BlockDevicePrototype* GetICH9SATABlockDevicePrototype() {
+    return &ICH9SATABlockDevicePrototype
+}

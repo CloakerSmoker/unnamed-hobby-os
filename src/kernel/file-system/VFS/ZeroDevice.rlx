@@ -1,0 +1,83 @@
+declare FileHandlePrototype* GetZeroDeviceFileHandlePrototype()
+
+struct ZeroDeviceFileInstance {
+    #Include "./src/kernel/file-system/HandleInstance.rlx"
+
+    static FileHandle* New() {
+        self* this := Alloc(#self)
+        
+        this->Prototype := GetZeroDeviceFileHandlePrototype()
+
+        return this As void*
+    }
+
+    define void Status(FileStatus* Out) {
+        
+    }
+    define i32 Read(void* Buffer, i32 Size) {
+        FastSetMemory8(Buffer, 0, Size)
+
+        return Size
+    }
+    define i32 Write(void* Buffer, i32 Size) {
+        return 0
+    }
+    define void Seek(i32 Destination, SeekMode Mode) {
+    }
+    define i32 Tell() {
+        return 0
+    }
+    define void Close() {
+    }
+}
+
+FileHandlePrototype ZeroDeviceFileHandlePrototype {
+	Status: &ZeroDeviceFileInstance.Status,
+	Read: &ZeroDeviceFileInstance.Read,
+	Write: &ZeroDeviceFileInstance.Write,
+	Seek: &ZeroDeviceFileInstance.Seek,
+	Tell: &ZeroDeviceFileInstance.Tell
+}
+
+define FileHandlePrototype* GetZeroDeviceFileHandlePrototype() {
+    return &ZeroDeviceFileHandlePrototype
+}
+
+declare IFilePrototype* GetZeroDeviceFilePrototype()
+
+struct ZeroDeviceFile {
+    #Include "./src/kernel/file-system/VFS/IFile.rlx"
+
+    FileHandle* Handle
+
+    static IFile* New() {
+        self* this := Alloc(#self)
+
+        this->Prototype := GetVFSBlockDeviceFilePrototype()
+
+        this->Handle := ZeroDeviceFileInstance:New()
+
+        return this As void*
+    }
+
+    define i8 IsEphemeral() {
+        return false
+    }
+
+    define FileHandle* Open() {
+        return this->Handle
+    }
+    define void Close(FileHandle* Handle) {
+        
+    }
+}
+
+IFilePrototype ZeroDeviceFilePrototype {
+    IsEphemeral: &ZeroDeviceFile.IsEphemeral,
+    Open: &ZeroDeviceFile.Open,
+    Close: &ZeroDeviceFile.Close
+}
+
+define IFilePrototype* GetZeroDeviceFilePrototype() {
+    return &ZeroDeviceFilePrototype
+}
