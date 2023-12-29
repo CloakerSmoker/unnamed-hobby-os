@@ -68,7 +68,13 @@ define void ExecuteMount(i64 ArgC, i8** ArgV) {
         return
     }
 
-    Mount(CurrentDirectory, DestinationPath, DeviceRoot)
+    if (StringEquals(DestinationPath, "/")) {
+        MountRoot(DeviceRoot)
+        CurrentDirectory := VFSRootDirectory
+    }
+    else {
+        Mount(CurrentDirectory, DestinationPath, DeviceRoot)
+    }
 }
 
 i32 MOUNT_COMMAND_ID := RegisterCommand("mount", &ExecuteMount)

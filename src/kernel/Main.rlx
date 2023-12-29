@@ -452,6 +452,10 @@ define void PopulateDevicesDirectory(IDirectory* DevicesDirectory) {
 	}
 }
 
+define void VFSRunShellTask() {
+	VFSRunShell(KernelTerminal)
+}
+
 define void MainContinuation() {
 	CurrentTask := KernelSetupTask
 	
@@ -526,7 +530,12 @@ define void MainContinuation() {
 
 	PopulateDevicesDirectory(VFSDevicesDirectory)
 
-	VFSRunShell(KernelTerminal)
+	Task* ShellThread := Scheduler->AddLightTask(&VFSRunShellTask)
+
+	ShellThread->State := TASK_CAN_RUN
+
+	StartScheduler()
+	
 
 	/*SetupNetworking()
 

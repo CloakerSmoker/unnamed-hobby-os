@@ -504,13 +504,15 @@ namespace ICH9::AHCI {
         }
 
         define void Reset() {
-            DeviceCommand* Command := this->PrepareCommand()
+            DeviceCommand* _Command := this->PrepareCommand()
 
-            ; TODO: Compiler bug. `::ICH9::AHCI::` is required to avoid a compiler crash
+            ; TODO: Compiler bug.
+            ; `::ICH9::AHCI::` = crash sometimes
+            ; `Command` = crash sometimes
 
-            Command->MakeTransfer(::ICH9::AHCI::HBA::TransferDirection::DeviceToHost, ATA::Command::DEVICE_RESET)
+            _Command->MakeTransfer(HBA::TransferDirection::DeviceToHost, ATA::Command::DEVICE_RESET)
 
-            this->IssueCommand(Command)
+            this->IssueCommand(_Command)
         }
 
         define void DecodeIdentityString(i8* In, i32 Size, i8* Out) {

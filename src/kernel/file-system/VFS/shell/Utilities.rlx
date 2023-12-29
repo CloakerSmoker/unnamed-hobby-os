@@ -1,0 +1,129 @@
+
+enum DataScale {
+    Count := 1,
+    Block := 512,
+    Kilobyte := 1000,
+    Kibibyte := 1024,
+    Megabyte := 1000000, ; 1000 * 1000
+    Mebibyte := 1048576  ; 1024 * 1024
+}
+
+struct DataUnit {
+    i64 Value
+
+    union {
+        i64 RawScale
+        DataScale Scale
+    }
+
+    define i64 Get() {
+        return this->Value * this->RawScale
+    }
+
+    define i64 AsBlocksOf(i64 BlockSize) {
+        return this->Get() / BlockSize
+    }
+}
+
+define i8 ParseDataUnit(i8* Input, i32 Length, DataUnit* Out) {
+    Out->Value := 0
+
+    i8[64] LowerInput
+
+    i8 AllowNumber := true
+    i32 ScaleStart := -1
+
+    for (i32 Index := 0, Index < Length, Index++) {
+        i8 Character := Input[Index]
+
+        if (AllowNumber && IsNumber(Character)) {
+            Out->Value *= 10
+            Out->Value += GetCharacterValue(Character)
+        }
+        else if (AllowNumber) {
+            AllowNumber := false
+            ScaleStart := Index
+        }
+
+        LowerInput[Index] := Lower(Character)
+    }
+
+    LowerInput[Length] := 0
+
+    Out->Scale := DataScale::Count
+
+    if (ScaleStart != -1 && ScaleStart != Length) {
+        i8* Scale := &LowerInput[ScaleStart]
+        ;Print("Scale: %s\n", Scale)
+
+        if (StringEquals(Scale, "b")) {
+            Out->Scale := DataScale::Block
+        }
+        else if (StringEquals(Scale, "kb")) {
+            Out->Scale := DataScale::Kilobyte
+        }
+        else if (StringEquals(Scale, "k")) {
+            Out->Scale := DataScale::Kibibyte
+        }
+        else if (StringEquals(Scale, "mb")) {
+            Out->Scale := DataScale::Megabyte
+        }
+        else if (StringEquals(Scale, "m")) {
+            Out->Scale := DataScale::Mebibyte
+        }
+
+        return 0
+    }
+
+    return 1
+}
+
+define i8 ParseDataUnit(i8* Input, DataUnit* Out) {
+    return ParseDataUnit(Input, StringLength(Input), Out)
+}
+define i64 ParseDataUnit(i8* Input) {
+    DataUnit Out
+    ParseDataUnit(Input, &Out)
+
+    return Out.Get()
+}
+
+
+define void ParseCommandLine(i8* CommandLine, i64* ArgC, i8** Args) {
+	i32 Length := StringLength(CommandLine)
+	i32 ArgCount := 0
+	
+	i32 CurrentArgStart := 0
+	
+	for (i32 Index := 0, Index < Length, Index += 1) {
+		i8 NextCharacter := CommandLine[Index]
+		
+		if (NextCharacter = ' ') {
+			Args[ArgCount] := CommandLine + CurrentArgStart
+			ArgCount += 1
+			
+			CommandLine[Index] := 0
+			
+			while (CommandLine[Index + 1] = ' ') {
+				Index += 1
+			}
+			
+			CurrentArgStart := Index + 1
+		}
+		else if (NextCharacter = '"') {
+			CurrentArgStart += 1
+			CommandLine[Index] := 0
+			
+			while (CommandLine[Index] != '"') {
+				Index += 1
+			}
+			
+			CommandLine[Index] := 0
+		}
+	}
+	
+	Args[ArgCount] := CommandLine + CurrentArgStart
+	ArgCount += 1
+	
+	ArgC[0] := ArgCount
+}
