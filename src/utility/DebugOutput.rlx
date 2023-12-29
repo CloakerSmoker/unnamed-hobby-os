@@ -16,7 +16,7 @@ PrintOutputAdapterPrototype* SerialPrinter := &RawSerialPrinter
 
 define void InitializeOutputPort() {
 	if (USE_SERIAL_OUTPUT && !OutputPort->PortBase) {
-		i16 PortBase := COM_PORT_BASES[SERIAL_OUTPUT_PORT]
+		i16 PortBase := COM_PORT_BASES[SERIAL_OUTPUT_PORT - 1]
 		
 		OutputPort->Initialize(PortBase, COM_DIVISOR_115200, COM_DATA_BITS_8 | COM_PARITY_NONE | COM_STOP_BITS_1)
 		SerialPorts[SERIAL_OUTPUT_PORT - 1] := OutputPort

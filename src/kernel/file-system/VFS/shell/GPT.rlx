@@ -1,4 +1,6 @@
 
+#Require "$/String.rlx"
+
 define void PrintGUID(i8* this) {
 	Print("{")
 	
@@ -153,7 +155,7 @@ define void ExecuteGPT(i64 ArgC, i8** ArgV) {
     if (StringEquals(Verb, "format")) {
         ; gpt /dev/loop0 format 128m
 
-        i64 Size := ParseDataSize(ArgV[3])
+        i64 Size := ParseDataUnit(ArgV[3])
 
         Device->Format(Size)
         Device->ReadHeader(1)
@@ -273,14 +275,14 @@ define void ExecuteGPT(i64 ArgC, i8** ArgV) {
         i8* Value := ArgV[5]
 
         if (StringEquals(Property, "start")) {
-            DataSize Start
-            ParseDataSize(Value, &Start)
+            DataUnit Start
+            ParseDataUnit(Value, &Start)
 
             Partition->StartingLBA := Start.AsBlocksOf(BlockSize)
         }
         else if (StringEquals(Property, "end")) {
-            DataSize End
-            ParseDataSize(Value, &End)
+            DataUnit End
+            ParseDataUnit(Value, &End)
 
             Partition->EndingLBA := End.AsBlocksOf(BlockSize)
         }

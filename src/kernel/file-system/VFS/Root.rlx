@@ -1,9 +1,16 @@
+IDirectory* VFSRootOverlayDirectory := null
 IDirectory* VFSRootDirectory := null
 
 define void MountRoot(IDirectory* NewRoot) {
-    IDirectory* RootOverlay := VFSDirectory:New()
+    IDirectory* RootOverlay := VFSRootOverlayDirectory
+
+    if (RootOverlay = null) {
+        RootOverlay := VFSDirectory:New()
+    }
+
     IDirectory* Root := VFSOverlayDirectory:New(NewRoot, RootOverlay, VFSOverlayWriteMode::OnlyEphemeralToOverlay)
 
+    VFSRootOverlayDirectory:= RootOverlay
     VFSRootDirectory := Root
 }
 
@@ -140,14 +147,14 @@ define i8 Lookup(IDirectory* At, i8* RawPath, VFSDirectoryEntry* Result) {
 }
 
 define i8 Mount(IDirectory* At, i8* RawPath, IDirectory* Root) {
-    IDirectory* Current := At
-
     FilePath Path
     ParsePath(RawPath, &Path)
 
     if (Path.Anchor = FilePathAnchor::Root) {
         At := VFSRootDirectory
     }
+
+    IDirectory* Current := At
 
     for (i32 Index := 0, Index < Path->Count - 1, Index++) {
         i8* Part := Path->Parts[Index]

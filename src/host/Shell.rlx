@@ -22,31 +22,6 @@ define void Info(i8* Format, ... Args) {
 
 #Require "./src/kernel/file-system/VFS/Root.rlx"
 
-define IDirectory* OpenFAT32(BlockDevice* Device) {
-	FAT32Device* FATDevice := Alloc(#FAT32Device)
-	FATDevice->Initialize(Device)
-
-	FATDevice->ReadHeader()
-
-    return FAT32Directory:New(FATDevice, FATDevice->Header->RootDirectoryCluster)
-}
-
-define IDirectory* OpenExt2(BlockDevice* Device) {
-    Ext2* FS := Alloc(#Ext2)
-	FS->Device := Device
-	
-	void* SB := Alloc(2048)
-	void* TI := Alloc(1024)
-	void* TB1 := Alloc(1024)
-	void* TB2 := Alloc(1024)
-	void* BMP := Alloc(1024)
-	
-	FS->Initialize(SB, TI, TB1, TB2, BMP)
-
-    Ext2INode* RootINode := CloneMemory(FS->ReadINode(2), #Ext2INode)
-    return VFSExt2Directory:New(FS, RootINode)
-}
-
 define IDirectory* OpenHostDirectory(i8* Path) {
     i64 Handle := FileOpen(Path, FILE_READ)
 

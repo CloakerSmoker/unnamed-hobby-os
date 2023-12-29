@@ -7,7 +7,7 @@ i16 COM_2 := 0x2F8
 i16 COM_3 := 0x3E8
 i16 COM_4 := 0x2E8
 
-i16* COM_PORT_BASES := i16[0, 0x3F8, 0x2F8, 0x3E8, 0x2E8]
+i16* COM_PORT_BASES := i16[0x3F8, 0x2F8, 0x3E8, 0x2E8]
 
 i16 COM_REGISTER_DATA             := 0
 i16 COM_REGISTER_DIVISOR_LSB      := 0
@@ -339,30 +339,32 @@ define void RegisterSerialInterrupts() {
 
 #Require "./src/kernel/file-system/FileSystem.rlx"
 
-struct SerialPortFileInstance {
+declare FileHandlePrototype* GetSerialPortFileHandlePrototype()
+
+struct SerialPortFileHandle {
 	#Include "./src/kernel/file-system/HandleInstance.rlx"
 	
 	SerialPort* Port
-	
-	define void Initialize(void** Options, i32 OptionCount) {
-		i32 Major := Options[0] As i32
-		i32 Minor := Options[1] As i32
-		
-		i32 Number := Minor - SERIAL_MINOR
-		
-		SerialPort* Port := SerialPorts[Number]
-		
-		if !(Port) {
-			i16 PortNumber := COM_PORT_BASES[Number + 1]
-			
-			Port := Alloc(#SerialPort)
-			Port->Initialize(PortNumber, COM_DIVISOR_115200, COM_DATA_BITS_8 | COM_PARITY_NONE | COM_STOP_BITS_1)
-			
+
+	static FileHandle* New(i32 Number) {
+		self* this := Alloc(#self)
+
+		this->Prototype := GetSerialPortFileHandlePrototype()
+
+		this->Port := SerialPorts[Number]
+
+		if !(this->Port) {
+			SerialPort* Port := Alloc(#SerialPort)
+			Port->Initialize(COM_PORT_BASES[Number], COM_DIVISOR_115200, COM_DATA_BITS_8 | COM_PARITY_NONE | COM_STOP_BITS_1)
+
 			SerialPorts[Number] := Port
+
+			this->Port := Port
 		}
-		
-		this->Port := Port
+
+		return this As void*
 	}
+	
 	define i32 Poll(i32 Mode) {
 		i32 Result := 0
 		
@@ -388,25 +390,16 @@ struct SerialPortFileInstance {
 	}
 }
 
-FileHandlePrototype SerialPortFilePrototype {
-	DataSize: #SerialPortFileInstance,
-	Initialize: &SerialPortFileInstance.Initialize,
+FileHandlePrototype SerialPortFileHandlePrototype {
+	DataSize: #SerialPortFileHandle,
 	
-	Poll: &SerialPortFileInstance.Poll,
-	Read: &SerialPortFileInstance.Read,
-	Write: &SerialPortFileInstance.Write
+	Poll: &SerialPortFileHandle.Poll,
+	Read: &SerialPortFileHandle.Read,
+	Write: &SerialPortFileHandle.Write
 }
 
-i32 SERIAL_FILE_PROTOTYPE_ID := RegisterHandlePrototype(&SerialPortFilePrototype)
+i32 SERIAL_PORT_FILE_HANDLE_PROTOTYPE_ID := RegisterHandlePrototype(&SerialPortFileHandlePrototype)
 
-MagicFilePrototype SerialPortMagicFilePrototype {
-	Prototype: &SerialPortFilePrototype,
-	Major: 4,
-	
-	MinorRange: {
-		First: 64,
-		Count: 4
-	}
+define FileHandlePrototype* GetSerialPortFileHandlePrototype() {
+	return &SerialPortFileHandlePrototype
 }
-
-i32 SERIAL_FILE_MAGIC_ID := RegisterMagicFile(&SerialPortMagicFilePrototype)

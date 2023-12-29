@@ -1,0 +1,38 @@
+
+declare IFilePrototype* GetVFSDeviceSingletonFilerototype()
+
+struct VFSDeviceSingletonFile {
+    #Include "./src/kernel/file-system/VFS/IFile.rlx"
+
+    FileHandle* Handle
+
+    static IFile* New(FileHandle* Handle) {
+        self* this := Alloc(#self)
+
+        this->Prototype := GetVFSDeviceSingletonFilerototype()
+
+        this->Handle := Handle
+
+        return this As void*
+    }
+
+    define i8 IsEphemeral() {
+        return true
+    }
+
+    define FileHandle* Open() {
+        return this->Handle
+    }
+    define void Close(FileHandle* Handle) {
+    }
+}
+
+IFilePrototype VFSDeviceSingletonFilePrototype {
+    IsEphemeral: &VFSDeviceSingletonFile.IsEphemeral,
+    Open: &VFSDeviceSingletonFile.Open,
+    Close: &VFSDeviceSingletonFile.Close
+}
+
+define IFilePrototype* GetVFSDeviceSingletonFilerototype() {
+    return &VFSDeviceSingletonFilePrototype
+}

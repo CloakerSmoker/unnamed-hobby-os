@@ -24,6 +24,7 @@ BootloaderInfo* BootInfo := &RawBootInfo
 
 #Require "./src/kernel/core/Paging.rlx"
 #Require "$/Memory.rlx"
+#Require "$/String.rlx"
 
 define void PrintCharacter(i8 Character) {
 	; Pre-terminal print function
@@ -133,9 +134,22 @@ PrintOutputAdapterPrototype KernelPrinter {
 #Require "./src/drivers/block-device/ATABlockDevice.rlx"
 #Require "./src/drivers/block-device/GPTBlockDevice.rlx"
 
-#Require "./src/drivers/Ext2.rlx"
+#Require "./src/kernel/file-system/VFS/VFS.rlx"
+#Require "./src/kernel/file-system/VFS/VFSDirectory.rlx"
+#Require "./src/kernel/file-system/VFS/VFSOverlayDirectory.rlx"
+#Require "./src/kernel/file-system/VFS/Root.rlx"
 
-Ext2* FS := null
+#Require "./src/kernel/file-system/VFS/Device.rlx"
+
+#Require "./src/kernel/file-system/VFS/Ext2.rlx"
+#Require "./src/kernel/file-system/VFS/FAT32.rlx"
+
+#Require "./src/kernel/file-system/VFS/BlockDeviceFileHandle.rlx"
+#Require "./src/kernel/file-system/VFS/ZeroDevice.rlx"
+
+IDirectory* VFSDevicesDirectory := null
+
+#Require "./src/kernel/file-system/KernelShell.rlx"
 
 #Require "./src/kernel/system-calls/SystemCalls.rlx"
 
@@ -296,6 +310,7 @@ E1000* FirstE1000 := null
 
 
 #Require "./src/drivers/ICH9/AHCI.rlx"
+#Require "./src/drivers/block-device/ICH9/PortBlockDevice.rlx"
 
 ICH9::AHCI::Controller* SATAController := null
 
@@ -367,6 +382,76 @@ Task* KernelSetupTask := &_KernelSetupTask
 
 #Require "./src/kernel/networking/Main.rlx"
 
+define void InitializeTerminal() {
+	DefaultTerminalInput := NewHandle(&TerminalInputStreamPrototype)
+	DefaultTerminalOutput := NewHandle(&TerminalRendererPrototype, PrimaryDisplay, BootFont, TERMINAL_FOREGROUND, TERMINAL_BACKGROUND)
+	
+	KernelTerminal := NewHandle(&TerminalFilePrototype, TERMINAL_MAJOR, TERMINAL_MINOR)
+}
+
+define void PopulateDevicesDirectory(IDirectory* DevicesDirectory) {
+	; Virtual Devices: /dev/zero
+
+	VFSDirectoryEntry Entry {
+        Type: VFSDirectoryEntryType::File,
+        Name: "zero",
+        File: ZeroDeviceFile:New()
+    }
+
+    DevicesDirectory->Insert(&Entry)
+
+	; Serial ports: /dev/ttySX
+
+	for (i32 Index := 0, Index < 4, Index++) {
+		VFSDirectoryEntry SerialEntry {
+			Type: VFSDirectoryEntryType::File,
+			Name: FormatString("ttyS%i", Index),
+			File: VFSDeviceSingletonFile:New(SerialPortFileHandle:New(Index))
+		}
+
+		DevicesDirectory->Insert(&SerialEntry)
+	}
+
+	; Terminal: /dev/tty0
+
+	VFSDirectoryEntry TerminalEntry {
+		Type: VFSDirectoryEntryType::File,
+		Name: "tty0",
+		File: VFSDeviceSingletonFile:New(KernelTerminal)
+	}
+
+	DevicesDirectory->Insert(&TerminalEntry)
+
+	; SATA Devices: /dev/sataX
+
+	i32 PopulatedPortCount := SATAController->Ports->Count()
+
+	for (i32 Index := 0, Index < PopulatedPortCount, Index++) {
+		ICH9::AHCI::DevicePort* Port := SATAController->Ports->At(Index)
+
+		if (Port->Type = SATA::DeviceType::SATA) {
+			Port->EnableInterrupts()
+			Port->StartCommands()
+
+			Port->Identify()
+
+			Print("SATA Device %i is a %s, SN: %s\n", Port->Index, Port->Model, Port->SerialNumber)
+
+			BlockDevice* Device := ICH9::AHCI::PortBlockDevice:New(Port)
+			FileHandle* Handle := BlockDeviceFileHandle:New(Device)
+			IFile* File := VFSBlockDeviceFile:New(Handle)
+
+			VFSDirectoryEntry SATAEntry {
+				Type: VFSDirectoryEntryType::File,
+				Name: FormatString("sata%i", Index),
+				File: File
+			}
+
+			DevicesDirectory->Insert(&SATAEntry)
+		}
+	}
+}
+
 define void MainContinuation() {
 	CurrentTask := KernelSetupTask
 	
@@ -395,24 +480,8 @@ define void MainContinuation() {
 	PixelBuffer* FrameBuffer := Alloc(#PixelBuffer)
 	FrameBuffer->Initialize(ADDRESS_OF_FRAME_BUFFER, RGB32, SCREEN_WIDTH, SCREEN_HEIGHT)
 
-	;PrimaryDisplay := FrameBuffer
-
-	;PixelBuffer* Front := Alloc(#PixelBuffer)
-	;void* FrontBuffer := KernelPageAllocator->AllocateVirtual(FrameBufferPageCount)
-	;Front->Initialize(FrontBuffer, RGB32, SCREEN_WIDTH, SCREEN_HEIGHT)
-
-	;DoubleBufferController* DoubleBuffer := Alloc(#DoubleBufferController)
-	;DoubleBuffer->Initialize(FrameBuffer, Front)
-
 	PrimaryDisplay := FrameBuffer
-
-	; Terminals created as TERMINAL_MAJOR:TERMINAL_MINOR will grab DefaultTerminal(Input|Output)
-
-	DefaultTerminalInput := NewHandle(&TerminalInputStreamPrototype)
-	DefaultTerminalOutput := NewHandle(&TerminalRendererPrototype, PrimaryDisplay, BootFont, TERMINAL_FOREGROUND, TERMINAL_BACKGROUND)
-	
-	KernelTerminal := NewHandle(&TerminalFilePrototype, TERMINAL_MAJOR, TERMINAL_MINOR)
-	
+	InitializeTerminal()
 	Printer := &KernelPrinter
 	
 	Print("BOOT: Screen *probably* works\n")
@@ -450,20 +519,14 @@ define void MainContinuation() {
 		Panic("No SATA disk controller detected, hanging...\n")
 	}
 
-	i32 PopulatedPortCount := SATAController->Ports->Count()
+	MountRoot(VFSDirectory:New())
 
-	for (i32 Index := 0, Index < PopulatedPortCount, Index++) {
-		ICH9::AHCI::DevicePort* Port := SATAController->Ports->At(Index)
+	VFSDevicesDirectory := VFSDirectory:New()
+	Mount(null, "/dev", VFSDevicesDirectory)
 
-		if (Port->Type = SATA::DeviceType::SATA) {
-			Port->EnableInterrupts()
-			Port->StartCommands()
+	PopulateDevicesDirectory(VFSDevicesDirectory)
 
-			Port->Identify()
-
-			Print("SATA Device %i is a %s, SN: %s\n", Port->Index, Port->Model, Port->SerialNumber)
-		}
-	}
+	VFSRunShell(KernelTerminal)
 
 	/*SetupNetworking()
 

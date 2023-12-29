@@ -45,6 +45,11 @@ define void ExecuteCD(i64 ArgC, i8** ArgV) {
     if (ArgC = 2) {
         i8* Path := ArgV[1]
 
+        if (StringEquals(Path, "/")) {
+            CurrentDirectory := VFSRootDirectory
+            return
+        }
+
         VFSDirectoryEntry Entry
         if !(Lookup(CurrentDirectory, Path, &Entry)) {
             Print("'%s' does not exist\n", Path)
@@ -140,11 +145,11 @@ define void ExecuteDD(i64 ArgC, i8** ArgV) {
 
         if (Value != null) {
             if (StringEquals(Name, "bs")) {
-                BlockSize := ParseDataSize(Value) As i32
+                BlockSize := ParseDataUnit(Value) As i32
             }
             else if (StringEquals(Name, "count")) {
-                DataSize TransferSize
-                ParseDataSize(Value, &TransferSize)
+                DataUnit TransferSize
+                ParseDataUnit(Value, &TransferSize)
 
                 if (TransferSize.Scale = DataScale::Count) {
                     BlockCount := TransferSize.Value As i32
@@ -155,10 +160,10 @@ define void ExecuteDD(i64 ArgC, i8** ArgV) {
                 }
             }
             else if (StringEquals(Name, "skip")) {
-                InputBase := ParseDataSize(Value) As i32
+                InputBase := ParseDataUnit(Value) As i32
             }
             else if (StringEquals(Name, "seek")) {
-                OutputBase := ParseDataSize(Value) As i32
+                OutputBase := ParseDataUnit(Value) As i32
             }
             else if (StringEquals(Name, "if")) {
                 InputFilePath := Value

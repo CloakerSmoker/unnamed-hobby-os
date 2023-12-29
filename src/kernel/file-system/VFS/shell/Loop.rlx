@@ -26,9 +26,13 @@ struct ActiveLoopDevice {
     }
 }
 
-PointerArray* LoopDevices := PointerArray:New() ; <IFile*>
+PointerArray* LoopDevices := null ;PointerArray:New() ; <IFile*>
 
 define void ExecuteLoop(i64 ArgC, i8** ArgV) {
+    if (LoopDevices = null) {
+        LoopDevices := PointerArray:New()
+    }
+
     if (ArgC < 2) {
         return
     }
