@@ -504,15 +504,11 @@ namespace ICH9::AHCI {
         }
 
         define void Reset() {
-            DeviceCommand* _Command := this->PrepareCommand()
+            DeviceCommand* Command := this->PrepareCommand()
 
-            ; TODO: Compiler bug.
-            ; `::ICH9::AHCI::` = crash sometimes
-            ; `Command` = crash sometimes
+            Command->MakeTransfer(HBA::TransferDirection::DeviceToHost, ATA::Command::DEVICE_RESET)
 
-            _Command->MakeTransfer(HBA::TransferDirection::DeviceToHost, ATA::Command::DEVICE_RESET)
-
-            this->IssueCommand(_Command)
+            this->IssueCommand(Command)
         }
 
         define void DecodeIdentityString(i8* In, i32 Size, i8* Out) {
@@ -534,8 +530,6 @@ namespace ICH9::AHCI {
         }
 
         define void Identify() {
-            ;this->Control->InterruptStatus := 0xFF_FF_FF_FF
-
             DeviceCommand* Command := this->PrepareCommand()
 
             Command->MakeTransfer(HBA::TransferDirection::DeviceToHost, ATA::Command::IDENTIFY_DEVICE)
@@ -550,8 +544,6 @@ namespace ICH9::AHCI {
         }
 
         define void Read(i64 StartBlock, i64 BlockCount, void* Buffer) {
-            ;this->Control->InterruptStatus := 0xFF_FF_FF_FF
-
             DeviceCommand* Command := this->PrepareCommand()
 
             Command->MakeTransfer(HBA::TransferDirection::DeviceToHost, ATA::Command::READ_DMA_EXT)
@@ -565,8 +557,6 @@ namespace ICH9::AHCI {
         }
 
         define void Write(i64 StartBlock, i64 BlockCount, void* Buffer) {
-            ;this->Control->InterruptStatus := 0xFF_FF_FF_FF
-
             DeviceCommand* Command := this->PrepareCommand()
 
             Command->MakeTransfer(HBA::TransferDirection::DeviceToHost, ATA::Command::WRITE_DMA_EXT)

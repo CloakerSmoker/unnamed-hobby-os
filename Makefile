@@ -138,12 +138,12 @@ LIGHT_CLEAN_FILES+= $(BUILD)/Boot.efi $(BUILD)/Boot.d
 $(BUILD)/Kernel.elf: $(RLX)
 $(BUILD)/Kernel.elf: $(BUILD)/Kernel.d
 $(BUILD)/Kernel.elf: $(shell cat $(BUILD)/Kernel.d 2>/dev/null)
-	$(RLX) -i ./src/kernel/Main.rlx -o $@ $(KERNEL_RLX_FLAGS)
+	$(DBG)$(RLX) -i ./src/kernel/Main.rlx -o $@ $(KERNEL_RLX_FLAGS)
 
 secret-internal-deps: $(BUILD)/Kernel.d
 
 $(BUILD)/Kernel.d: $(RLX)
-	$(RLX) -i ./src/kernel/Main.rlx -o $@ --makedep $(KERNEL_RLX_FLAGS)
+	$(DBG)$(RLX) -i ./src/kernel/Main.rlx -o $@ --makedep $(KERNEL_RLX_FLAGS)
 
 LIGHT_CLEAN_FILES+= $(BUILD)/Kernel.elf $(BUILD)/Kernel.d
 
@@ -188,6 +188,9 @@ all: Disk.qcow2
 
 boot: Disk.qcow2
 	qemu-system-x86_64 -bios OVMF.fd -hda Disk.qcow2 -serial stdio --cpu max,la57=off -s $(QEMU_FLAGS)
+
+reset-compiler:
+	cd compiler/; git reset --hard HEAD; cd ..
 
 pull-compiler:
 	cd compiler/; git pull upstream +master; cd ..
