@@ -65,6 +65,7 @@ namespace ICH9::AHCI {
             
             union {
                 PortInterruptStatus InterruptStatus
+                i32 RawInterruptStatus
             }
 
             i32 InterruptEnable
@@ -473,6 +474,7 @@ namespace ICH9::AHCI {
         }
 
         define void IssueCommand(DeviceCommand* Command) {
+            this->Control->RawInterruptStatus := 0
             this->SpinUntilNotBusy()
             
             ;Info("Issue FIS:\n%hexdump\n", Command->RawFIS, 0x40)
@@ -494,7 +496,7 @@ namespace ICH9::AHCI {
                     return
                 }
 
-                if (Spin > 0x20) {
+                if (Spin > 0x2000) {
                     Panic("AHCI command timeout\n")
                     return
                 }
