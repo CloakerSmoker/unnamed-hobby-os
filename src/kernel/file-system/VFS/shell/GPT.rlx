@@ -77,7 +77,7 @@ define void PrintGPTPartitionEntryAttributes(i64 Attributes) {
 
 define void PrintGPTPartitionEntry(GPTPartitionEntry* this) {
 	if (this->StartingLBA = 0 && this->EndingLBA = 0) {
-		return
+		;return
 	}
 	
 	Print("GPTPartitionEntry {\n")
@@ -251,62 +251,61 @@ define void ExecuteGPT(i64 ArgC, i8** ArgV) {
     else if (StringEquals(Verb, "create")) {
         ; gpt /dev/loop0 create 0
 
+        i32 Index := AToI(ArgV[3]) As i32
+
         GPTPartitionEntry* NewEntry := Alloc(#GPTPartitionEntry)
 
         GenerateGUID(NewEntry->PartitionGUID)
 
-        i32 Index := Device->AddPartition(NewEntry)
+        Device->WritePartitionEntry(Index, NewEntry)
 		
 		Free(NewEntry)
 		
-		if (Index = -1) {
-			Print("Could not add entry, partition entry table has no free slots\n")
-		}
-		else {
-			Print("Added entry in slot %i\n", Index)
-		}
+		Print("Added entry in slot %i\n", Index)
     }
     else if (StringEquals(Verb, "set")) {
         ; gpt /dev/loop0 set 0 start 32
         i32 PartitionNumber := AToI(ArgV[3]) As i32
-        GPTPartitionEntry* Partition := Device->ReadPartitionEntry(PartitionNumber)
+        GPTPartitionEntry* BorrowedPartition := Device->ReadPartitionEntry(PartitionNumber)
+
+        GPTPartitionEntry TargetPartition
+        MoveMemory(&TargetPartition, BorrowedPartition, #GPTPartitionEntry)
+
+        ;PrintGPTPartitionEntry(&TargetPartition)
 
         i8* Property := ArgV[4]
         i8* Value := ArgV[5]
 
         if (StringEquals(Property, "start")) {
-            DataUnit Start
-            ParseDataUnit(Value, &Start)
-
-            Partition->StartingLBA := Start.AsBlocksOf(BlockSize)
+            TargetPartition.StartingLBA := ParseDataUnit(Value) / 512
         }
         else if (StringEquals(Property, "end")) {
-            DataUnit End
-            ParseDataUnit(Value, &End)
-
-            Partition->EndingLBA := End.AsBlocksOf(BlockSize)
+            TargetPartition.EndingLBA := ParseDataUnit(Value) / 512
         }
         else if (StringEquals(Property, "name")) {
             i8* Name := ArgV[5]
             i32 NameLength := StringLength(Name)
 			
-			MoveMemory(Partition~>PartitionName, AToW(Name, NameLength), NameLength * 2)
+			MoveMemory(TargetPartition~>PartitionName, AToW(Name, NameLength), NameLength * 2)
         }
         else if (StringEquals(Property, "type")) {
             i8* Type := ArgV[5]
 
 			if (StringEquals(Type, "system")) {
-				MoveMemory(Partition~>PartitionTypeGUID, GPT_PARTITION_TYPE_SYSTEM, 16)
+				MoveMemory(TargetPartition~>PartitionTypeGUID, GPT_PARTITION_TYPE_SYSTEM, 16)
 			}
 			else if (StringEquals(Type, "custom")) {
-				MoveMemory(Partition~>PartitionTypeGUID, GPT_PARTITION_TYPE_CUSTOM, 16)
+				MoveMemory(TargetPartition~>PartitionTypeGUID, GPT_PARTITION_TYPE_CUSTOM, 16)
 			}
 			else if (StringEquals(Type, "none")) {
-				MoveMemory(Partition~>PartitionTypeGUID, GPT_PARTITION_TYPE_NONE, 16)
+				MoveMemory(TargetPartition~>PartitionTypeGUID, GPT_PARTITION_TYPE_NONE, 16)
 			}
         }
 
-        Device->WritePartitionEntry(PartitionNumber, Partition)
+        ;PrintGPTPartitionEntry(&TargetPartition)
+
+        Device->WritePartitionEntry(PartitionNumber, &TargetPartition)
+        Print("Set %i.%s = %s\n", PartitionNumber, Property, Value)
     }
 }
 

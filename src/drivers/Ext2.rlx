@@ -277,7 +277,7 @@ struct Ext2CreationParameters {
 	}
 	
 	define void AssumeFromStorageSize(i32 Size) {
-		this->BlockCount := Size / this->BlockSize
+		this->BlockCount := Size
 		this->BlockGroupCount := (this->BlockCount / this->BlocksPerGroup) + 1
 		this->INodeCount := this->BlockGroupCount * this->INodesPerGroup
 		this->INodeTableSize := (this->INodeCount * #Ext2INode) / this->BlockSize

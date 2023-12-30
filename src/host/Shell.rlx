@@ -83,10 +83,20 @@ define i64 ParseBlockCount(i8* ValueString, i8* Scale) {
 #Require "./src/kernel/file-system/VFS/shell/Loop.rlx"
 #Require "./src/kernel/file-system/VFS/shell/Mount.rlx"
 #Require "./src/kernel/file-system/VFS/shell/GPT.rlx"
+#Require "./src/kernel/file-system/VFS/shell/Format.rlx"
 
 #Require "./src/kernel/file-system/VFS/ZeroDevice.rlx"
 
-define void Main() {
+define void Main(i64 _ArgC, i8** _ArgV) {
+    i8 ScriptedInput := false
+
+    if (_ArgC = 2) {
+        if (StringEquals(_ArgV[1], "--script")) {
+            ScriptedInput := true
+        }
+    }
+
+
     IDirectory* Root := VFSDirectory:New()
     MountRoot(Root)
 
@@ -106,14 +116,33 @@ define void Main() {
     CurrentDirectory := VFSRootDirectory
 
     loop {
-        Print(">")
+        if !(ScriptedInput) {
+            Print(">")
+        }
+
         i8* Line := ReadLine()
+
+        while (StringLength(Line) = 0) {
+            Line := ReadLine()
+        }
+
+        if (ScriptedInput) {
+            Print(">%s\n", Line)
+        }
 
         i64 ArgC := 0
         i8** ArgV := null
         
         ParseCommandLine(Line, &ArgC, &ArgV)
         i8* CommandName := ArgV[0]
+
+        if (StringEquals(CommandName, "exit")) {
+            break
+        }
+        else if (StringEquals(CommandName, "end-script")) {
+            ScriptedInput := false
+            continue
+        }
 
         ShellCommand* Command := LookupCommand(CommandName)
 
