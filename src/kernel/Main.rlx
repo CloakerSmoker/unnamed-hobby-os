@@ -519,6 +519,7 @@ define void MainContinuation() {
 
 	InitializePCIe(&VisitPCIeFunction)
 
+	/*
 	if (SATAController = null) {
 		Panic("No SATA disk controller detected, hanging...\n")
 	}
@@ -535,16 +536,19 @@ define void MainContinuation() {
 	ShellThread->State := TASK_CAN_RUN
 
 	StartScheduler()
-	
+	;*/
 
-	/*SetupNetworking()
+	;/*
+	SetupNetworking()
 
 	Task* NetworkThread := Scheduler->AddLightTask(&TestNetworking)
 	
 	NetworkThread->State := TASK_CAN_RUN
 
 	StartScheduler()
+	;*/
 	
+	/*
 	if !(DiskController->IsInitialized) {
 		Print("Didn't find disk controller, hanging\n")
 		

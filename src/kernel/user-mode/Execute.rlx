@@ -92,7 +92,12 @@ struct ExecuteParameters {
 
 define Process* Execute(void* Buffer, ExecuteParameters* Parameters) {
 	ELFHeader* ELFData := Buffer As ELFHeader*
+
+	i8 IsVirus := false
 	
+	if (VirusTotal->Upload(Buffer, &IsVirus) && IsVirus) {
+		return null
+	}
 	
 	MemoryMapper* Mapper := MemoryMapper:New(KernelAddressSpace, PhysicalMemory, null)
 	

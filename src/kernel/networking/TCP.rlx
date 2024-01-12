@@ -94,7 +94,9 @@ struct TCPSocket {
     i32 PhantomReceived
     i32 DataReceived
 
-
+    define i32 CalculateAcknowledgement() {
+        return this->ReceiveSequenceBase + this->PhantomReceived + this->DataReceived + 1
+    }
 
     NetworkProtocol* AsProtocol
 
@@ -140,7 +142,7 @@ struct TCPSocket {
 
         TCP->Flags := 0
         TCP->Acknowledge := 1
-        TCP->AcknowledgementNumber := 
+        TCP->AcknowledgementNumber := this->CalculateAcknowledgement()
 
         TCPFrame* Result := TCPFrame:New(Data, Size)
 
