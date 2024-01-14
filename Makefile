@@ -186,8 +186,32 @@ depend dep deps:
 
 all: Disk.qcow2
 
+QEMU?=qemu-system-x86_64
+QEMU_FLAGS=-machine q35 -bios OVMF.fd -hda Disk.qcow2 -serial stdio --cpu max,la57=off
+DEBUG_FLAGS=
+
+ifneq (,$(findstring --gdb,$(flags)))
+	DEBUG_FLAGS=-s
+endif
+
+ifneq (,$(findstring --wait,$(flags)))
+	DEBUG_FLAGS=-s -S
+endif
+
+ifneq (,$(findstring --no-reset,$(flags)))
+	QEMU_FLAGS+=-no-reboot -no-shutdown
+endif
+
+ifneq (,$(findstring --achi-debug,$(flags)))
+	QEMU_FLAGS+=--trace "ahci_*" --trace "handle_*" --trace "ide_*"
+endif
+
+ifneq (,$(findstring --net-debug,$(flags)))
+	QEMU_FLAGS+=-device e1000e,netdev=hub0port0 -object filter-dump,id=f1,netdev=hub0port0,file=dump.pcap -netdev user,id=hub0port0,hostfwd=udp::7777-:7777
+endif
+
 boot: Disk.qcow2
-	qemu-system-x86_64 -bios OVMF.fd -hda Disk.qcow2 -serial stdio --cpu max,la57=off -s $(QEMU_FLAGS)
+	$(QEMU) $(QEMU_FLAGS) $(DEBUG_FLAGS)
 
 reset-compiler:
 	cd compiler/; git reset --hard HEAD; cd ..
