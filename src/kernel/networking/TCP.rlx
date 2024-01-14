@@ -38,6 +38,10 @@ struct TCPHeader {
         this->WindowSize := NetworkShort(this->WindowSize)
         this->UrgentPointer := NetworkShort(this->UrgentPointer)
     }
+
+    define i32 Size() {
+        return this->DataOffset * 4
+    }
 }
 
 struct TCPPacketOptions {
@@ -48,6 +52,7 @@ struct TCPPacketOptions {
 }
 
 i32 PACKET_DATA_TCP_HEADER := RegisterPacketData("TCP Header")
+i32 PACKET_DATA_TCP_BODY := RegisterPacketData("TCP Body")
 
 declare NetworkProtocolPrototype* GetTCPSocketProtocolPrototype()
 
@@ -62,16 +67,44 @@ struct TCPFrame {
     void* Data
     i32 Size
 
-    i32 SegmentNumber
+    union {
+        i8 Flags
+        
+        bits As i8 {
+            [0] Final
+            [1] Synchronize
+            [2] Reset
+            [3] Push
+            [4] Acknowledge
+            [5] Urgent
+            [6] CongestionExperienced
+            [6] PeerSupportsECN
+            [7] CongestionWindowReduced
+        }
+    }
 
-    i8 Sent
-    i8 Dropped
-    i8 Acknowledged
+    i32 AcknowledgementNumber
+    i32 SequenceNumber
+    i32 NextSequenceNumber
+
+    i8 SendCount
+    i8 DropCount
+    i64 LastSentAt
 
     i32 SentAtWindowSize
 
     TCPFrame* Next
+
+    define i32 LastByteSequenceNumber() {
+        return this->NextSequenceNumber - this->SequenceNumber - 2
+    }
+
+    define i32 SequenceSize() {
+        return this->NextSequenceNumber - this->SequenceNumber - 1
+    }
 }
+
+i64 TCP_TIMEOUT_MS := 500
 
 struct TCPSocket {
     ; Bidirectional
@@ -84,19 +117,17 @@ struct TCPSocket {
     i32 RemoteAddress
     i16 RemotePort
 
-    i32 SendSequenceBase
-    i32 PhantomSent
-    i32 DataSent
-    i32 RemoteReceived
-    
+    i32 SequenceNumberBase
+    i32 NextSequenceNumber
+    i32 RemoteWindowSize
 
-    i32 ReceiveSequenceBase
-    i32 PhantomReceived
-    i32 DataReceived
+    i32 CongestionWindow
+    i32 MaximumSegmentSize
 
-    define i32 CalculateAcknowledgement() {
-        return this->ReceiveSequenceBase + this->PhantomReceived + this->DataReceived + 1
-    }
+    TCPFrame* OldestFrame
+    TCPFrame* NewestFrame
+
+    i8 State
 
     NetworkProtocol* AsProtocol
 
@@ -125,16 +156,45 @@ struct TCPSocket {
         return Packet
     }
 
-    define i32 SendSingle(NetworkPacket* Packet) {
-        TCPHeader* TCP := Packet->Get(PACKET_DATA_TCP_HEADER)
+    define void SendNow(TCPFrame* Frame) {
+        NetworkPacket* Packet := this->Enter(null)
+        TCPHeader* Header := Packet->Get(PACKET_DATA_TCP_HEADER)
 
-        i32 DataSize := Packet->Tell() - Packet->GetEndOffset(PACKET_DATA_TCP_HEADER)
-        i32 PhantomSize := TCP->Acknowledge || TCP->Synchronize
-        i32 RemoteSequence := this->RemoteSequenceBase + DataSize + PhantomSize + 1
+        ;Info("SendNow %i, next = %i\n", Frame->SequenceNumber, Frame->NextSequenceNumber)
 
+        Header->Flags := Frame->Flags
+        Header->AcknowledgementNumber := Frame->AcknowledgementNumber
+        Header->SequenceNumber := this->SequenceNumberBase + Frame->SequenceNumber
+        Header->WindowSize := 8000
+        
         this->Transport->Send(Packet)
+    }
 
-        return TCP
+    define TCPFrame* EnterFrame() {
+        TCPFrame* Result := Alloc(#TCPFrame)
+
+
+        return Result
+    }
+
+    define void QueueFrame(TCPFrame* Frame) {
+        if (this->NewestFrame) {
+            Frame->SequenceNumber := this->NewestFrame->NextSequenceNumber
+
+            this->NewestFrame->Next := Frame
+        }
+        else {
+            Frame->SequenceNumber := this->NextSequenceNumber
+
+            this->OldestFrame := Frame
+        }
+        
+        this->NewestFrame := Frame
+
+        i32 DataSize := Frame->Size
+        i32 PhantomSize := 0 ;Frame->Acknowledge || Frame->Synchronize
+
+        Frame->NextSequenceNumber := DataSize + PhantomSize + 1
     }
 
     define TCPFrame* SendDataSingle(TCPFrame** pNext, void* Data, i32 Size) {
@@ -142,14 +202,16 @@ struct TCPSocket {
 
         TCP->Flags := 0
         TCP->Acknowledge := 1
-        TCP->AcknowledgementNumber := this->CalculateAcknowledgement()
+        ;TCP->AcknowledgementNumber := this->CalculateAcknowledgement()
 
-        TCPFrame* Result := TCPFrame:New(Data, Size)
+        ;TCPFrame* Result := TCPFrame:New(Data, Size)
 
-        this->NeedsAcknowledgement(Result)
+        ;this->NeedsAcknowledgement(Result)
 
-        *pNext := Result
-        return Result
+        ;*pNext := Result
+        ;return Result
+
+        return null
     }
 
     define void SendPump() {
@@ -157,39 +219,47 @@ struct TCPSocket {
         ; Second: figure out what we can send
         ; Third: send it
 
-        TCPFrame* Current := this->FirstInFlight
+        ;/*
+
+        i64 Now := GetUptimeMS()
+
+        TCPFrame* Current := this->OldestFrame
 
         while (Current) {
-            if (Current->SegmentNumber < this->RemoteSegmentNumber) {
-                Current->Acknowledged := true
+            if (Current->SendCount > 0) {
+                i64 Timeout := Current->LastSentAt + TCP_TIMEOUT_MS
 
-                Current := Current->Next
+                if (Timeout < Now) {
+                    Current->DropCount += 1
+                }
             }
             else {
                 break
             }
         }
 
-        this->FirstInFlight := Current
-
-        i32 Now := GetUptimeMS()
-
-        while (Current) {
-            i32 Timeout := Current->SentAt + TCP_TIMEOUT_MS
-
-            if (Timeout < Now) {
-                Current->Dropped := true
-            }
-        }
-
         i32 Budget := this->RemoteWindowSize
-        TCPFrame* Current := this->FirstUnsent
+        TCPFrame* Current := this->OldestFrame
 
         while (Current && Budget != 0) {
-            if (Current->Size <= Budget) {
-                this->SendDataSingle(Current->Data, Current->Size)
+            i32 Size := Current->SequenceSize()
+
+            Info("Send(), Budget: %i, Current: %i\n", Budget, Size)
+
+            if (Size <= Budget) {
+                Current->SendCount += 1
+
+                this->SendNow(Current)
+
+                Budget -= Size
             }
+            else {
+                break
+            }
+
+            Current := Current->Next
         }
+        ;*/
 
     }
 
@@ -217,22 +287,8 @@ struct TCPSocket {
 
                 i32 SegmentSize := this->MaximumSegmentSize
 
-                if (Index + 1 = Segments) {
-                    SegmentDataSize := LastSegmentSize
-                }
-
-                TCPFrame* Current := this->SendDataSingle(pNext, SegmentData, SegmentSize)
-
-                pNext := Current~>Next
-            }
-
-            for (i32 SegmentIndex := 0, SegmentIndex < Segments, SegmentIndex++) {
-                void* SegmentData := Data + (SegmentIndex * this->MaximumSegmentSize)
-
-                i32 SegmentSize := this->MaximumSegmentSize
-
-                if (Index + 1 = Segments) {
-                    SegmentDataSize := LastSegmentSize
+                if (SegmentIndex + 1 = Segments) {
+                    SegmentSize := LastSegmentSize
                 }
 
                 TCPFrame* Current := this->SendDataSingle(pNext, SegmentData, SegmentSize)
@@ -242,24 +298,94 @@ struct TCPSocket {
         }
     }
 
+    define void DequeueFrame(TCPFrame* Frame) {
+        Info("Clearing frame %i (ack'd)\n", Frame->SequenceNumber)
+        Info("Next seq: %i\n", this->NextSequenceNumber)
+
+        if (this->OldestFrame = Frame) {
+            if (Frame->Next) {
+                this->OldestFrame := Frame->Next
+            }
+        }
+
+        if (this->NewestFrame = Frame) {
+            this->NewestFrame := null
+        }
+
+        Free(Frame)
+    }
+
+    define void Update(i32 RemoteAcknowledge) {
+        RemoteAcknowledge -= this->SequenceNumberBase
+
+        Info("Remote recieved up to %i\n", RemoteAcknowledge)
+
+        TCPFrame* Current := this->OldestFrame
+
+        while (Current != null) {
+            if (Current->SendCount = 0) {
+                break
+            }
+
+            if (Current->LastByteSequenceNumber() <= RemoteAcknowledge) {
+                this->NextSequenceNumber := Current->NextSequenceNumber
+
+                this->DequeueFrame(Current)
+            }
+
+            Current := Current->Next
+        }
+    }
+
+    define i32 CalculateAcknowledgementNumber(TCPHeader* Header, i32 BodySize) {
+        return Header->SequenceNumber + BodySize + Header->Synchronize
+    }
+
+    define void QueueAcknowledge(NetworkPacket* Packet) {
+        TCPHeader* TCP := Packet->Get(PACKET_DATA_TCP_HEADER)
+        i32 BodySize := Packet->GetSize(PACKET_DATA_TCP_BODY)
+
+        TCPFrame* Frame := this->EnterFrame()
+
+        Frame->Acknowledge := true
+        Frame->AcknowledgementNumber := this->CalculateAcknowledgementNumber(TCP, BodySize)
+
+        this->QueueFrame(Frame)
+        this->SendPump()
+    }
+
     define void Ingest(NetworkPacket* Packet) {
         TCPHeader* TCP := Packet->Get(PACKET_DATA_TCP_HEADER)
 
-        i32 ExpectedAcknowledgement := this->PhantomSent + this->DataSent
+        if (TCP->Acknowledge) {
+            this->Update(TCP->AcknowledgementNumber)
+        }
+
+        if (TCP->Synchronize) {
+            this->RemoteWindowSize := TCP->WindowSize
+
+            this->QueueAcknowledge(Packet)
+        }
+        else if (Packet->GetSize(PACKET_DATA_TCP_BODY) != 0) {
+            this->QueueAcknowledge(Packet)
+        }
 
         if (this->State = TCP_SOCKET_STATE_SYNCHRONIZE_SENT) {
-            if (TCP->Synchronize && TCP->Acknowledge) {
-                
-            }
+            Info("TCP recv\n")
 
+            Info("Flags: %b\n", (TCP->Flags As i64) & 0xFF)
+
+            if (TCP->Synchronize && TCP->Acknowledge) {
+                Info("Syn Ack\n")
+            }
         }
         else if (this->State = TCP_SOCKET_STATE_ESTABLISHED) {
 
             if (TCP->Acknowledge) {
-                this->RemoteReceived := TCP->AcknowledgementNumber - this->SendSequenceBase
-            }
+                ;this->RemoteReceived := TCP->AcknowledgementNumber - this->SendSequenceBase
 
-            if ()
+                
+            }
         }
     }
 
@@ -273,21 +399,21 @@ struct TCPSocket {
 
         this->State := TCP_SOCKET_STATE_SYNCHRONIZE_SENT
 
-        NetworkPacket* Synchronize := this->Enter(null)
-        TCPHeader* Header := Synchronize->Get(PACKET_DATA_TCP_HEADER)
+        this->SequenceNumberBase := 0x1000_0000
+        this->NextSequenceNumber := 0
+        this->RemoteWindowSize := 1
 
-        Header->Synchronize := true
-        Header->WindowSize := 0x2000
-        
-        Header->SequenceNumber := 0x1000_0000
+        TCPFrame* Frame := this->EnterFrame()
+        Frame->Synchronize := true
 
-        this->SendSingle(Synchronize)
+        this->QueueFrame(Frame)
+        this->SendPump()
     }
 }
 
 NetworkProtocolPrototype TCPSocketProtocolPrototype {
     Enter: &TCPSocket.Enter,
-    Send: &TCPSocket.Send,
+    ;Send: &TCPSocket.Send,
     Ingest: &TCPSocket.Ingest
 }
 
@@ -440,7 +566,15 @@ struct TCPLayer {
 
     define void Ingest(NetworkPacket* Packet) {
         IPV4Header* IPV4 := Packet->Get(PACKET_DATA_IPV4_HEADER)
-        TCPHeader* TCP := Packet->Mark(PACKET_DATA_TCP_HEADER, #TCPHeader)
+        TCPHeader* TCP := Packet->GetEnd(PACKET_DATA_IPV4_HEADER)
+
+        i32 HeaderSize := TCP->Size()
+        i32 DataSize := IPV4->TotalLength - #IPV4Header - TCP->Size()
+
+        Packet->Mark(PACKET_DATA_TCP_HEADER, HeaderSize)
+        Packet->Mark(PACKET_DATA_TCP_BODY, DataSize)
+
+        Info("TCP Body Size %i\n", DataSize)
 
         TCP->FlipEndianess()
 

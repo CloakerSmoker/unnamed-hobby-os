@@ -135,6 +135,10 @@ struct NetworkPacket {
         return this->Buffer + this->Find(ID)->Offset
     }
 
+    define i32 GetSize(i32 ID) {
+        return this->Find(ID)->Size
+    }
+
     define void* GetEnd(i32 ID) {
         NetworkPacketMarker* Marker := this->Find(ID)
 
