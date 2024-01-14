@@ -97,14 +97,14 @@ define void TestNetworking() {
 
     Print("DHCP: Gateway: %ipv4. Gateway MAC: %mac\n", FirstNetworkInterface->Gateway, FirstNetworkInterface->GatewayMAC)
 
-    NetworkProtocol* RawTCP := FirstNetworkInterface->GetProtocol("TCP")
-    TCPLayer* TCP := RawTCP->this
+    ;NetworkProtocol* RawTCP := FirstNetworkInterface->GetProtocol("TCP")
+    ;TCPLayer* TCP := RawTCP->this
 
-    TCPSocket* Socket := TCPSocket:New(FirstNetworkInterface, RawTCP)
+    ;TCPSocket* Socket := TCPSocket:New(FirstNetworkInterface, RawTCP)
 
     ;TCP->BindSocket(42830 As i16, Socket)
 
-    Socket->Connect(PackIPV4(10, 2, 30, 3), 80)
+    ;Socket->Connect(PackIPV4(10, 2, 30, 3), 80)
 
     loop {}
 

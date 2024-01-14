@@ -2,7 +2,7 @@
 
 i8 DEBUG_EXT2_OPTIMIZATION := false
 
-#Require "./src/drivers/Ext2.rlx"
+#Require "./src/drivers/file-system/Ext2.rlx"
 
 declare IFilePrototype* GetVFSExt2FilePrototype()
 

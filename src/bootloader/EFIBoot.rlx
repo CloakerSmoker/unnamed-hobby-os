@@ -13,8 +13,8 @@ define void SchedulerYield() {
 
 #Require "./src/kernel/file-system/FileSystem.rlx"
 
-#Require "./src/drivers/FAT32.rlx"
-#Require "./src/drivers/Ext2.rlx"
+#Require "./src/drivers/file-system/FAT32.rlx"
+#Require "./src/drivers/file-system/Ext2.rlx"
 #Require "./src/drivers/GPT.rlx"
 #Require "./src/utility/ELF.rlx"
 

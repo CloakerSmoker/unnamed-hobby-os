@@ -1,4 +1,4 @@
-#Require "./src/drivers/FAT32.rlx"
+#Require "./src/drivers/file-system/FAT32.rlx"
 
 declare IDirectoryPrototype* GetFAT32DirectoryPrototype()
 
@@ -138,12 +138,12 @@ struct FAT32Directory {
     define IDirectory* CreateDirectory() {
         i32 DirectoryClusterNumber := this->FS->AllocateCluster()
 
-        return FAT32Directory:New(this->FS, DirectoryCluster)
+        return FAT32Directory:New(this->FS, DirectoryClusterNumber)
     }
     define IFile* CreateFile() {
         i32 FileClusterNumber := this->FS->AllocateCluster()
 
-        return 
+        return null
     }
 
     define i8 Insert(VFSDirectoryEntry* Entry) {

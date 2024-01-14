@@ -33,7 +33,7 @@ define i64 ParseSectorCount(i8* ValueString, i8* Scale) {
 	return Value
 }
 
-#Require "./src/drivers/FAT32.rlx"
+#Require "./src/drivers/file-system/FAT32.rlx"
 
 define void PrintFAT32DirectoryEntry(FAT32DirectoryEntry* this) {
 	if (this->Name[0]) {
