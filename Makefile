@@ -214,7 +214,7 @@ boot: Disk.qcow2
 	$(QEMU) $(QEMU_FLAGS) $(DEBUG_FLAGS)
 
 reset-compiler:
-	cd compiler/; git reset --hard HEAD; cd ..
+	cd compiler/; git reset --hard HEAD~1; cd ..
 
 pull-compiler:
 	cd compiler/; git pull upstream +master; cd ..

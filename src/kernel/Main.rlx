@@ -542,6 +542,8 @@ define void MainContinuation() {
 	SetupNetworking()
 
 	Task* NetworkThread := Scheduler->AddLightTask(&TestNetworking)
+
+	NetworkThread~>Context->RDI := KernelTerminal As i64
 	
 	NetworkThread->State := TASK_CAN_RUN
 

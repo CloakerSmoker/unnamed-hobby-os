@@ -77,7 +77,7 @@ define void TestICMPPing() {
     ;ICMP->SendPing(PackIPV4(10, 0, 2, 2), Data, 1400)
 }
 
-define void TestNetworking() {
+define void TestNetworking(FileHandle* stdio) {
     ;SetIP()
 
     ;/*
@@ -105,16 +105,49 @@ define void TestNetworking() {
 
     TCP->BindSocket(42830 As i16, Socket)
 
-    Socket->Connect(PackIPV4(10, 0, 2, 2), 7777)
+    Socket->Connect(PackIPV4(10, 0, 2, 2), 7779)
 
     while (Socket->State != TCP_SOCKET_STATE_ESTABLISHED) { SchedulerYield() }
 
-    Info("Sending!\n")
+    ;Info("Sending!\n")
 
-    Socket->QueueString("One")
+    ;Socket->QueueString("One")
     ;Socket->QueueString("Two")
     ;Socket->QueueString("Three")
     ;Socket->QueueString("Four")
+
+    ;while (Socket->NewestFrame != null) { SchedulerYield() }
+
+    Print(">")
+
+    loop {
+        i8[100] Line
+
+        i32 Recv := Socket->Poll()
+        
+        if (Recv) {
+            i32 Size := Socket->Recieve(Line, 100)
+            Line[Size] := 0
+
+            Print("Loser: %s>", Line)
+        }
+
+        i32 Send := stdio->Poll(POLL_FOR_READ)
+
+        if (Send & POLL_CAN_READ) {
+            i32 Size := stdio->Read(Line, 100)
+            Line[Size] := 0
+
+            Socket->Send(CloneMemory(Line, Size), Size)
+        }
+    }
+
+    ;i8[100] Line
+    Socket->Recieve(Line, 100)
+
+    Info("Got: %s", Line)
+
+    Socket->Close()
 
     loop { SchedulerYield() }
 

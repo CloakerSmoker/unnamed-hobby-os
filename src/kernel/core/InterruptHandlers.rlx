@@ -22,6 +22,14 @@ define void PageFault(AMD64Context* Context, i64 ErrorCode) {
 	
 	i64 CR2 := GetCR2()
 	i64 CR2Page := (CR2 >> 12) << 12
+
+	Print("^H1^SF\e[0J                      PANIC!!!! NOW!!!!!!!                  \n")
+	Print("              Page fault") ; Split prints just for when Info formatting is page faulting
+	Print(" at %x while accessing %x                        \n", Context->RIP, CR2)
+
+	Print("%stackdump")
+
+	Halt()
 	
 	Info("Page fault") ; Split prints just for when Info formatting is page faulting
 	Info(" at %x while accessing %x {\n", Context->RIP, CR2) 
