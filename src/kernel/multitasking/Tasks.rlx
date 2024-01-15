@@ -89,6 +89,9 @@ struct Task {
 	define void Yield() {
 		this->State := TASK_CAN_RUN
 	}
+	define void Pause() {
+		this->State := TASK_PAUSED
+	}
 	define void Block() {
 		this->State := TASK_BLOCKED
 	}

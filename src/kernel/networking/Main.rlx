@@ -109,14 +109,16 @@ define void TestNetworking() {
 
     while (Socket->State != TCP_SOCKET_STATE_ESTABLISHED) { SchedulerYield() }
 
-    i8* Content := "Hello\n"
-
     Info("Sending!\n")
 
-    Socket->QueueData(Content, StringLength(Content))
-    Socket->SendPump()
+    Socket->QueueString("One")
+    ;Socket->QueueString("Two")
+    ;Socket->QueueString("Three")
+    ;Socket->QueueString("Four")
 
-    Halt()
+    loop { SchedulerYield() }
+
+    ;Halt()
 
     /*
     DNSLayer* DNS := FirstNetworkInterface->GetProtocol("DNS")->this

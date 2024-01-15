@@ -283,7 +283,7 @@ struct IPV4Layer {
         Header->FlipEndianess()
         i64 Hash := Header->Hash()
 
-        Info("IPv4: Recieved packet with fragment hash %x\n", Hash)
+        ;Info("IPv4: Recieved packet with fragment hash %x\n", Hash)
 
         PointerArray* PreviousFragments := this->InflightFragments->GetPointer(Hash)
 

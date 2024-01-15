@@ -8,7 +8,11 @@ struct Timer {
 
 	i8 OneShot
 	i64 IntervalMS
-	Task* Target
+
+	union {
+		Task* Target
+		Task* Task
+	}
 	
 	Timer* Next
 	
