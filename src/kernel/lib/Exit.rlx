@@ -6,12 +6,17 @@ define void Hang() {
     loop {asm {emit, 0xF4}}
 }
 
+define void Halt() {
+    DisableInterrupts()
+    loop {asm {emit, 0xF4}}
+}
+
 define void Exit(i32 Code) {
     Info("EXIT CALLED\n%stackdump\nHALTING")
-    loop {}
+    Halt()
 }
 
 define void Panic(i8* Reason) {
     Info("PANIC: %s\n%stackdump\nHALTING\n", Reason)
-    Hang()
+    Halt()
 }

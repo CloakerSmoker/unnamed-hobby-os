@@ -107,7 +107,16 @@ define void TestNetworking() {
 
     Socket->Connect(PackIPV4(10, 0, 2, 2), 7777)
 
-    loop {}
+    while (Socket->State != TCP_SOCKET_STATE_ESTABLISHED) { SchedulerYield() }
+
+    i8* Content := "Hello\n"
+
+    Info("Sending!\n")
+
+    Socket->QueueData(Content, StringLength(Content))
+    Socket->SendPump()
+
+    Halt()
 
     /*
     DNSLayer* DNS := FirstNetworkInterface->GetProtocol("DNS")->this
