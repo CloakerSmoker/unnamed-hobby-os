@@ -124,6 +124,8 @@ i8 TCP_SOCKET_STATE_CLOSED := 10
 i8 TCP_SOCKET_STATE_REFUSED := 11
 i8 TCP_SOCKET_STATE_CLOSING := 12
 
+i8 TCP_SOCKET_STATE_ACCEPT_WAIT := 13
+
 
 
 struct TCPFrame {
@@ -210,6 +212,7 @@ struct TCPSocket {
         return this->RecieveWindowSize - this->RecieveWindowTail - 1
     }
 
+    AVLTree* Children ; <i64, TCPSocket*>
 
     static self* New(NetworkInterface* Interface, NetworkProtocol* Transport) {
         self* this := Alloc(#self)
@@ -218,8 +221,25 @@ struct TCPSocket {
         this->Transport := Transport
 
         this->AsProtocol := Interface->AddEphemeralProtocol(GetTCPSocketProtocolPrototype(), this)
+        
+        this->Children := AVLTree:New(#void*)
 
         return this
+    }
+
+    define void Free() {
+        if (this->State != TCP_SOCKET_STATE_CLOSED) {
+            Panic("Attempt to free a TCP socket that is not closed")
+        }
+
+        Free(this->AsProtocol)
+
+        this->Children->Free()
+        Free(this->Children)
+
+        if (this->RecieveWindow) {
+            Free(this->RecieveWindow)
+        }
     }
 
     TCPCounters SendCounters
@@ -242,7 +262,7 @@ struct TCPSocket {
 
     define void IngestInfo(i8* Format, ... Args) {
         i8[200] Buffer
-        i32 Length := FormatString(Buffer, 200, "IN TCP(%i, [%tcp-flags]) %s\n", this~>RecieveCounters->Packets, this->CurrentHeader->Flags, Format)
+        i32 Length := FormatString(Buffer, 200, "TCP(%ipv4:%net-port <-> :%net-port) IN %i [%tcp-flags] %s\n", this->RemoteAddress, this->RemotePort, this->LocalPort, this~>RecieveCounters->Packets, this->CurrentHeader->Flags, Format)
         Buffer[Length] := 0
 
         RawInfo(Buffer, Args)
@@ -250,7 +270,7 @@ struct TCPSocket {
 
     define void EgressInfo(TCPFrame* Frame, i8* Format, ... Args) {
         i8[200] Buffer
-        i32 Length := FormatString(Buffer, 200, "OUT TCP(%i, [%tcp-flags]) %s\n", Frame->FrameNumber, Frame->Flags, Format)
+        i32 Length := FormatString(Buffer, 200, "TCP(%ipv4:%net-port <-> :%net-port) OUT %i [%tcp-flags] %s\n", this->RemoteAddress, this->RemotePort, this->LocalPort, Frame->FrameNumber, Frame->Flags, Format)
         Buffer[Length] := 0
 
         ;Info("RawInfo(%s)\n", Buffer)
@@ -294,7 +314,7 @@ struct TCPSocket {
 
         this->UpdateCounters(this~>SendCounters, Header)
 
-        ;/*
+        /*
         if (this~>SendCounters->Packets % 4 = 3) {
             this->EgressInfo(Frame, "Injected drop")
             return
@@ -652,13 +672,16 @@ struct TCPSocket {
         this->SendAcknowledge(this->LastAcknowledgeNumberSent)
     }
 
+    declare void Request(i16, i32, i16)
+
     define void Ingest(NetworkPacket* Packet) {
+        IPV4Header* IP := Packet->Get(PACKET_DATA_IPV4_HEADER)
         TCPHeader* TCP := Packet->Get(PACKET_DATA_TCP_HEADER)
 
         this->UpdateCounters(this~>RecieveCounters, TCP)
         this->CurrentHeader := TCP
 
-        ;/*
+        /*
         if (this~>RecieveCounters->Packets % 4 = 3) {
             this->IngestInfo("Injected drop")
             return
@@ -680,7 +703,40 @@ struct TCPSocket {
         }
         ;*/
 
-        if (this->State = TCP_SOCKET_STATE_SYNCHRONIZE_SENT) {
+        if (this->State = TCP_SOCKET_STATE_LISTEN) {
+            i64 ChildID := IP->Source << 32
+            ChildID |= TCP->SourcePort
+
+            TCPSocket* Child := this->Children->GetPointer(ChildID)
+
+            if !(Child) {
+                Child := TCPSocket:New(this->Interface, this->Transport)
+                Child->Request(this->LocalPort, IP->Source, TCP->SourcePort)
+
+                this->IngestInfo("LISTEN -> ACCEPT_WAIT")
+
+                this->Children->InsertPointer(ChildID, Child)
+            }
+
+            Child->Ingest(Packet)
+
+            if (Child->State = TCP_SOCKET_STATE_CLOSED) {
+                this->Children->Remove(ChildID)
+
+                ;Child->Free()
+            }
+        }
+        else if (this->State = TCP_SOCKET_STATE_ACCEPT_WAIT) {
+            if (TCP->Synchronize) {
+                this->RemoteWindowSize := (TCP->WindowSize As i32) & 0xFFFF
+                this->RemoteSequenceBase := TCP->SequenceNumber
+
+                this->IngestInfo("ACCEPT_WAIT -> ACCEPT_WAIT")
+
+                this->LastAcknowledgeNumberSent := this->CalculateAcknowledgementNumber(Packet)
+            }
+        }
+        else if (this->State = TCP_SOCKET_STATE_SYNCHRONIZE_SENT) {
             if (TCP->Acknowledge) {
                 this->UpdateQueue(TCP->AcknowledgementNumber)
             }
@@ -815,58 +871,141 @@ struct TCPSocket {
         this->RoundTripSum := 200
         this->RoundTripCount := 1
 
+        this->State := TCP_SOCKET_STATE_CLOSED
+    }
+
+    define void InitializeDataFlow() {
         this->RecieveWindow := Alloc(0x1_0000)
         this->RecieveWindowSize := 0x1_0000
 
-        this->State := TCP_SOCKET_STATE_CLOSED
+        this->SetSendPumpTimer()
+    }
+
+    define void Request(i16 LocalPort, i32 RemoteAddress, i16 RemotePort) {
+        this->Initialize()
+
+        this->LocalPort := LocalPort
+        this->RemoteAddress := RemoteAddress
+        this->RemotePort := RemotePort
+
+        this->State := TCP_SOCKET_STATE_ACCEPT_WAIT
+    }
+
+    define TCPSocket* AcceptSelf() {
+        this->State := TCP_SOCKET_STATE_SYNCHRONIZE_RECEIVED
+
+        this->InitializeDataFlow()
+        
+        TCPFrame* Frame := this->EnterFrame()
+        
+        Frame->Synchronize := true
+        Frame->Acknowledge := true
+        Frame->AcknowledgementNumber := this->LastAcknowledgeNumberSent
+
+        this->QueueFrame(Frame)
+
+        return this
+    }
+
+    define TCPSocket* FindAcceptCandidate() {
+        i32 Count := this->Children->Count()
+
+        for (i32 Index := 0, Index < Count, Index++) {
+            TCPSocket* Child := this->Children->PointerAt(Index)
+
+            if (Child->State = TCP_SOCKET_STATE_ACCEPT_WAIT) {
+                return Child
+            }
+        }
+
+        return null
+    }
+
+    define TCPSocket* Accept() {
+        loop {
+            TCPSocket* Child := this->FindAcceptCandidate()
+
+            if (Child) {
+                return Child->AcceptSelf()
+            }
+
+            SchedulerYield()
+        }
+
+        return null
     }
 
     define void Connect(i32 RemoteAddress, i16 RemotePort) {
         this->Initialize()
-        this->SetSendPumpTimer()
 
         this->RemoteAddress := RemoteAddress
         this->RemotePort := RemotePort
 
         this->State := TCP_SOCKET_STATE_SYNCHRONIZE_SENT
 
+        this->InitializeDataFlow()
+
         TCPFrame* Frame := this->EnterFrame()
         Frame->Synchronize := true
 
         this->QueueFrame(Frame)
     }
-    
-    define i32 Send(void* Buffer, i32 Size) {
-        this->QueueData(Buffer, Size)
 
-        return Size
+    define void Listen() {
+        this->Initialize()
+
+        this->State := TCP_SOCKET_STATE_LISTEN
     }
 
-    define i32 Poll(i32 PollMode) {
-        if (PollMode = POLL_FOR_READ) {
-            return this->RecieveWindowTail
+    define i32 Poll(i32 Mode) {
+        if (this->State = TCP_SOCKET_STATE_LISTEN) {
+            if (Mode & POLL_FOR_READ) {
+                return this->FindAcceptCandidate() != null
+            }
+        }
+        else if (this->State = TCP_SOCKET_STATE_ESTABLISHED) {
+            if (Mode & POLL_FOR_READ) {
+                return this->RecieveWindowTail
+            }
+        }
+        else {
+            return 0
+        }
+
+        return 0
+    }
+
+    define i32 Send(void* Buffer, i32 Size) {
+        if (this->State = TCP_SOCKET_STATE_ESTABLISHED) {
+            this->QueueData(Buffer, Size)
+
+            return Size
         }
 
         return 0
     }
 
     define i32 Recieve(void* Buffer, i32 MaximumSize) {
-        while (this->RecieveWindowTail = 0) { SchedulerYield() }
+        if (this->State = TCP_SOCKET_STATE_ESTABLISHED) {
+            while (this->RecieveWindowTail = 0) { SchedulerYield() }
 
-        i32 ReadSize := MaximumSize
+            i32 ReadSize := MaximumSize
 
-        if (MaximumSize > this->RecieveWindowTail) {
-            ReadSize := this->RecieveWindowTail
+            if (MaximumSize > this->RecieveWindowTail) {
+                ReadSize := this->RecieveWindowTail
+            }
+
+            MoveMemory(Buffer, this->RecieveWindow, ReadSize)
+
+            this->RemoteSequenceBase += ReadSize
+            this->RecieveWindowTail -= ReadSize
+
+            MoveMemory(this->RecieveWindow, this->RecieveWindow + ReadSize, this->RecieveWindowTail)
+
+            return ReadSize
         }
-
-        MoveMemory(Buffer, this->RecieveWindow, ReadSize)
-
-        this->RemoteSequenceBase += ReadSize
-        this->RecieveWindowTail -= ReadSize
-
-        MoveMemory(this->RecieveWindow, this->RecieveWindow + ReadSize, this->RecieveWindowTail)
-
-        return ReadSize
+        
+        return 0
     }
 
     define void Close() {
@@ -1053,7 +1192,7 @@ struct TCPLayer {
         NetworkProtocol* Handler := this->Sockets->GetPointer(TCP->DestinationPort)
 
         if (Handler = null) {
-            Info("TCP: Dropping packet from %ipv4:%i -> :%i\n", IPV4->Source, TCP->SourcePort, TCP->DestinationPort)
+            Info("TCP: Dropping packet from %ipv4:%i -> :%i\n", IPV4->Source, (TCP->SourcePort As i64) & 0xFFFF, (TCP->DestinationPort As i64) & 0xFFFF)
             return
         }
 

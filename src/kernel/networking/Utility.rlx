@@ -44,6 +44,21 @@ PrintFormatPrototype MACAddressFormatPrototype {
 
 i32 MAC_ADDRESS_FORMAT_PROTOTYPE_ID := AddPrintFormat(&MACAddressFormatPrototype)
 
+define void DoPortPrint(PrintOutputAdapterPrototype* this, i8* Format, i32* FormatIndex, void* Parameters, i32 ParameterCount, i32* ParameterIndex) {
+    i64 Port := Parameters[*ParameterIndex] As i64
+
+    this->Print("%i", Port & 0xFFFF)
+
+    *ParameterIndex += 1
+}
+
+PrintFormatPrototype PortFormatPrototype {
+	Name: "net-port",
+	Format: &DoPortPrint
+}
+
+i32 PORT_FORMAT_PROTOTYPE_ID := AddPrintFormat(&PortFormatPrototype)
+
 i8*[20] PacketDataNames
 i32 NextPacketDataID := 0
 

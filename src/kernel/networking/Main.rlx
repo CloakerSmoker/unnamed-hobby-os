@@ -77,6 +77,38 @@ define void TestICMPPing() {
     ;ICMP->SendPing(PackIPV4(10, 0, 2, 2), Data, 1400)
 }
 
+define void TinyNC(FileHandle* stdio, TCPSocket* Socket) {
+    Print("Say hello to %ipv4:%net-port!\n", Socket->RemoteAddress, Socket->RemotePort)
+
+    loop {
+        if (Socket->State = TCP_SOCKET_STATE_CLOSED) {
+            break
+        }
+
+        i8[100] Line
+
+        i32 Recv := Socket->Poll(POLL_FOR_READ)
+        
+        if (Recv) {
+            i32 Size := Socket->Recieve(Line, 100)
+            Line[Size] := 0
+
+            Print("\nLoser: %s\n", Line)
+        }
+
+        i32 Send := stdio->Poll(POLL_FOR_READ)
+
+        if (Send & POLL_CAN_READ) {
+            i32 Size := stdio->Read(Line, 100)
+            Line[Size] := 0
+
+            Socket->Send(CloneMemory(Line, Size), Size)
+        }
+
+        SchedulerYield()
+    }
+}
+
 define void TestNetworking(FileHandle* stdio) {
     ;SetIP()
 
@@ -103,11 +135,22 @@ define void TestNetworking(FileHandle* stdio) {
 
     TCPSocket* Socket := TCPSocket:New(FirstNetworkInterface, RawTCP)
 
-    TCP->BindSocket(42830 As i16, Socket)
+    ;TCP->BindSocket(42830 As i16, Socket)
+    TCP->BindSocket(7777 As i16, Socket)
 
-    Socket->Connect(PackIPV4(10, 0, 2, 2), 7778)
+    ;Socket->Connect(PackIPV4(10, 0, 2, 2), 7778)
 
-    while (Socket->State != TCP_SOCKET_STATE_ESTABLISHED) { SchedulerYield() }
+    ;while (Socket->State != TCP_SOCKET_STATE_ESTABLISHED) { SchedulerYield() }
+
+    Socket->Listen()
+
+    loop {
+        TCPSocket* Child := Socket->Accept()
+
+        while (Child->State != TCP_SOCKET_STATE_ESTABLISHED) { SchedulerYield() }
+
+        TinyNC(stdio, Child)
+    }
 
     ;Info("Sending!\n")
 
@@ -118,38 +161,14 @@ define void TestNetworking(FileHandle* stdio) {
 
     ;while (Socket->NewestFrame != null) { SchedulerYield() }
 
-    Print(">")
-
-    loop {
-        i8[100] Line
-
-        i32 Recv := Socket->Poll(POLL_FOR_READ)
-        
-        if (Recv) {
-            i32 Size := Socket->Recieve(Line, 100)
-            Line[Size] := 0
-
-            Print("Loser: %s>", Line)
-        }
-
-        i32 Send := stdio->Poll(POLL_FOR_READ)
-
-        if (Send & POLL_CAN_READ) {
-            i32 Size := stdio->Read(Line, 100)
-            Line[Size] := 0
-
-            Socket->Send(CloneMemory(Line, Size), Size)
-        }
-
-        SchedulerYield()
-    }
+    
 
     ;i8[100] Line
-    Socket->Recieve(Line, 100)
+    ;Socket->Recieve(Line, 100)
 
-    Info("Got: %s", Line)
+    ;Info("Got: %s", Line)
 
-    Socket->Close()
+    ;Socket->Close()
 
     loop { SchedulerYield() }
 

@@ -207,7 +207,7 @@ ifneq (,$(findstring --achi-debug,$(flags)))
 endif
 
 ifneq (,$(findstring --net-debug,$(flags)))
-	QEMU_FLAGS+=-device e1000e,netdev=hub0port0 -object filter-dump,id=f1,netdev=hub0port0,file=dump.pcap -netdev user,id=hub0port0,hostfwd=udp::7777-:7777
+	QEMU_FLAGS+=-device e1000e,netdev=hub0port0 -object filter-dump,id=f1,netdev=hub0port0,file=dump.pcap -netdev user,id=hub0port0,hostfwd=tcp::7777-:7777
 endif
 
 boot: Disk.qcow2
