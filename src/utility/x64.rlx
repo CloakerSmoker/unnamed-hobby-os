@@ -80,12 +80,14 @@ struct AMD64Context {
 		i16 BX
 	}
 	union {
+		i64 P4
 		i64 RCX
 		i32 ECX
 		i16 CX
 	}
 	
 	union {
+		i64 P3
 		i64 RDX
 		i32 EDX
 		i16 DX
@@ -100,24 +102,28 @@ struct AMD64Context {
 	i64 RBP
 	
 	union {
+		i64 P2
 		i64 RSI
 		i32 ESI
 		i16 SI
 	}
 	
 	union {
+		i64 P1
 		i64 RDI
 		i32 EDI
 		i16 DI
 	}
 	
 	union {
+		i64 P5
 		i64 R8
 		i32 R8D
 		i16 R8W
 	}
 	
 	union {
+		i64 P6
 		i64 R9
 		i32 R9D
 		i16 R9W
@@ -164,6 +170,54 @@ struct AMD64Context {
 	}
 	define void StackFree(i32 Size) {
 		this->RSP += Size
+	}
+
+	define void RawCall(void* Function, i64 ParameterCount, i64* Parameters) {
+		i64 RegisterParameters := ParameterCount % 6
+		i64 StackParameters := ParameterCount - 6
+
+		if (StackParameters < 0) {
+			StackParameters := 0
+		}
+
+		if (RegisterParameters >= 1) { this->P1 := Parameters[0] }
+		if (RegisterParameters >= 2) { this->P2 := Parameters[1] }
+		if (RegisterParameters >= 3) { this->P3 := Parameters[2] }
+		if (RegisterParameters >= 4) { this->P4 := Parameters[3] }
+		if (RegisterParameters >= 5) { this->P5 := Parameters[4] }
+		if (RegisterParameters >= 6) { this->P6 := Parameters[5] }
+
+		if (StackParameters && StackParameters % 2 = 0) {
+			this->Push(0)
+		}
+
+		for (i64 Index := StackParameters - 1, Index >= 0, Index--) {
+			i64 Value := Parameters[Index]
+
+			this->Push(Value)
+		}
+
+		this->RIP := Function
+	}
+
+	define void Call(void* Function, ... RawParameters) {
+		; Discard the "count" field of the varargs
+
+		i64 ParameterCount := RawParameters[0] As i64
+		i64* Parameters := &RawParameters[1] As i64*
+
+		this->RawCall(Function, ParameterCount, Parameters)
+	}
+
+	define void CallMethod(void* State, void* Method, ... RawParameters) {
+		; Replace the "count" field of the varargs with the "this" parameter
+
+		i64 ParameterCount := RawParameters[0] As i64
+		i64* Parameters := &RawParameters[0] As i64*
+
+		Parameters[0] := State As i64
+
+		this->RawCall(Method, ParameterCount + 1, Parameters)
 	}
 }
 
