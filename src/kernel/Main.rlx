@@ -302,12 +302,11 @@ define void BootStrap() {
 	KernelAddressSpace->Takeover(&RawMainContinuation, Stack, Stack)
 }
 
-ATADevice* FirstDisk := null
+#Require "./src/kernel/networking/Stack.rlx"
 
-E1000* FirstE1000 := null
+NetworkStack* Network := null
 
 #Require "./src/drivers/networking/E1000.rlx"
-
 
 #Require "./src/drivers/ICH9/AHCI.rlx"
 #Require "./src/drivers/block-device/ICH9/PortBlockDevice.rlx"
@@ -348,9 +347,11 @@ define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Devic
 
 				Device->EnableMSI(19)
 
-				FirstE1000 := Alloc('E1000', #E1000)
-				
-				FirstE1000->Initialize(Device)
+				E1000* Adapter := Alloc('E1000', #E1000)
+				Adapter->Initialize(Device)
+				Adapter->Setup()
+
+				Network->AddInterface(MakeNetworkInterfaceFromE1000(Adapter))
 			}
 		}
 		else if (Device->ClassCode = PCI_CLASS_CODE_MASS_STORAGE_CONTROLLER && Device->SubClass = PCI_SUBCLASS_SATA_CONTROLLER) {
@@ -517,6 +518,13 @@ define void MainContinuation() {
 	
 	SetupSystemCalls()
 
+	MountRoot(VFSDirectory:New())
+
+	VFSDevicesDirectory := VFSDirectory:New()
+	Mount(null, "/dev", VFSDevicesDirectory)
+
+	Network := NetworkStack:New()
+
 	InitializePCIe(&VisitPCIeFunction)
 
 	/*
@@ -539,7 +547,7 @@ define void MainContinuation() {
 	;*/
 
 	;/*
-	SetupNetworking()
+	;SetupNetworking()
 
 	Task* NetworkThread := Scheduler->AddLightTask(&TestNetworking)
 

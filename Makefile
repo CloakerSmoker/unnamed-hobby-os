@@ -206,8 +206,16 @@ ifneq (,$(findstring --achi-debug,$(flags)))
 	QEMU_FLAGS+=--trace "ahci_*" --trace "handle_*" --trace "ide_*"
 endif
 
-ifneq (,$(findstring --net-debug,$(flags)))
-	QEMU_FLAGS+=-device e1000e,netdev=hub0port0 -object filter-dump,id=f1,netdev=hub0port0,file=dump.pcap -netdev user,id=hub0port0,hostfwd=tcp::7777-:7777
+ifneq (,$(findstring --net-user,$(flags)))
+	QEMU_FLAGS+=-device e1000e,netdev=hub0port0 -netdev user,id=hub0port0
+endif
+
+ifneq (,$(findstring --net-tap,$(flags)))
+	QEMU_FLAGS+=-device e1000e,netdev=hub0port0 -netdev tap,ifname=vm0,id=hub0port0
+endif
+
+ifneq (,$(findstring --net-capture,$(flags)))
+	QEMU_FLAGS+=-object filter-dump,id=f1,netdev=hub0port0,file=dump.pcap
 endif
 
 boot: Disk.qcow2

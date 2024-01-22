@@ -631,9 +631,13 @@ NetworkProtocolPrototype E1000NetworkProtocolPrototype {
 	Ingest: &E1000.Send(NetworkPacket*)
 }
 
-define void LinkE1000NetworkProtocol(NetworkInterface* Interface, E1000* Device) {
+define NetworkInterface* MakeNetworkInterfaceFromE1000(E1000* Device) {
+	NetworkInterface* Interface := NetworkInterface:New()
+
 	Device->Interface := Interface
 	Interface->MAC := Device~>MAC
 
 	Interface->SendProtocol := Interface->AddProtocol("E1000", &E1000NetworkProtocolPrototype, Device)
+
+	return Interface
 }

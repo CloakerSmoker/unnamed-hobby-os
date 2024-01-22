@@ -1,0 +1,204 @@
+
+#Require "./src/kernel/networking/Utility.rlx"
+
+declare WellKnownProtocols* AttachWellKnownProtocols(NetworkInterface*)
+
+struct NetworkInterface {
+    MACAddress* MAC
+    i32 Gateway
+    MACAddress* GatewayMAC
+    i32 IP
+    i32 MTU
+    i32 DNS
+
+    AVLTree* Protocols ; <FNV1A(Name), NetworkProtocol*>
+    WellKnownProtocols* WellKnownProtocols
+
+    NetworkProtocol* SendProtocol
+    NetworkProtocol* ReceiveProtocol
+
+    static self* New() {
+        self* this := Alloc(#self)
+
+        this->Protocols := AVLTree:New(#void*)
+
+        this->MTU := 1400
+
+        return this
+    }
+
+    define NetworkProtocol* AddProtocol(i8* Name, NetworkProtocolPrototype* Prototype, void* State) {
+        NetworkProtocol* Protocol := NetworkProtocol:New(Prototype, State)
+
+        this->Protocols->InsertPointer(FNV1A(Name), Protocol)
+
+        return Protocol
+    }
+
+    define NetworkProtocol* AddEphemeralProtocol(NetworkProtocolPrototype* Prototype, void* State) {
+        return NetworkProtocol:New(Prototype, State)
+    }
+
+    define NetworkProtocol* GetProtocol(i8* Name) {
+        return this->Protocols->GetPointer(FNV1A(Name))
+    }
+
+    define void DoSend(NetworkPacket* Packet) {
+        this->SendProtocol->Ingest(Packet)
+    }
+
+    define void OnReceive(NetworkPacket* Packet) {
+        this->ReceiveProtocol->Ingest(Packet)
+    }
+
+    define void AttachWellKnownProtocols() {
+        this->WellKnownProtocols := AttachWellKnownProtocols(this)
+    }
+
+    define i32 DeviceControl(i32 Function, void* Parameter) {
+        return 0
+    }
+}
+
+#Require "./src/kernel/networking/ICMP.rlx"
+#Require "./src/kernel/networking/UDP.rlx"
+#Require "./src/kernel/networking/TCP.rlx"
+#Require "./src/kernel/networking/UDPSocket.rlx"
+
+#Require "./src/kernel/networking/DHCP.rlx"
+#Require "./src/kernel/networking/DNS.rlx"
+
+struct WellKnownProtocols {
+    EthernetLayer* Ethernet
+    ARPLayer* ARP
+    IPV4Layer* IP
+
+    ICMPLayer* ICMP
+
+    UDPLayer* UDP
+    TCPLayer* TCP
+
+    DHCPClient* DHCP
+
+    DNSLayer* DNS
+
+    static self* Attach(NetworkInterface* Interface) {
+        self* this := Alloc(#self)
+
+        this->Ethernet := EthernetLayer:New(Interface)
+        this->ARP := ARPLayer:New(Interface, this->Ethernet->AsProtocol)
+        this->IP := IPV4Layer:New(Interface, this->Ethernet->AsProtocol)
+
+        this->ICMP := ICMPLayer:New(Interface, this->IP->AsProtocol)
+
+        this->UDP := UDPLayer:New(Interface, this->IP->AsProtocol)
+        this->TCP := TCPLayer:New(Interface, this->IP->AsProtocol)
+
+        this->DHCP := DHCPClient:New(Interface, this->UDP->AsProtocol)
+
+        this->DNS := DNSLayer:New(Interface)
+
+        return this
+    }
+}
+
+define WellKnownProtocols* AttachWellKnownProtocols(NetworkInterface* Interface) {
+    if (Interface->WellKnownProtocols) {
+        return Interface->WellKnownProtocols
+    }
+
+    return WellKnownProtocols:Attach(Interface)
+}
+
+struct NetworkRoute {
+    i32 Prefix
+    i32 Mask
+    i32 InterfaceNumber
+}
+
+struct NetworkStack {
+    PointerArray* Interfaces ; <NetworkInterface*>
+
+    NetworkRoute* DefaultRoute
+    PointerArray* Routes ; <NetworkRoute*>
+
+    static self* New() {
+        self* this := Alloc(#self)
+        
+        this->Interfaces := PointerArray:New()
+        this->Routes := PointerArray:New()
+
+        return this
+    }
+
+    define i32 AddInterface(NetworkInterface* Interface) {
+        Interface->AttachWellKnownProtocols()
+
+        i32 Index := this->Interfaces->Count()
+        this->Interfaces->Push(Interface)
+        return Index
+    }
+
+    define void AddRoute(i64 Prefix, i64 Mask, i32 InterfaceNumber) {
+        NetworkRoute* Route := Alloc(#NetworkRoute)
+
+        Route->Prefix := Prefix As i32
+        Route->Mask := Mask As i32
+        Route->InterfaceNumber := InterfaceNumber
+
+        if (Mask = 0) {
+            this->DefaultRoute := Route
+        }
+        else {
+            this->Routes->Push(Route)
+        }
+    }
+
+    static i8 FindFirstBitSet(i64 Number) asm {
+        bsr, rax, rdi
+        ret
+    }
+
+    define NetworkRoute* Lookup(i32 Address) {
+        NetworkRoute* BestMatch := this->DefaultRoute
+        i32 BestMatchLength := 0
+
+        i32 Count := this->Routes->Count()
+
+        for (i32 Index := 0, Index < Count, Index++) {
+            NetworkRoute* Route := this->Routes->At(Index)
+
+            Info("Match %ipv4 & %ipv4 (%ipv4) against %ipv4\n", Address, Route->Mask, Address & Route->Mask, Route->Prefix)
+
+            if ((Address & Route->Mask) = Route->Prefix) {
+                i32 Length := self:FindFirstBitSet(Route->Mask)
+
+                if (Length > BestMatchLength) {
+                    BestMatch := Route
+                }
+            }
+        }
+
+        return BestMatch
+    }
+
+    define TCPSocket* CreateTCP() {
+        return TCPSocket:New()
+    }
+
+    define void BindTCP(i32 Address, i16 Port, TCPSocket* Socket) {
+        NetworkRoute* Route := this->Lookup(Address)
+        NetworkInterface* Interface := this->Interfaces->At(Route->InterfaceNumber)
+        TCPLayer* TCP := Interface->WellKnownProtocols->TCP
+
+        TCP->Bind(Port, Socket)
+    }
+    
+    define void ConnectTCP(TCPSocket* Socket, i32 Address, i16 Port) {
+        NetworkRoute* Route := this->Lookup(Address)
+        NetworkInterface* Interface := this->Interfaces->At(Route->InterfaceNumber)
+        TCPLayer* TCP := Interface->WellKnownProtocols->TCP
+
+        TCP->Connect(Socket, Address, Port)
+    }
+}

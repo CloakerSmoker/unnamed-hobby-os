@@ -264,52 +264,6 @@ struct NetworkProtocol {
     }
 }
 
-struct NetworkInterface {
-    MACAddress* MAC
-    i32 Gateway
-    MACAddress* GatewayMAC
-    i32 IP
-    i32 MTU
-    i32 DNS
-
-    AVLTree* Protocols ; <FNV1A(Name), NetworkProtocol*>
-
-    NetworkProtocol* SendProtocol
-    NetworkProtocol* ReceiveProtocol
-
-    static self* New() {
-        self* this := Alloc(#self)
-
-        this->Protocols := AVLTree:New(#void*)
-
-        return this
-    }
-
-    define NetworkProtocol* AddProtocol(i8* Name, NetworkProtocolPrototype* Prototype, void* State) {
-        NetworkProtocol* Protocol := NetworkProtocol:New(Prototype, State)
-
-        this->Protocols->InsertPointer(FNV1A(Name), Protocol)
-
-        return Protocol
-    }
-
-    define NetworkProtocol* AddEphemeralProtocol(NetworkProtocolPrototype* Prototype, void* State) {
-        return NetworkProtocol:New(Prototype, State)
-    }
-
-    define NetworkProtocol* GetProtocol(i8* Name) {
-        return this->Protocols->GetPointer(FNV1A(Name))
-    }
-
-    define void DoSend(NetworkPacket* Packet) {
-        this->SendProtocol->Ingest(Packet)
-    }
-
-    define void OnReceive(NetworkPacket* Packet) {
-        this->ReceiveProtocol->Ingest(Packet)
-    }
-}
-
 define i64 RFC1071ChecksumStart() {
     return 0
 }

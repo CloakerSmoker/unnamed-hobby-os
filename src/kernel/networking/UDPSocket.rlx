@@ -1,4 +1,6 @@
 
+#Require "./src/kernel/networking/UDP.rlx"
+
 declare NetworkProtocolPrototype* GetUDPSocketProtocolPrototype()
 
 i16 NextUDPConnectionPort := 49152 As i16

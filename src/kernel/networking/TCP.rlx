@@ -214,17 +214,19 @@ struct TCPSocket {
 
     AVLTree* Children ; <i64, TCPSocket*>
 
-    static self* New(NetworkInterface* Interface, NetworkProtocol* Transport) {
+    static self* New() {
         self* this := Alloc(#self)
 
-        this->Interface := Interface
-        this->Transport := Transport
-
-        this->AsProtocol := Interface->AddEphemeralProtocol(GetTCPSocketProtocolPrototype(), this)
-        
         this->Children := AVLTree:New(#void*)
 
         return this
+    }
+
+    define void BindInterface(NetworkInterface* Interface, NetworkProtocol* Transport) {
+        this->Interface := Interface
+        this->Transport := Transport
+
+        this->AsProtocol := this->Interface->AddEphemeralProtocol(GetTCPSocketProtocolPrototype(), this)
     }
 
     define void Free() {
@@ -710,7 +712,8 @@ struct TCPSocket {
             TCPSocket* Child := this->Children->GetPointer(ChildID)
 
             if !(Child) {
-                Child := TCPSocket:New(this->Interface, this->Transport)
+                Child := TCPSocket:New()
+                Child->BindInterface(this->Interface, this->Transport)
                 Child->Request(this->LocalPort, IP->Source, TCP->SourcePort)
 
                 this->IngestInfo("LISTEN -> ACCEPT_WAIT")
@@ -1032,49 +1035,6 @@ define NetworkProtocolPrototype* GetTCPSocketProtocolPrototype() {
     return &TCPSocketProtocolPrototype
 }
 
-/*
-struct TCPServer {
-    ; Unidirectional, accept()-s connections
-    ; Multiplexes multiple remote connections to the same port
-
-    AVLTree* Connections ; <i32 Peer, NetworkProtocol* Socket>
-
-
-    define void Ingest(NetworkPacket* Packet) {
-        IPV4Header* IP := Packet->Get(PACKET_DATA_IPV4_HEADER)
-        TCPHeader* TCP := Packet->Get(PACKET_DATA_TCP_HEADER)
-
-        i64 Hash := (IP->Source As i64) + ((TCP->DestinationPort As i64) << 32)
-
-        NetworkProtocol* ExistingSocket := this->Connections->GetPointer(Hash)
-
-        if (ExistingSocket = null) {
-            if (TCP->Synchronize) {
-                NetworkProtocol* NewSocket := 
-
-                NewSocket->State := TCP_SOCKET_STATE_ACCEPT_WAIT
-
-                this->Connections->InsertPointer(Hash, NewSocket)
-            }
-        }
-        else {
-            if (TCP->Acknowledgement && ExistingSocket->State = TCP_SOCKET_STATE_SYNCHRONIZE_RECEIVED) {
-                ExistingSocket->State := TCP_SOCKET_STATE_ESTABLISHED
-            }
-
-        }
-
-    }
-
-    define NetworkProtocol* Accept() {
-        NetworkProtocol* Socket := 
-
-        Socket->SendSynchronize()
-        Socket->State := TCP_SOCKET_STATE_SYNCHRONIZE_RECEIVED
-    }
-}
-*/
-
 struct TCPPseudoHeader {
     i32 Source
     i32 Destination
@@ -1092,6 +1052,8 @@ struct TCPPseudoHeader {
 }
 
 declare NetworkProtocolPrototype* GetTCPLayerProtocolPrototype()
+
+i16 TCP_OUTGOING_PORT_BASE := 6_0000 As i16
 
 struct TCPLayer {
     NetworkInterface* Interface
@@ -1199,10 +1161,22 @@ struct TCPLayer {
         Handler->Ingest(Packet)
     }
 
-    define void BindSocket(i16 LocalPort, TCPSocket* Socket) {
+    define void Bind(i16 LocalPort, TCPSocket* Socket) {
+        Socket->BindInterface(this->Interface, this->AsProtocol)
+
         Socket->LocalPort := LocalPort
 
         this->Sockets->InsertPointer(LocalPort, Socket->AsProtocol)
+    }
+    
+    define void Connect(TCPSocket* Socket, i32 Address, i16 Port) {
+        Socket->BindInterface(this->Interface, this->AsProtocol)
+
+        Socket->LocalPort := (TCP_OUTGOING_PORT_BASE + this->Sockets->Count()) As i16
+
+        this->Sockets->InsertPointer(Socket->LocalPort, Socket->AsProtocol)
+
+        Socket->Connect(Address, Port)
     }
 }
 

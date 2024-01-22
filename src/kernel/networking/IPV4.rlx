@@ -1,4 +1,7 @@
 
+#Require "./src/kernel/networking/Ethernet.rlx"
+#Require "./src/kernel/networking/ARP.rlx"
+
 i16 ETHERTYPE_IPV4 := 0x800
 
 i8 IPV4_FLAG_HAS_FOLLOWING_FRAGMENTS := 1
