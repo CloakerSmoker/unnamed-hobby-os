@@ -84,6 +84,8 @@ struct EthernetLayer {
 
         Header->FlipEndianess()
 
+        Info("Packet: %hexdump\n", Packet->Buffer, Packet->Size)
+
         Info("Ethernet: Received %x byte packet from %mac to %mac\n", Packet->Size, Header~>Source, Header~>Destination)
 
         if !(Header~>Destination->Equals(this->Interface->MAC) || Header~>Destination->IsBroadcast?()) {

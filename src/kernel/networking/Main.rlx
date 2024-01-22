@@ -129,7 +129,7 @@ define void TestNetworking(FileHandle* stdio) {
 
     void* nuts := &NetworkPacket.DumpMarkers
 
-    NetworkInterface* Interface := Network->Interfaces->At(0)
+    NetworkInterface* Interface := Network->Interfaces->At(1)
 
     ;/*
     DHCPClient* DHCP := Interface->WellKnownProtocols->DHCP

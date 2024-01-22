@@ -120,6 +120,10 @@ struct NetworkPacket {
         return self:New(Buffer, Size)
     }
 
+    define void ClearMarkers() {
+        this->MarkerCount := 0
+    }
+
     define void* Mark(i32 ID, i32 Size) {
         void* Result := this->Buffer + this->Offset
 

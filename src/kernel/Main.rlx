@@ -306,6 +306,7 @@ NetworkStack* Network := null
 
 #Require "./src/kernel/networking/Stack.rlx"
 
+#Require "./src/kernel/networking/Loopback.rlx"
 #Require "./src/drivers/networking/E1000.rlx"
 
 #Require "./src/drivers/ICH9/AHCI.rlx"
@@ -524,6 +525,8 @@ define void MainContinuation() {
 	Mount(null, "/dev", VFSDevicesDirectory)
 
 	Network := NetworkStack:New()
+
+	Network->AddInterface(MakeLoopbackNetworkInterface(IPv4("127.0.0.1")))
 
 	InitializePCIe(&VisitPCIeFunction)
 

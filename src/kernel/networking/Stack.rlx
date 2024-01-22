@@ -61,7 +61,7 @@ struct NetworkInterface {
     }
 }
 
-declare void AddNetworkRoute(i32, i32, NetworkInterface*)
+declare void AddNetworkRoute(i32, i64, NetworkInterface*)
 
 #Require "./src/kernel/networking/ICMP.rlx"
 #Require "./src/kernel/networking/UDP.rlx"
@@ -233,6 +233,6 @@ struct NetworkStack {
     }
 }
 
-define void AddNetworkRoute(i32 Prefix, i32 Mask, NetworkInterface* Interface) {
-    Network->AddRoute(Prefix, Mask, Interface)
+define void AddNetworkRoute(i32 Prefix, i64 Mask, NetworkInterface* Interface) {
+    Network->AddRoute(Prefix, Mask As i32, Interface)
 }

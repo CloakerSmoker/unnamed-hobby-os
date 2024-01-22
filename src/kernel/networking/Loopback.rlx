@@ -1,0 +1,35 @@
+
+struct LoopbackAdapter {
+    NetworkInterface* Interface
+
+    static self* New(NetworkInterface* Interface) {
+        self* this := Alloc(#self)
+
+        this->Interface := Interface
+
+        return this
+    }
+
+    define void DoSend(NetworkPacket* Packet) {
+        Packet->ClearMarkers()
+
+        this->Interface->OnReceive(Packet)
+    }
+}
+
+NetworkProtocolPrototype LoopbackProtocolPrototype {
+    Ingest: &LoopbackAdapter.DoSend
+}
+
+define NetworkInterface* MakeLoopbackNetworkInterface(i32 Address) {
+    NetworkInterface* Interface := NetworkInterface:New()
+    LoopbackAdapter* Loopback := LoopbackAdapter:New(Interface)
+
+    Interface->SendProtocol := Interface->AddProtocol("Loopback", &LoopbackProtocolPrototype, Loopback)
+
+    Interface->IP := Address
+
+    AddNetworkRoute(Address, 0xFF_FF_FF_FF, Interface)
+
+    return Interface
+}

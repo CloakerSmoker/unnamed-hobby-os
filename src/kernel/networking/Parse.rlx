@@ -179,6 +179,12 @@ define i8 ParseIPv4(i8* Address, i32* Out) {
     return ParseIPv4(Address, StringLength(Address), Out)
 }
 
+define i32 IPv4(i8* Address) {
+    i32 Result := 0
+    ParseIPv4(Address, &Result)
+    return Result
+}
+
 define i8 ParseIPv4AndPort(i8* Address, i32 Length, i32* OutAddress, i16* OutPort) {
     StringReader Reader {
         Buffer: Address,
