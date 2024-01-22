@@ -111,8 +111,12 @@ define void TinyNC(FileHandle* stdio, TCPSocket* Socket) {
     }
 }
 
+#Require "./src/kernel/networking/Parse.rlx"
+
 define void TestNetworking(FileHandle* stdio) {
     ;SetIP()
+
+    ;Test() return
 
     /*
     NetworkStack* Stack := NetworkStack:New()
@@ -137,7 +141,9 @@ define void TestNetworking(FileHandle* stdio) {
     }
 
     Print("DHCP: Leased: %ipv4. DNS: %ipv4\n", Interface->IP, Interface->DNS)
-    Network->AddRoute(0, 0, 0)
+    Network->AddRoute("0.0.0.0/0", Interface)
+
+    Network->DumpRoutes()
 
     ARPLayer* ARP := Interface->WellKnownProtocols->ARP
 

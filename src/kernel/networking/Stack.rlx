@@ -1,4 +1,5 @@
 
+#Require "./src/kernel/networking/Parse.rlx"
 #Require "./src/kernel/networking/Utility.rlx"
 
 declare WellKnownProtocols* AttachWellKnownProtocols(NetworkInterface*)
@@ -60,6 +61,8 @@ struct NetworkInterface {
     }
 }
 
+declare void AddNetworkRoute(i32, i32, NetworkInterface*)
+
 #Require "./src/kernel/networking/ICMP.rlx"
 #Require "./src/kernel/networking/UDP.rlx"
 #Require "./src/kernel/networking/TCP.rlx"
@@ -113,7 +116,7 @@ define WellKnownProtocols* AttachWellKnownProtocols(NetworkInterface* Interface)
 struct NetworkRoute {
     i32 Prefix
     i32 Mask
-    i32 InterfaceNumber
+    NetworkInterface* Interface
 }
 
 struct NetworkStack {
@@ -139,18 +142,47 @@ struct NetworkStack {
         return Index
     }
 
-    define void AddRoute(i64 Prefix, i64 Mask, i32 InterfaceNumber) {
+    define void AddRoute(i64 Prefix, i64 Mask, NetworkInterface* Interface) {
         NetworkRoute* Route := Alloc(#NetworkRoute)
 
         Route->Prefix := Prefix As i32
         Route->Mask := Mask As i32
-        Route->InterfaceNumber := InterfaceNumber
+        Route->Interface := Interface
 
         if (Mask = 0) {
             this->DefaultRoute := Route
         }
         else {
             this->Routes->Push(Route)
+        }
+    }
+
+    define i8 AddRoute(i8* AddressWithCIDR, NetworkInterface* Interface) {
+        i32 Address := 0
+        i32 CIDR := 0
+
+        if !(ParseIPv4CIDR(AddressWithCIDR, &Address, &CIDR)) {
+            return false
+        }
+
+        i32 Mask := ((0xFF_FF_FF_FF << (32 - CIDR)) & 0xFF_FF_FF_FF) As i32
+
+        this->AddRoute(Address, Mask, Interface)
+
+        return true
+    }
+
+    define void DumpRoutes() {
+        if (this->DefaultRoute) {
+            Info("default -> dev %ipv4\n", this->DefaultRoute->Interface->IP)
+        }
+
+        i32 Count := this->Routes->Count()
+
+        for (i32 Index := 0, Index < Count, Index++) {
+            NetworkRoute* Route := this->Routes->At(Index)
+
+            Info("%ipv4 %ipv4 -> dev %ipv4\n", Route->Prefix, Route->Mask, Route->Interface->IP)
         }
     }
 
@@ -188,17 +220,19 @@ struct NetworkStack {
 
     define void BindTCP(i32 Address, i16 Port, TCPSocket* Socket) {
         NetworkRoute* Route := this->Lookup(Address)
-        NetworkInterface* Interface := this->Interfaces->At(Route->InterfaceNumber)
-        TCPLayer* TCP := Interface->WellKnownProtocols->TCP
+        TCPLayer* TCP := Route->Interface->WellKnownProtocols->TCP
 
         TCP->Bind(Port, Socket)
     }
     
     define void ConnectTCP(TCPSocket* Socket, i32 Address, i16 Port) {
         NetworkRoute* Route := this->Lookup(Address)
-        NetworkInterface* Interface := this->Interfaces->At(Route->InterfaceNumber)
-        TCPLayer* TCP := Interface->WellKnownProtocols->TCP
+        TCPLayer* TCP := Route->Interface->WellKnownProtocols->TCP
 
         TCP->Connect(Socket, Address, Port)
     }
+}
+
+define void AddNetworkRoute(i32 Prefix, i32 Mask, NetworkInterface* Interface) {
+    Network->AddRoute(Prefix, Mask, Interface)
 }

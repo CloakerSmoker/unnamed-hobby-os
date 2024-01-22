@@ -251,6 +251,11 @@ struct DHCPClient {
             DHCPOption::AddressList* DNS := Options->Get(DHCP_OPTION_DOMAIN_NAME_SERVER)
             this->Interface->DNS := DNS->At(0)
 
+            DHCPOption::AddressList* Masks := Options->Get(DHCP_OPTION_SUBNET_MASK)
+            i32 Mask := Masks->At(0)
+
+            AddNetworkRoute(this->Interface->Gateway & Mask, Mask, this->Interface)
+
             ARPLayer* ARP := this->Interface->GetProtocol("ARP")->this
 
             ARP->Announce()

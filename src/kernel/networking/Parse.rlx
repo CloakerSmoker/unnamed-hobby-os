@@ -1,0 +1,297 @@
+
+
+struct StringReader {
+    i8* Buffer
+    i32 Length
+
+    i32 Index
+
+    define i8 PeekNextCharacter() {
+        return this->Buffer[this->Index]
+    }
+    define i8 GetNextCharacter() {
+        return this->Buffer[this->Index++]
+    }
+
+    define i8 NextCharacterMatches(i8 Check) {
+        if (this->PeekNextCharacter() = Check) {
+            this->GetNextCharacter()
+
+            return true
+        }
+
+        return false
+    }
+
+    define i8 ReadNumber(i64 Base, i64* Out) {
+        i64 Result := 0
+        i32 Length := 0
+
+        loop {
+            i8 Next := this->PeekNextCharacter()
+
+            if (IsNumeric(Next, Base)) {
+                Result *= Base
+                Result += GetCharacterValue(this->GetNextCharacter())
+                Length++
+            }
+            else {
+                break
+            }
+        }
+
+        *Out := Result
+
+        return Length != 0
+    }
+
+    define i8 ReadNumber(i64* Out) {
+        i64 Base := 10
+
+        i32 Before := this->Index
+        
+        if (this->NextCharacterMatches('0')) {
+            if (this->NextCharacterMatches('x')) {
+                Base := 16
+            }
+            else {
+                this->Index := Before
+            }
+        }
+
+        return this->ReadNumber(Base, Out)
+    }
+
+    define i8 ReadNumberInRange(i64 Minimum, i64 Maximum, i64* Out) {
+        i64 Value := 0
+
+        if !(this->ReadNumber(&Value)) {
+            return false
+        }
+
+        if (Value < Minimum || Value > Maximum) {
+            return false
+        }
+
+        *Out := Value
+        return true
+    }
+
+    define i8 ReadIPv4Digit(i8* Out) {
+        i64 Value := 0
+
+        if !(this->ReadNumberInRange(0, 0xFF, &Value)) {
+            return false
+        }
+
+        *Out := Value As i8
+        return true
+    }
+
+    define i8 ReadIPv4(i32* Out) {
+        i8* Bytes := Out As i8*
+        i8 Value := 0
+
+        if !(this->ReadIPv4Digit(&Value)) {
+            return false
+        }
+
+        if !(this->NextCharacterMatches('.')) {
+            Bytes[0] := Value ; 1 digit format, 1st value to the far right
+            return true
+        }
+
+        Bytes[3] := Value ; Any format, 1st value to the far left
+
+        if !(this->ReadIPv4Digit(&Value)) {
+            return false
+        }
+
+        if !(this->NextCharacterMatches('.')) {
+            Bytes[0] := Value ; 2 digit format, 2nd value to the far right
+            return true
+        }
+
+        Bytes[2] := Value ; Any format, 2nd value to the left
+
+        if !(this->ReadIPv4Digit(&Value)) {
+            return false
+        }
+
+        if !(this->NextCharacterMatches('.')) {
+            Bytes[0] := Value ; 3 digit format, 3rd value to the far right
+            return true
+        }
+
+        Bytes[1] := Value ; Any format, 3rd value to the right
+
+        if !(this->ReadIPv4Digit(&Value)) {
+            return false
+        }
+
+        Bytes[0] := Value
+
+        return true
+    }
+
+    define i8 ReadPortNumber(i16* Out) {
+        i64 Value := 0
+
+        if !(this->ReadNumberInRange(0, 0xFFFF, &Value)) {
+            return false
+        }
+
+        *Out := Value As i16
+        return true
+    }
+
+    define i8 ReadCIDRSuffix(i32* Out) {
+        i64 Value := 0
+
+        if !(this->ReadNumberInRange(0, 32, &Value)) {
+            return false
+        }
+
+        *Out := Value As i32
+        return true
+    }
+
+    define i8 AssertAtEnd(i8 LastSuccess) {
+        if !(LastSuccess) {
+            return false
+        }
+
+        return this->Index = this->Length
+    }
+}
+
+define i8 ParseIPv4(i8* Address, i32 Length, i32* Out) {
+    StringReader Reader {
+        Buffer: Address,
+        Length: Length,
+        Index : 0
+    }
+
+    return Reader.AssertAtEnd(Reader.ReadIPv4(Out))
+}
+
+define i8 ParseIPv4(i8* Address, i32* Out) {
+    return ParseIPv4(Address, StringLength(Address), Out)
+}
+
+define i8 ParseIPv4AndPort(i8* Address, i32 Length, i32* OutAddress, i16* OutPort) {
+    StringReader Reader {
+        Buffer: Address,
+        Length: Length,
+        Index : 0
+    }
+
+    i8 Result := Reader.ReadIPv4(OutAddress)
+
+    if !(Result) {
+        return false
+    }
+
+    if (Reader.Index = Reader.Length) {
+        return false
+    }
+
+    if !(Reader.NextCharacterMatches(':')) {
+        return false
+    }
+
+    return Reader.AssertAtEnd(Reader.ReadPortNumber(OutPort))
+}
+
+define i8 ParseIPv4AndPort(i8* Address, i32* OutAddress, i16* OutPort) {
+    return ParseIPv4AndPort(Address, StringLength(Address), OutAddress, OutPort)
+}
+
+define i8 ParseIPv4CIDR(i8* Address, i32 Length, i32* OutAddress, i32* OutCIDR) {
+    StringReader Reader {
+        Buffer: Address,
+        Length: Length,
+        Index : 0
+    }
+
+    i8 Result := Reader.ReadIPv4(OutAddress)
+
+    if !(Result) {
+        return false
+    }
+
+    if (Reader.Index = Reader.Length) {
+        return false
+    }
+
+    if !(Reader.NextCharacterMatches('/')) {
+        return false
+    }
+
+    return Reader.AssertAtEnd(Reader.ReadCIDRSuffix(OutCIDR))
+}
+
+define i8 ParseIPv4CIDR(i8* Address, i32* OutAddress, i32* OutCIDR) {
+    return ParseIPv4CIDR(Address, StringLength(Address), OutAddress, OutCIDR)
+}
+
+define void TestParse(i8* Address) {
+    i32 Value := 0
+
+    if (ParseIPv4(Address, &Value)) {
+        Info("%s = %ipv4\n", Address, Value)
+    }
+    else {
+        Info("%s = invalid\n", Address)
+    }
+}
+
+define void TestParsePort(i8* Address) {
+    i32 Value := 0
+    i16 Port := 0
+
+    if (ParseIPv4AndPort(Address, &Value, &Port)) {
+        Info("%s = %ipv4:%net-port\n", Address, Value, Port)
+    }
+    else {
+        Info("%s = invalid\n", Address)
+    }
+}
+
+define void TestParseCIDR(i8* Address) {
+    i32 Value := 0
+    i32 CIDR := 0
+
+    if (ParseIPv4CIDR(Address, &Value, &CIDR)) {
+        Info("%s = %ipv4/%i\n", Address, Value, CIDR)
+    }
+    else {
+        Info("%s = invalid\n", Address)
+    }
+}
+
+define void Test() {
+
+    TestParse("1.2.3.4")
+    TestParse("1.2.3")
+    TestParse("1.2")
+    TestParse("1")
+
+    TestParse("1.2.3.a")
+    TestParse("1.2333.a")
+    TestParse("1.2333.")
+
+    TestParse("1a")
+
+    TestParsePort("1")
+    TestParsePort("1:2")
+    TestParsePort("1:23456")
+    TestParsePort("1:0x10000")
+
+    TestParseCIDR("1")
+    TestParseCIDR("1/0")
+    TestParseCIDR("1/1")
+    TestParseCIDR("1/32")
+    TestParseCIDR("1/33")
+
+}

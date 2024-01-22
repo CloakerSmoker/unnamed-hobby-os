@@ -211,6 +211,7 @@ ifneq (,$(findstring --net-user,$(flags)))
 endif
 
 ifneq (,$(findstring --net-tap,$(flags)))
+	QEMU:=sudo $(QEMU)
 	QEMU_FLAGS+=-device e1000e,netdev=hub0port0 -netdev tap,ifname=vm0,id=hub0port0
 endif
 
@@ -220,6 +221,14 @@ endif
 
 boot: Disk.qcow2
 	$(QEMU) $(QEMU_FLAGS) $(DEBUG_FLAGS)
+
+create-tap:
+	sudo ip tuntap add vm0 mode tap
+	sudo ip link set vm0 master vmbr0
+	sudo ip link set vm0 up
+
+delete-tap:
+	sudo ip tuntap del vm0 mode tap
 
 reset-compiler:
 	cd compiler/; git reset --hard HEAD~1; cd ..

@@ -302,9 +302,9 @@ define void BootStrap() {
 	KernelAddressSpace->Takeover(&RawMainContinuation, Stack, Stack)
 }
 
-#Require "./src/kernel/networking/Stack.rlx"
-
 NetworkStack* Network := null
+
+#Require "./src/kernel/networking/Stack.rlx"
 
 #Require "./src/drivers/networking/E1000.rlx"
 
