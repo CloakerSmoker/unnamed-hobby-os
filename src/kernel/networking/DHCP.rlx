@@ -254,6 +254,7 @@ struct DHCPClient {
             DHCPOption::AddressList* Masks := Options->Get(DHCP_OPTION_SUBNET_MASK)
             i32 Mask := Masks->At(0)
 
+            this->Interface->Mask := Mask
             AddNetworkRoute(this->Interface->Gateway & Mask, Mask, this->Interface)
 
             ARPLayer* ARP := this->Interface->GetProtocol("ARP")->this

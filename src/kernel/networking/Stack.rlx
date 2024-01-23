@@ -21,8 +21,11 @@ struct NetworkInterface {
     i8* Name
 
     MACAddress* MAC
+
     i32 Gateway
+    i32 Mask
     MACAddress* GatewayMAC
+
     i32 IP
     i32 MTU
     i32 DNS
@@ -224,7 +227,7 @@ struct NetworkStack {
 
     define void DumpRoutes() {
         if (this->DefaultRoute) {
-            Info("default -> dev %ipv4\n", this->DefaultRoute->Interface->IP)
+            Info("default -> %ipv4 via dev %s\n", this->DefaultRoute->Interface->Gateway, this->DefaultRoute->Interface->Name)
         }
 
         i32 Count := this->Routes->Count()
@@ -232,7 +235,7 @@ struct NetworkStack {
         for (i32 Index := 0, Index < Count, Index++) {
             NetworkRoute* Route := this->Routes->At(Index)
 
-            Info("%ipv4 %ipv4 -> dev %ipv4\n", Route->Prefix, Route->Mask, Route->Interface->IP)
+            Info("%ipv4 %ipv4 -> %ipv4 via dev %s\n", Route->Prefix, Route->Mask, Route->Interface->Gateway, Route->Interface->Name)
         }
     }
 

@@ -187,10 +187,13 @@ define void TestNetworking(FileHandle* stdio) {
     Info("Route: %i\n", Stack->Lookup(0x10_01_00_20)->InterfaceNumber)
     */
 
-    /*
+    ;/*
     void* nuts := &NetworkPacket.DumpMarkers
 
     NetworkInterface* Interface := Network->Interfaces->At(1)
+
+    ;Interface->SetKnobToggle("Ethernet.SpewInOut", true)
+    Interface->SetKnobToggle("ARP.SpewGateway", true)
 
     DHCPClient* DHCP := Interface->WellKnownProtocols->DHCP
 
@@ -214,8 +217,20 @@ define void TestNetworking(FileHandle* stdio) {
 
     TCPSocket* Socket := Network->CreateTCP()
 
+    Network->Connect(Socket, IPv4("10.2.30.100"), 7778 As i16)
+
+    while (Socket->State = TCP_SOCKET_STATE_SYNCHRONIZE_SENT) {
+        Print("Connecting...\r")
+        SleepMS(100)
+    }
+
+    Socket->QueueString("Hello world!")
+    Socket->Flush()
+    Socket->Close()
+
     ;TCP->BindSocket(42830 As i16, Socket)
     ;TCP->BindSocket(7777 As i16, Socket)
+    /*
     Network->Bind(IPv4("127.0.0.1"), 7777 As i16, Socket)
 
     ;Socket->Connect(PackIPV4(10, 0, 2, 2), 7778)
@@ -231,7 +246,7 @@ define void TestNetworking(FileHandle* stdio) {
 
         TinyNC(stdio, Child)
     }
-    ;*/
+    */
 
     ;Info("Sending!\n")
 
