@@ -1,17 +1,21 @@
 
 struct LoopbackAdapter {
+    MACAddress MAC
+
     NetworkInterface* Interface
 
     static self* New(NetworkInterface* Interface) {
         self* this := Alloc(#self)
 
         this->Interface := Interface
+        this~>MAC->Bytes[5] := 1
 
         return this
     }
 
     define void DoSend(NetworkPacket* Packet) {
         Packet->ClearMarkers()
+        Packet->Seek(0)
 
         this->Interface->OnReceive(Packet)
     }
@@ -21,13 +25,21 @@ NetworkProtocolPrototype LoopbackProtocolPrototype {
     Ingest: &LoopbackAdapter.DoSend
 }
 
+i32 LoopbackAdapterCount := 0
+
 define NetworkInterface* MakeLoopbackNetworkInterface(i32 Address) {
-    NetworkInterface* Interface := NetworkInterface:New()
+    NetworkInterface* Interface := NetworkInterface:New(FormatString("lo%i", LoopbackAdapterCount++))
     LoopbackAdapter* Loopback := LoopbackAdapter:New(Interface)
 
     Interface->SendProtocol := Interface->AddProtocol("Loopback", &LoopbackProtocolPrototype, Loopback)
 
     Interface->IP := Address
+    Interface->MAC := Loopback~>MAC
+    Interface->GatewayMAC := Loopback~>MAC
+    Interface->Gateway := Address
+
+    Interface->AttachWellKnownProtocols()
+    Interface->WellKnownProtocols->ARP->PopulateCache(Interface->MAC, Address)
 
     AddNetworkRoute(Address, 0xFF_FF_FF_FF, Interface)
 

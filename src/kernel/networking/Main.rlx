@@ -79,6 +79,66 @@ define void TestICMPPing() {
 }
 */
 
+define void SocketListener() {
+    TCPSocket* Socket := Network->CreateTCP()
+
+    ;TCP->BindSocket(42830 As i16, Socket)
+    ;TCP->BindSocket(7777 As i16, Socket)
+    Network->Bind(IPv4("127.0.0.1"), 7777 As i16, Socket)
+
+    ;Socket->Interface->SetKnobToggle("Ethernet.SpewInOut", true)
+
+    ;Socket->Connect(PackIPV4(10, 0, 2, 2), 7778)
+
+    ;while (Socket->State != TCP_SOCKET_STATE_ESTABLISHED) { SchedulerYield() }
+
+    Socket->Listen()
+
+    loop {
+        TCPSocket* Child := Socket->Accept()
+
+        while (Child->State != TCP_SOCKET_STATE_ESTABLISHED) { SchedulerYield() }
+
+        Print("Say hello to %ipv4:%net-port!\n", Child->RemoteAddress, Child->RemotePort)
+
+        while (Child->State = TCP_SOCKET_STATE_ESTABLISHED) {
+            i8[100] Line
+
+            i32 Recv := Child->Poll(POLL_FOR_READ)
+            
+            if (Recv) {
+                i32 Size := Child->Recieve(Line, 100)
+                Line[Size] := 0
+
+                Print("\nLoser: %s\n", Line)
+            }
+
+            SchedulerYield()
+        }
+    }
+}
+
+define void SocketClient() {
+    TCPSocket* Socket := Network->CreateTCP()
+
+    ;TCP->BindSocket(42830 As i16, Socket)
+    ;TCP->BindSocket(7777 As i16, Socket)
+    Network->Connect(Socket, IPv4("127.0.0.1"), 7777 As i16)
+
+    while (Socket->State = TCP_SOCKET_STATE_SYNCHRONIZE_SENT) {
+        Print("Connecting...\r")
+        SleepMS(100)
+    }
+
+    Socket->QueueString("Hello world!")
+    Socket->Flush()
+    Socket->Close()
+
+    ;Socket->Connect(PackIPV4(10, 0, 2, 2), 7778)
+
+    ;while (Socket->State != TCP_SOCKET_STATE_ESTABLISHED) { SchedulerYield() }
+}
+
 define void TinyNC(FileHandle* stdio, TCPSocket* Socket) {
     Print("Say hello to %ipv4:%net-port!\n", Socket->RemoteAddress, Socket->RemotePort)
 
@@ -127,11 +187,11 @@ define void TestNetworking(FileHandle* stdio) {
     Info("Route: %i\n", Stack->Lookup(0x10_01_00_20)->InterfaceNumber)
     */
 
+    /*
     void* nuts := &NetworkPacket.DumpMarkers
 
     NetworkInterface* Interface := Network->Interfaces->At(1)
 
-    ;/*
     DHCPClient* DHCP := Interface->WellKnownProtocols->DHCP
 
     DHCP->SendDiscover(0)
@@ -156,7 +216,7 @@ define void TestNetworking(FileHandle* stdio) {
 
     ;TCP->BindSocket(42830 As i16, Socket)
     ;TCP->BindSocket(7777 As i16, Socket)
-    Network->BindTCP(0x0_0_0_0, 7777 As i16, Socket)
+    Network->Bind(IPv4("127.0.0.1"), 7777 As i16, Socket)
 
     ;Socket->Connect(PackIPV4(10, 0, 2, 2), 7778)
 

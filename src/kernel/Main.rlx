@@ -552,11 +552,13 @@ define void MainContinuation() {
 	;/*
 	;SetupNetworking()
 
-	Task* NetworkThread := Scheduler->AddLightTask(&TestNetworking)
-
-	NetworkThread~>Context->RDI := KernelTerminal As i64
-	
+	Task* NetworkThread := Scheduler->AddLightTask(null)
+	NetworkThread~>Context->Call(&SocketListener)
 	NetworkThread->State := TASK_CAN_RUN
+
+	Task* NetworkThread2 := Scheduler->AddLightTask(null)
+	NetworkThread2~>Context->Call(&SocketClient)
+	NetworkThread2->State := TASK_CAN_RUN
 
 	StartScheduler()
 	;*/
