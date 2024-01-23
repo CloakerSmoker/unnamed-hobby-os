@@ -84,6 +84,9 @@ struct ARPLayer {
     NetworkInterface* Interface
     NetworkProtocol* LinkLayer
 
+    NetworkInterfaceKnob* SpewInOut
+    NetworkInterfaceKnob* SpewCache
+
     AVLTree* Cache ; <i32, ARPTableEntry>
 
     static self* New(NetworkInterface* Interface, NetworkProtocol* LinkLayer) {
@@ -100,6 +103,9 @@ struct ARPLayer {
 
         Ethernet->AddEtherType(ETHERTYPE_ARP, ThisProtocol)
 
+        this->SpewInOut := Interface->DefineKnob("ARP.SpewInOut", NetworkInterfaceKnobType::Toggle)
+        this->SpewCache := Interface->DefineKnob("ARP.SpewCache", NetworkInterfaceKnobType::Toggle)
+
         return this
     }
 
@@ -108,7 +114,9 @@ struct ARPLayer {
             Destination := MAC_BROADCAST
         }
 
-        Info("ARP: Building ARP packet to %mac\n", Destination)
+        if (this->SpewInOut->ToggleValue) {
+            Info("ARP: Building ARP packet to %mac\n", Destination)
+        }
 
         EthernetPacketOptions Options {
             EtherType: ETHERTYPE_ARP,
@@ -152,6 +160,12 @@ struct ARPLayer {
         Body~>TargetHardwareAddress->Set(TargetHardwareAddress)
         Body->TargetProtocolAddress := TargetProtocolAddress
 
+        if (this->SpewInOut->ToggleValue) {
+            if (TargetHardwareAddress = MAC_NULL) {
+                this->Interface->Info("ARP: Looking up %ipv4", TargetProtocolAddress)
+            }
+        }
+
         this->Send(Packet)
     }
 
@@ -177,7 +191,9 @@ struct ARPLayer {
             ProtocolAddress: ProtocolAddress
         }
 
-        Info("ARP: Cache %ipv4 -> %mac\n", ProtocolAddress, HardwareAddress)
+        if (this->SpewCache->ToggleValue) {
+            this->Interface->Info("ARP: Cache %ipv4 -> %mac\n", ProtocolAddress, HardwareAddress)
+        }
 
         Entry~>HardwareAddress->Set(HardwareAddress)
 
@@ -191,9 +207,11 @@ struct ARPLayer {
     }
 
     define void EvictProtocolAddress(i32 ProtocolAddress) {
-        Info("ARP: Evict %ipv4\n", ProtocolAddress)
+        if (this->SpewCache->ToggleValue) {
+            this->Interface->Info("ARP: Evict %ipv4\n", ProtocolAddress)
+        }
 
-        this->Cache->Print()
+        ;this->Cache->Print()
 
         this->Cache->Remove(ProtocolAddress)
     }
@@ -229,23 +247,23 @@ struct ARPLayer {
         Header->FlipEndianess()
 
         if (Header->HardwareType != ARP_HARDWARE_TYPE_ETHERNET) {
-            Info("ARP: Bad packet recieved from %mac, unknown hardware type %x\n", Ethernet~>Source, Header->HardwareType)
+            this->Interface->Info("ARP: Bad packet recieved from %mac, unknown hardware type %x\n", Ethernet~>Source, Header->HardwareType)
             return
         }
         else if (Header->HardwareSize != 6) {
-            Info("ARP: Bad packet recieved from %mac, wrong hardware size %i\n", Ethernet~>Source, Header->HardwareSize)
+            this->Interface->Info("ARP: Bad packet recieved from %mac, wrong hardware size %i\n", Ethernet~>Source, Header->HardwareSize)
             return
         }
         else if (Header->ProtocolType != ARP_PROTOCOL_TYPE_IPV4) {
-            Info("ARP: Bad packet recieved from %mac, unknown protocol type %x\n", Ethernet~>Source, Header->ProtocolType)
+            this->Interface->Info("ARP: Bad packet recieved from %mac, unknown protocol type %x\n", Ethernet~>Source, Header->ProtocolType)
             return
         }
         else if (Header->ProtocolSize != 4) {
-            Info("ARP: Bad packet recieved from %mac, wrong protocol size %i\n", Ethernet~>Source, Header->ProtocolSize)
+            this->Interface->Info("ARP: Bad packet recieved from %mac, wrong protocol size %i\n", Ethernet~>Source, Header->ProtocolSize)
             return
         }
         else if (Header->Opcode != ARP_OPCODE_REPLY && Header->Opcode != ARP_OPCODE_REQUEST) {
-            Info("ARP: Bad packet recieved from %mac, unknown opcode %x\n", Ethernet~>Source, Header->Opcode)
+            this->Interface->Info("ARP: Bad packet recieved from %mac, unknown opcode %x\n", Ethernet~>Source, Header->Opcode)
             return
         }
 

@@ -31,6 +31,8 @@ struct EthernetLayer {
 
     AVLTree* EtherTypeHandlers ; <i16, NetworkProtocol>
 
+    NetworkInterfaceKnob* SpewInOut
+
     declare void Ingest(NetworkPacket*)
 
     static self* New(NetworkInterface* Interface) {
@@ -43,6 +45,8 @@ struct EthernetLayer {
         Interface->ReceiveProtocol := this->AsProtocol
 
         this->EtherTypeHandlers := AVLTree:New(#NetworkProtocol*)
+
+        this->SpewInOut := Interface->DefineKnob("Ethernet.SpewInOut", NetworkInterfaceKnobType::Toggle)
 
         return this
     }
@@ -70,7 +74,9 @@ struct EthernetLayer {
 
         EthernetHeader* Header := Packet->Get(PACKET_DATA_ETHERNET)
 
-        Info("Ethernet: Send %mac -> %mac\n", Header~>Source, Header~>Destination)
+        if (this->SpewInOut->ToggleValue) {
+            this->Interface->Info("Ethernet: Send %mac -> %mac", Header~>Source, Header~>Destination)
+        }
 
         ;Info("%hexdump\n", Packet->Buffer, Packet->Size)
 
@@ -84,12 +90,12 @@ struct EthernetLayer {
 
         Header->FlipEndianess()
 
-        Info("Packet: %hexdump\n", Packet->Buffer, Packet->Size)
-
-        Info("Ethernet: Received %x byte packet from %mac to %mac\n", Packet->Size, Header~>Source, Header~>Destination)
+        if (this->SpewInOut->ToggleValue) {
+            this->Interface->Info("Ethernet (%mac): Received %x byte packet from %mac to %mac", this->Interface->MAC, Packet->Size, Header~>Source, Header~>Destination)
+        }
 
         if !(Header~>Destination->Equals(this->Interface->MAC) || Header~>Destination->IsBroadcast?()) {
-            Info("Ethernet: Dropping packet from %mac for bad destination MAC\n", Header~>Source)
+            this->Interface->Info("Ethernet: Dropping packet from %mac for bad destination MAC", Header~>Source)
 
             return
         }
@@ -97,7 +103,7 @@ struct EthernetLayer {
         NetworkProtocol* Protocol := this->EtherTypeHandlers->GetPointer(Header->EtherType)
 
         if !(Protocol) {
-            Info("Ethernet: Dropping packet from %mac for unknown ethertype %x\n", Header~>Source, Header->EtherType)
+            this->Interface->Info("Ethernet: Dropping packet from %mac for unknown ethertype %x", Header~>Source, Header->EtherType)
             return
         }
 

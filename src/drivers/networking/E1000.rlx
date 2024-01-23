@@ -632,7 +632,7 @@ NetworkProtocolPrototype E1000NetworkProtocolPrototype {
 }
 
 define NetworkInterface* MakeNetworkInterfaceFromE1000(E1000* Device) {
-	NetworkInterface* Interface := NetworkInterface:New()
+	NetworkInterface* Interface := NetworkInterface:New("eth0")
 
 	Device->Interface := Interface
 	Interface->MAC := Device~>MAC

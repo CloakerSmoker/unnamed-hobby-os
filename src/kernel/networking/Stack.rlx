@@ -4,7 +4,22 @@
 
 declare WellKnownProtocols* AttachWellKnownProtocols(NetworkInterface*)
 
+enum NetworkInterfaceKnobType {
+    Toggle
+}
+
+struct NetworkInterfaceKnob {
+    NetworkInterfaceKnobType Type
+
+    union {
+        i8 ToggleValue
+        i64 FullValue
+    }
+}
+
 struct NetworkInterface {
+    i8* Name
+
     MACAddress* MAC
     i32 Gateway
     MACAddress* GatewayMAC
@@ -12,20 +27,55 @@ struct NetworkInterface {
     i32 MTU
     i32 DNS
 
+    AVLTree* Knobs ; <FNV1A(Name), NetworkInterfaceKnob>
+
     AVLTree* Protocols ; <FNV1A(Name), NetworkProtocol*>
     WellKnownProtocols* WellKnownProtocols
 
     NetworkProtocol* SendProtocol
     NetworkProtocol* ReceiveProtocol
 
-    static self* New() {
+    static self* New(i8* Name) {
         self* this := Alloc(#self)
-
+        
+        this->Name := Name
         this->Protocols := AVLTree:New(#void*)
+
+        this->Knobs := AVLTree:New(#NetworkInterfaceKnob)
 
         this->MTU := 1400
 
         return this
+    }
+
+    define NetworkInterfaceKnob* DefineKnob(i8* Name, NetworkInterfaceKnobType Type) {
+        i64 Hash := FNV1A(Name)
+
+        NetworkInterfaceKnob Knob {
+            Type: Type,
+            FullValue: 0
+        }
+
+        this->Knobs->Insert(Hash, &Knob)
+
+        return this->Knobs->Get(Hash)
+    }
+
+    define void SetKnobToggle(i8* Name, i8 Value) {
+        NetworkInterfaceKnob* Knob := this->Knobs->Get(FNV1A(Name))
+
+        if (Knob->Type = NetworkInterfaceKnobType::Toggle) {
+            Knob->ToggleValue := Value
+        }
+    }
+
+    define void Info(i8* Format, ... Args) {
+        i8[200] Buffer
+
+        i32 Length := FormatString(Buffer, 200, "[%s] %s\n", this->Name, Format)
+        Buffer[Length] := 0
+
+        RawInfo(Buffer, Args)
     }
 
     define NetworkProtocol* AddProtocol(i8* Name, NetworkProtocolPrototype* Prototype, void* State) {
@@ -218,14 +268,14 @@ struct NetworkStack {
         return TCPSocket:New()
     }
 
-    define void BindTCP(i32 Address, i16 Port, TCPSocket* Socket) {
+    define void Bind(i32 Address, i16 Port, TCPSocket* Socket) {
         NetworkRoute* Route := this->Lookup(Address)
         TCPLayer* TCP := Route->Interface->WellKnownProtocols->TCP
 
         TCP->Bind(Port, Socket)
     }
     
-    define void ConnectTCP(TCPSocket* Socket, i32 Address, i16 Port) {
+    define void Connect(TCPSocket* Socket, i32 Address, i16 Port) {
         NetworkRoute* Route := this->Lookup(Address)
         TCPLayer* TCP := Route->Interface->WellKnownProtocols->TCP
 

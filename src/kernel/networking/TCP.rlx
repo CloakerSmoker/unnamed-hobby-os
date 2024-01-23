@@ -264,20 +264,20 @@ struct TCPSocket {
 
     define void IngestInfo(i8* Format, ... Args) {
         i8[200] Buffer
-        i32 Length := FormatString(Buffer, 200, "TCP(%ipv4:%net-port <-> :%net-port) IN %i [%tcp-flags] %s\n", this->RemoteAddress, this->RemotePort, this->LocalPort, this~>RecieveCounters->Packets, this->CurrentHeader->Flags, Format)
+        i32 Length := RawFormatString(Buffer, 200, Format, Args)
         Buffer[Length] := 0
 
-        RawInfo(Buffer, Args)
+        this->Interface->Info("TCP(%ipv4:%net-port <-> :%net-port) IN %i [%tcp-flags] %s", this->RemoteAddress, this->RemotePort, this->LocalPort, this~>RecieveCounters->Packets, this->CurrentHeader->Flags, Buffer)
     }
 
     define void EgressInfo(TCPFrame* Frame, i8* Format, ... Args) {
         i8[200] Buffer
-        i32 Length := FormatString(Buffer, 200, "TCP(%ipv4:%net-port <-> :%net-port) OUT %i [%tcp-flags] %s\n", this->RemoteAddress, this->RemotePort, this->LocalPort, Frame->FrameNumber, Frame->Flags, Format)
+        i32 Length := RawFormatString(Buffer, 200, Format, Args)
         Buffer[Length] := 0
 
         ;Info("RawInfo(%s)\n", Buffer)
 
-        RawInfo(Buffer, Args)
+        this->Interface->Info("TCP(%ipv4:%net-port <-> :%net-port) OUT %i [%tcp-flags] %s", this->RemoteAddress, this->RemotePort, this->LocalPort, Frame->FrameNumber, Frame->Flags, Buffer)
     }
 
     define NetworkPacket* Enter(void* Options) {
@@ -716,7 +716,7 @@ struct TCPSocket {
                 Child->BindInterface(this->Interface, this->Transport)
                 Child->Request(this->LocalPort, IP->Source, TCP->SourcePort)
 
-                this->IngestInfo("LISTEN -> ACCEPT_WAIT")
+                this->IngestInfo("LISTEN +> ACCEPT_WAIT (for %ipv4:%net-port)", IP->Source, TCP->SourcePort)
 
                 this->Children->InsertPointer(ChildID, Child)
             }
@@ -1011,6 +1011,12 @@ struct TCPSocket {
         return 0
     }
 
+    define void Flush() {
+        while (this->OldestFrame) {
+            SchedulerYield()
+        }
+    }
+
     define void Close() {
         this->State := TCP_SOCKET_STATE_FIN_WAIT_1
         this->DrainQueue()
@@ -1154,8 +1160,16 @@ struct TCPLayer {
         NetworkProtocol* Handler := this->Sockets->GetPointer(TCP->DestinationPort)
 
         if (Handler = null) {
-            Info("TCP: Dropping packet from %ipv4:%i -> :%i\n", IPV4->Source, (TCP->SourcePort As i64) & 0xFFFF, (TCP->DestinationPort As i64) & 0xFFFF)
+            this->Interface->Info("TCP: Dropping packet from %ipv4:%net-port -> :%net-port (no answer)", IPV4->Source, TCP->SourcePort, TCP->DestinationPort)
             return
+        }
+
+        TCPSocket* Socket := Handler->this
+
+        if (Socket->State != TCP_SOCKET_STATE_LISTEN) {
+            if (IPV4->Source != Socket->RemoteAddress || TCP->SourcePort != Socket->RemotePort) {
+                this->Interface->Info("TCP: Dropping packet from %ipv4:%net-port -> :%net-port (already connected to %ipv4:%net-port)", IPV4->Source, TCP->SourcePort, TCP->DestinationPort, Socket->RemoteAddress, Socket->RemotePort)
+            }
         }
 
         Handler->Ingest(Packet)
