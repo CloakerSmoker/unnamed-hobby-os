@@ -116,12 +116,22 @@ define void SetPITMode(PITCounterMode* Mode) {
 define void SleepTicks(i32 Ticks) {
 	i64 End := TickCount + Ticks
 	
-	while (TickCount < End) {}
+	if (IsSchedulerActive()) {
+		while (TickCount < End) {}
+	}
+	else {
+		while (TickCount < End) { SchedulerYield() }
+	}
 }
 define void SleepMS(i32 Milliseconds) {
 	i64 End := PITWhole + Milliseconds
 	
-	while (PITWhole < End) {}
+	if (IsSchedulerActive()) {
+		while (PITWhole < End) { SchedulerYield() }
+	}
+	else {
+		while (PITWhole < End) {}
+	}
 }
 
 define void PlayRawSound(i32 Counter) {
