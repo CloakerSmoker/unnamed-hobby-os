@@ -305,3 +305,15 @@ define i16 RFC1071Checksum(void* Data, i32 Size) {
 define i32 PackIPV4(i32 A, i32 B, i32 C, i32 D) {
     return (A << 24) | (B << 16) | (C << 8) | (D << 0)
 }
+
+enum NetworkAddressType {
+    IPv4
+}
+
+struct NetworkAddress {
+    NetworkAddressType Type
+
+    union {
+        i32 IPv4
+    }
+}
