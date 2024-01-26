@@ -106,8 +106,7 @@ i32 PACKET_DATA_TCP_BODY := RegisterPacketData("TCP Body")
 
 declare NetworkProtocolPrototype* GetTCPSocketProtocolPrototype()
 
-
-
+;i8 TCP_SOCKET_STATE_NONE := 0
 i8 TCP_SOCKET_STATE_LISTEN := 1
 i8 TCP_SOCKET_STATE_SYNCHRONIZE_SENT := 2
 i8 TCP_SOCKET_STATE_SYNCHRONIZE_RECEIVED := 3
@@ -126,7 +125,13 @@ i8 TCP_SOCKET_STATE_CLOSING := 12
 
 i8 TCP_SOCKET_STATE_ACCEPT_WAIT := 13
 
-
+enum TCPError {
+    Ok,
+    PortBusy,
+    NotBound,
+    InvalidState,
+    NothingToAccept
+}
 
 struct TCPFrame {
     void* Data
@@ -218,6 +223,16 @@ struct TCPSocket {
         self* this := Alloc(#self)
 
         this->Children := AVLTree:New(#void*)
+
+        this->SequenceNumberBase := 0x1000_0000
+        this->NextSequenceNumber := 0
+        this->RemoteWindowSize := 1
+        this->MaximumSegmentSize := 1200
+
+        this->RoundTripSum := 200
+        this->RoundTripCount := 1
+
+        this->State := TCP_SOCKET_STATE_CLOSED
 
         return this
     }
@@ -865,17 +880,7 @@ struct TCPSocket {
         }
     }
 
-    define void Initialize() {
-        this->SequenceNumberBase := 0x1000_0000
-        this->NextSequenceNumber := 0
-        this->RemoteWindowSize := 1
-        this->MaximumSegmentSize := 1200
-
-        this->RoundTripSum := 200
-        this->RoundTripCount := 1
-
-        this->State := TCP_SOCKET_STATE_CLOSED
-    }
+    ; "API" stuff
 
     define void InitializeDataFlow() {
         this->RecieveWindow := Alloc(0x1_0000)
@@ -885,8 +890,6 @@ struct TCPSocket {
     }
 
     define void Request(i16 LocalPort, i32 RemoteAddress, i16 RemotePort) {
-        this->Initialize()
-
         this->LocalPort := LocalPort
         this->RemoteAddress := RemoteAddress
         this->RemotePort := RemotePort
@@ -924,22 +927,31 @@ struct TCPSocket {
         return null
     }
 
-    define TCPSocket* Accept() {
+    ; Actual API
+
+    define TCPError Accept(TCPSocket** Out) {
+        if (this->State != TCP_SOCKET_STATE_LISTEN) {
+            return TCPError::InvalidState
+        }
+
         loop {
             TCPSocket* Child := this->FindAcceptCandidate()
 
             if (Child) {
-                return Child->AcceptSelf()
+                *Out := Child->AcceptSelf()
+                return TCPError::Ok
             }
 
             SchedulerYield()
         }
 
-        return null
+        return TCPError::NothingToAccept
     }
 
-    define void Connect(i32 RemoteAddress, i16 RemotePort) {
-        this->Initialize()
+    define TCPError Connect(i32 RemoteAddress, i16 RemotePort) {
+        if (this->State != TCP_SOCKET_STATE_CLOSED) {
+            return TCPError::InvalidState
+        }
 
         this->RemoteAddress := RemoteAddress
         this->RemotePort := RemotePort
@@ -952,63 +964,76 @@ struct TCPSocket {
         Frame->Synchronize := true
 
         this->QueueFrame(Frame)
+
+        return TCPError::Ok
     }
 
-    define void Listen() {
-        this->Initialize()
+    define TCPError Listen() {
+        if (this->State != TCP_SOCKET_STATE_CLOSED) {
+            return TCPError::InvalidState
+        }
 
         this->State := TCP_SOCKET_STATE_LISTEN
     }
 
-    define i32 Poll(i32 Mode) {
+    define TCPError Poll(i32 Mode, i32* Out) {
+        *Out := 0
+
         if (this->State = TCP_SOCKET_STATE_LISTEN) {
             if (Mode & POLL_FOR_READ) {
-                return this->FindAcceptCandidate() != null
+                if (this->FindAcceptCandidate() != null) {
+                    *Out |= POLL_CAN_READ
+                }
+
+                return TCPError::Ok
             }
         }
         else if (this->State = TCP_SOCKET_STATE_ESTABLISHED) {
             if (Mode & POLL_FOR_READ) {
-                return this->RecieveWindowTail
+                if (this->RecieveWindowTail) {
+                    *Out |= POLL_CAN_WRITE
+                }
+
+                return TCPError::Ok
             }
-        }
-        else {
-            return 0
-        }
-
-        return 0
-    }
-
-    define i32 Send(void* Buffer, i32 Size) {
-        if (this->State = TCP_SOCKET_STATE_ESTABLISHED) {
-            this->QueueData(Buffer, Size)
-
-            return Size
-        }
-
-        return 0
-    }
-
-    define i32 Recieve(void* Buffer, i32 MaximumSize) {
-        if (this->State = TCP_SOCKET_STATE_ESTABLISHED) {
-            while (this->RecieveWindowTail = 0) { SchedulerYield() }
-
-            i32 ReadSize := MaximumSize
-
-            if (MaximumSize > this->RecieveWindowTail) {
-                ReadSize := this->RecieveWindowTail
-            }
-
-            MoveMemory(Buffer, this->RecieveWindow, ReadSize)
-
-            this->RemoteSequenceBase += ReadSize
-            this->RecieveWindowTail -= ReadSize
-
-            MoveMemory(this->RecieveWindow, this->RecieveWindow + ReadSize, this->RecieveWindowTail)
-
-            return ReadSize
         }
         
-        return 0
+        return TCPError::InvalidState
+    }
+
+    define TCPError Send(void* Buffer, i32 Size, i32* Out) {
+        if (this->State != TCP_SOCKET_STATE_ESTABLISHED) {
+            return TCPError::InvalidState    
+        }
+
+        this->QueueData(Buffer, Size)
+        *Out := Size
+
+        return TCPError::Ok
+    }
+
+    define TCPError Recieve(void* Buffer, i32 MaximumSize, i32* Out) {
+        if (this->State != TCP_SOCKET_STATE_ESTABLISHED) {
+            return TCPError::InvalidState
+        }
+
+        while (this->RecieveWindowTail = 0) { SchedulerYield() }
+
+        i32 ReadSize := MaximumSize
+
+        if (MaximumSize > this->RecieveWindowTail) {
+            ReadSize := this->RecieveWindowTail
+        }
+
+        MoveMemory(Buffer, this->RecieveWindow, ReadSize)
+
+        this->RemoteSequenceBase += ReadSize
+        this->RecieveWindowTail -= ReadSize
+
+        MoveMemory(this->RecieveWindow, this->RecieveWindow + ReadSize, this->RecieveWindowTail)
+
+        *Out := ReadSize
+        return TCPError::Ok
     }
 
     define void Flush() {
@@ -1175,22 +1200,28 @@ struct TCPLayer {
         Handler->Ingest(Packet)
     }
 
-    define void Bind(i16 LocalPort, TCPSocket* Socket) {
+    define TCPError Bind(i16 LocalPort, TCPSocket* Socket) {
+        if (this->Sockets->Has(LocalPort)) {
+            return TCPError::PortBusy
+        }
+
         Socket->BindInterface(this->Interface, this->AsProtocol)
 
         Socket->LocalPort := LocalPort
 
         this->Sockets->InsertPointer(LocalPort, Socket->AsProtocol)
+
+        return TCPError::Ok
     }
     
-    define void Connect(TCPSocket* Socket, i32 Address, i16 Port) {
+    define TCPError Connect(TCPSocket* Socket, i32 Address, i16 Port) {
         Socket->BindInterface(this->Interface, this->AsProtocol)
 
         Socket->LocalPort := (TCP_OUTGOING_PORT_BASE + this->Sockets->Count()) As i16
 
         this->Sockets->InsertPointer(Socket->LocalPort, Socket->AsProtocol)
 
-        Socket->Connect(Address, Port)
+        return Socket->Connect(Address, Port)
     }
 }
 

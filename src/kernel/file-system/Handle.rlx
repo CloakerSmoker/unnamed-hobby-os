@@ -97,15 +97,16 @@ struct FileHandlePrototype {
 		return 0
 	}
 
-	i32(void*, NetworkAddress*, i32) Connect
+	i32(void*, NetworkAddress*) Connect
 
 	i32(void*) Listen
-	FileHandle*(void*, NetworkAddress*, i32) Accept
+	i32(void*, NetworkAddress*) Bind
+	FileHandle*(void*, NetworkAddress*) Accept
 
 	i32(void*, void*, i32) Send
-	i32(void*, void*, i32, NetworkAddress*, i32) SendTo
+	i32(void*, void*, i32, NetworkAddress*) SendTo
 	i32(void*, void*, i32) Recieve
-	i32(void*, void*, i32, NetworkAddress*, i32) RecieveFrom
+	i32(void*, void*, i32, NetworkAddress*) RecieveFrom
 
 	define i64 DefaultNotSupported() {
 		Throw(HANDLE_ERROR_NOT_SUPPORTED)
@@ -162,7 +163,9 @@ define i32 RegisterHandlePrototype(FileHandlePrototype* Prototype) {
 	}
 
 	if !(Prototype->Connect) { Prototype->Connect := Unsupported }
+
 	if !(Prototype->Listen) { Prototype->Listen := Unsupported }
+	if !(Prototype->Bind) { Prototype->Bind := Unsupported }
 	if !(Prototype->Accept) { Prototype->Accept := Unsupported }
 
 	if !(Prototype->Send) { Prototype->Send := Unsupported }
@@ -239,32 +242,36 @@ struct FileHandle {
 		return this->Prototype->MapIntoMemory(this, Mappings, Where, Offset, Size)
 	}
 
-	define i32 Connect(NetworkAddress* Address, i32 AddressSize) {
-		return this->Prototype->Connect(this, Address, AddressSize)
+	define i32 Connect(NetworkAddress* Address) {
+		return this->Prototype->Connect(this, Address)
 	}
 
 	define i32 Listen() {
 		return this->Prototype->Listen(this)
 	}
 
-	define FileHandle* Accept(NetworkAddress* Address, i32 AddressSize) {
-		return this->Prototype->Accept(this, Address, AddressSize)
+	define i32 Bind(NetworkAddress* Address) {
+		return this->Prototype->Bind(this, Address)
+	}
+
+	define FileHandle* Accept(NetworkAddress* Address) {
+		return this->Prototype->Accept(this, Address)
 	}
 
 	define i32 Send(void* Buffer, i32 Size) {
 		return this->Prototype->Send(this, Buffer, Size)
 	}
 
-	define i32 SendTo(void* Buffer, i32 Size, NetworkAddress* Address, i32 AddressSize) {
-		return this->Prototype->SendTo(this, Buffer, Size, Address, AddressSize)
+	define i32 SendTo(void* Buffer, i32 Size, NetworkAddress* Address) {
+		return this->Prototype->SendTo(this, Buffer, Size, Address)
 	}
 
 	define i32 Recieve(void* Buffer, i32 Size) {
 		return this->Prototype->Recieve(this, Buffer, Size)
 	}
 
-	define i32 RecieveFrom(void* Buffer, i32 Size, NetworkAddress* Address, i32 AddressSize) {
-		return this->Prototype->RecieveFrom(this, Buffer, Size, Address, AddressSize)
+	define i32 RecieveFrom(void* Buffer, i32 Size, NetworkAddress* Address) {
+		return this->Prototype->RecieveFrom(this, Buffer, Size, Address)
 	}
 }
 

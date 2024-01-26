@@ -316,4 +316,8 @@ struct NetworkAddress {
     union {
         i32 IPv4
     }
+
+    union {
+        i16 Port
+    }
 }
