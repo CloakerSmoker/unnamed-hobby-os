@@ -1,0 +1,58 @@
+
+declare FileHandlePrototype* GetUDPSocketHandlePrototype()
+
+struct UDPSocketHandle {
+    #Include "./src/kernel/file-system/HandleInstance.rlx"
+
+    i8 HasLocalPort
+    UDPSocket* Socket
+
+    static FileHandle* New() {
+        self* this := Alloc(#self)
+
+        this->Prototype := GetUDPSocketHandlePrototype()
+
+        this->Socket := Network->CreateUDP()
+
+        return this
+    }
+
+    define i32 Bind(NetworkAddress* Address) {
+        if (Address->Type != NetworkAddressType::IPv4) {
+            Throw(LINUX_ERROR_OPNOTSUPP)
+        }
+
+        UDPError Error := Network->Bind(Address->IPv4, Address->Port, this->Socket)
+
+        if (Error = UDPError::PortBusy) {
+            Throw(LINUX_ERROR_ADDRINUSE)
+        }
+        else if (Error != UDPError::Ok) {
+            Throw(LINUX_ERROR_INVAL)
+        }
+
+        return 0
+    }
+
+    define i32 Poll(i32 Mode) {
+        return this->Socket->Poll(Mode)
+    }
+
+    define i32 SendTo(void* Buffer, i32 Size, NetworkAddress* Address) {
+        if !(this->HasLocalPort) {
+            Network->Bind(Address, NextUDPConnectionPort++)
+
+            this->HasLocalPort := true
+        }
+
+        return this->Socket->SendTo(Buffer, Size, Address)
+    }
+
+    define i32 RecieveFrom(void* Buffer, i32 Size, NetworkAddress* Address) {
+        return this->Socket->RecieveFrom(Buffer, Size, Address)
+    }
+
+    define void Close() {
+        
+    }
+}

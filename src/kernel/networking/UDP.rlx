@@ -34,13 +34,119 @@ struct UDPPacketOptions {
     i16 DestinationPort
 }
 
+enum UDPError {
+    Ok := 0,
+    PortBusy := 1
+}
+
+declare NetworkProtocolPrototype* GetUDPSocketProtocolPrototype()
+
+i16 NextUDPConnectionPort := 49152 As i16
+
+struct UDPSocket {
+    NetworkInterface* Interface
+    NetworkProtocol* Transport
+
+    NetworkProtocol* AsProtocol
+
+    i16 LocalPort
+
+    NetworkPacket* LastPacket
+
+    static self* New() {
+        return Alloc(#self)
+    }
+
+    define void BindInterface(NetworkInterface* Interface, NetworkProtocol* Transport) {
+        this->Interface := Interface
+        this->Transport := Transport
+
+        this->AsProtocol := Interface->AddEphemeralProtocol(GetUDPSocketProtocolPrototype(), this) this)
+    }
+
+    define void Ingest(NetworkPacket* Packet) {
+        IPV4Header* IP := Packet->Get(PACKET_DATA_IPV4_HEADER)
+
+        if (this->LastRecieved) {
+            this->LastRecieved->Free()
+        }
+
+        this->LastRecieved := Packet->Clone()
+    }
+
+    define i32 Poll(i32 Mask) {
+        i32 Result := 0
+
+        if (Mask & POLL_FOR_READ) {
+            if (this->LastRecieved != null) {
+                Result |= POLL_CAN_READ
+            }
+        }
+
+        if (Mask & POLL_FOR_WRITE) {
+            Result |= POLL_CAN_WRITE
+        }
+
+        return Result
+    }
+
+    define void SendTo(NetworkAddress* Address, void* Data, i32 Size) {
+        UDPPacketOptions Options {
+            SourcePort: this->LocalPort,
+            Destination: Address->IPv4,
+            DestinationPort: Address->Port
+        }
+
+        NetworkPacket* Packet := this->Transport->Enter(&Options)
+
+        MoveMemory(Packet->Bump(Size), Data, Size)
+
+        this->Transport->Send(Packet)
+    }
+
+    define i32 ReceiveFrom(NetworkAddress* OutAddress, void* Buffer, i32 MaxSize) {
+        NetworkPacket* Packet := this->LastRecieved
+        IPV4Header* IPv4 := Packet->Get(PACKET_DATA_IPV4_HEADER)
+        UDPHeader* UDP := Packet->Get(PACKET_DATA_UDP_HEADER)
+
+        OutAddress->Type := NetworkAddressType::IPv4
+        OutAddress->IPv4 := IPv4->SourceAddress
+        OutAddress->Port := UDP->SourcePort
+
+        void* Data := Packet->GetEnd(PACKET_DATA_UDP_HEADER)
+        i32 DataOffset := Packet->Tell() - Packet->GetEndOffset(PACKET_DATA_UDP_HEADER)
+
+        i32 DataSize := UDP->Length - DataOffset - #UDPHeader
+        i32 Result := MaxSize
+
+        if (DataSize < MaxSize) {
+            Result := DataSize   
+        }
+
+        MoveMemory(Buffer, Data, Result)
+
+        Packet->Free()
+        this->LastRecieved := null
+
+        return Result
+    }
+}
+
+NetworkProtocolPrototype UDPSocketProtocolPrototype {
+    Ingest: &UDPSocket.Ingest
+}
+
+define NetworkProtocolPrototype* GetUDPSocketProtocolPrototype() {
+    return &UDPSocketProtocolPrototype
+}
+
 struct UDPLayer {
     NetworkInterface* Interface
     NetworkProtocol* Transport
 
     NetworkProtocol* AsProtocol
 
-    AVLTree* PortHandlers ; <i16, NetworkProtocol*>
+    AVLTree* Sockets ; <i16, NetworkProtocol*>
 
 	static self* New(NetworkInterface* Interface, NetworkProtocol* Transport) {
 		self* this := Alloc(#self)
@@ -54,7 +160,7 @@ struct UDPLayer {
 
         IPV4->AddProtocol(IPV4_PROTOCOL_UDP, this->AsProtocol)
 
-        this->PortHandlers := AVLTree:New(#NetworkProtocol*)
+        this->Sockets := AVLTree:New(#NetworkProtocol*)
 
 		return this
 	}
@@ -118,17 +224,13 @@ struct UDPLayer {
         return RFC1071ChecksumFinish(State)
     }
 
-    define void ListenPort(i16 Port, NetworkProtocol* Handler) {
-        this->PortHandlers->InsertPointer(Port, Handler)
-    }
-
     define void Ingest(NetworkPacket* Packet) {
         IPV4Header* IPV4 := Packet->Get(PACKET_DATA_IPV4_HEADER)
         UDPHeader* UDP := Packet->Mark(PACKET_DATA_UDP_HEADER, #UDPHeader)
 
         UDP->FlipEndianess()
 
-        NetworkProtocol* Handler := this->PortHandlers->GetPointer(UDP->DestinationPort)
+        NetworkProtocol* Handler := this->Sockets->GetPointer(UDP->DestinationPort)
 
         Info("UDP: Packet checksum: Given = %x, Calculated = %x\n", UDP->Checksum, this->Checksum(Packet))
 
@@ -138,6 +240,18 @@ struct UDPLayer {
         }
 
         Handler->Ingest(Packet)
+    }
+
+    define UDPError Bind(i16 LocalPort, UDPSocket* Socket) {
+        if (this->Sockets->Has(LocalPort)) {
+            return UDPError::PortBusy
+        }
+
+        Socket->LocalPort := LocalPort
+
+        this->Sockets->InsertPointer(LocalPort, Socket->AsProtocol)
+
+        return UDPError::Ok
     }
 }
 

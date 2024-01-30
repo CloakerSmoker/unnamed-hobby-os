@@ -1,0 +1,121 @@
+
+declare FileHandlePrototype* GetTCPSocketHandlePrototype()
+
+struct TCPSocketHandle {
+    #Include "./src/kernel/file-system/HandleInstance.rlx"
+
+    TCPSocket* Socket
+
+    static FileHandle* New() {
+        self* this := Alloc(#self)
+
+        this->Prototype := GetTCPSocketHandlePrototype()
+
+        this->Socket := Network->CreateTCP()
+
+        return this
+    }
+
+    define void Connect(NetworkAddress* Address) {
+        TCPError Error := this->Socket->Connect(Address)
+
+        if (Error = TCPError::InvalidState) {
+            Throw(LINUX_ERROR_OPNOTSUPP)
+        }
+        else if (Error != TCPError::Ok) {
+            Throw(LINUX_ERROR_INVAL)
+        }
+    }
+
+    define i32 Listen() {
+        TCPError Error := this->Socket->Listen()
+
+        if (Error = TCPError::InvalidState) {
+            Throw(LINUX_ERROR_OPNOTSUPP)
+        }
+        else if (Error != TCPError::Ok) {
+            Throw(LINUX_ERROR_INVAL)
+        }
+
+        return 0
+    }
+
+    define i32 Bind(NetworkAddress* Address) {
+        if (Address->Type != NetworkAddressType::IPv4) {
+            Throw(LINUX_ERROR_OPNOTSUPP)
+        }
+
+        TCPError Error := Network->Bind()
+
+        if (Error = TCPError::PortBusy) {
+            Throw(LINUX_ERROR_ADDRINUSE)
+        }
+        else if (Error != TCPError::Ok) {
+            Throw(LINUX_ERROR_INVAL)
+        }
+
+        return 0
+    }
+
+    define FileHandle* Accept(NetworkAddress* Address) {
+        TCPSocket* Result := null
+        TCPError Error := this->Socket->Accept(&Result)
+
+        if (Error = TCPError::InvalidState) {
+            Throw(LINUX_ERROR_OPNOTSUPP)
+        }
+        else if (Error != TCPError::Ok) {
+            Throw(LINUX_ERROR_INVAL)
+        }
+
+        return TCPSocketHandle:New(Result)
+    }
+
+    define i32 Poll(i32 Mode) {
+        i32 Result := 0
+        TCPError Error := this->Socket->Poll(Mode, &Result)
+
+        if (Error = TCPError::InvalidState) {
+            Throw(LINUX_ERROR_OPNOTSUPP)
+        }
+        else if (Error != TCPError::Ok) {
+            Throw(LINUX_ERROR_INVAL)
+        }
+
+        return Result
+    }
+
+    define i32 Send(void* Buffer, i32 Size) {
+        i32 Result := 0
+        TCPError Error := this->Socket->Send(Buffer, Size, &Result)
+
+        if (Error = TCPError::InvalidState) {
+            Throw(LINUX_ERROR_OPNOTSUPP)
+        }
+
+        return Result
+    }
+
+    define i32 Write(void* Buffer, i32 Size) {
+        return this->Send(Buffer, Size)
+    }
+
+    define i32 Recieve(void* Buffer, i32 Size) {
+        i32 Result := 0
+        TCPError Error := this->Socket->Recieve(Buffer, Size, &Result)
+
+        if (Error = TCPError::InvalidState) {
+            Throw(LINUX_ERROR_OPNOTSUPP)
+        }
+
+        return Result
+    }
+
+    define i32 Read(void* Buffer, i32 Size) {
+        return this->Recieve(Buffer, Size)
+    }
+
+    define void Close() {
+        
+    }
+}

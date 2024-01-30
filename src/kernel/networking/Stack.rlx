@@ -271,18 +271,25 @@ struct NetworkStack {
         return TCPSocket:New()
     }
 
-    define void Bind(i32 Address, i16 Port, TCPSocket* Socket) {
+    define TCPError Bind(i32 Address, i16 Port, TCPSocket* Socket) {
         NetworkRoute* Route := this->Lookup(Address)
         TCPLayer* TCP := Route->Interface->WellKnownProtocols->TCP
 
-        TCP->Bind(Port, Socket)
+        return TCP->Bind(Port, Socket)
     }
     
-    define void Connect(TCPSocket* Socket, i32 Address, i16 Port) {
+    define TCPError Connect(TCPSocket* Socket, i32 Address, i16 Port) {
         NetworkRoute* Route := this->Lookup(Address)
         TCPLayer* TCP := Route->Interface->WellKnownProtocols->TCP
 
-        TCP->Connect(Socket, Address, Port)
+        return TCP->Connect(Socket, Address, Port)
+    }
+
+    define UDPError Bind(i32 Address, i16 Port, UDPSocket* Socket) {
+        NetworkRoute* Route := this->Lookup(Address)
+        UDPLayer* UDP := Route->Interface->WellKnownProtocols->UDP
+
+        return UDP->Bind(Port, Socket)
     }
 }
 
