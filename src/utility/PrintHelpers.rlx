@@ -50,3 +50,58 @@ PrintFormatPrototype StackDumpFormatPrototype {
 }
 
 i32 STACK_DUMP_FORMAT_PROTOTYPE_ID := AddPrintFormat(&StackDumpFormatPrototype)
+
+
+define void DoSpecificStackDumpPrint(PrintOutputAdapterPrototype* this, i8* Format, i32* FormatIndex, void* Parameters, i32 ParameterCount, i32* ParameterIndex) {
+	i32 IgnoreFrames := 2
+	
+	void* RSP := Parameters[*ParameterIndex] As void*
+	StackFrame* Last := RSP
+
+	i32 Index := 1
+	
+	while (Last) {
+		if (Last->LastFrame & 1) {
+			StackFrame* Temp := Last->LastFrame - 1
+			
+			if (IgnoreFrames) {
+				IgnoreFrames -= 1
+			}
+			else {
+				this->Print("	Stack[%i] Try catch address = %x\n", Index, Last->ReturnAddress, Temp)
+				Index += 1
+			}
+			
+			Last := Temp
+		}
+		else {
+			if (IgnoreFrames) {
+				IgnoreFrames -= 1
+			}
+			else {
+				i64* MaybeMagic := (Last - 0x8) As i64*
+				i8** MaybeName := (Last - 0x10) As i8**
+				
+				if (Debug && *MaybeMagic = 0x12345678) {
+					this->Print("	Stack[%i] Fn = %s\n", Index, *MaybeName)
+				}
+				else {
+					this->Print("	Stack[%i] Fn callsite = %x\n", Index, Last->ReturnAddress, Last->LastFrame)
+				}
+				
+				Index += 1
+			}
+			
+			Last := Last->LastFrame
+		}
+	}
+
+	*ParameterIndex += 1
+}
+
+PrintFormatPrototype SpecificStackDumpFormatPrototype {
+	Name: "stackdump-for",
+	Format: &DoSpecificStackDumpPrint
+}
+
+i32 SPECIFIC_STACK_DUMP_FORMAT_PROTOTYPE_ID := AddPrintFormat(&SpecificStackDumpFormatPrototype)

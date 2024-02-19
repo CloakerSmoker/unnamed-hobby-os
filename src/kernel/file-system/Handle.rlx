@@ -97,10 +97,10 @@ struct FileHandlePrototype {
 		return 0
 	}
 
-	i32(void*, NetworkAddress*) Connect
+	void(void*, NetworkAddress*) Connect
 
-	i32(void*) Listen
-	i32(void*, NetworkAddress*) Bind
+	void(void*) Listen
+	void(void*, NetworkAddress*) Bind
 	FileHandle*(void*, NetworkAddress*) Accept
 
 	i32(void*, void*, i32) Send
@@ -242,16 +242,16 @@ struct FileHandle {
 		return this->Prototype->MapIntoMemory(this, Mappings, Where, Offset, Size)
 	}
 
-	define i32 Connect(NetworkAddress* Address) {
-		return this->Prototype->Connect(this, Address)
+	define void Connect(NetworkAddress* Address) {
+		this->Prototype->Connect(this, Address)
 	}
 
-	define i32 Listen() {
-		return this->Prototype->Listen(this)
+	define void Listen() {
+		this->Prototype->Listen(this)
 	}
 
-	define i32 Bind(NetworkAddress* Address) {
-		return this->Prototype->Bind(this, Address)
+	define void Bind(NetworkAddress* Address) {
+		this->Prototype->Bind(this, Address)
 	}
 
 	define FileHandle* Accept(NetworkAddress* Address) {

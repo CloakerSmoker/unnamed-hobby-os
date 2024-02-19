@@ -95,7 +95,8 @@ define void SocketListener() {
     Socket->Listen()
 
     loop {
-        TCPSocket* Child := Socket->Accept()
+        TCPSocket* Child := null
+        Socket->Accept(&Child)
 
         while (Child->State != TCP_SOCKET_STATE_ESTABLISHED) { SchedulerYield() }
 
@@ -104,10 +105,12 @@ define void SocketListener() {
         while (Child->State = TCP_SOCKET_STATE_ESTABLISHED) {
             i8[100] Line
 
-            i32 Recv := Child->Poll(POLL_FOR_READ)
+            i32 Recv := 0
+            Child->Poll(POLL_FOR_READ, &Recv)
             
             if (Recv) {
-                i32 Size := Child->Recieve(Line, 100)
+                i32 Size := 0
+                Child->Recieve(Line, 100, &Size)
                 Line[Size] := 0
 
                 Print("\nLoser: %s\n", Line)
@@ -149,10 +152,12 @@ define void TinyNC(FileHandle* stdio, TCPSocket* Socket) {
 
         i8[100] Line
 
-        i32 Recv := Socket->Poll(POLL_FOR_READ)
+        i32 Recv := 0
+        Socket->Poll(POLL_FOR_READ, &Recv)
         
         if (Recv) {
-            i32 Size := Socket->Recieve(Line, 100)
+            i32 Size := 0
+            Socket->Recieve(Line, 100, &Size)
             Line[Size] := 0
 
             Print("\nLoser: %s\n", Line)
@@ -164,7 +169,8 @@ define void TinyNC(FileHandle* stdio, TCPSocket* Socket) {
             i32 Size := stdio->Read(Line, 100)
             Line[Size] := 0
 
-            Socket->Send(CloneMemory(Line, Size), Size)
+            i32 Sent := 0
+            Socket->Send(CloneMemory(Line, Size), Size, &Sent)
         }
 
         SchedulerYield()
@@ -172,6 +178,35 @@ define void TinyNC(FileHandle* stdio, TCPSocket* Socket) {
 }
 
 #Require "./src/kernel/networking/Parse.rlx"
+
+define void SetStatic(NetworkInterface* Interface, i8* RawGateway, i8* RawMe, i8* RawDNS) {
+    i32 Gateway := 0
+    i32 CIDR := 0
+    ParseIPv4CIDR(RawGateway, &Gateway, &CIDR)
+
+    i32 Mask := MaskFromCIDR(CIDR)
+
+    i32 Me := 0
+    ParseIPv4(RawMe, &Me)
+
+    i32 DNS := 0
+    ParseIPv4(RawDNS, &DNS)
+
+    Interface->Gateway := Gateway
+    Interface->Mask := Mask
+
+    Interface->IP := Me
+
+    Interface->DNS := DNS
+
+    AddNetworkRoute(Interface->Gateway & Mask, Mask, Interface)
+    AddNetworkRoute(0, 0, Interface)
+
+    ARPLayer* ARP := Interface->GetProtocol("ARP")->this
+    ARP->Announce()
+
+    Interface->GatewayMAC := ARP->Lookup(Gateway)
+}
 
 define void TestNetworking(FileHandle* stdio) {
     ;SetIP()
@@ -189,12 +224,17 @@ define void TestNetworking(FileHandle* stdio) {
 
     ;/*
     void* nuts := &NetworkPacket.DumpMarkers
+    void* nuts2 := &Task.Dump
 
     NetworkInterface* Interface := Network->Interfaces->At(1)
 
-    ;Interface->SetKnobToggle("Ethernet.SpewInOut", true)
+    SetStatic(Interface, "10.0.2.2/24", "10.0.2.15", "10.0.2.3")
+
+    Interface->SetKnobToggle("Ethernet.SpewInOut", true)
+    Interface->SetKnobToggle("ARP.SpewInOut", true)
     Interface->SetKnobToggle("ARP.SpewGateway", true)
 
+    /*
     DHCPClient* DHCP := Interface->WellKnownProtocols->DHCP
 
     DHCP->SendDiscover(0)
@@ -215,17 +255,29 @@ define void TestNetworking(FileHandle* stdio) {
     Print("DHCP: Gateway: %ipv4. Gateway MAC: %mac\n", Interface->Gateway, Interface->GatewayMAC)
     ;*/
 
+    Print("Gateway: %ipv4\nMask: %ipv4\nMe: %ipv4\nDNS: %ipv4\n", Interface->Gateway, Interface->Mask, Interface->IP, Interface->DNS)
+
+    Network->DumpRoutes()
+
     TCPSocket* Socket := Network->CreateTCP()
 
     Network->Connect(Socket, IPv4("10.2.30.100"), 7778 As i16)
 
-    while (Socket->State = TCP_SOCKET_STATE_SYNCHRONIZE_SENT) {
-        Print("Connecting...\r")
-        SleepMS(100)
+    while (Socket->State != TCP_SOCKET_STATE_ESTABLISHED) {
+        Print("Connecting...\n")
+        SleepMS(400)
     }
 
+    Print("Connected!\n")
+
+    ;Print("%stackdump-for", Socket->QuantumTimer->Task->Context->RBP)
+
     Socket->QueueString("Hello world!")
+    Print("Queued\n")
+
     Socket->Flush()
+    Print("Flush\n")
+
     Socket->Close()
 
     ;TCP->BindSocket(42830 As i16, Socket)

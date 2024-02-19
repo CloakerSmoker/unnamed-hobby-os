@@ -157,33 +157,36 @@ declare NetworkProtocolPrototype* GetDHCPProtocolPrototype()
 
 struct DHCPClient {
     NetworkInterface* Interface
-    NetworkProtocol* Transport
+    FileHandle* Socket
 
     NetworkProtocol* AsProtocol
 
-	static self* New(NetworkInterface* Interface, NetworkProtocol* Transport) {
+    NetworkPacket* Packet
+
+	static self* New(NetworkInterface* Interface, FileHandle* Socket) {
 		self* this := Alloc(#self)
 
 		this->Interface := Interface
-		this->Transport := Transport
-
-        UDPLayer* UDP := Transport->this
+		this->Socket := Socket
 
         this->AsProtocol := Interface->AddProtocol("DHCP", GetDHCPProtocolPrototype(), this)
 
-        UDP->ListenPort(DHCP_CLIENT_PORT, this->AsProtocol)
+        this->Packet := NetworkPacket:New(2)
+
+        NetworkAddress BindAddress {
+            Type: NetworkAddressType::IPv4,
+            IPv4: Interface->IP,
+            Port: DHCP_CLIENT_PORT
+        }
+
+        Socket->Bind(&BindAddress)
 
         return this
     }
 
-    define NetworkPacket* Enter(i32 Destination) {
-        UDPPacketOptions Options {
-            Destination: Destination,
-            SourcePort: DHCP_CLIENT_PORT,
-            DestinationPort: DHCP_SERVER_PORT
-        }
-
-        NetworkPacket* Packet := this->Transport->Enter(&Options)
+    define NetworkPacket* Enter() {
+        NetworkPacket* Packet := this->Packet
+        Packet->ClearMarkers()
 
         DHCPHeader* Header := Packet->Mark(PACKET_DATA_DHCP_HEADER, #DHCPHeader)
 
@@ -209,15 +212,37 @@ struct DHCPClient {
         return Option As void*
     }
 
-    define void Send(NetworkPacket* Packet) {
+    define void Send(NetworkPacket* Packet, i32 Destination) {
         DHCPHeader* Header := Packet->Get(PACKET_DATA_DHCP_HEADER)
 
         Header->FlipEndianess()
 
-        this->Transport->Send(Packet)
+        NetworkAddress ServerAddress {
+            Type: NetworkAddressType::IPv4,
+            IPv4: Destination,
+            Port: DHCP_SERVER_PORT
+        }
+
+        this->Socket->SendTo(Packet->Buffer, Packet->Tell(), &ServerAddress)
     }
 
     declare void SendRequest(i32, i32)
+
+    define void Recieve() {
+        loop {
+            if (this->Socket->Poll(POLL_CAN_READ)) {
+                this->Packet->Reset()
+
+                i32 Size := this->Socket->Read(this->Packet->Buffer, 0x2000)
+
+                this->Packet->Size := Size
+
+                this->Ingest(this->Packet)
+            }
+
+            SchedulerYield()
+        }
+    }
 
     define void Ingest(NetworkPacket* Packet) {
         IPV4Header* IP := Packet->Get(PACKET_DATA_IPV4_HEADER)

@@ -119,10 +119,10 @@ declare void AddNetworkRoute(i32, i64, NetworkInterface*)
 #Require "./src/kernel/networking/ICMP.rlx"
 #Require "./src/kernel/networking/UDP.rlx"
 #Require "./src/kernel/networking/TCP.rlx"
-#Require "./src/kernel/networking/UDPSocket.rlx"
+#Require "./src/kernel/networking/UDP.rlx"
 
-#Require "./src/kernel/networking/DHCP.rlx"
-#Require "./src/kernel/networking/DNS.rlx"
+;#Require "./src/kernel/networking/DHCP.rlx"
+;#Require "./src/kernel/networking/DNS.rlx"
 
 struct WellKnownProtocols {
     EthernetLayer* Ethernet
@@ -134,9 +134,8 @@ struct WellKnownProtocols {
     UDPLayer* UDP
     TCPLayer* TCP
 
-    DHCPClient* DHCP
-
-    DNSLayer* DNS
+    ;DHCPClient* DHCP
+    ;DNSLayer* DNS
 
     static self* Attach(NetworkInterface* Interface) {
         self* this := Alloc(#self)
@@ -150,9 +149,8 @@ struct WellKnownProtocols {
         this->UDP := UDPLayer:New(Interface, this->IP->AsProtocol)
         this->TCP := TCPLayer:New(Interface, this->IP->AsProtocol)
 
-        this->DHCP := DHCPClient:New(Interface, this->UDP->AsProtocol)
-
-        this->DNS := DNSLayer:New(Interface)
+        ;this->DHCP := DHCPClient:New(Interface, this->UDP->AsProtocol)
+        ;this->DNS := DNSLayer:New(Interface)
 
         return this
     }
@@ -218,7 +216,7 @@ struct NetworkStack {
             return false
         }
 
-        i32 Mask := ((0xFF_FF_FF_FF << (32 - CIDR)) & 0xFF_FF_FF_FF) As i32
+        i32 Mask := MaskFromCIDR(CIDR)
 
         this->AddRoute(Address, Mask, Interface)
 
@@ -285,6 +283,10 @@ struct NetworkStack {
         return TCP->Connect(Socket, Address, Port)
     }
 
+    define UDPSocket* CreateUDP() {
+        return UDPSocket:New()
+    }
+
     define UDPError Bind(i32 Address, i16 Port, UDPSocket* Socket) {
         NetworkRoute* Route := this->Lookup(Address)
         UDPLayer* UDP := Route->Interface->WellKnownProtocols->UDP
@@ -296,3 +298,7 @@ struct NetworkStack {
 define void AddNetworkRoute(i32 Prefix, i64 Mask, NetworkInterface* Interface) {
     Network->AddRoute(Prefix, Mask As i32, Interface)
 }
+
+#Require "./src/kernel/networking/TCPSocketHandle.rlx"
+#Require "./src/kernel/networking/UDPSocketHandle.rlx"
+

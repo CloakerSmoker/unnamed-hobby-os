@@ -494,7 +494,7 @@ struct TCPSocket {
 
     define void Quantum() {
         loop {
-            ;Info("Quantum\n")
+            Info("Quantum\n")
 			this->SendPump()
 			
 			SchedulerBlock()
@@ -974,6 +974,8 @@ struct TCPSocket {
         }
 
         this->State := TCP_SOCKET_STATE_LISTEN
+
+        return TCPError::Ok
     }
 
     define TCPError Poll(i32 Mode, i32* Out) {

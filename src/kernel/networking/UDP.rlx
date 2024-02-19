@@ -51,7 +51,7 @@ struct UDPSocket {
 
     i16 LocalPort
 
-    NetworkPacket* LastPacket
+    NetworkPacket* LastRecieved
 
     static self* New() {
         return Alloc(#self)
@@ -61,7 +61,7 @@ struct UDPSocket {
         this->Interface := Interface
         this->Transport := Transport
 
-        this->AsProtocol := Interface->AddEphemeralProtocol(GetUDPSocketProtocolPrototype(), this) this)
+        this->AsProtocol := Interface->AddEphemeralProtocol(GetUDPSocketProtocolPrototype(), this)
     }
 
     define void Ingest(NetworkPacket* Packet) {
@@ -104,13 +104,13 @@ struct UDPSocket {
         this->Transport->Send(Packet)
     }
 
-    define i32 ReceiveFrom(NetworkAddress* OutAddress, void* Buffer, i32 MaxSize) {
+    define i32 RecieveFrom(NetworkAddress* OutAddress, void* Buffer, i32 MaxSize) {
         NetworkPacket* Packet := this->LastRecieved
         IPV4Header* IPv4 := Packet->Get(PACKET_DATA_IPV4_HEADER)
         UDPHeader* UDP := Packet->Get(PACKET_DATA_UDP_HEADER)
 
         OutAddress->Type := NetworkAddressType::IPv4
-        OutAddress->IPv4 := IPv4->SourceAddress
+        OutAddress->IPv4 := IPv4->Source
         OutAddress->Port := UDP->SourcePort
 
         void* Data := Packet->GetEnd(PACKET_DATA_UDP_HEADER)

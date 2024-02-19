@@ -380,7 +380,8 @@ Task* KernelSetupTask := &_KernelSetupTask
 #Require "./src/kernel/networking/IPV4.rlx"
 #Require "./src/kernel/networking/ICMP.rlx"
 #Require "./src/kernel/networking/UDP.rlx"
-#Require "./src/kernel/networking/DHCP.rlx"
+
+;#Require "./src/kernel/networking/DHCP.rlx"
 
 #Require "./src/kernel/networking/Main.rlx"
 

@@ -321,3 +321,7 @@ struct NetworkAddress {
         i16 Port
     }
 }
+
+define i32 MaskFromCIDR(i32 CIDR) {
+    return ((0xFF_FF_FF_FF << (32 - CIDR)) & 0xFF_FF_FF_FF) As i32
+}

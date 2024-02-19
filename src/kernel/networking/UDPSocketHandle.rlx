@@ -14,7 +14,7 @@ struct UDPSocketHandle {
 
         this->Socket := Network->CreateUDP()
 
-        return this
+        return this->AsHandle()
     }
 
     define i32 Bind(NetworkAddress* Address) {
@@ -40,19 +40,35 @@ struct UDPSocketHandle {
 
     define i32 SendTo(void* Buffer, i32 Size, NetworkAddress* Address) {
         if !(this->HasLocalPort) {
-            Network->Bind(Address, NextUDPConnectionPort++)
+            Network->Bind(Address->IPv4, NextUDPConnectionPort++, this->Socket)
 
             this->HasLocalPort := true
         }
 
-        return this->Socket->SendTo(Buffer, Size, Address)
+        this->Socket->SendTo(Address, Buffer, Size)
+
+        return Size
     }
 
     define i32 RecieveFrom(void* Buffer, i32 Size, NetworkAddress* Address) {
-        return this->Socket->RecieveFrom(Buffer, Size, Address)
+        return this->Socket->RecieveFrom(Address, Buffer, Size)
     }
 
     define void Close() {
         
     }
+}
+
+FileHandlePrototype UDPSocketHandlePrototype {
+    Bind: &UDPSocketHandle.Bind,
+
+    Poll: &UDPSocketHandle.Poll,
+	SendTo: &UDPSocketHandle.SendTo,
+    RecieveFrom: &UDPSocketHandle.RecieveFrom
+}
+
+i32 UDP_SOCKET_HANDLE_PROTOTYPE_ID := RegisterHandlePrototype(&UDPSocketHandlePrototype)
+
+define FileHandlePrototype* GetUDPSocketHandlePrototype() {
+    return &UDPSocketHandlePrototype
 }

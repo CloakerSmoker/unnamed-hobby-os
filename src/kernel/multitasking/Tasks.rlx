@@ -113,5 +113,9 @@ struct Task {
 	define i8 CouldRun() {
 		return this->State <= TASK_RUNNING
 	}
+
+	define void Dump() {
+		Print("%stackdump-for\n", this->Context->RBP)
+	}
 }
 

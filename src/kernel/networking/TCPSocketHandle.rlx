@@ -6,18 +6,23 @@ struct TCPSocketHandle {
 
     TCPSocket* Socket
 
-    static FileHandle* New() {
+    static FileHandle* New(TCPSocket* Socket) {
         self* this := Alloc(#self)
 
         this->Prototype := GetTCPSocketHandlePrototype()
 
-        this->Socket := Network->CreateTCP()
+        this->Socket := Socket
 
-        return this
+        return this->AsHandle()
+    }
+
+
+    static FileHandle* New() {
+        return self:New(Network->CreateTCP())
     }
 
     define void Connect(NetworkAddress* Address) {
-        TCPError Error := this->Socket->Connect(Address)
+        TCPError Error := this->Socket->Connect(Address->IPv4, Address->Port)
 
         if (Error = TCPError::InvalidState) {
             Throw(LINUX_ERROR_OPNOTSUPP)
@@ -27,7 +32,7 @@ struct TCPSocketHandle {
         }
     }
 
-    define i32 Listen() {
+    define void Listen() {
         TCPError Error := this->Socket->Listen()
 
         if (Error = TCPError::InvalidState) {
@@ -36,16 +41,14 @@ struct TCPSocketHandle {
         else if (Error != TCPError::Ok) {
             Throw(LINUX_ERROR_INVAL)
         }
-
-        return 0
     }
 
-    define i32 Bind(NetworkAddress* Address) {
+    define void Bind(NetworkAddress* Address) {
         if (Address->Type != NetworkAddressType::IPv4) {
             Throw(LINUX_ERROR_OPNOTSUPP)
         }
 
-        TCPError Error := Network->Bind()
+        TCPError Error := Network->Bind(Address->IPv4, Address->Port, this->Socket)
 
         if (Error = TCPError::PortBusy) {
             Throw(LINUX_ERROR_ADDRINUSE)
@@ -53,8 +56,6 @@ struct TCPSocketHandle {
         else if (Error != TCPError::Ok) {
             Throw(LINUX_ERROR_INVAL)
         }
-
-        return 0
     }
 
     define FileHandle* Accept(NetworkAddress* Address) {
@@ -118,4 +119,25 @@ struct TCPSocketHandle {
     define void Close() {
         
     }
+}
+
+FileHandlePrototype TCPSocketHandlePrototype {
+    Connect: &TCPSocketHandle.Connect,
+    Listen: &TCPSocketHandle.Listen,
+    Bind: &TCPSocketHandle.Bind,
+    Accept: &TCPSocketHandle.Accept,
+
+    Poll: &TCPSocketHandle.Poll,
+
+	Send: &TCPSocketHandle.Send,
+    Write: &TCPSocketHandle.Write,
+
+    Recieve: &TCPSocketHandle.Recieve,
+    Read: &TCPSocketHandle.Read
+}
+
+i32 TCP_SOCKET_HANDLE_PROTOTYPE_ID := RegisterHandlePrototype(&TCPSocketHandlePrototype)
+
+define FileHandlePrototype* GetTCPSocketHandlePrototype() {
+    return &TCPSocketHandlePrototype
 }
