@@ -55,7 +55,11 @@ struct UDPSocketHandle {
     }
 
     define void Close() {
-        
+        NetworkInterface* Interface := this->Socket->Interface
+
+        Interface->WellKnownProtocols->UDP->Close(this->Socket)
+
+        Free(this)
     }
 }
 
@@ -64,7 +68,9 @@ FileHandlePrototype UDPSocketHandlePrototype {
 
     Poll: &UDPSocketHandle.Poll,
 	SendTo: &UDPSocketHandle.SendTo,
-    RecieveFrom: &UDPSocketHandle.RecieveFrom
+    RecieveFrom: &UDPSocketHandle.RecieveFrom,
+
+    Close: &UDPSocketHandle.Close
 }
 
 i32 UDP_SOCKET_HANDLE_PROTOTYPE_ID := RegisterHandlePrototype(&UDPSocketHandlePrototype)

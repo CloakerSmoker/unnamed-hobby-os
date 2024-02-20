@@ -130,6 +130,14 @@ struct UDPSocket {
 
         return Result
     }
+
+    define void Free() {
+        if (this->LastRecieved) {
+            this->LastRecieved->Free()
+        }
+
+        Free(this)
+    }
 }
 
 NetworkProtocolPrototype UDPSocketProtocolPrototype {
@@ -252,6 +260,12 @@ struct UDPLayer {
         this->Sockets->InsertPointer(LocalPort, Socket->AsProtocol)
 
         return UDPError::Ok
+    }
+
+    define void Close(UDPSocket* Socket) {
+        this->Sockets->Remove(Socket->LocalPort)
+
+        Socket->Free()
     }
 }
 

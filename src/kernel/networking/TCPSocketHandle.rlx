@@ -130,8 +130,12 @@ struct TCPSocketHandle {
     }
 
     define void Close() {
-        this->Socket->Flush()
-        this->Socket->Close()
+        NetworkInterface* Interface := this->Socket->Interface
+
+        ; Ask TCP to do the closing for us
+        Interface->WellKnownProtocols->TCP->Close(this->Socket)
+
+        Free(this)
     }
 }
 

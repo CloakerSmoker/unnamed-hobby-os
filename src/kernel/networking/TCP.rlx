@@ -1056,6 +1056,26 @@ struct TCPSocket {
 
         this->QueueFrame(FinalAcknowledge)
     }
+
+    define void Shutdown() {
+        this->Flush() ; Wait for user data flow
+
+        this->Close() ; Start protocol level shutdown
+        this->Flush() ; Wait for ^ to finish
+
+        ; We're now TCP_SOCKET_STATE_CLOSED
+    }
+
+    define void Destroy() {
+        this->AbortSendPump() ; Shutdown data flow
+
+        Scheduler->Remove(this->QuantumTimer->Task) ; Remove data flow task
+        this->QuantumTimer->Task->Free() ; Free data flow task
+
+        ; NOTE: leaks `this->QuantumTimer` itself (timers are annoying to free)
+
+        this->Free() ; Free protocol level buffers (and `this`)
+    }
 }
 
 NetworkProtocolPrototype TCPSocketProtocolPrototype {
@@ -1228,6 +1248,12 @@ struct TCPLayer {
         this->Sockets->InsertPointer(Socket->LocalPort, Socket->AsProtocol)
 
         return Socket->Connect(Address, Port)
+    }
+
+    define void Close(TCPSocket* Socket) {
+        Socket->Shutdown()
+        this->Sockets->Remove(Socket->LocalPort)
+        Socket->Destroy()
     }
 }
 
