@@ -213,6 +213,16 @@ define i8 ParseIPv4AndPort(i8* Address, i32* OutAddress, i16* OutPort) {
     return ParseIPv4AndPort(Address, StringLength(Address), OutAddress, OutPort)
 }
 
+define i8 ParseIPv4NetworkAddress(i8* Address, NetworkAddress* Out) {
+    if !(ParseIPv4AndPort(Address, Out~>IPv4, Out~>Port)) {
+        return false
+    }
+
+    Out->Type := NetworkAddressType::IPv4
+    
+    return true
+}
+
 define i8 ParseIPv4CIDR(i8* Address, i32 Length, i32* OutAddress, i32* OutCIDR) {
     StringReader Reader {
         Buffer: Address,

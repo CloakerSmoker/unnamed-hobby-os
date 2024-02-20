@@ -494,7 +494,7 @@ struct TCPSocket {
 
     define void Quantum() {
         loop {
-            Info("Quantum\n")
+            ;Info("Quantum\n")
 			this->SendPump()
 			
 			SchedulerBlock()
@@ -1108,6 +1108,10 @@ struct TCPLayer {
         IPV4->AddProtocol(IPV4_PROTOCOL_TCP, this->AsProtocol)
 
         this->Sockets := AVLTree:New(#void*)
+
+        NetworkInterfaceKnob* TimeoutKnob := Interface->DefineKnob("TCP.ConnectTimeoutMS", NetworkInterfaceKnobType::Integer)
+
+        TimeoutKnob->IntegerValue := 5000
 
         return this
     }

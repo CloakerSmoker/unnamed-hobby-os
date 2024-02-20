@@ -36,6 +36,8 @@ i32 LINUX_ERROR_RANGE := 34 ; Math result not representable
 i32 LINUX_ERROR_OPNOTSUPP := 95 ; Operation not supported on transport endpoint
 i32 LINUX_ERROR_ADDRINUSE := 98 ; Address already in use
 
+i32 LINUX_ERROR_CONNREFUSED := 111 ; Connection refused
+
 enum ErrorNumber {
 	Permission
 	NoEntry

@@ -16,19 +16,32 @@ struct TCPSocketHandle {
         return this->AsHandle()
     }
 
-
     static FileHandle* New() {
         return self:New(Network->CreateTCP())
     }
 
     define void Connect(NetworkAddress* Address) {
-        TCPError Error := this->Socket->Connect(Address->IPv4, Address->Port)
+        TCPError Error := Network->Connect(this->Socket, Address->IPv4, Address->Port)
 
         if (Error = TCPError::InvalidState) {
             Throw(LINUX_ERROR_OPNOTSUPP)
         }
         else if (Error != TCPError::Ok) {
             Throw(LINUX_ERROR_INVAL)
+        }
+
+        NetworkInterfaceKnob* ConnectTimeout := this->Socket->Interface->GetKnob("TCP.ConnectTimeoutMS")
+
+        i64 Timeout := GetUptimeMS() + ConnectTimeout->IntegerValue
+
+        while (this->Socket->State != TCP_SOCKET_STATE_ESTABLISHED && GetUptimeMS() < Timeout) {
+            SchedulerYield()
+        }
+
+        if (this->Socket->State != TCP_SOCKET_STATE_ESTABLISHED) {
+            this->Socket->Close()
+
+            Throw(LINUX_ERROR_CONNREFUSED)
         }
     }
 
@@ -117,7 +130,8 @@ struct TCPSocketHandle {
     }
 
     define void Close() {
-        
+        this->Socket->Flush()
+        this->Socket->Close()
     }
 }
 
@@ -133,7 +147,9 @@ FileHandlePrototype TCPSocketHandlePrototype {
     Write: &TCPSocketHandle.Write,
 
     Recieve: &TCPSocketHandle.Recieve,
-    Read: &TCPSocketHandle.Read
+    Read: &TCPSocketHandle.Read,
+
+    Close: &TCPSocketHandle.Close
 }
 
 i32 TCP_SOCKET_HANDLE_PROTOTYPE_ID := RegisterHandlePrototype(&TCPSocketHandlePrototype)

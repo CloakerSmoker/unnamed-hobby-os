@@ -259,6 +259,22 @@ define void TestNetworking(FileHandle* stdio) {
 
     Network->DumpRoutes()
 
+    FileHandle* Socket := TCPSocketHandle:New()
+
+    NetworkAddress Target
+    ParseIPv4NetworkAddress("10.2.30.100:7778", &Target)
+
+    Socket->Connect(&Target)
+
+    Print("Connected!\n")
+
+    ;Print("%stackdump-for", Socket->QuantumTimer->Task->Context->RBP)
+
+    Socket->Write("Nuts", 4)
+    
+    Socket->Close()
+
+    /*
     TCPSocket* Socket := Network->CreateTCP()
 
     Network->Connect(Socket, IPv4("10.2.30.100"), 7778 As i16)
@@ -279,6 +295,7 @@ define void TestNetworking(FileHandle* stdio) {
     Print("Flush\n")
 
     Socket->Close()
+    ;*/
 
     ;TCP->BindSocket(42830 As i16, Socket)
     ;TCP->BindSocket(7777 As i16, Socket)

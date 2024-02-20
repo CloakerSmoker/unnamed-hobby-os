@@ -90,6 +90,12 @@ struct FileHandlePrototype {
 		return null
 	}
 
+	void(void*) Close
+	
+	define void DefaultClose() {
+		Free(this)
+	}
+
 	i32(void*, MemoryMappingGroup*, void*, i32, i32) MapIntoMemory
 
 	define i32 DefaultMapIntoMemory(MemoryMappingGroup* Mappings, void* Virtual, i32 Offset, i32 Size) {
@@ -150,15 +156,12 @@ define i32 RegisterHandlePrototype(FileHandlePrototype* Prototype) {
 		Prototype->ReadDirectoryEntries := &FileHandlePrototype.DefaultReadDirectoryEntries
 	}
 	
-	if !(Prototype->OpenOrCreate) {
-		Prototype->OpenOrCreate := &FileHandlePrototype.DefaultOpenOrCreate
-	}
+	if !(Prototype->OpenOrCreate) { Prototype->OpenOrCreate := &FileHandlePrototype.DefaultOpenOrCreate }
 	
-	if !(Prototype->Open) {
-		Prototype->Open := &FileHandlePrototype.DefaultOpen
-	}
+	if !(Prototype->Open) { Prototype->Open := &FileHandlePrototype.DefaultOpen }
+	if !(Prototype->Close) { Prototype->Close := &FileHandlePrototype.DefaultClose }
 
-	if !(Prototype->Open) {
+	if !(Prototype->MapIntoMemory) {
 		Prototype->MapIntoMemory := &FileHandlePrototype.DefaultMapIntoMemory
 	}
 
@@ -231,7 +234,7 @@ struct FileHandle {
 	}
 	
 	define void Close() {
-		Free(this)
+		this->Prototype->Close(this)
 	}
 	
 	define FileHandle* Clone() {

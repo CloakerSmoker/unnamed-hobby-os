@@ -1,11 +1,12 @@
 
-#Require "./src/kernel/networking/Parse.rlx"
 #Require "./src/kernel/networking/Utility.rlx"
+#Require "./src/kernel/networking/Parse.rlx"
 
 declare WellKnownProtocols* AttachWellKnownProtocols(NetworkInterface*)
 
 enum NetworkInterfaceKnobType {
-    Toggle
+    Toggle,
+    Integer
 }
 
 struct NetworkInterfaceKnob {
@@ -13,6 +14,7 @@ struct NetworkInterfaceKnob {
 
     union {
         i8 ToggleValue
+        i32 IntegerValue
         i64 FullValue
     }
 }
@@ -64,11 +66,23 @@ struct NetworkInterface {
         return this->Knobs->Get(Hash)
     }
 
+    define NetworkInterfaceKnob* GetKnob(i8* Name) {
+        return this->Knobs->Get(FNV1A(Name))
+    }
+
     define void SetKnobToggle(i8* Name, i8 Value) {
         NetworkInterfaceKnob* Knob := this->Knobs->Get(FNV1A(Name))
 
         if (Knob->Type = NetworkInterfaceKnobType::Toggle) {
             Knob->ToggleValue := Value
+        }
+    }
+
+    define void SetKnobInteger(i8* Name, i32 Value) {
+        NetworkInterfaceKnob* Knob := this->Knobs->Get(FNV1A(Name))
+
+        if (Knob->Type = NetworkInterfaceKnobType::Integer) {
+            Knob->IntegerValue := Value
         }
     }
 
@@ -268,6 +282,9 @@ struct NetworkStack {
     define TCPSocket* CreateTCP() {
         return TCPSocket:New()
     }
+    ;define TCPSocketHandle* CreateTCPHandle() {
+    ;    return TCPSocketHandle:New()
+    ;}
 
     define TCPError Bind(i32 Address, i16 Port, TCPSocket* Socket) {
         NetworkRoute* Route := this->Lookup(Address)
@@ -286,6 +303,9 @@ struct NetworkStack {
     define UDPSocket* CreateUDP() {
         return UDPSocket:New()
     }
+    ;define UDPSocketHandle* CreateUDPHandle() {
+    ;    return UDPSocketHandle:New()
+    ;}
 
     define UDPError Bind(i32 Address, i16 Port, UDPSocket* Socket) {
         NetworkRoute* Route := this->Lookup(Address)
