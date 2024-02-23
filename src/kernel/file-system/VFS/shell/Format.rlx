@@ -1,0 +1,100 @@
+
+define FAT32Device* RawOpenFAT32(BlockDevice* Device) {
+	FAT32Device* FS := Alloc(#FAT32Device)
+	FS->Initialize(Device)
+
+    return FS
+}
+
+define Ext2* RawOpenExt2(BlockDevice* Device) {
+    Ext2* FS := Alloc(#Ext2)
+	FS->Device := Device
+	
+	void* SB := Alloc(2048)
+	void* TI := Alloc(1024)
+	void* TB1 := Alloc(1024)
+	void* TB2 := Alloc(1024)
+	void* BMP := Alloc(1024)
+	
+	FS->Initialize(SB, TI, TB1, TB2, BMP)
+
+    return FS
+}
+
+define void ExecuteFormat(i64 ArgC, i8** ArgV) {
+    if (ArgC != 4) {
+        return
+    }
+
+    i8* Type := ArgV[1]
+    i8* DevicePath := ArgV[2]
+    i32 Size := ParseDataUnit(ArgV[3]) As i32
+
+    VFSDirectoryEntry Entry
+    if !(Lookup(CurrentDirectory, DevicePath, &Entry)) {
+        Print("'%s' does not exist\n", DevicePath)
+        return
+    }
+
+    if (Entry.Type != VFSDirectoryEntryType::File) {
+        Print("'%s' not a file\n", DevicePath)
+        return
+    }
+
+    IFile* File := Entry.File
+
+    if !(File->Is(GetVFSBlockDeviceFilePrototype())) {
+        Print("'%s' not a block device", DevicePath)
+        return
+    }
+
+    VFSBlockDeviceFile* BlockDeviceFile := File As void*
+    BlockDeviceFileHandle* BlockDeviceHandle := BlockDeviceFile->Handle As void*
+    BlockDevice* Device := BlockDeviceHandle->Device
+
+    if (StringEquals(Type, "ext2")) {
+        Ext2* E2FS := RawOpenExt2(Device)
+
+        Ext2CreationParameters* Parameters := Alloc(#Ext2CreationParameters)
+		Parameters->SetDefaults()
+
+        Parameters->AssumeFromStorageSize(Size)
+
+        E2FS->Format(Parameters)
+
+        Print(" +------------------------------\n")
+		Print(" + Total FS size: %x bytes\n", Parameters->TotalSize)
+		Print(" + Free blocks: %i\n", Parameters->FreeBlocks)
+		Print(" + Free INodes: %i\n", Parameters->FreeINodes)
+		Print(" +------------------------------\n")
+		Print(" + Number of block groups: %i\n", Parameters->BlockGroupCount)
+		Print(" + Blocks per group: %i\n", Parameters->BlocksPerGroup)
+		Print(" + INodes per group: %i\n", Parameters->INodesPerGroup)
+		Print(" + INodes table size (in blocks): %i\n", Parameters->INodeTableSize)
+		Print(" +------------------------------\n")
+		
+		Print(" + Final group size (in blocks): %i\n", Parameters->FinalGroupSize)
+		
+		if (Parameters->FinalGroupIsPresent) {
+			Print(" + Final group free blocks: %i\n", Parameters->FinalGroupFreeBlocks)
+			Print(" + Final group first free block: %i\n", Parameters->FinalGroupFirstFreeBlock)
+			Print(" + Final group reserved block range: %i - %i\n", Parameters->FinalGroupFirstTailBlock, Parameters->BlocksPerGroup)
+		}
+		else {
+			Print(" + Final group removed (not big enough for INode table)\n")
+		}
+
+        Print(" +------------------------------\n")
+    }
+    else if (StringEquals(Type, "fat32")) {
+        FAT32Device* FAT32FS := RawOpenFAT32(Device)
+
+        FAT32FS->Format(Size / 512)
+    }
+    else {
+        Print("'%s' unknown FS type\n", DevicePath)
+        return
+    }
+}
+
+i32 FORMAT_COMMAND_ID := RegisterCommand("format", &ExecuteFormat)
