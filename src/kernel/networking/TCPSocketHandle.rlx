@@ -71,7 +71,7 @@ struct TCPSocketHandle {
         }
     }
 
-    define FileHandle* Accept(NetworkAddress* Address) {
+    define FileHandle* Accept(NetworkAddress* OutAddress) {
         TCPSocket* Result := null
         TCPError Error := this->Socket->Accept(&Result)
 
@@ -80,6 +80,12 @@ struct TCPSocketHandle {
         }
         else if (Error != TCPError::Ok) {
             Throw(LINUX_ERROR_INVAL)
+        }
+
+        if (OutAddress) {
+            OutAddress->Type := NetworkAddressType::IPv4
+            OutAddress->IPv4 := Result->RemoteAddress
+            OutAddress->Port := Result->RemotePort
         }
 
         return TCPSocketHandle:New(Result)

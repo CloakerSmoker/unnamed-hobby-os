@@ -322,6 +322,26 @@ struct NetworkAddress {
     }
 }
 
+define void DoNetworkAddressPrint(PrintOutputAdapterPrototype* this, i8* Format, i32* FormatIndex, void* Parameters, i32 ParameterCount, i32* ParameterIndex) {
+    NetworkAddress* Address := Parameters[*ParameterIndex] As void*
+
+    if (Address->Type = NetworkAddressType::IPv4) {
+        this->Print("%ipv4:%net-port", Address->IPv4, Address->Port)
+    }
+    else {
+        this->Print("<unknown net address type %x>", Address->Type)
+    }
+
+    *ParameterIndex += 1
+}
+
+PrintFormatPrototype NetworkAddressFormatPrototype {
+	Name: "net-addr",
+	Format: &DoMACAddressPrint
+}
+
+i32 NETWORK_ADDRESS_FORMAT_PROTOTYPE_ID := AddPrintFormat(&NetworkAddressFormatPrototype)
+
 define i32 MaskFromCIDR(i32 CIDR) {
     return ((0xFF_FF_FF_FF << (32 - CIDR)) & 0xFF_FF_FF_FF) As i32
 }
