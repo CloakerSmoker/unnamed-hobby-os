@@ -1,7 +1,6 @@
 # Config-ish
 
 ROOT_EXTRA= TestFile.txt test.txt sponge.six dum.six
-BIN_EXTRA=cat ed hexedit vi
 
 RLX_FLAGS?= --crlf --dwarf --debug --silent
 EFI_RLX_FLAGS?= $(RLX_FLAGS) --pe-reloc --pe --efi
@@ -10,12 +9,41 @@ KERNEL_RLX_FLAGS?= $(RLX_FLAGS) --standalone-elf --platform kernel --platform-di
 
 RLX?=compiler/build/linux_compiler.elf
 
-BUILD=./build
+BUILD=build
 
 # Files to clean
 
 CLEAN_FILES=
 LIGHT_CLEAN_FILES=
+
+# Busybox
+
+BUSYBOX=$(BUILD)/busybox
+BUSYBOX_VER=1.35.0
+BUSYBOX_SRC=$(BUSYBOX)/busybox-$(BUSYBOX_VER)
+
+CLEAN_FILES= $(BUSYBOX_SRC)
+
+$(BUSYBOX)/busybox-$(BUSYBOX_VER).tar.bz2:
+	wget https://www.busybox.net/downloads/busybox-$(BUSYBOX_VER).tar.bz2 -P $(BUSYBOX)
+
+$(BUSYBOX)/busybox-$(BUSYBOX_VER).tar: $(BUSYBOX)/busybox-$(BUSYBOX_VER).tar.bz2
+	bunzip2 -k $(BUSYBOX)/busybox-$(BUSYBOX_VER).tar.bz2
+
+$(BUSYBOX_SRC): $(BUSYBOX)/busybox-$(BUSYBOX_VER).tar
+	mkdir -p $(BUSYBOX_SRC)
+	tar -xf $(BUSYBOX)/busybox-$(BUSYBOX_VER).tar --directory=$(BUSYBOX)
+
+$(BUSYBOX_SRC)/.config: $(BUSYBOX_SRC)
+	wget -O $@ https://www.busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/config
+
+$(BUSYBOX_SRC)/busybox: $(BUSYBOX_SRC) src/host/busybox.config
+	cp src/host/busybox.config $(BUSYBOX_SRC)/.config
+	cd $(BUSYBOX_SRC); make all
+	cd $(BUSYBOX_SRC); make busybox.links
+	cd $(BUSYBOX_SRC); ./make_single_applets.sh
+
+busybox: $(BUSYBOX_SRC)/busybox
 
 # Preprocess
 
@@ -34,22 +62,67 @@ LIGHT_CLEAN_FILES+= EFIBoot.qcow2
 
 # Full disk image
 
+define SCRIPT =
+dd bs=1M count=128M if=/dev/zero of=/host/build/Disk.img
+loop open /host/build/Disk.img
+
+gpt /dev/loop0 format 100M
+
+gpt /dev/loop0 create 0
+gpt /dev/loop0 set 0 start 9M
+gpt /dev/loop0 set 0 end 19M
+gpt /dev/loop0 set 0 name "EFI System"
+gpt /dev/loop0 set 0 type system
+
+gpt /dev/loop0 create 1
+gpt /dev/loop0 set 1 start 20M
+gpt /dev/loop0 set 1 end 100M
+gpt /dev/loop0 set 1 name "Boot"
+gpt /dev/loop0 set 1 type custom
+
+gpt /dev/loop0 show partitions
+
+gpt /dev/loop0 scan
+
+format fat32 /dev/loop0p0 10M
+format ext2 /dev/loop0p1 80M
+
+mount ext2 /dev/loop0p1 /root
+
+install /host/build/Kernel.elf /root/Kernel.elf
+
+install /host/sponge.six /root/usr/share/demo/sponge.six
+install /host/dum.six /root/usr/share/demo/dum.six
+
+$(shell python3 src/host/busybox.py --install $(BUSYBOX_SRC) | tr '\n' '\1')
+
+exit
+endef
+
+#loop open /host/build/Disk.img
+#gpt /dev/loop0 scan
+#mount ext2 /dev/loop0p1 /root
+#install /host/cat /root/usr/bin/cat
+
+export SCRIPT
+
+newdisk: $(BUILD)/HostFileShell.elf
+	
+
 $(BUILD)/Disk.img: $(BUILD)/GPTTool.elf
 $(BUILD)/Disk.img: $(BUILD)/FAT32Tool.elf $(BUILD)/Boot.efi
 $(BUILD)/Disk.img: $(BUILD)/Ext2Tool.elf $(BUILD)/Kernel.elf
 $(BUILD)/Disk.img: $(BIN_EXTRA)
 $(BUILD)/Disk.img: $(BUILD)/Beep.elf
+$(BUILD)/Disk.img: $(BUILD)/HostFileShell.elf
+$(BUILD)/Disk.img: $(shell python3 src/host/busybox.py --src $(BUSYBOX_SRC))
 $(BUILD)/Disk.img:
 	rm -f $@
 
-	$(BUILD)/GPTTool.elf "File($@,512)" \
-		"format 120 m" \
-		"create start 0x32 b end 70 m name \"EFI System\" type system" \
-		"create start 71 m end 119 m name \"Boot\" type custom" \
-		"quit"
+	echo "$$SCRIPT" | tr '\1' '\n' | $(BUILD)/HostFileShell.elf --script
 	
 	$(BUILD)/FAT32Tool.elf "File($@,512)>GPT(0)" \
-		"format 64 m" \
+		"format 10 m" \
 		"mkdir EFI" \
 		"cd EFI" \
 		"mkdir BOOT" \
@@ -58,20 +131,12 @@ $(BUILD)/Disk.img:
 		"quit"
 	
 	$(BUILD)/Ext2Tool.elf "File($@,512)>GPT(1)" \
-		"format 32 m" \
-		"import $(BUILD)/Kernel.elf Kernel.elf" \
-		"import-all $(ROOT_EXTRA)" \
 		"mkdir dev" \
 		"cd dev" \
 		"mknod tty1 c 4 1" \
 		"mknod ttyS0 c 4 64" \
 		"hard-link console tty1" \
 		"mknod pc-speaker c 10 129" \
-		"cd .." \
-		"mkdir bin" \
-		"cd bin" \
-		"import-all $(BIN_EXTRA)" \
-		"import $(BUILD)/Beep.elf beep" \
 		"quit"
 
 LIGHT_CLEAN_FILES+= $(BUILD)/Disk.img
@@ -118,6 +183,20 @@ $(BUILD)/Ext2Tool.d: $(RLX)
 	$(RLX) -i ./src/host/Ext2Tool.rlx -o $@ --makedep $(ELF_RLX_FLAGS)
 
 CLEAN_FILES+= $(BUILD)/Ext2Tool.elf $(BUILD)/Ext2Tool.d
+
+# HostFileShell
+
+$(BUILD)/HostFileShell.elf: $(RLX)
+$(BUILD)/HostFileShell.elf: $(BUILD)/HostFileShell.d
+$(BUILD)/HostFileShell.elf: $(shell cat $(BUILD)/HostFileShell.d 2>/dev/null)
+	$(RLX) -i ./src/host/HostFileShell.rlx -o $@ ${ELF_RLX_FLAGS}
+
+secret-internal-deps: $(BUILD)/HostFileShell.d
+
+$(BUILD)/HostFileShell.d: $(RLX)
+	$(RLX) -i ./src/host/HostFileShell.rlx -o $@ --makedep $(ELF_RLX_FLAGS)
+
+CLEAN_FILES+= $(BUILD)/HostFileShell.elf $(BUILD)/HostFileShell.d
 
 # Bootloader
 
