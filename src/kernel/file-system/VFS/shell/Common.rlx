@@ -233,8 +233,87 @@ define void ExecuteDD(i64 ArgC, i8** ArgV) {
         Output->Write(BlockBuffer, BlockSize)
     }
 
-    Input->Close()
-    Output->Close()
+    ;Input->Close()
+    ;Output->Close()
 }
 
 i32 DD_COMMAND_ID := RegisterCommand("dd", &ExecuteDD)
+
+define void ExecuteInstall(i64 ArgC, i8** ArgV) {
+    if (ArgC != 3) {
+        ;return
+    }
+
+    i8* RawSourcePath := ArgV[1]
+    i8* RawDestinationPath := ArgV[2]
+
+    VFSDirectoryEntry SourceEntry
+    if !(Lookup(CurrentDirectory, RawSourcePath, &SourceEntry)) {
+        Print("'%s' not found\n", RawSourcePath)
+        return
+    }
+
+    if (SourceEntry.Type != VFSDirectoryEntryType::File) {
+        Print("'%s' not a file\n", RawSourcePath)
+        return
+    }
+
+    IFile* SourceFile := SourceEntry.File
+    FileHandle* Source := SourceFile->Open()
+
+    Source->Seek(SeekMode::End, 0)
+    i32 SourceSize := Source->Tell()
+    Source->Seek(SeekMode::Set, 0)
+
+    Print("Installing %i (%x) bytes\n", SourceSize, SourceSize)
+
+    void* SourceData := Alloc(SourceSize)
+    Source->Read(SourceData, SourceSize)
+
+    ;SourceFile->Close(Source)
+
+    FilePath DestinationPath
+    ParsePath(RawDestinationPath, &DestinationPath)
+
+    IDirectory* Current := CurrentDirectory
+
+    if (DestinationPath.Anchor = FilePathAnchor::Root) {
+        Current := VFSRootDirectory
+    }
+
+    for (i32 Index := 0, Index < DestinationPath.Count - 1, Index++) {
+        i8* Part := DestinationPath.Parts[Index]
+
+        Print("Ensuring %s exists\n", Part)
+
+        VFSDirectoryEntry Next
+        
+        if !(Current->Lookup(Part, &Next)) {
+            Next.Type := VFSDirectoryEntryType::Directory
+            Next.Name := CloneString(Part)
+            Next.Directory := Current->CreateDirectory()
+
+            Current->Insert(&Next)
+        }
+        
+        Current := Next.Directory
+    }
+    
+    IFile* Destination := Current->CreateFile()
+
+    VFSDirectoryEntry Entry {
+        Type: VFSDirectoryEntryType::File,
+        Name: CloneString(DestinationPath.FileName),
+        File: Destination
+    }
+
+    Current->Insert(&Entry)
+
+    FileHandle* DestinationFile := Destination->Open()
+
+    DestinationFile->Write(SourceData, SourceSize)
+
+    ;Destination->Close(DestinationFile)
+}
+
+i32 INSTALL_COMMAND_ID := RegisterCommand("install", &ExecuteInstall)

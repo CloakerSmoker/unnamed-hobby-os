@@ -156,7 +156,12 @@ struct VFSExt2Directory {
         Ext2DirectoryEntry* Next := this->FS->WalkDirectoryNext(this~>Node, State~>Handle)
 
         if (Next) {
-            VFSDirectoryEntry* Cached := this->FindOrCacheEntry(Next->Name, Next)
+            i8[100] NameBuffer
+
+            MoveMemory(NameBuffer, Next->Name, Next->NameLength)
+            NameBuffer[Next->NameLength] := 0
+
+            VFSDirectoryEntry* Cached := this->FindOrCacheEntry(NameBuffer, Next)
 
             if (Cached) {
                 if (Cached->Type = VFSDirectoryEntryType::Hole) {
@@ -182,7 +187,7 @@ struct VFSExt2Directory {
         return VFSExt2Directory:New(this->FS, this->FS->ReadINode(DirectoryNodeNumber))
     }
     define IFile* CreateFile() {
-        i32 FileNodeNumber := this->FS->CreateDirectory()
+        i32 FileNodeNumber := this->FS->CreateFile()
 
         return VFSExt2File:New(this->FS, this->FS->ReadINode(FileNodeNumber))
     }
@@ -190,17 +195,35 @@ struct VFSExt2Directory {
     define i8 Insert(VFSDirectoryEntry* Entry) {
         ;this->Children->Insert(FNV1A(Entry->Name), Entry)
 
+        i8 ValidEntry := false
+        i8 Type := 0
+        i32 ChildNodeNumber := 0
+
         if (Entry->Type = VFSDirectoryEntryType::Directory) {
             if (Entry->Directory->Is(GetVFSExt2DirectoryPrototype())) {
-                VFSExt2Directory* Child := Entry->Directory As void*
+                ValidEntry := true
+                Type := DIRECTORY_ENTRY_DIRECTORY
 
-                i32 ChildNodeNumber := Child~>Node->INodeNumber
-
-                this->FS->CreateDirectoryEntry(this~>Node, Entry->Name, ChildNodeNumber, DIRECTORY_ENTRY_DIRECTORY)
-
-                this->Cache->Insert(FNV1A(Entry->Name), Entry)
+                VFSExt2Directory* Directory := Entry->Directory As void*
+                ChildNodeNumber := Directory~>Node->INodeNumber
             }
         }
+        else if (Entry->Type = VFSDirectoryEntryType::File) {
+            if (Entry->File->Is(GetVFSExt2FilePrototype())) {
+                ValidEntry := true
+                Type := DIRECTORY_ENTRY_FILE
+
+                VFSExt2File* File := Entry->File As void*
+                ChildNodeNumber := File~>Node->INodeNumber
+            }
+        }
+
+        if !(ValidEntry) {
+            return false
+        }
+
+        this->FS->CreateDirectoryEntry(this~>Node, Entry->Name, ChildNodeNumber, Type)
+        this->Cache->Insert(FNV1A(Entry->Name), Entry)
 
         return true
     }
@@ -221,6 +244,7 @@ IDirectoryPrototype VFSExt2DirectoryPrototype {
     IsEphemeral: &VFSExt2Directory.IsEphemeral,
 
     CreateDirectory: &VFSExt2Directory.CreateDirectory,
+    CreateFile: &VFSExt2Directory.CreateFile,
 
     Insert: &VFSExt2Directory.Insert,
     Remove: &VFSExt2Directory.Remove
