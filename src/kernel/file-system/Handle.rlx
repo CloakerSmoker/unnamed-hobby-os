@@ -197,8 +197,11 @@ struct FileHandle {
 	define void Seek(i32 Where, SeekMode Mode) {
 		this->Prototype->Seek(this, Where, Mode)
 	}
+	define void Seek(SeekMode Mode, i32 Where) {
+		this->Prototype->Seek(this, Where, Mode)
+	}
 	define i32 Tell() {
-		return this->Prototype->Tell()
+		return this->Prototype->Tell(this)
 	}
 	
 	define i32 DeviceControl(i32 Function, void* Parameter) {
