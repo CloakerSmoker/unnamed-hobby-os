@@ -3,7 +3,10 @@ import sys, os
 mode = sys.argv[1]
 busybox = sys.argv[2]
 
-links = open(f'{busybox}/busybox.links', 'r').readlines()
+try:
+    links = open(f'{busybox}/busybox.links', 'r').readlines()
+except:
+    sys.exit(0)
 
 for link in [l.rstrip() for l in links]:
     binary = f'busybox_{os.path.basename(link).upper()}'

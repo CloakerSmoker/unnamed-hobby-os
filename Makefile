@@ -30,20 +30,15 @@ $(BUSYBOX)/busybox-$(BUSYBOX_VER).tar.bz2:
 $(BUSYBOX)/busybox-$(BUSYBOX_VER).tar: $(BUSYBOX)/busybox-$(BUSYBOX_VER).tar.bz2
 	bunzip2 -k $(BUSYBOX)/busybox-$(BUSYBOX_VER).tar.bz2
 
-$(BUSYBOX_SRC): $(BUSYBOX)/busybox-$(BUSYBOX_VER).tar
+$(BUSYBOX_SRC)/README: $(BUSYBOX)/busybox-$(BUSYBOX_VER).tar
 	mkdir -p $(BUSYBOX_SRC)
-	tar -xf $(BUSYBOX)/busybox-$(BUSYBOX_VER).tar --directory=$(BUSYBOX)
+	tar -mxf $(BUSYBOX)/busybox-$(BUSYBOX_VER).tar --directory=$(BUSYBOX)
 
-$(BUSYBOX_SRC)/.config: $(BUSYBOX_SRC)
-	wget -O $@ https://www.busybox.net/downloads/binaries/1.35.0-x86_64-linux-musl/config
-
-$(BUSYBOX_SRC)/busybox: $(BUSYBOX_SRC) src/host/busybox.config
+$(BUSYBOX_SRC)/busybox.links: $(BUSYBOX_SRC)/README src/host/busybox.config
 	cp src/host/busybox.config $(BUSYBOX_SRC)/.config
 	cd $(BUSYBOX_SRC); make all
 	cd $(BUSYBOX_SRC); make busybox.links
 	cd $(BUSYBOX_SRC); ./make_single_applets.sh
-
-busybox: $(BUSYBOX_SRC)/busybox
 
 # Preprocess
 
@@ -66,17 +61,17 @@ define SCRIPT =
 dd bs=1M count=128M if=/dev/zero of=/host/build/Disk.img
 loop open /host/build/Disk.img
 
-gpt /dev/loop0 format 100M
+gpt /dev/loop0 format 128M
 
 gpt /dev/loop0 create 0
-gpt /dev/loop0 set 0 start 9M
-gpt /dev/loop0 set 0 end 19M
+gpt /dev/loop0 set 0 start 10M
+gpt /dev/loop0 set 0 end 50M
 gpt /dev/loop0 set 0 name "EFI System"
 gpt /dev/loop0 set 0 type system
 
 gpt /dev/loop0 create 1
-gpt /dev/loop0 set 1 start 20M
-gpt /dev/loop0 set 1 end 100M
+gpt /dev/loop0 set 1 start 51M
+gpt /dev/loop0 set 1 end 127M
 gpt /dev/loop0 set 1 name "Boot"
 gpt /dev/loop0 set 1 type custom
 
@@ -84,8 +79,8 @@ gpt /dev/loop0 show partitions
 
 gpt /dev/loop0 scan
 
-format fat32 /dev/loop0p0 10M
-format ext2 /dev/loop0p1 80M
+format fat32 /dev/loop0p0 40M
+format ext2 /dev/loop0p1 70M
 
 mount ext2 /dev/loop0p1 /root
 
@@ -106,23 +101,17 @@ endef
 
 export SCRIPT
 
-newdisk: $(BUILD)/HostFileShell.elf
-	
-
 $(BUILD)/Disk.img: $(BUILD)/GPTTool.elf
 $(BUILD)/Disk.img: $(BUILD)/FAT32Tool.elf $(BUILD)/Boot.efi
 $(BUILD)/Disk.img: $(BUILD)/Ext2Tool.elf $(BUILD)/Kernel.elf
-$(BUILD)/Disk.img: $(BIN_EXTRA)
-$(BUILD)/Disk.img: $(BUILD)/Beep.elf
 $(BUILD)/Disk.img: $(BUILD)/HostFileShell.elf
-$(BUILD)/Disk.img: $(shell python3 src/host/busybox.py --src $(BUSYBOX_SRC))
+$(BUILD)/Disk.img: $(BUSYBOX_SRC)/busybox.links $(shell python3 src/host/busybox.py --src $(BUSYBOX_SRC))
 $(BUILD)/Disk.img:
 	rm -f $@
 
 	echo "$$SCRIPT" | tr '\1' '\n' | $(BUILD)/HostFileShell.elf --script
 	
 	$(BUILD)/FAT32Tool.elf "File($@,512)>GPT(0)" \
-		"format 10 m" \
 		"mkdir EFI" \
 		"cd EFI" \
 		"mkdir BOOT" \

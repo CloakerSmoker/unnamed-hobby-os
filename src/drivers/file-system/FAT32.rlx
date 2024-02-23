@@ -59,7 +59,7 @@ struct FAT32Info {
 	i32 SecondSignature
 	i32 LastKnownFreeSectorCount
 	i32 FirstAvailableCluster
-	i8[16] Reserved2
+	i8[14] Reserved2
 	i8[2] BootMarker
 }
 
@@ -687,6 +687,9 @@ struct FAT32Device {
 		this->Header->DriveNumber := 0x80 As i8
 		this->Header->Signature   := FAT32_SIGNATURE
 		this->Header->VolumeID    := 0x7613646D
+
+		this->Header->BootMarker[0] := 0x55
+		this->Header->BootMarker[1] := 0xaa As i8
 		
 		MoveMemory(this->Header->VolumeLabel, "NO NAME    ", 11)
 		MoveMemory(this->Header->SystemIdentiferString, FAT32_IDENTIFIER_STRING, 8)
@@ -695,6 +698,9 @@ struct FAT32Device {
 		this->Info->SecondSignature := FAT32_INFO_SECOND_SIGNATURE
 		this->Info->FirstAvailableCluster := 2
 		this->Info->LastKnownFreeSectorCount := ClusterCount
+
+		this->Info->BootMarker[0] := 0x55
+		this->Info->BootMarker[1] := 0xaa As i8
 		
 		this->Sync()
 		this->ReadHeader()
