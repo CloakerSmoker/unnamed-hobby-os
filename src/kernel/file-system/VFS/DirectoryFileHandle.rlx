@@ -1,0 +1,81 @@
+declare FileHandlePrototype* GetGenericDirectoryFileHandlePrototype()
+
+struct GenericDirectoryFileHandle {
+	#Include "./src/kernel/file-system/HandleInstance.rlx"
+	
+    IDirectory* Directory
+	void* EnumerationState
+
+	static FileHandle* New(IDirectory* Directory) {
+		self* this := Alloc(#self)
+
+		this->Prototype := GetGenericDirectoryFileHandlePrototype()
+
+		this->Directory := Directory
+
+		return this->AsHandle()
+	}
+
+	define void Seek(i32 Destination, SeekMode Mode) {
+		if (Mode = SeekMode::Set && Destination = 0) {
+			this->EnumerationState := null
+		}
+		else {
+			Throw(HANDLE_ERROR_BAD_PARAMETER)
+		}
+	}
+	
+	define i32 ReadDirectoryEntries(DirectoryEntry* Out, i32 Count) {
+		if (this->EnumerationState = null) {
+			this->EnumerationState := this->Directory->Enumerate()
+		}
+
+		for (i32 Index := 0, Index < Count, Index++) {
+			VFSDirectoryEntry Result
+
+			if !(this->Directory->Next(this~>EnumerationState, &Result)) {
+				break
+			}
+
+			DirectoryEntry* Entry := Out[Index]
+
+			Entry->NameLength := StringLength(Result.Name)
+			MoveMemory(Entry~>Name, Result.Name, Entry->NameLength)
+		}
+		
+		return Index
+	}
+	
+	define FileHandle* OpenOrCreate(i8* Path, i8 Flags) {
+		VFSDirectoryEntry Entry
+
+		if !(this->Directory->Lookup(Path, &Entry)) {
+			; TODO: Handle create
+
+			return null
+		}
+
+		if (Entry.Type = VFSDirectoryEntryType::File) {
+			return Entry.File->Open()
+		}
+		else if (Entry.Type = VFSDirectoryEntryType::Directory) {
+			return self:New(Entry.Directory)
+		}
+
+		return null
+	}
+	define FileHandle* Open(i8* Path) {
+		return this->OpenOrCreate(Path, EXT2_OPEN_IF_EXISTS)
+	}
+}
+
+FileHandlePrototype GenericDirectoryFileHandlePrototype {
+	Seek: &GenericDirectoryFileHandle.Seek,
+	ReadDirectoryEntries: &GenericDirectoryFileHandle.ReadDirectoryEntries,
+	OpenOrCreate: &GenericDirectoryFileHandle.OpenOrCreate,
+	Open: &GenericDirectoryFileHandle.Open
+}
+
+define FileHandlePrototype* GetGenericDirectoryFileHandlePrototype() {
+	return &GenericDirectoryFileHandlePrototype
+}

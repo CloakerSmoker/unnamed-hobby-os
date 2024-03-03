@@ -1,0 +1,31 @@
+
+#Require "./src/kernel/networking/Endianess.rlx"
+
+i16 LINUX_PROTOCOL_FAMILY_INET := 2
+i16 LINUX_PROTOCOL_FAMILY_INET6 := 10
+
+i16 LINUX_ADDRESS_FAMILY_INET := 2
+i16 LINUX_ADDRESS_FAMILY_INET6 := 10
+
+i32 LINUX_SOCKET_TYPE_STREAM := 1
+i32 LINUX_SOCKET_TYPE_DATAGRAM := 2
+
+i32 LINUX_SOCKET_PROTOCOL_IP := 0
+i32 LINUX_SOCKET_PROTOCOL_TCP := 6
+i32 LINUX_SOCKET_PROTOCOL_UDP := 67
+
+struct LinuxNetworkAddress {
+    i16 AddressFamily
+}
+
+struct LinuxIPv4NetworkAddress {
+    i16 AddressFamily
+
+    i16 Port
+    i32 Address
+
+    define void FlipEndianess() {
+        this->Port := NetworkShort(this->Port)
+        this->Address := NetworkInt(this->Address)
+    }
+}

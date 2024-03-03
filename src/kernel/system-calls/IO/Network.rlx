@@ -1,0 +1,221 @@
+
+#Require "./src/kernel/networking/Stack.rlx"
+#Require "./src/linux/Network.rlx"
+
+define i64 SystemCallSocket(i32 Domain, i32 Type, i32 Protocol) {
+    ;Info("Socket(%i, %i, %i)\n", Domain, Type, Protocol)
+    ;Info("Expect UDP: %i %i %i\n", LINUX_ADDRESS_FAMILY_INET, LINUX_SOCKET_TYPE_DATAGRAM, LINUX_SOCKET_PROTOCOL_UDP)
+    ;Info("Expect TCP: %i %i %i\n", LINUX_ADDRESS_FAMILY_INET, LINUX_SOCKET_TYPE_STREAM, LINUX_SOCKET_PROTOCOL_TCP)
+
+    if (Domain = LINUX_ADDRESS_FAMILY_INET) {
+        if (Type = LINUX_SOCKET_TYPE_DATAGRAM) {
+            if (Protocol = LINUX_SOCKET_PROTOCOL_UDP || Protocol = 0) {
+                FileHandle* UDP := UDPSocketHandle:New()
+
+                return CurrentProcess->AllocateFileDescriptor(UDP)
+            }
+        }
+        else if (Type = LINUX_SOCKET_TYPE_STREAM) {
+            if (Protocol = LINUX_SOCKET_PROTOCOL_TCP || Protocol = 0) {
+                FileHandle* TCP := TCPSocketHandle:New()
+
+                return CurrentProcess->AllocateFileDescriptor(TCP)
+            }
+        }
+    }
+
+    return -LINUX_ERROR_OPNOTSUPP
+}
+
+define i64 TranslateLinuxNetworkAddress(LinuxNetworkAddress* RawIn, i32 InSize, NetworkAddress* Out) {
+    if (RawIn->AddressFamily != LINUX_ADDRESS_FAMILY_INET) {
+        return -LINUX_ERROR_OPNOTSUPP
+    }
+    
+    if (InSize < #LinuxIPv4NetworkAddress) {
+        return -LINUX_ERROR_INVAL
+    }
+
+    LinuxIPv4NetworkAddress* In := RawIn As void*
+
+    Out->Type := NetworkAddressType::IPv4
+    Out->IPv4 := NetworkInt(In->Address)
+    Out->Port := NetworkShort(In->Port)
+
+    return 0
+}
+
+define i64 SystemCallConnect(i32 FileDescriptor, LinuxNetworkAddress* RawAddress, i32 AddressLength) {
+    i64 Error := 0
+    NetworkAddress Address
+
+    if (Error := TranslateLinuxNetworkAddress(RawAddress, AddressLength, &Address)) {
+        return Error
+    }
+    
+    FileHandle* Handle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
+
+    if !(Handle) {
+        return -LINUX_ERROR_INVAL
+    }
+
+    try {
+        Handle->Connect(&Address)
+    }
+    catch (i64 Exception) {
+        ; todo
+
+        return -LINUX_ERROR_INVAL
+    }
+
+    return 0
+}
+
+define i64 SystemCallListen(i32 FileDescriptor, i32 Backlog) {
+    FileHandle* Handle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
+
+    if !(Handle) {
+        return -LINUX_ERROR_INVAL
+    }
+
+    try {
+        Handle->Listen()
+    }
+    catch (i64 Exception) {
+        ; todo
+
+        return -LINUX_ERROR_INVAL
+    }
+
+    return 0
+}
+
+define i64 SystemCallBind(i32 FileDescriptor, LinuxNetworkAddress* RawAddress, i32 AddressLength) {
+    i64 Error := 0
+    NetworkAddress Address
+
+    if (Error := TranslateLinuxNetworkAddress(RawAddress, AddressLength, &Address)) {
+        return Error
+    }
+    
+    FileHandle* Handle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
+
+    if !(Handle) {
+        return -LINUX_ERROR_INVAL
+    }
+
+    try {
+        Handle->Bind(&Address)
+    }
+    catch (i64 Exception) {
+        ; todo
+
+        return -LINUX_ERROR_INVAL
+    }
+
+    return 0
+}
+
+define i64 SystemCallAccept(i32 FileDescriptor, LinuxNetworkAddress* RawAddress, i32 AddressLength) {
+    i8 ReturnAddress := false
+    
+    if (RawAddress != null && AddressLength > #LinuxNetworkAddress) {
+        ReturnAddress := true
+    }
+
+    FileHandle* Handle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
+
+    if !(Handle) {
+        return -LINUX_ERROR_INVAL
+    }
+
+    NetworkAddress RemoteAddress
+    i32 ResultHandle := 0
+
+    try {
+        FileHandle* Child := Handle->Accept(&RemoteAddress)
+
+        ResultHandle := CurrentProcess->AllocateFileDescriptor(Child)
+    }
+    catch (i64 Exception) {
+        ; todo
+
+        return -LINUX_ERROR_INVAL
+    }
+
+    if (ReturnAddress) {
+        LinuxIPv4NetworkAddress* IPv4Address := RawAddress As void*
+
+        RawAddress->AddressFamily := LINUX_ADDRESS_FAMILY_INET
+        IPv4Address->Address := NetworkInt(RemoteAddress.IPv4)
+        IPv4Address->Port := NetworkShort(RemoteAddress.Port)
+    }
+
+    return ResultHandle
+}
+
+define i64 SystemCallSendTo(i32 FileDescriptor, void* Buffer, i32 Size, i32 Flags, LinuxNetworkAddress* Address, i32 AddressLength) {
+    FileHandle* Handle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
+
+    if !(Handle) {
+        return -LINUX_ERROR_INVAL
+    }
+
+    i8 HasAddress := Address != null && AddressLength >= #LinuxIPv4NetworkAddress
+    i32 Result := 0
+
+    try {
+        if (HasAddress) {
+            ; TODO: sendto + address struct translation
+            ; 
+        }
+        else {
+            Result := Handle->Send(Buffer, Size)
+        }
+    }
+    catch (i64 Exception) {
+        ; todo
+
+        return -LINUX_ERROR_INVAL
+    }
+
+    return Result
+}
+
+define i64 SystemCallRecieveFrom(i32 FileDescriptor, void* Buffer, i32 Size, i32 Flags, LinuxNetworkAddress* Address, i32 AddressLength) {
+    FileHandle* Handle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
+
+    if !(Handle) {
+        return -LINUX_ERROR_INVAL
+    }
+
+    i8 HasAddress := Address != null && AddressLength >= #LinuxIPv4NetworkAddress
+    i32 Result := 0
+
+    try {
+        if (HasAddress) {
+            ; TODO: recvfrom + address struct translation
+            ;Result := Handle->RecieveFrom
+        }
+        else {
+            Result := Handle->Recieve(Buffer, Size)
+        }
+    }
+    catch (i64 Exception) {
+        ; todo
+
+        return -LINUX_ERROR_INVAL
+    }
+
+    return Result
+}
+
+define void RegisterNetworkSystemCalls() {
+	SystemCalls->Register(LINUX_SYSCALL_SOCKET, &SystemCallSocket)
+	SystemCalls->Register(LINUX_SYSCALL_CONNECT, &SystemCallConnect)
+	SystemCalls->Register(LINUX_SYSCALL_LISTEN, &SystemCallListen)
+	SystemCalls->Register(LINUX_SYSCALL_BIND, &SystemCallBind)
+	SystemCalls->Register(LINUX_SYSCALL_ACCEPT, &SystemCallAccept)
+	SystemCalls->Register(LINUX_SYSCALL_SENDTO, &SystemCallSendTo)
+	SystemCalls->Register(LINUX_SYSCALL_RECVFROM, &SystemCallRecieveFrom)
+}

@@ -31,7 +31,7 @@ define void HandleSystemCall(AMD64Context* Context) {
 		Info("During syscall %i: %s(%x, %x, %x, %x, %x, %x) -> ", SyscallCount, Name, Context->RDI, Context->RSI, Context->RDX, Context->R10, Context->R8, Context->R9)
 		Info("Exception %l\n", Code)
 		
-		loop {}
+		Context->RAX := -LINUX_ERROR_FAULT
 	}
 
 	if (DEBUG_SYSTEM_CALLS) {
@@ -76,6 +76,7 @@ define void OnSystemCall() asm {
 }
 
 #Require "./src/kernel/system-calls/IO/FileSystem.rlx"
+#Require "./src/kernel/system-calls/IO/Network.rlx"
 #Require "./src/kernel/system-calls/Control/Environment.rlx"
 #Require "./src/kernel/system-calls/Control/Process.rlx"
 
@@ -90,6 +91,7 @@ define void SetupSystemCalls() {
 	RegisterFileSystemSystemCalls()
 	RegisterEnvironmentSystemCalls()
 	RegisterProcessSystemCalls()
+	RegisterNetworkSystemCalls()
 }
 
 define void UserModeReturnStub() asm {

@@ -130,10 +130,13 @@ struct NetworkInterface {
 
 declare void AddNetworkRoute(i32, i64, NetworkInterface*)
 
+#Require "./src/kernel/networking/Utility.rlx"
+#Require "./src/kernel/networking/Ethernet.rlx"
+#Require "./src/kernel/networking/ARP.rlx"
+#Require "./src/kernel/networking/IPV4.rlx"
 #Require "./src/kernel/networking/ICMP.rlx"
 #Require "./src/kernel/networking/UDP.rlx"
 #Require "./src/kernel/networking/TCP.rlx"
-#Require "./src/kernel/networking/UDP.rlx"
 
 ;#Require "./src/kernel/networking/DHCP.rlx"
 ;#Require "./src/kernel/networking/DNS.rlx"
@@ -314,6 +317,8 @@ struct NetworkStack {
         return UDP->Bind(Port, Socket)
     }
 }
+
+NetworkStack* Network := null
 
 define void AddNetworkRoute(i32 Prefix, i64 Mask, NetworkInterface* Interface) {
     Network->AddRoute(Prefix, Mask As i32, Interface)
