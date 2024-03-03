@@ -18,7 +18,7 @@ i8 RECOVER_FROM_USER_PAGE_FAULT := false
 
 i8 DEBUG_SCHEDULER         := false ; Logs task switches plus why
 i8 DEBUG_SLOW_CLOCK        := false ; Uses a very low clock speed to reduce output clutter
-i8 DEBUG_SYSTEM_CALLS      := false ; Logs system call names/parameters + result
+i8 DEBUG_SYSTEM_CALLS      := true ; Logs system call names/parameters + result
 i8 DEBUG_SYS_READ          := false ; Logs a hexdump of data moved by `read()`
 i8 DEBUG_SYS_WRITE         := false ; Logs a hexdump of data moved by `write()`
 i8 DEBUG_TERMINAL_ESCAPES  := false ; Logs ANSI escapes as the terminal processes them
@@ -31,6 +31,8 @@ i64 PHYSICAL_ADDRESS_OF_KERNEL := 0x20_0000
 
 #ImageBase 0x7F00_0000_0000
 void* ADDRESS_OF_KERNEL       := 0x7F00_0000_0000 As void*
+
+void* ADDRESS_OF_PHYSICAL_MEMORY_ALLOCATOR := 0x10_0000 As void*
 
 void* ADDRESS_OF_PAGE_FRAMES  := 0xA000_0000 As void*
 void* ADDRESS_OF_KERNEL_STACK := 0xB000_0000 As void*

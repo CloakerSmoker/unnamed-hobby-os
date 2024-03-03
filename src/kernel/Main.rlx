@@ -288,7 +288,7 @@ define void BootStrap() {
 	
 	KernelAddressSpace->Initialize(ADDRESS_OF_PAGE_FRAMES, Kernel->PageFramesPages, BYTES_IN_1MB / PAGE_SIZE)
 	
-	KernelAddressSpace->MapRange(0x10_0000 As void*, 0x10_0000 / PAGE_SIZE, 0x10)
+	KernelAddressSpace->MapRange(ADDRESS_OF_PHYSICAL_MEMORY_ALLOCATOR, (ADDRESS_OF_PHYSICAL_MEMORY_ALLOCATOR / PAGE_SIZE) As i64, 0x10)
 	KernelAddressSpace->MapRange(ADDRESS_OF_KERNEL, PHYSICAL_ADDRESS_OF_KERNEL / PAGE_SIZE, Kernel->PageCount)
 	
 	KernelAddressSpace->MapRange(ADDRESS_OF_PAGE_FRAMES, Kernel->PageFramesPages / PAGE_SIZE, PAGE_COUNT_FOR_1MB)
@@ -301,8 +301,6 @@ define void BootStrap() {
 
 	KernelAddressSpace->Takeover(&RawMainContinuation, Stack, Stack)
 }
-
-NetworkStack* Network := null
 
 #Require "./src/kernel/networking/Stack.rlx"
 
@@ -374,12 +372,7 @@ Task* KernelSetupTask := &_KernelSetupTask
 
 #Require "./src/kernel/graphics/DoubleBuffer.rlx"
 
-#Require "./src/kernel/networking/Utility.rlx"
-#Require "./src/kernel/networking/Ethernet.rlx"
-#Require "./src/kernel/networking/ARP.rlx"
-#Require "./src/kernel/networking/IPV4.rlx"
-#Require "./src/kernel/networking/ICMP.rlx"
-#Require "./src/kernel/networking/UDP.rlx"
+#Require "./src/kernel/networking/Stack.rlx"
 
 ;#Require "./src/kernel/networking/DHCP.rlx"
 
@@ -459,14 +452,65 @@ define void VFSRunShellTask() {
 	VFSRunShell(KernelTerminal)
 }
 
+#Require "./src/kernel/file-system/VFS/DirectoryFileHandle.rlx"
+
+define void ExecuteExecute(i32 ArgC, i8** ArgV) {
+    i8* Path := ArgV[1]
+
+    VFSDirectoryEntry Entry
+    if !(Lookup(CurrentDirectory, Path, &Entry)) {
+        Print("'%s' does not exist\n", Path)
+        return
+    }
+
+    if (Entry.Type != VFSDirectoryEntryType::File) {
+        Print("'%s' not a file\n", Path)
+        return
+    }
+
+    IFile* InputFile := Entry.File
+    FileHandle* Input := InputFile->Open()
+
+	Input->Seek(SeekMode::End, 0)
+	i32 Size := Input->Tell()
+	Input->Seek(SeekMode::Set, 0)
+
+	void* Buffer := Alloc(Size)
+	Input->Read(Buffer, Size)
+
+	i8*[1] Environment {"USER=root"}
+
+	ExecuteParameters Parameters {
+		WorkingDirectory: GenericDirectoryFileHandle:New(CurrentDirectory),
+
+		StandardInput: DefaultTerminalInput,
+		StandardOutput: DefaultTerminalOutput,
+		StandardError: DefaultTerminalOutput,
+
+		ArgumentCount: ArgC - 1,
+		Arguments: &ArgV[1],
+
+		EnvironmentCount: 1,
+		Environment: Environment
+	}
+
+	Execute(Buffer, &Parameters)
+}
+
+i32 EXECUTE_COMMAND_ID := RegisterCommand("execute", &ExecuteExecute)
+
 define void MainContinuation() {
 	CurrentTask := KernelSetupTask
 	
 	DisableInterrupts()
+
+	KernelAddressSpace->PrintMappings()
+
+	;Halt()
 	
 	Info("Paging initialized, AddressSpaceManager in control\n")
 	
-	KernelPageAllocator := PageHeap:Adopt(ADDRESS_OF_KERNEL_PAGES As i64, NUMBER_OF_KERNEL_PAGES)
+	KernelPageAllocator := PageHeap:Adopt(ADDRESS_OF_KERNEL_PAGES, NUMBER_OF_KERNEL_PAGES)
 	
 	Info("Built kernel virtual allocator\n")
 	
@@ -531,7 +575,7 @@ define void MainContinuation() {
 
 	InitializePCIe(&VisitPCIeFunction)
 
-	/*
+	;/*
 	if (SATAController = null) {
 		Panic("No SATA disk controller detected, hanging...\n")
 	}
@@ -563,9 +607,11 @@ define void MainContinuation() {
 	NetworkThread2->State := TASK_CAN_RUN
 	;*/
 
+	/*
 	Task* NetworkThread2 := Scheduler->AddLightTask(null)
 	NetworkThread2~>Context->Call(&TestNetworking)
 	NetworkThread2->State := TASK_CAN_RUN
+	;*/
 
 	StartScheduler()
 	;*/

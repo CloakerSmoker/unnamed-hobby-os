@@ -7,7 +7,9 @@ struct PageHeap {
 	
 	i8[0] AllocationMap
 	
-	static PageHeap* Adopt(i64 PhysicalBase, i32 PageCount) {
+	static PageHeap* Adopt(void* RawPhysicalBase, i32 PageCount) {
+		i64 PhysicalBase := RawPhysicalBase As i64
+
 		i32 AllocationMapSize := PageCount / 8
 		
 		if (PageCount % 8) {
@@ -170,4 +172,4 @@ struct PageHeap {
 	}
 }
 
-PageHeap* PhysicalMemory := PageHeap:Adopt(0x10_0000, 0x500)
+PageHeap* PhysicalMemory := PageHeap:Adopt(ADDRESS_OF_PHYSICAL_MEMORY_ALLOCATOR, 0x500)
