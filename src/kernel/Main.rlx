@@ -370,7 +370,7 @@ define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Devic
 Task _KernelSetupTask
 Task* KernelSetupTask := &_KernelSetupTask
 
-#Require "./src/kernel/graphics/DoubleBuffer.rlx"
+;#Require "./src/kernel/graphics/DoubleBuffer.rlx"
 
 #Require "./src/kernel/networking/Stack.rlx"
 

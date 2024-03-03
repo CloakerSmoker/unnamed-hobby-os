@@ -2,6 +2,13 @@
 
 # Abort commit with untracked files
 
+make deps > /dev/null
+
+if test $status != 0
+	echo "Build failed! Can't commit"
+	exit 1
+end
+
 set -l result 0
 
 for file in (cat build/Kernel.d | string split ' ' | uniq | grep -v compiler)
