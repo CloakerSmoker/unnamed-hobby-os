@@ -1,39 +1,7 @@
 
 #Require "$/String.rlx"
 
-define void PrintGUID(i8* this) {
-	Print("{")
-	
-	for (i32 Index := 0, Index < 4, Index++) {
-        Print("%B", this[Index])
-	}
-	
-	Print("-")
-	
-	for (i32 Index := 4, Index < 6, Index++) {
-		Print("%B", this[Index])
-	}
-	
-	Print("-")
-	
-	for (i32 Index := 6, Index < 8, Index++) {
-		Print("%B", this[Index])
-	}
-	
-	Print("-")
-	
-	for (i32 Index := 8, Index < 10, Index++) {
-		Print("%B", this[Index])
-	}
-	
-	Print("-")
-	
-	for (i32 Index := 10, Index < 16, Index++) {
-		Print("%B", this[Index])
-	}
-	
-	Print("}")
-}
+#Require "./src/utility/GUID.rlx"
 
 define void PrintGPTPartitionTableHeader(GPTPartitionTableHeader* this) {
 	Print("GPTPartitionTableHeader {\n")
@@ -48,8 +16,8 @@ define void PrintGPTPartitionTableHeader(GPTPartitionTableHeader* this) {
 	Print("\tFirstUsableBlock           : %x\n", this->FirstUsableBlock)
 	Print("\tLastUsableBlock            : %x\n", this->LastUsableBlock)
 	
-	Print("\tDiskGUID                   : ")
-	PrintGUID(this->DiskGUID)
+	Print("\tDiskGUID                   : %guid", this~>DiskGUID)
+	;PrintGUID(this->DiskGUID)
 	Print("\n")
 	
 	Print("\tPartitionEntryArrayLBA     : %x\n", this->PartitionEntryArrayLBA)
@@ -91,11 +59,11 @@ define void PrintGPTPartitionEntry(GPTPartitionEntry* this) {
 		Print("[Custom] ")
 	}
 	
-	PrintGUID(this->PartitionTypeGUID)
-	Print("\n")
+	;PrintGUID(this->PartitionTypeGUID)
+	Print("%guid\n", this~>PartitionTypeGUID)
 	
-	Print("\tPartitionGUID    : ")
-	PrintGUID(this->PartitionGUID)
+	Print("\tPartitionGUID    : %guid", this~>PartitionGUID)
+	;PrintGUID(this->PartitionGUID)
 	Print("\n")
 	
 	Print("\tStartingLBA      : %x\n", this->StartingLBA)
@@ -107,6 +75,8 @@ define void PrintGPTPartitionEntry(GPTPartitionEntry* this) {
 	Print("\tName             : %s\n", WToA(this~>PartitionName))
 	Print("}\n")
 }
+
+#Require "./src/utility/Random.rlx"
 
 define void ExecuteGPT(i64 ArgC, i8** ArgV) {
     if (ArgC = 2) {
@@ -221,6 +191,10 @@ define void ExecuteGPT(i64 ArgC, i8** ArgV) {
             Device->ReadHeader(HeaderLBA)
             PrintGPTPartitionTableHeader(Device->Header)
         }
+        else if (StringEquals(Noun, "guid")) {
+            Device->ReadHeader(1)
+            Print("%guid\n", Device->Header->DiskGUID)
+        }
         else if (StringEquals(Noun, "partitions")) {
             for (i32 Index := 0, Index < Device->Header->PartitionEntryCount, Index++) {
                 GPTPartitionEntry* NextPartition := Device->ReadPartitionEntry(Index)
@@ -244,8 +218,17 @@ define void ExecuteGPT(i64 ArgC, i8** ArgV) {
 
             GPTPartitionEntry* Partition := Device->ReadPartitionEntry(PartitionNumber)
 
-            Print("Partition %i:\n", PartitionNumber)
-            PrintGPTPartitionEntry(Partition)
+            if (ArgC >= 6) {
+                i8* Property := ArgV[5]
+
+                if (StringEquals(Property, "guid")) {
+                    Print("%guid\n", Partition~>PartitionGUID)
+                }
+            }
+            else {
+                Print("Partition %i:\n", PartitionNumber)
+                PrintGPTPartitionEntry(Partition)
+            }
         }
     }
     else if (StringEquals(Verb, "create")) {
@@ -255,7 +238,7 @@ define void ExecuteGPT(i64 ArgC, i8** ArgV) {
 
         GPTPartitionEntry* NewEntry := Alloc(#GPTPartitionEntry)
 
-        GenerateGUID(NewEntry->PartitionGUID)
+        ;GenerateGUID(NewEntry->PartitionGUID)
 
         Device->WritePartitionEntry(Index, NewEntry)
 		
@@ -264,48 +247,105 @@ define void ExecuteGPT(i64 ArgC, i8** ArgV) {
 		Print("Added entry in slot %i\n", Index)
     }
     else if (StringEquals(Verb, "set")) {
-        ; gpt /dev/loop0 set 0 start 32
-        i32 PartitionNumber := AToI(ArgV[3]) As i32
-        GPTPartitionEntry* BorrowedPartition := Device->ReadPartitionEntry(PartitionNumber)
+        ; gpt /dev/loop0 set
 
-        GPTPartitionEntry TargetPartition
-        MoveMemory(&TargetPartition, BorrowedPartition, #GPTPartitionEntry)
+        i8* Selector := ArgV[3]
 
-        ;PrintGPTPartitionEntry(&TargetPartition)
+        if (StringEquals(Selector, "disk")) {
+            ; gpt /dev/loop0 set disk
 
-        i8* Property := ArgV[4]
-        i8* Value := ArgV[5]
+            i8* Property := ArgV[4]
+            i8* Value := ArgV[5]
 
-        if (StringEquals(Property, "start")) {
-            TargetPartition.StartingLBA := ParseDataUnit(Value) / BlockSize
+            if (StringEquals(Property, "guid")) {
+                ; gpt /dev/loop0 set disk guid
+
+                if (StringEquals(Value, "random")) {
+                    ; gpt /dev/loop0 set disk guid random
+
+                    FillRandom(Device->Header~>DiskGUID, 16)
+                }
+
+                ; gpt /dev/loop0 set disk guid {whatever}
+                else if !(ParseGUID(Value, Device->Header~>DiskGUID)) {
+                    Print("Could not parse '%s' as a disk GUID\n", Value)
+                    return
+                }
+
+                Device->WriteHeader(Device->Header)
+
+                Print("Set disk.guid = %guid\n", Device->Header~>DiskGUID)
+            }
         }
-        else if (StringEquals(Property, "end")) {
-            TargetPartition.EndingLBA := ParseDataUnit(Value) / BlockSize
-        }
-        else if (StringEquals(Property, "name")) {
-            i8* Name := ArgV[5]
-            i32 NameLength := StringLength(Name)
-			
-			MoveMemory(TargetPartition~>PartitionName, AToW(Name, NameLength), NameLength * 2)
-        }
-        else if (StringEquals(Property, "type")) {
-            i8* Type := ArgV[5]
+        else if (StringEquals(Selector, "partition")) {
+            ; gpt /dev/loop0 set partition 0
+            
+            i32 PartitionNumber := AToI(ArgV[4]) As i32
+            GPTPartitionEntry* BorrowedPartition := Device->ReadPartitionEntry(PartitionNumber)
 
-			if (StringEquals(Type, "system")) {
-				MoveMemory(TargetPartition~>PartitionTypeGUID, GPT_PARTITION_TYPE_SYSTEM, 16)
-			}
-			else if (StringEquals(Type, "custom")) {
-				MoveMemory(TargetPartition~>PartitionTypeGUID, GPT_PARTITION_TYPE_CUSTOM, 16)
-			}
-			else if (StringEquals(Type, "none")) {
-				MoveMemory(TargetPartition~>PartitionTypeGUID, GPT_PARTITION_TYPE_NONE, 16)
-			}
+            GPTPartitionEntry TargetPartition
+            MoveMemory(&TargetPartition, BorrowedPartition, #GPTPartitionEntry)
+
+            ;PrintGPTPartitionEntry(&TargetPartition)
+
+            i8* Property := ArgV[5]
+            i8* Value := ArgV[6]
+
+            i8 ShowDefaultResult := true
+
+            if (StringEquals(Property, "start")) {
+                TargetPartition.StartingLBA := ParseDataUnit(Value) / BlockSize
+            }
+            else if (StringEquals(Property, "end")) {
+                TargetPartition.EndingLBA := ParseDataUnit(Value) / BlockSize
+            }
+            else if (StringEquals(Property, "name")) {
+                i32 ValueLength := StringLength(Value)
+                
+                MoveMemory(TargetPartition~>PartitionName, AToW(Value, ValueLength), (ValueLength * 2) + 1)
+            }
+            else if (StringEquals(Property, "type")) {
+                if (StringEquals(Value, "system")) {
+                    MoveMemory(TargetPartition~>PartitionTypeGUID, GPT_PARTITION_TYPE_SYSTEM, 16)
+                }
+                else if (StringEquals(Value, "custom")) {
+                    MoveMemory(TargetPartition~>PartitionTypeGUID, GPT_PARTITION_TYPE_CUSTOM, 16)
+                }
+                else if (StringEquals(Value, "none")) {
+                    MoveMemory(TargetPartition~>PartitionTypeGUID, GPT_PARTITION_TYPE_NONE, 16)
+                }
+                else {
+                    if !(ParseGUID(Value, TargetPartition~>PartitionTypeGUID)) {
+                        Print("Could not parse '%s' as a partition type GUID\n", Value)
+                        return
+                    }
+                }
+            }
+            else if (StringEquals(Property, "guid")) {
+                ; gpt /dev/loop0 set 0 guid
+
+                if (StringEquals(Value, "random")) {
+                    FillRandom(TargetPartition~>PartitionGUID, 16)
+
+                    Print("Set %i.guid = %guid\n", PartitionNumber, TargetPartition~>PartitionGUID)
+                    ShowDefaultResult := false
+                }
+                else {
+                    if !(ParseGUID(Value, TargetPartition~>PartitionGUID)) {
+                        Print("Could not parse '%s' as a partition GUID\n", Value)
+                        return
+                    }
+                }
+            }
+
+            ;PrintGPTPartitionEntry(&TargetPartition)
+
+            Device->WritePartitionEntry(PartitionNumber, &TargetPartition)
+
+            if (ShowDefaultResult) {
+                Print("Set %i.%s = %s\n", PartitionNumber, Property, Value)
+            }
         }
-
-        ;PrintGPTPartitionEntry(&TargetPartition)
-
-        Device->WritePartitionEntry(PartitionNumber, &TargetPartition)
-        Print("Set %i.%s = %s\n", PartitionNumber, Property, Value)
     }
 }
 

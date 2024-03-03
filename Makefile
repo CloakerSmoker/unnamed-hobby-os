@@ -57,23 +57,27 @@ LIGHT_CLEAN_FILES+= EFIBoot.qcow2
 
 # Full disk image
 
-define SCRIPT =
+define MAKE_DISK_SCRIPT =
 dd bs=1M count=128M if=/dev/zero of=/host/build/Disk.img
 loop open /host/build/Disk.img
 
 gpt /dev/loop0 format 128M
 
+gpt /dev/loop0 set disk guid random
+
 gpt /dev/loop0 create 0
-gpt /dev/loop0 set 0 start 10M
-gpt /dev/loop0 set 0 end 50M
-gpt /dev/loop0 set 0 name "EFI System"
-gpt /dev/loop0 set 0 type system
+gpt /dev/loop0 set partition 0 start 10M
+gpt /dev/loop0 set partition 0 end 50M
+gpt /dev/loop0 set partition 0 name "EFI System"
+gpt /dev/loop0 set partition 0 type system
+gpt /dev/loop0 set partition 0 guid random
 
 gpt /dev/loop0 create 1
-gpt /dev/loop0 set 1 start 51M
-gpt /dev/loop0 set 1 end 127M
-gpt /dev/loop0 set 1 name "Boot"
-gpt /dev/loop0 set 1 type custom
+gpt /dev/loop0 set partition 1 start 51M
+gpt /dev/loop0 set partition 1 end 127M
+gpt /dev/loop0 set partition 1 name "Boot"
+gpt /dev/loop0 set partition 1 type custom
+gpt /dev/loop0 set partition 1 guid random
 
 gpt /dev/loop0 show partitions
 
@@ -99,7 +103,19 @@ endef
 #mount ext2 /dev/loop0p1 /root
 #install /host/cat /root/usr/bin/cat
 
-export SCRIPT
+export MAKE_DISK_SCRIPT
+
+define GET_GUIDS_SCRIPT =
+loop open /host/build/Disk.img
+@echo "--efi-system-guid "
+@gpt /dev/loop0 show partition 0 guid
+
+@echo "--root-guid "
+@gpt /dev/loop0 show partition 1 guid
+exit
+endef
+
+export GET_GUIDS_SCRIPT
 
 $(BUILD)/Disk.img: $(BUILD)/GPTTool.elf
 $(BUILD)/Disk.img: $(BUILD)/FAT32Tool.elf $(BUILD)/Boot.efi
@@ -109,7 +125,8 @@ $(BUILD)/Disk.img: $(BUSYBOX_SRC)/busybox.links $(shell python3 src/host/busybox
 $(BUILD)/Disk.img:
 	rm -f $@
 
-	echo "$$SCRIPT" | tr '\1' '\n' | $(BUILD)/HostFileShell.elf --script
+	echo "$$MAKE_DISK_SCRIPT" | tr '\1' '\n' | $(BUILD)/HostFileShell.elf --script
+	echo "$$GET_GUIDS_SCRIPT" | tr '\1' '\n' | $(BUILD)/HostFileShell.elf --silent | tr '\n' ' ' > build/KernelCommandLine.txt
 	
 	$(BUILD)/FAT32Tool.elf "File($@,512)>GPT(0)" \
 		"mkdir EFI" \
@@ -117,6 +134,7 @@ $(BUILD)/Disk.img:
 		"mkdir BOOT" \
 		"cd BOOT" \
 		"import $(BUILD)/Boot.efi BOOTX64.EFI" \
+		"import $(BUILD)/KernelCommandLine.txt" "KCMDLN.TXT" \
 		"quit"
 	
 	$(BUILD)/Ext2Tool.elf "File($@,512)>GPT(1)" \

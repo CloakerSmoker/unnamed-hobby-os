@@ -317,3 +317,9 @@ define void ExecuteInstall(i64 ArgC, i8** ArgV) {
 }
 
 i32 INSTALL_COMMAND_ID := RegisterCommand("install", &ExecuteInstall)
+
+define void ExecuteEcho(i64 ArgC, i8** ArgV) {
+    Print("%s", ArgV[1])
+}
+
+i32 ECHO_COMMAND_ID := RegisterCommand("echo", &ExecuteEcho)

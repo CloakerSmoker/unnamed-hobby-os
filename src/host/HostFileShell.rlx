@@ -84,18 +84,27 @@ define i64 ParseBlockCount(i8* ValueString, i8* Scale) {
 #Require "./src/kernel/file-system/VFS/shell/Mount.rlx"
 #Require "./src/kernel/file-system/VFS/shell/GPT.rlx"
 #Require "./src/kernel/file-system/VFS/shell/Format.rlx"
+#Require "./src/kernel/file-system/VFS/shell/Random.rlx"
 
 #Require "./src/kernel/file-system/VFS/ZeroDevice.rlx"
 
 define void Main(i64 _ArgC, i8** _ArgV) {
     i8 ScriptedInput := false
+    i8 SilentMode := false
 
     if (_ArgC = 2) {
         if (StringEquals(_ArgV[1], "--script")) {
             ScriptedInput := true
         }
+        else if (StringEquals(_ArgV[1], "--silent")) {
+            SilentMode := true
+        }
     }
 
+    if (SilentMode) {
+        i64 RealSTDOUT := STDOUT
+        STDOUT := -1
+    }
 
     IDirectory* Root := VFSDirectory:New()
     MountRoot(Root)
@@ -136,8 +145,18 @@ define void Main(i64 _ArgC, i8** _ArgV) {
         ParseCommandLine(Line, &ArgC, &ArgV)
         i8* CommandName := ArgV[0]
 
+        i8 Loud := false ; Only valid in silent mode
+
         if (CommandName[0] = '#') {
             continue
+        }
+        else if (CommandName[0] = '@') {
+            CommandName += 1
+            
+            if (SilentMode) {
+                STDOUT := RealSTDOUT
+                Loud := true
+            }
         }
 
         if (StringEquals(CommandName, "exit")) {
@@ -155,6 +174,10 @@ define void Main(i64 _ArgC, i8** _ArgV) {
         }
         else {
             Command->Callback(ArgC, ArgV)
+        }
+
+        if (Loud) {
+            STDOUT := -1
         }
     }
 

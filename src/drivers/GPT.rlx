@@ -1,5 +1,6 @@
 #Require "./src/utility/EFICRC.rlx"
 #Require "./src/utility/MBR.rlx"
+#Require "./src/utility/Random.rlx"
 
 #Require "./src/drivers/block-device/BlockDevice.rlx"
 
@@ -166,7 +167,7 @@ struct GPTDevice {
 		this->Header->Version := GPT_VERSION_1_0
 		this->Header->HeaderSize := #GPTPartitionTableHeader
 		
-		GenerateGUID(this->Header->DiskGUID)
+		FillRandom(this->Header~>DiskGUID, 16)
 		
 		this->Header->ThisHeaderLBA := 1
 		this->Header->AlternateHeaderLBA := LastLBA

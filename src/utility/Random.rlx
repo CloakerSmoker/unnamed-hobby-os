@@ -1,0 +1,50 @@
+
+define i64 Random64() asm {
+    ; retry:
+    ; rdrand rax
+    ; jnc retry
+    { 0x48, 0x0F, 0xC7, 0xF0, 0x73, 0xFA }
+    ret
+}
+
+define i32 Random32() asm {
+    ; retry:
+    ; rdrand eax
+    ; jnc retry
+    { 0x0F, 0xC7, 0xF0, 0x73, 0xFB }
+    ret
+}
+
+define i16 Random16() asm {
+    ; retry:
+    ; rdrand ax
+    ; jnc retry
+    { 0x66, 0x0F, 0xC7, 0xF0, 0x73, 0xFA }
+    ret
+}
+
+define i8 Random8() asm {
+    ; retry:
+    ; rdrand ax
+    ; jnc retry
+    { 0x66, 0x0F, 0xC7, 0xF0, 0x73, 0xFA }
+    ret
+}
+
+define void FillRandom(void* Buffer, i32 Size) {
+    void* Tail := Buffer
+    i32 ChunkCount := Size / 8
+    i32 Remainder := Size % 8
+
+    for (i32 Chunk := 0, Chunk < ChunkCount, Chunk++) {
+        *(Tail As i64*) := Random64()
+
+        Tail += 8
+    }
+
+    for (i32 Byte := 0, Byte < Remainder, Byte++) {
+        *(Tail As i8*) := Random8()
+
+        Tail += 1
+    }
+}
