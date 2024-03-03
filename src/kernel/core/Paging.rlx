@@ -417,10 +417,10 @@ struct AddressSpaceManager {
 			for (i32 ColumnIndex := 0, ColumnIndex < 40, ColumnIndex++) {
 				i32 Allocated := this->GetPageFrameIndexStatus(Index++)
 				
-				Print("%b", Allocated)
+				Info("%b", Allocated)
 			}
 			
-			Print("\n")
+			Info("\n")
 		}
 		
 		i32 Remainder := this->PageFrameCount % 40
@@ -428,37 +428,37 @@ struct AddressSpaceManager {
 		for (i32 ColumnIndex := 0, ColumnIndex < Remainder, ColumnIndex++) {
 			i32 Allocated := this->GetPageFrameIndexStatus(Index++)
 			
-			Print("%b", Allocated)
+			Info("%b", Allocated)
 		}
 		
-		Print("\n")
+		Info("\n")
 	}
 	
 	define void PrintPTE(i64 Virtual, i64 Entry) {
-		Print("%x -> %x ", Virtual, RemovePageFlags(Entry As void*))
+		Info("%x -> %x ", Virtual, RemovePageFlags(Entry As void*))
 		
 		if (Entry & PAGE_PRESENT) {
-			Print("[Present] ")
+			Info("[Present] ")
 		}
 		else {
-			Print("[Not Present] ")
+			Info("[Not Present] ")
 		}
 		
 		if (Entry & PAGE_WRITE) {
-			Print("[Write] ")
+			Info("[Write] ")
 		}
 		else {
-			Print("[Read only] ")
+			Info("[Read only] ")
 		}
 		
 		if (Entry & PAGE_USER) {
-			Print("[User] ")
+			Info("[User] ")
 		}
 		else {
-			Print("[Supervisor] ")
+			Info("[Supervisor] ")
 		}
 		
-		Print("\n")
+		Info("\n")
 	}
 	
 	define i64 EndRun(i64 RunStartAddress, i64 RunStart, i64 RunLastAddress, i64 RunLast, i64 RunLength) {
@@ -466,7 +466,7 @@ struct AddressSpaceManager {
 			this->PrintPTE(RunStartAddress, RunStart)
 			
 			if (RunLength > 1) {
-				Print("...\n")
+				Info("...\n")
 				this->PrintPTE(RunLastAddress, RunLast)
 			}
 		}

@@ -262,7 +262,7 @@ struct Process {
 	ELFHeader* ELF
 	
 	void* BreakStart
-	i64 BreakPages
+	i64 BreakSize
 	
 	UserThread MainThread
 
@@ -309,7 +309,7 @@ struct Process {
 		}
 		
 		this->BreakStart := ((MaxAddress + PAGE_SIZE) & 0x7FFF_FFFF_FFFF_F000) As void*
-		this->BreakPages := 0
+		this->BreakSize := 0
 		
 		this~>MainThread->UserTask   := Task:New(0)
 		this~>MainThread->KernelTask := Task:NewWithStack(0, 1)
@@ -318,6 +318,10 @@ struct Process {
 		this->AliveThreads := 1
 		
 		this~>MainThread~>OnKilled->ListenMethod(&Process.OnThreadKilled, this)
+
+		this->Threads := PointerArray:New()
+		
+		this->Threads->Push(this~>MainThread)
 	}
 	
 	define void DefineFileDescriptor(i32 Index, FileHandle* Target) {
@@ -335,24 +339,6 @@ struct Process {
 
 		return Result
 	}
-	
-	/*
-	define void* GetBreak() {
-		return this->BreakStart + (this->BreakPages * PAGE_SIZE)
-	}
-	define void* SetBreak(void* NewBreakEnd) {
-		i32 AdditionalBreakPages := ((NewBreakEnd - this->GetBreak()) As i32) / PAGE_SIZE
-		
-		void* FirstNewBreakPage := this->GetBreak()
-		
-		this->Mappings->MapAddressAnonymous(FirstNewBreakPage, AdditionalBreakPages, PAGE_USER | PAGE_WRITE)
-		
-		SetMemory(FirstNewBreakPage, AdditionalBreakPages * PAGE_SIZE, 0)
-		
-		this->BreakPages += AdditionalBreakPages
-		
-		return this->GetBreak()
-	};*/
 	
 	define void ExitAll(i32 Code) {
 		this~>MainThread->Exit(Code)

@@ -28,17 +28,6 @@ define void SystemCallSetSignalMask(i32 Operation, i64* New, i64* Old) {
 	CurrentThread->SignalMask := Mask
 }
 
-/*
-define void* SystemCallProgramBreak(void* NewBreak) {
-	if (NewBreak = null) {
-		return CurrentProcess->GetBreak()
-	}
-	else {
-		return CurrentProcess->SetBreak(NewBreak)
-	}
-}
-;*/
-
 i32 LINUX_PROTECTION_READ  := 0x1
 i32 LINUX_PROTECTION_WRITE := 0x2
 i32 LINUX_PROTECTION_EXECUTE  := 0x4
@@ -110,6 +99,25 @@ define i64 SystemCallUnMapMemory(void* Address, i32 Size) {
 	return 0
 }
 
+define void* SystemCallProgramBreak(void* NewBreak) {
+	void* BreakEnd := CurrentProcess->BreakStart + (CurrentProcess->BreakSize * PAGE_SIZE)
+
+	if (NewBreak = null) {
+		return BreakEnd
+	}
+	else {
+		i64 SizeBytes := (NewBreak As i64) - (CurrentProcess->BreakStart As i64)
+		i64 SizePages := SizeBytes / PAGE_SIZE
+		i64 NewPages := SizePages - CurrentProcess->BreakSize
+
+		SystemCallMapMemory(BreakEnd, (NewPages * PAGE_SIZE) As i32, LINUX_PROTECTION_READ | LINUX_PROTECTION_WRITE, LINUX_MAP_ANONYMOUS, 0, 0)
+
+		CurrentProcess->BreakSize += NewPages
+
+		return BreakEnd + (NewPages * PAGE_SIZE)
+	}
+}
+
 i32 ARCH_PRCTL_SET_GS := 0x1001
 i32 ARCH_PRCTL_SET_FS := 0x1002
 i32 ARCH_PRCTL_GET_FS := 0x1003
@@ -137,7 +145,7 @@ define i64 SystemCallSetThreadIDAdress(i64* pThreadID) {
 define void RegisterEnvironmentSystemCalls() {
 	SystemCalls->Register(LINUX_SYSCALL_RT_SIGACTION, &SystemCallSetSignalAction)
 	SystemCalls->Register(LINUX_SYSCALL_RT_SIGPROCMASK, &SystemCallSetSignalMask)
-	;SystemCalls->Register(LINUX_SYSCALL_BRK, &SystemCallProgramBreak)
+	SystemCalls->Register(LINUX_SYSCALL_BRK, &SystemCallProgramBreak)
 	SystemCalls->Register(LINUX_SYSCALL_MMAP, &SystemCallMapMemory)
 	SystemCalls->Register(LINUX_SYSCALL_MUNMAP, &SystemCallUnMapMemory)
 	SystemCalls->Register(LINUX_SYSCALL_ARCH_PRCTL, &SystemCallArchPrctl)

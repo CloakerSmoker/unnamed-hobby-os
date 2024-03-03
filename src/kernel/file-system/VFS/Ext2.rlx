@@ -115,6 +115,7 @@ struct VFSExt2Directory {
             }
             else if (Node->IsFile()) {
                 NewCacheEntry.Type := VFSDirectoryEntryType::File
+                NewCacheEntry.File := VFSExt2File:New(this->FS, Node)
             }
             else {
                 return null
