@@ -109,16 +109,16 @@ define i8 Lookup(IDirectory* At, FilePath* Path, VFSDirectoryEntry* Result) {
     IDirectory* Current := At
 
     if (Path->Anchor = FilePathAnchor::Root) {
+        if (Path->Count = 0) {
+            Result->Type := VFSDirectoryEntryType::Directory
+            Result->Name := "/"
+            Result->Directory := Current
+
+            return true
+        }
+
         Current := VFSRootDirectory
     }
-
-    /*if (Path->Count <= 0) {
-        Result->Type := VFSDirectoryEntryType::Directory
-        Result->Name := "/"
-        Result->Directory := Current
-
-        return true
-    }*/
 
     for (i32 Index := 0, Index < Path->Count - 1, Index++) {
         i8* Part := Path->Parts[Index]
