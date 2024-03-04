@@ -323,19 +323,11 @@ struct Process {
 		
 		this->Threads->Push(this~>MainThread)
 	}
-	
-	define void DefineFileDescriptor(i32 Index, FileHandle* Target) {
-		if (Index > this->FileDescriptorCount) {
-			this->FileDescriptorCount := Index
-		}
-
-		this->FileDescriptorsToHandles[Index] := Target
-	}
 
 	define i32 AllocateFileDescriptor(FileHandle* Handle) {
 		i32 Result := this->FileDescriptorCount++
 
-		this->FileDescriptorsToHandles[this->FileDescriptorCount] := Handle
+		this->FileDescriptorsToHandles[Result] := Handle
 
 		return Result
 	}

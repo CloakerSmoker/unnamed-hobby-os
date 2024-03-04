@@ -179,34 +179,7 @@ define void TinyNC(FileHandle* stdio, TCPSocket* Socket) {
 
 #Require "./src/kernel/networking/Parse.rlx"
 
-define void SetStatic(NetworkInterface* Interface, i8* RawGateway, i8* RawMe, i8* RawDNS) {
-    i32 Gateway := 0
-    i32 CIDR := 0
-    ParseIPv4CIDR(RawGateway, &Gateway, &CIDR)
 
-    i32 Mask := MaskFromCIDR(CIDR)
-
-    i32 Me := 0
-    ParseIPv4(RawMe, &Me)
-
-    i32 DNS := 0
-    ParseIPv4(RawDNS, &DNS)
-
-    Interface->Gateway := Gateway
-    Interface->Mask := Mask
-
-    Interface->IP := Me
-
-    Interface->DNS := DNS
-
-    AddNetworkRoute(Interface->Gateway & Mask, Mask, Interface)
-    AddNetworkRoute(0, 0, Interface)
-
-    ARPLayer* ARP := Interface->GetProtocol("ARP")->this
-    ARP->Announce()
-
-    Interface->GatewayMAC := ARP->Lookup(Gateway)
-}
 
 define void TestNetworking(FileHandle* stdio) {
     ;SetIP()
@@ -228,7 +201,7 @@ define void TestNetworking(FileHandle* stdio) {
 
     NetworkInterface* Interface := Network->Interfaces->At(1)
 
-    SetStatic(Interface, "10.0.2.2/24", "10.0.2.15", "10.0.2.3")
+    SetStaticIP(Interface, "10.0.2.2/24", "10.0.2.15", "10.0.2.3")
 
     Interface->SetKnobToggle("Ethernet.SpewInOut", true)
     Interface->SetKnobToggle("ARP.SpewInOut", true)

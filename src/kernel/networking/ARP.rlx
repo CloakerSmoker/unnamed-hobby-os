@@ -201,7 +201,7 @@ struct ARPLayer {
 
         this->Cache->Insert(ProtocolAddress, &Entry)
 
-        this->Cache->Print()
+        ;this->Cache->Print()
     }
 
     define ARPTableEntry* LookupCachedEntry(i32 ProtocolAddress) {
@@ -325,11 +325,7 @@ struct ARPLayer {
 
             this->SendRequest(MAC_NULL, ProtocolAddress)
 
-            i32 Delay := 10
-
-            while (Delay-- > 0) {
-                SchedulerYield()
-            }
+            SleepMS(100)
 
             if (Tries++ > 3) {
                 return this->Interface->GatewayMAC

@@ -565,6 +565,17 @@ define void MountPartitions() {
 	Mount(null, "/efi", EFISystemRootDirectory)
 }
 
+define void NetworkSetupTask() {
+	NetworkInterface* Interface := Network->Interfaces->At(1)
+
+    SetStaticIP(Interface, "10.0.2.2/24", "10.0.2.15", "10.0.2.3")
+
+    Interface->SetKnobToggle("Ethernet.SpewInOut", true)
+    Interface->SetKnobToggle("ARP.SpewInOut", true)
+	Interface->SetKnobToggle("ARP.SpewCache", true)
+    Interface->SetKnobToggle("ARP.SpewGateway", true)
+}
+
 define void MainContinuation() {
 	DisableInterrupts()
 
@@ -645,8 +656,6 @@ define void MainContinuation() {
 	
 	Print("Set up PIT/timers/serial\n")
 	
-	EnableInterrupts()
-	
 	SetupSystemCalls()
 
 	MountRoot(VFSDirectory:New())
@@ -658,7 +667,9 @@ define void MainContinuation() {
 
 	Network->AddInterface(MakeLoopbackNetworkInterface(IPv4("127.0.0.1")))
 
+	EnableInterrupts()
 	InitializePCIe(&VisitPCIeFunction)
+	DisableInterrupts()
 
 	;/*
 	if (SATAController = null) {
@@ -673,11 +684,15 @@ define void MainContinuation() {
 	PopulateDevicesDirectory(VFSDevicesDirectory)
 	MountPartitions()
 
-	Task* ShellThread := Scheduler->AddLightTask(&VFSRunShellTask)
+	;NetworkSetupTask()
 
+	Task* NetworkThread := Scheduler->AddLightTask(&NetworkSetupTask)
+	NetworkThread->State := TASK_CAN_RUN
+
+	Task* ShellThread := Scheduler->AddLightTask(&VFSRunShellTask)
 	ShellThread->State := TASK_CAN_RUN
 
-	StartScheduler()
+	;StartScheduler()
 	;*/
 
 	;/*

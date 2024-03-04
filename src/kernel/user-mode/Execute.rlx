@@ -121,9 +121,9 @@ define Process* Execute(void* Buffer, ExecuteParameters* Parameters) {
 	CurrentProcess := KernelHeapAllocate('PROC', #Process)
 	CurrentProcess->Initialize(ELFData, Parameters->WorkingDirectory)
 	
-	CurrentProcess->DefineFileDescriptor(STANDARD_INPUT_FILE_DESCRIPTOR, Parameters->StandardInput)
-	CurrentProcess->DefineFileDescriptor(STANDARD_OUTPUT_FILE_DESCRIPTOR, Parameters->StandardOutput)
-	CurrentProcess->DefineFileDescriptor(STANDARD_ERROR_FILE_DESCRIPTOR, Parameters->StandardError)
+	CurrentProcess->AllocateFileDescriptor(Parameters->StandardInput)
+	CurrentProcess->AllocateFileDescriptor(Parameters->StandardOutput)
+	CurrentProcess->AllocateFileDescriptor(Parameters->StandardError)
 	
 	UserThread* Thread := CurrentProcess~>MainThread
 	Thread->Start(2, Mapper, CurrentProcess~>Signals, RSP, ELFData->EntryPoint As void*)
