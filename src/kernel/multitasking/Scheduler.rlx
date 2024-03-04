@@ -232,8 +232,13 @@ define void SchedulerBlock() asm {
 	
 	jmp, @_SchedulerBlock
 }
-define void SchedulerEnd() {
+define void _SchedulerEnd() {
 	Scheduler->EndCurrent()
+}
+define void SchedulerEnd() asm {
+	cli
+
+	call, @_SchedulerEnd
 }
 define void SchedulerRestart() {
 	; Called after non-task code 
