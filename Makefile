@@ -273,7 +273,7 @@ depend dep deps:
 all: Disk.qcow2
 
 QEMU?=qemu-system-x86_64
-QEMU_FLAGS=-machine q35 -bios OVMF.fd -hda Disk.qcow2 -serial stdio --cpu max,la57=off
+QEMU_FLAGS=-machine q35 -bios misc/files/OVMF.fd -hda Disk.qcow2 -serial stdio --cpu max,la57=off
 DEBUG_FLAGS=
 
 ifneq (,$(findstring --gdb,$(flags)))
