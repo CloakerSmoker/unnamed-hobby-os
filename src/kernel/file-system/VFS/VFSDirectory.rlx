@@ -88,6 +88,7 @@ IDirectoryPrototype VFSDirectoryPrototype {
     Enumerate: &VFSDirectory.Enumerate,
     Next: &VFSDirectory.Next,
     IsEphemeral: &VFSDirectory.IsEphemeral,
+    CreateDirectory: &VFSDirectory.CreateDirectory,
     Insert: &VFSDirectory.Insert,
     Remove: &VFSDirectory.Remove
 }

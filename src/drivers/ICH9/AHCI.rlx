@@ -614,7 +614,7 @@ namespace ICH9::AHCI {
         }
 
         static void ServiceInterrupt() {
-            Info("AHCI INTERRUPT!!!\n")
+            ;Info("AHCI INTERRUPT!!!\n")
 
             LocalAPIC->EOI()
         }

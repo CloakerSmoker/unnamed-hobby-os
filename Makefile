@@ -126,7 +126,7 @@ $(BUILD)/Disk.img:
 	rm -f $@
 
 	echo "$$MAKE_DISK_SCRIPT" | tr '\1' '\n' | $(BUILD)/HostFileShell.elf --script
-	echo "$$GET_GUIDS_SCRIPT" | tr '\1' '\n' | $(BUILD)/HostFileShell.elf --silent | tr '\n' ' ' > build/KernelCommandLine.txt
+	echo "$$GET_GUIDS_SCRIPT" | tr '\1' '\n' | $(BUILD)/HostFileShell.elf --silent | tr '\n' ' ' > $(BUILD)/KernelCommandLine.txt
 	
 	$(BUILD)/FAT32Tool.elf "File($@,512)>GPT(0)" \
 		"mkdir EFI" \
@@ -134,7 +134,7 @@ $(BUILD)/Disk.img:
 		"mkdir BOOT" \
 		"cd BOOT" \
 		"import $(BUILD)/Boot.efi BOOTX64.EFI" \
-		"import $(BUILD)/KernelCommandLine.txt" "KCMDLN.TXT" \
+		"import $(BUILD)/KernelCommandLine.txt KCMDLN.TXT" \
 		"quit"
 	
 	$(BUILD)/Ext2Tool.elf "File($@,512)>GPT(1)" \

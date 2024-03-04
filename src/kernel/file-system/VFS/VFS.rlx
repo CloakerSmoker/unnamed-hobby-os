@@ -14,6 +14,24 @@ struct IDirectoryPrototype {
     i8(void*, i8*) Remove
 }
 
+enum VFSDirectoryEntryType {
+    Directory,
+    File,
+    Hole
+}
+
+struct _VFSDirectoryEntry {
+    i8* Name
+    
+    union {
+        IDirectory* Directory
+        IFile* File
+        void* Value
+    }
+
+    VFSDirectoryEntryType Type
+}
+
 struct IDirectory {
     #Include "./src/kernel/file-system/VFS/IDirectory.rlx"
 
@@ -45,6 +63,27 @@ struct IDirectory {
     define i8 Insert(VFSDirectoryEntry* Entry) {
         return this->Prototype->Insert(this, Entry)
     }
+    define i8 Insert(VFSDirectoryEntryType Type, i8* Name, void* Value) {
+        _VFSDirectoryEntry Entry {
+            Type: Type,
+            Name: Name,
+            Value: Value
+        }
+
+        return this->Insert(&Entry As void*)
+    }
+    define i8 Insert(i8* Name, IDirectory* Value) {
+        return this->Insert(VFSDirectoryEntryType::Directory, Name, Value)
+    }
+    define i8 Insert(i8* Name, IFile* Value) {
+        return this->Insert(VFSDirectoryEntryType::File, Name, Value)
+    }
+    define i8 Has(i8* Name) {
+        _VFSDirectoryEntry Entry
+
+        return this->Lookup(Name, &Entry As void*)
+    }
+
     define i8 Remove(i8* Name) {
         return this->Prototype->Remove(this, Name)
     }
@@ -69,12 +108,6 @@ struct IFile {
     define void Close(FileHandle* Target) {
         this->Prototype->Close(this, Target)
     }
-}
-
-enum VFSDirectoryEntryType {
-    Directory,
-    File,
-    Hole
 }
 
 struct VFSDirectoryEntry {

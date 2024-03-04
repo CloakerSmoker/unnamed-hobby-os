@@ -14,6 +14,9 @@ struct KernelInfo {
 	i64 HeapPages
 	i64 KernelPages
 	i64 UserPages
+
+	i8* RootPartitionGUID
+	i8* EFISystemPartitionGUID
 }
 
 struct BootloaderInfo {
@@ -24,6 +27,8 @@ struct BootloaderInfo {
 
 	i32 PCISegmentGroupCount
 	ACPI_MCFG_ENTRY[4] PCISegmentGroups
+
+	i8[256] KernelCommandLine
 
 	void* Data
 	i32 Size

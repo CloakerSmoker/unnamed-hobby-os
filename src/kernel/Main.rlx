@@ -388,37 +388,30 @@ define void InitializeTerminal() {
 define void PopulateDevicesDirectory(IDirectory* DevicesDirectory) {
 	; Virtual Devices: /dev/zero
 
-	VFSDirectoryEntry Entry {
-        Type: VFSDirectoryEntryType::File,
-        Name: "zero",
-        File: ZeroDeviceFile:New()
-    }
-
-    DevicesDirectory->Insert(&Entry)
+    DevicesDirectory->Insert("zero", ZeroDeviceFile:New())
 
 	; Serial ports: /dev/ttySX
 
 	for (i32 Index := 0, Index < 4, Index++) {
-		VFSDirectoryEntry SerialEntry {
-			Type: VFSDirectoryEntryType::File,
-			Name: FormatString("ttyS%i", Index),
-			File: VFSDeviceSingletonFile:New(SerialPortFileHandle:New(Index))
-		}
-
-		DevicesDirectory->Insert(&SerialEntry)
+		DevicesDirectory->Insert(FormatString("ttyS%i", Index), VFSDeviceSingletonFile:New(SerialPortFileHandle:New(Index)))
 	}
 
 	; Terminal: /dev/tty0
 
-	VFSDirectoryEntry TerminalEntry {
-		Type: VFSDirectoryEntryType::File,
-		Name: "tty0",
-		File: VFSDeviceSingletonFile:New(KernelTerminal)
-	}
+	DevicesDirectory->Insert("tty0", VFSDeviceSingletonFile:New(KernelTerminal))
 
-	DevicesDirectory->Insert(&TerminalEntry)
+	; /dev/disk
+
+	IDirectory* DiskDirectory := DevicesDirectory->CreateDirectory()
+	DevicesDirectory->Insert("disk", DiskDirectory)
+
+	; /dev/disk/gpt
+
+	IDirectory* GPTDirectory := DiskDirectory->CreateDirectory()
+	DiskDirectory->Insert("gpt", GPTDirectory)
 
 	; SATA Devices: /dev/sataX
+	; (and maybe: /dev/gpt/{partuuid})
 
 	i32 PopulatedPortCount := SATAController->Ports->Count()
 
@@ -437,13 +430,40 @@ define void PopulateDevicesDirectory(IDirectory* DevicesDirectory) {
 			FileHandle* Handle := BlockDeviceFileHandle:New(Device)
 			IFile* File := VFSBlockDeviceFile:New(Handle)
 
-			VFSDirectoryEntry SATAEntry {
-				Type: VFSDirectoryEntryType::File,
-				Name: FormatString("sata%i", Index),
-				File: File
+			DevicesDirectory->Insert(FormatString("sata%i", Index), File)
+
+			GPTDevice* GPT := GPTDevice:New(Device)
+
+			GPT->ReadHeader(1)
+
+			if !(CompareMemory(GPT->Header->Signature, "EFI PART", 8)) {
+				Free(GPT)
+				continue
 			}
 
-			DevicesDirectory->Insert(&SATAEntry)
+			for (i32 Partition := 0, Partition < GPT->Header->PartitionEntryCount, Partition++) {
+				GPTPartitionEntry* NextPartition := GPT->ReadPartitionEntry(Partition)
+
+				if (NextPartition->StartingLBA = 0 && NextPartition->EndingLBA = 0) {
+					continue
+				}
+
+				i8* FileName := FormatString("sata%ip%i", Index, Partition)
+
+				if (DevicesDirectory->Has(FileName)) {
+					Free(FileName)
+					continue
+				}
+
+				i8* GUIDName := FormatString("%guid", NextPartition~>PartitionGUID)
+
+				BlockDevice* PartitionDevice := GPTBlockDevice:New(Device, NextPartition)
+				FileHandle* PartitionHandle := BlockDeviceFileHandle:New(PartitionDevice)
+				IFile* PartitionFile := VFSBlockDeviceFile:New(PartitionHandle)
+
+				DevicesDirectory->Insert(FileName, PartitionFile)
+				GPTDirectory->Insert(GUIDName, PartitionFile)
+			}
 		}
 	}
 }
@@ -499,12 +519,77 @@ define void ExecuteExecute(i32 ArgC, i8** ArgV) {
 
 i32 EXECUTE_COMMAND_ID := RegisterCommand("execute", &ExecuteExecute)
 
+struct OpenFSErrors {
+	i8* NoEntry
+	i8* NotABlockDevice
+}
+
+OpenFSErrors OpenRootErrors {
+	NoEntry: "Could not find real root device. Good luck, you're on your own.",
+	NotABlockDevice: "Real root device is not a block device. Good luck, you're on your own."
+}
+
+OpenFSErrors OpenEFISystemErrors {
+	NoEntry: "Could not find EFI system device. Something's very broken.",
+	NotABlockDevice: "EFI system device is not a block device. What?"
+}
+
+define IDirectory* OpenFSFromPath(OpenFSErrors* Errors, i8* Path, IDirectory*(BlockDevice*) OpenDevice) {
+	VFSDirectoryEntry DeviceEntry
+
+	if !(Lookup(null, Path, &DeviceEntry)) {
+		Panic(Errors->NoEntry)
+	}
+
+    IFile* File := DeviceEntry.File
+
+    if !(File->Is(GetVFSBlockDeviceFilePrototype())) {
+        Panic(Errors->NotABlockDevice)
+    }
+
+    VFSBlockDeviceFile* BlockDeviceFile := File As void*
+    BlockDeviceFileHandle* BlockDeviceHandle := BlockDeviceFile->Handle As void*
+    BlockDevice* RootDevice := BlockDeviceHandle->Device
+
+	return OpenDevice(RootDevice)
+}
+
+define void MountPartitions() {
+	i8* EFISystemPartitionPath := FormatString("/dev/disk/gpt/%s", Kernel->EFISystemPartitionGUID)
+	i8* RootPartitionPath := FormatString("/dev/disk/gpt/%s", Kernel->RootPartitionGUID)
+
+	IDirectory* EFISystemRootDirectory := OpenFSFromPath(&OpenEFISystemErrors, EFISystemPartitionPath, &OpenFAT32)
+	IDirectory* RootDirectory := OpenFSFromPath(&OpenRootErrors, RootPartitionPath, &OpenExt2)
+
+	MountRoot(RootDirectory)
+	Mount(null, "/efi", EFISystemRootDirectory)
+}
+
 define void MainContinuation() {
-	CurrentTask := KernelSetupTask
-	
 	DisableInterrupts()
 
-	KernelAddressSpace->PrintMappings()
+	CurrentTask := KernelSetupTask
+
+	i64 ArgC := 0
+	i8*[10] ArgV
+
+	ParseCommandLine(BootInfo~>KernelCommandLine, &ArgC, ArgV)
+	
+	for (i32 Index := 0, Index < ArgC, Index++) {
+		i8* Next := ArgV[Index]
+
+		if (StringEquals(Next, "--efi-system-guid")) {
+			Kernel->EFISystemPartitionGUID := ArgV[++Index]
+		}
+		else if (StringEquals(Next, "--root-guid")) {
+			Kernel->RootPartitionGUID := ArgV[++Index]
+		}
+	}
+
+	;KernelAddressSpace->PrintMappings()
+
+	Info("Root Partition       GUID: %s\n", Kernel->RootPartitionGUID)
+	Info("EFI System Partition GUID: %s\n", Kernel->EFISystemPartitionGUID)
 
 	;Halt()
 	
@@ -586,6 +671,7 @@ define void MainContinuation() {
 	Mount(null, "/dev", VFSDevicesDirectory)
 
 	PopulateDevicesDirectory(VFSDevicesDirectory)
+	MountPartitions()
 
 	Task* ShellThread := Scheduler->AddLightTask(&VFSRunShellTask)
 

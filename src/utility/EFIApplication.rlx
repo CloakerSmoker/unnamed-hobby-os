@@ -2,6 +2,65 @@
 #Require "@/Console.rlx"
 #Require "@/Debug.rlx"
 
+EFI_GUID* EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID := i8[0x22, 0x5b, 0x4e, 0x96, 0x59, 0x64, 0xd2, 0x11, 0x8e, 0x39, 0x00, 0xa0, 0xc9, 0x69, 0x72, 0x3b] As EFI_GUID*
+
+struct EFI_SIMPLE_FILE_SYSTEM_PROTOCOL {
+	i64 Revision
+
+	void* _OpenVolume
+
+	define EFI_FILE_PROTOCOL* OpenVolume() {
+		EFI_FILE_PROTOCOL* Result := null
+
+		EFICall(this, &Result As void*, this->_OpenVolume)
+
+		return Result
+	}
+}
+
+i64 EFI_FILE_MODE_CREATE := 0
+i64 EFI_FILE_MODE_READ := 1
+i64 EFI_FILE_MODE_WRITE := 2
+
+i64 EFI_FILE_ATTRIBUTE_READ_ONLY := 1
+i64 EFI_FILE_ATTRIBUTE_HIDDEN := 2
+i64 EFI_FILE_ATTRIBUTE_SYSTEM := 4
+
+struct EFI_FILE_PROTOCOL {
+	i64 Revision
+
+	void* _Open
+	void* _Close
+	void* _Delete
+	void* _Read
+	void* _Write
+	void* _GetPosition
+	void* _SetPosition
+	void* _GetInfo
+	void* _SetInfo
+	void* _Flush
+
+	define EFI_FILE_PROTOCOL* Open(i16* FileName, i64 OpenMode, i64 Attributes) {
+		EFI_FILE_PROTOCOL* Result := null
+
+		EFICall(this, &Result As void*, FileName, OpenMode As void*, Attributes As void*, this->_Open)
+
+		return Result
+	}
+
+	define i32 Read(void* Buffer, i32 BufferSize) {
+		i64 ReadSize := BufferSize
+
+		EFICall(this, &ReadSize As void*, Buffer, this->_Read)
+
+		return ReadSize As i32
+	}
+
+	define void Close() {
+		EFICall(this, this->_Close)
+	}
+}
+
 define void Info(i8* Format, ... Parameters) {
 	
 }

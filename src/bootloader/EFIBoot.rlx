@@ -384,6 +384,28 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	}
 	
 	SystemTable->ConsoleOutput->Reset()
+
+	EFI_SIMPLE_FILE_SYSTEM_PROTOCOL* SimpleFS := null
+	SystemTable->BootServices->HandleProtocol(LoadedImage->DeviceHandle, EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID, &SimpleFS As void**)
+
+	Print("SimpleFS: %x\n", SimpleFS)
+
+	EFI_FILE_PROTOCOL* SimpleFSRoot := SimpleFS->OpenVolume()
+
+	Print("SimpleFSRoot: %x\n", SimpleFSRoot)
+
+	EFI_FILE_PROTOCOL* CommandLine := SimpleFSRoot->Open("EFI\\BOOT\\KCMDLN.TXT"w, EFI_FILE_MODE_READ, EFI_FILE_ATTRIBUTE_READ_ONLY)
+	;EFI_FILE_PROTOCOL* CommandLine := SimpleFSRoot->Open("EFI\\BOOT\\BOOTX64.EFI"w, EFI_FILE_MODE_READ, EFI_FILE_ATTRIBUTE_READ_ONLY)
+
+	Print("CommandLine: %x\n", CommandLine)
+
+	void* CommandLineBuffer := SystemTable->BootServices->AllocatePages(2)
+	FastZeroMemory(CommandLineBuffer, 0x2000)
+	i32 CommandLineLength := CommandLine->Read(CommandLineBuffer, 0x2000)
+
+	Print("CommandLineBuffer: %s\n", CommandLineBuffer)
+
+	;loop {}
 	
 	void* FrameBuffer := Graphics->Mode->FrameBufferBase
 	
@@ -509,6 +531,9 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 		Data: Data,
 		Size: Size
 	}
+
+	MoveMemory(BootInfo~>KernelCommandLine, CommandLineBuffer, CommandLineLength)
+	BootInfo~>KernelCommandLine[CommandLineLength] := 0
 
 	MoveMemory(BootInfo~>PCISegmentGroups, SegmentGroups, SegmentGroupCount * #ACPI_MCFG_ENTRY)
 	
