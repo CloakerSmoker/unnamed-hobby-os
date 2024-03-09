@@ -2,24 +2,20 @@
 #Require "./src/kernel/multitasking/Tasks.rlx"
 #Require "./src/kernel/core/Events.rlx"
 
-Task* RootTask := null
-Task* DelayTask := null
+define void DoSchedulerDelay() {
+	loop {
+		; Nothing better to do
+		asm {
+			emit, 0xF4
+		}
+	}
+}
 
 struct TaskScheduler {
 	Task* DelayTask
 
 	List* NeedsToRun
 	List* HasRan
-	
-	AVLTree* CanRunNow
-	AVLTree* CanRunNext
-	AVLTree* Blocked
-	AVLTree* Stopped
-
-	define void Initialize() {
-		this->NeedsToRun := List:New(&Task.Link)
-		this->HasRan := List:New(&Task.Link)
-	}
 	
 	define void RunCurrent() {
 		CurrentTask->State := TASK_RUNNING
@@ -60,7 +56,7 @@ struct TaskScheduler {
 			this->HasRan := Temp
 		}
 
-		Task* Next := DelayTask
+		Task* Next := this->DelayTask
 		ListNode* Node := null
 
 		while (this->NeedsToRun->Next(&Node)) {
@@ -92,54 +88,8 @@ struct TaskScheduler {
 		}
 
 		CurrentTask := Next
-		
-		
-		/*if !(Next) {
-			CurrentTask := DelayTask
-			
-			/*
-			this->Debug("\n[%i.%i] %x -> ", PITWhole, PITFraction, CurrentTask)
-		
-			if (DEBUG_SCHEDULER) {
-				Task* Walk := RootTask
-				
-				while (Walk) {
-					this->Debug("(%x %i)", Walk, Walk->State)
-					
-					Walk := Walk->Next
-					
-					if (Walk) {
-						this->Debug(", ")
-					}
-				}
-			}
-			
-			this->Debug("= .\n")
-			*/
-		}
-		else {
-			/*this->Debug("\n[%i.%i] %x -> ", PITWhole, PITFraction, CurrentTask)
-		
-			if (DEBUG_SCHEDULER) {
-				Task* Walk := RootTask
-				
-				while (Walk) {
-					this->Debug("(%x %i)", Walk, Walk->State)
-					
-					Walk := Walk->Next
-					
-					if (Walk) {
-						this->Debug(", ")
-					}
-				}
-			}
-			
-			this->Debug(" = %x {%x %x}\n", Current, Current~>Context->RIP, Current~>Context->RSP)
-			*/
-
-			CurrentTask := Next
-		}*/
 	}
+	
 	define void RunNext() {
 		this->PickNext()
 		this->RunCurrent()
@@ -224,6 +174,17 @@ struct TaskScheduler {
 		
 		return EventState:CallNextListener
 	}
+
+	define void Initialize() {
+		this->NeedsToRun := List:New(&Task.Link)
+		this->HasRan := List:New(&Task.Link)
+
+		this->DelayTask := this->MakeLightTask(&DoSchedulerDelay)
+	}
+
+	define void Start() {
+		OnHardwareTimerTick->ListenMethod(&TaskScheduler.Quantum, this)
+	}
 }
 
 TaskScheduler _Scheduler
@@ -290,15 +251,6 @@ define void SchedulerRestart() {
 	Scheduler->RunCurrent()
 }
 
-define void DoSchedulerDelay() {
-	loop {
-		; Nothing better to do
-		asm {
-			emit, 0xF4
-		}
-	}
-}
-
 i8 SchedulerStarted := false
 
 define void StartScheduler() {
@@ -306,14 +258,12 @@ define void StartScheduler() {
 	
 	SchedulerStarted := true
 	
-	DelayTask := Scheduler->MakeLightTask(&DoSchedulerDelay)
-	
-	OnHardwareTimerTick->ListenMethod(&TaskScheduler.Quantum, Scheduler)
+	Scheduler->Start()
 	
 	loop {
 		asm {
 			sti
-			emit, 0xF4
+			emit, 0xF4 ; halt
 		}
 	}
 }
