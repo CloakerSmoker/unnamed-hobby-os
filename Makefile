@@ -293,7 +293,8 @@ ifneq (,$(findstring --achi-debug,$(flags)))
 endif
 
 ifneq (,$(findstring --net-user,$(flags)))
-	QEMU_FLAGS+=-device e1000e,netdev=hub0port0 -netdev user,id=hub0port0
+	COMMA:=,
+	QEMU_FLAGS+=-device e1000e,netdev=hub0port0 -netdev user,id=hub0port0$(if $(HOSTFWD),$(COMMA)hostfwd=$(HOSTFWD),)
 endif
 
 ifneq (,$(findstring --net-tap,$(flags)))

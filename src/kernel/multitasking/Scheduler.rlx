@@ -7,11 +7,19 @@ Task* DelayTask := null
 
 struct TaskScheduler {
 	Task* DelayTask
+
+	List* NeedsToRun
+	List* HasRan
 	
 	AVLTree* CanRunNow
 	AVLTree* CanRunNext
 	AVLTree* Blocked
 	AVLTree* Stopped
+
+	define void Initialize() {
+		this->NeedsToRun := List:New(&Task.Link)
+		this->HasRan := List:New(&Task.Link)
+	}
 	
 	define void RunCurrent() {
 		CurrentTask->State := TASK_RUNNING
@@ -40,16 +48,56 @@ struct TaskScheduler {
 			
 			loop {}
 		}
+
+		this->Debug("To  Run: %list\n", this->NeedsToRun)
+		this->Debug("Has Ran: %list\n", this->HasRan)
 		
-		Task* Current := RootTask
-		
-		while (Current && !Current->CouldRun()) {
-			Current := Current->Next
+		if (this->NeedsToRun->Empty()) {
+			this->Debug("Swapping\n")
+			
+			List* Temp := this->NeedsToRun
+			this->NeedsToRun := this->HasRan
+			this->HasRan := Temp
 		}
+
+		Task* Next := DelayTask
+		ListNode* Node := null
+
+		while (this->NeedsToRun->Next(&Node)) {
+			Task* Candidate := this->NeedsToRun->Self(Node)
+
+			this->Debug("Candidate %x\n", Candidate)
+
+			if (Candidate->CouldRun()) {
+				this->Debug("Picked    /\\\n")
+
+				Next := Candidate
+				break
+			}
+		}
+
+		loop {
+			ListNode* Previous := this->NeedsToRun->First()
+
+			if (Previous = null) {
+				break
+			}
+
+			this->NeedsToRun->Remove(Previous)
+			this->HasRan->Push(Previous)
+
+			if (Previous = Next) {
+				break
+			}
+		}
+
+		CurrentTask := Next
 		
-		if !(Current) {
+		
+		/*if !(Next) {
 			CurrentTask := DelayTask
 			
+			/*
 			this->Debug("\n[%i.%i] %x -> ", PITWhole, PITFraction, CurrentTask)
 		
 			if (DEBUG_SCHEDULER) {
@@ -67,9 +115,10 @@ struct TaskScheduler {
 			}
 			
 			this->Debug("= .\n")
+			*/
 		}
 		else {
-			this->Debug("\n[%i.%i] %x -> ", PITWhole, PITFraction, CurrentTask)
+			/*this->Debug("\n[%i.%i] %x -> ", PITWhole, PITFraction, CurrentTask)
 		
 			if (DEBUG_SCHEDULER) {
 				Task* Walk := RootTask
@@ -86,8 +135,10 @@ struct TaskScheduler {
 			}
 			
 			this->Debug(" = %x {%x %x}\n", Current, Current~>Context->RIP, Current~>Context->RSP)
-			CurrentTask := Current
-		}
+			*/
+
+			CurrentTask := Next
+		}*/
 	}
 	define void RunNext() {
 		this->PickNext()
@@ -118,30 +169,21 @@ struct TaskScheduler {
 	}
 	
 	define void Remove(Task* Old) {
-		Task* Next := RootTask
-		
-		while (Next->Next) {
-			if (Next->Next = Old) {
-				Next->Next := Old->Next
-				break
-			}
-		}
+		Old->State := TASK_KILLED
+
+		this->HasRan->Remove(Old~>Link)
 	}
 	
 	define void Enqueue(Task* NewTask) {
-		if (RootTask = null) {
-			RootTask := NewTask
-		}
-		else {
-			Task* Next := RootTask
-			
-			while (Next->Next && Next->Priority > NewTask->Priority) {
-				Next := Next->Next
-			}
-			
-			NewTask->Next := Next->Next
-			Next->Next := NewTask
-		}
+		this->Debug("Enqueue %x\n", NewTask)
+
+		;i8 Enabled := InterrupsAreEnabled()
+
+		;if (Enabled) { DisableInterrupts() }
+
+		this->NeedsToRun->Push(NewTask~>Link)
+
+		;if (Enabled) { EnableInterrupts() }
 	}
 	
 	define void Add(Task* NewTask) {
@@ -166,15 +208,17 @@ struct TaskScheduler {
 	define EventState Quantum(void* CurrentTickCount, Event* Fired) {
 		;Info("%x,", CurrentTask~>Context->RIP)
 		
-		Task* Current := RootTask
-		
-		while (Current) {
+		ListNode* Node := null
+
+		while (this->HasRan->Next(&Node)) {
+			Task* Current := this->HasRan->Self(Node)
+
 			if (Current->State = TASK_PAUSED) {
 				Current->State := TASK_CAN_RUN
 			}
-			
-			Current := Current->Next
 		}
+
+		;Current->State := TASK_PAUSED
 		
 		this->PickNext()
 		

@@ -16,8 +16,12 @@ i32 TASK_ON_HEAP := -1
 
 declare void SchedulerEnd()
 
+#Require "./src/utility/List.rlx"
+
 struct Task {
 	AMD64Context Context ; MUST be the first field
+
+	ListNode Link
 	
 	Task* Next
 	Task* AwaitedBy

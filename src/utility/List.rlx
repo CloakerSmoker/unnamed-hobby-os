@@ -1,0 +1,144 @@
+
+struct ListNode {
+    ListNode* Last
+    ListNode* Next
+}
+
+struct List {
+    union {
+        ListNode HeadSentinel
+
+        struct {
+            void* _
+            ListNode* RawHead
+        }
+    }
+
+    union {
+        ListNode TailSentinel
+
+        struct {
+            ListNode* RawTail
+            void* _
+        }
+    }
+
+    i32 LinkOffset
+
+    static self* New(i32 LinkOffset) {
+        self* this := Alloc(#self)
+
+        this->LinkOffset := LinkOffset
+
+        this~>HeadSentinel->Next := this~>TailSentinel
+        this~>TailSentinel->Last := this~>HeadSentinel
+
+        return this
+    }
+
+    define void InsertBefore(ListNode* Anchor, ListNode* Node) {
+        Anchor->Last->Next := Node
+
+        Node->Last := Anchor->Last
+        Anchor->Last := Node
+
+        Node->Next := Anchor
+    }
+
+    define void InsertAfter(ListNode* Anchor, ListNode* Node) {
+        Anchor->Next->Last := Node
+
+        Node->Next := Anchor->Next
+        Anchor->Next := Node
+
+        Node->Last := Anchor
+    }
+
+    define void Push(ListNode* Node) {
+        this->InsertBefore(this~>TailSentinel, Node)
+    }
+
+    define void Insert(ListNode* Node) {
+        this->InsertAfter(this~>HeadSentinel, Node)
+    }
+
+    define void Remove(ListNode* Node) {
+        Node->Last->Next := Node->Next
+        Node->Next->Last := Node->Last
+    }
+
+    define ListNode* Pop() {
+        ListNode* Result := this->RawTail
+
+        this->Remove(Result)
+
+        return Result
+    }
+
+    define ListNode* First() {
+        if (this->RawHead = this~>TailSentinel) {
+            return null
+        }
+
+        return this->RawHead
+    }
+
+    define ListNode* Last() {
+        if (this->RawTail = this~>HeadSentinel) {
+            return null
+        }
+
+        return this->RawTail
+    }
+
+    define i8 Next(ListNode** pNode) {
+        if (*pNode = null) {
+            *pNode := this->First()
+            
+            return *pNode != null
+        }
+
+        if ((*pNode)->Next = this~>TailSentinel) {
+            return false
+        }
+
+        *pNode := (*pNode)->Next
+
+        return true
+    }
+
+    define i8 Empty() {
+        return this->RawHead = this~>TailSentinel
+    }
+
+    define void* Self(ListNode* Node) {
+        return (Node As void*) - this->LinkOffset
+    }
+}
+
+define void DoListPrint(PrintOutputAdapterPrototype* this, i8* Format, i32* FormatIndex, void* Parameters, i32 ParameterCount, i32* ParameterIndex) {
+    List* Target := Parameters[*ParameterIndex] As void*
+
+    this->Print("[")
+
+    ListNode* Current := null
+
+    while (Target->Next(&Current)) {
+        this->Print("%x", Target->Self(Current))
+
+        if (Current != Target->Last()) {
+            this->Print(", ")
+        }
+    }
+
+    this->Print("]")
+
+    *ParameterIndex += 1
+}
+
+PrintFormatPrototype ListFormatPrototype {
+	Name: "list",
+	Format: &DoListPrint
+}
+
+i32 LIST_FORMAT_PROTOTYPE_ID := AddPrintFormat(&ListFormatPrototype)

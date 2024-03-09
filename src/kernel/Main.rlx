@@ -624,6 +624,8 @@ define void MainContinuation() {
 	_KernelHeap->Bootstrap()
 	Info("Initialized heap (%x - %x)\n", ADDRESS_OF_KERNEL_HEAP, ADDRESS_OF_KERNEL_HEAP + BYTES_IN_2MB)
 
+	Scheduler->Initialize()
+
 	PixelBuffer* FrameBuffer := Alloc(#PixelBuffer)
 	FrameBuffer->Initialize(ADDRESS_OF_FRAME_BUFFER, RGB32, SCREEN_WIDTH, SCREEN_HEIGHT)
 
