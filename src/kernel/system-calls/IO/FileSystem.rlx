@@ -80,7 +80,10 @@ define i32 SystemCallPoll(LinuxPollTarget* Targets, i32 TargetCount, i32 Timeout
 			
 			FileHandle* Target := CurrentProcess->FileDescriptorsToHandles[TargetInfo->FileDescriptor]
 
+			;Info("Poll(%i, %b) = ", TargetInfo->FileDescriptor, TargetInfo->RequestedEvents)
 			TargetInfo->ReturnedEvents := Target->Poll(TargetInfo->RequestedEvents) As i16
+
+			;Info("%b\n", TargetInfo->ReturnedEvents)
 
 			if (TargetInfo->ReturnedEvents) {
 				CountWithReturnEvents += 1
