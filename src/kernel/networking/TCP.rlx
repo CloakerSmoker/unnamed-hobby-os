@@ -217,12 +217,16 @@ struct TCPSocket {
         return this->RecieveWindowSize - this->RecieveWindowTail - 1
     }
 
-    AVLTree* Children ; <i64, TCPSocket*>
+    ;AVLTree* Children ; <i64, TCPSocket*>
+
+    List* Children
+    ListNode Link
 
     static self* New() {
         self* this := Alloc(#self)
 
-        this->Children := AVLTree:New(#void*)
+        ;this->Children := AVLTree:New(#void*)
+        this->Children := List:New(&TCPSocket.Link)
 
         this->SequenceNumberBase := 0x1000_0000
         this->NextSequenceNumber := 0
@@ -251,7 +255,7 @@ struct TCPSocket {
 
         Free(this->AsProtocol)
 
-        this->Children->Free()
+        ;this->Children->Free()
         Free(this->Children)
 
         if (this->RecieveWindow) {
@@ -721,28 +725,28 @@ struct TCPSocket {
         ;*/
 
         if (this->State = TCP_SOCKET_STATE_LISTEN) {
-            i64 ChildID := IP->Source << 32
-            ChildID |= TCP->SourcePort
+            ListNode* Node := null
 
-            TCPSocket* Child := this->Children->GetPointer(ChildID)
+            while (this->Children->Next(&Node)) {
+                TCPSocket* Child := this->Children->Self(Node)
 
-            if !(Child) {
-                Child := TCPSocket:New()
-                Child->BindInterface(this->Interface, this->Transport)
-                Child->Request(this->LocalPort, IP->Source, TCP->SourcePort)
+                if (Child->RemoteAddress = IP->Source && Child->RemotePort = TCP->SourcePort) {
+                    this->IngestInfo("%ipv4:%net-port waiting for accept", IP->Source, TCP->SourcePort)
 
-                this->IngestInfo("LISTEN +> ACCEPT_WAIT (for %ipv4:%net-port)", IP->Source, TCP->SourcePort)
-
-                this->Children->InsertPointer(ChildID, Child)
+                    return
+                }
             }
+
+            TCPSocket* Child := TCPSocket:New()
+
+            this->Children->Push(Child~>Link)
+
+            Child->BindInterface(this->Interface, this->Transport)
+            Child->Request(this->LocalPort, IP->Source, TCP->SourcePort)
+
+            this->IngestInfo("LISTEN +> ACCEPT_WAIT (for %ipv4:%net-port)", IP->Source, TCP->SourcePort)
 
             Child->Ingest(Packet)
-
-            if (Child->State = TCP_SOCKET_STATE_CLOSED) {
-                this->Children->Remove(ChildID)
-
-                ;Child->Free()
-            }
         }
         else if (this->State = TCP_SOCKET_STATE_ACCEPT_WAIT) {
             if (TCP->Synchronize) {
@@ -914,10 +918,10 @@ struct TCPSocket {
     }
 
     define TCPSocket* FindAcceptCandidate() {
-        i32 Count := this->Children->Count()
+        ListNode* Node := null
 
-        for (i32 Index := 0, Index < Count, Index++) {
-            TCPSocket* Child := this->Children->PointerAt(Index)
+        while (this->Children->Next(&Node)) {
+            TCPSocket* Child := this->Children->Self(Node)
 
             if (Child->State = TCP_SOCKET_STATE_ACCEPT_WAIT) {
                 return Child
@@ -938,6 +942,8 @@ struct TCPSocket {
             TCPSocket* Child := this->FindAcceptCandidate()
 
             if (Child) {
+                this->Children->Remove(Child~>Link)
+
                 *Out := Child->AcceptSelf()
                 return TCPError::Ok
             }
@@ -979,28 +985,33 @@ struct TCPSocket {
     }
 
     define TCPError Poll(i32 Mode, i32* Out) {
-        *Out := 0
+        i32 Result := 0
 
         if (this->State = TCP_SOCKET_STATE_LISTEN) {
             if (Mode & POLL_FOR_READ) {
                 if (this->FindAcceptCandidate() != null) {
-                    *Out |= POLL_CAN_READ
+                    Result |= POLL_CAN_READ
                 }
-
-                return TCPError::Ok
             }
         }
         else if (this->State = TCP_SOCKET_STATE_ESTABLISHED) {
             if (Mode & POLL_FOR_READ) {
-                if (this->RecieveWindowTail) {
-                    *Out |= POLL_CAN_WRITE
+                if (this->RecieveWindowTail > 0) {
+                    Result |= POLL_CAN_READ
                 }
+            }
 
-                return TCPError::Ok
+            if (Mode & POLL_FOR_WRITE) {
+                Result |= POLL_CAN_WRITE
             }
         }
+        else {
+            return TCPError::InvalidState
+        }
+
+        *Out := Result
         
-        return TCPError::InvalidState
+        return TCPError::Ok
     }
 
     define TCPError Send(void* Buffer, i32 Size, i32* Out) {
@@ -1045,7 +1056,14 @@ struct TCPSocket {
     }
 
     define void Close() {
+        if (this->State = TCP_SOCKET_STATE_LISTEN) {
+            this->State := TCP_SOCKET_STATE_CLOSED
+
+            return
+        }
+
         this->State := TCP_SOCKET_STATE_FIN_WAIT_1
+        
         this->DrainQueue()
 
         TCPFrame* FinalAcknowledge := this->EnterFrame()
@@ -1067,12 +1085,14 @@ struct TCPSocket {
     }
 
     define void Destroy() {
-        this->AbortSendPump() ; Shutdown data flow
+        if (this->QuantumTimer) {
+            this->AbortSendPump() ; Shutdown data flow
 
-        Scheduler->Remove(this->QuantumTimer->Task) ; Remove data flow task
-        this->QuantumTimer->Task->Free() ; Free data flow task
+            Scheduler->Remove(this->QuantumTimer->Task) ; Remove data flow task
+            this->QuantumTimer->Task->Free() ; Free data flow task
 
-        ; NOTE: leaks `this->QuantumTimer` itself (timers are annoying to free)
+            ; NOTE: leaks `this->QuantumTimer` itself (timers are annoying to free)
+        }
 
         this->Free() ; Free protocol level buffers (and `this`)
     }
@@ -1194,6 +1214,16 @@ struct TCPLayer {
         this->Transport->Send(Packet)
     }
 
+    define i64 ID(i32 Source, i16 SourcePort, i16 DestinationPort) {
+        i32[3] Info {0, 0, 0}
+
+        Info[0] := Source
+        Info[1] := SourcePort
+        Info[2] := DestinationPort
+
+        return FNV1A(Info, 12)
+    }
+
     define void Ingest(NetworkPacket* Packet) {
         IPV4Header* IPV4 := Packet->Get(PACKET_DATA_IPV4_HEADER)
         TCPHeader* TCP := Packet->GetEnd(PACKET_DATA_IPV4_HEADER)
@@ -1208,22 +1238,40 @@ struct TCPLayer {
 
         TCP->FlipEndianess()
 
-        NetworkProtocol* Handler := this->Sockets->GetPointer(TCP->DestinationPort)
+        i64 ExistingID := this->ID(IPV4->Source, TCP->SourcePort, TCP->DestinationPort)
+        NetworkProtocol* ExistingConnection := this->Sockets->GetPointer(ExistingID)
 
-        if (Handler = null) {
-            this->Interface->Info("TCP: Dropping packet from %ipv4:%net-port -> :%net-port (no answer)", IPV4->Source, TCP->SourcePort, TCP->DestinationPort)
-            return
+        if (ExistingConnection) {
+            ExistingConnection->Ingest(Packet)
         }
+        else {
+            i64 ListenerID := this->ID(0, 0, TCP->DestinationPort)
+            NetworkProtocol* Listener := this->Sockets->GetPointer(ListenerID)
 
-        TCPSocket* Socket := Handler->this
-
-        if (Socket->State != TCP_SOCKET_STATE_LISTEN) {
-            if (IPV4->Source != Socket->RemoteAddress || TCP->SourcePort != Socket->RemotePort) {
-                this->Interface->Info("TCP: Dropping packet from %ipv4:%net-port -> :%net-port (already connected to %ipv4:%net-port)", IPV4->Source, TCP->SourcePort, TCP->DestinationPort, Socket->RemoteAddress, Socket->RemotePort)
+            if (Listener) {
+                Listener->Ingest(Packet)
+            }
+            else {
+                this->Interface->Info("TCP: Dropping packet from %ipv4:%net-port -> :%net-port (no answer)", IPV4->Source, TCP->SourcePort, TCP->DestinationPort)
             }
         }
+    }
 
-        Handler->Ingest(Packet)
+    define TCPError Accept(TCPSocket* Parent, TCPSocket** Out) {
+        TCPError Error := Parent->Accept(Out)
+
+        if (Error != TCPError::Ok) {
+            return Error
+        }
+
+        TCPSocket* Child := *Out
+
+        i64 ChildID := this->ID(Child->RemoteAddress, Child->RemotePort, Child->LocalPort)
+        this->Sockets->InsertPointer(ChildID, Child->AsProtocol)
+        
+        this->Interface->Info("TCP(%ipv4:%net-port -> %net-port) ACCEPT", Child->RemoteAddress, Child->RemotePort, Child->LocalPort)
+
+        return TCPError::Ok
     }
 
     define TCPError Bind(i16 LocalPort, TCPSocket* Socket) {
@@ -1232,10 +1280,12 @@ struct TCPLayer {
         }
 
         Socket->BindInterface(this->Interface, this->AsProtocol)
-
         Socket->LocalPort := LocalPort
 
-        this->Sockets->InsertPointer(LocalPort, Socket->AsProtocol)
+        i64 ListenerID := this->ID(0, 0, LocalPort)
+        this->Sockets->InsertPointer(ListenerID, Socket->AsProtocol)
+
+        this->Interface->Info("TCP(:%net-port) BIND", LocalPort)
 
         return TCPError::Ok
     }
@@ -1245,7 +1295,8 @@ struct TCPLayer {
 
         Socket->LocalPort := (TCP_OUTGOING_PORT_BASE + this->Sockets->Count()) As i16
 
-        this->Sockets->InsertPointer(Socket->LocalPort, Socket->AsProtocol)
+        i64 ConnectionID := this->ID(Address, Port, Socket->LocalPort)
+        this->Sockets->InsertPointer(ConnectionID, Socket->AsProtocol)
 
         return Socket->Connect(Address, Port)
     }

@@ -268,7 +268,7 @@ struct NetworkStack {
         for (i32 Index := 0, Index < Count, Index++) {
             NetworkRoute* Route := this->Routes->At(Index)
 
-            Info("Match %ipv4 & %ipv4 (%ipv4) against %ipv4\n", Address, Route->Mask, Address & Route->Mask, Route->Prefix)
+            Info("Match %ipv4 & %ipv4 (%ipv4) against %ipv4 (%s)\n", Address, Route->Mask, Address & Route->Mask, Route->Prefix, Route->Interface->Name)
 
             if ((Address & Route->Mask) = Route->Prefix) {
                 i32 Length := self:FindFirstBitSet(Route->Mask)
@@ -278,6 +278,8 @@ struct NetworkStack {
                 }
             }
         }
+
+        Info("Matched to %s\n", BestMatch->Interface->Name)
 
         return BestMatch
     }

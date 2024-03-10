@@ -72,8 +72,11 @@ struct TCPSocketHandle {
     }
 
     define FileHandle* Accept(NetworkAddress* OutAddress) {
+        NetworkInterface* Interface := this->Socket->Interface
+        TCPLayer* TCP := Interface->WellKnownProtocols->TCP
+
         TCPSocket* Result := null
-        TCPError Error := this->Socket->Accept(&Result)
+        TCPError Error := TCP->Accept(this->Socket, &Result)
 
         if (Error = TCPError::InvalidState) {
             Throw(LINUX_ERROR_OPNOTSUPP)
