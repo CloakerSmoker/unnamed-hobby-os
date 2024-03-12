@@ -1,5 +1,7 @@
 #Require "$/AVLTree.rlx"
 
+#Require "./src/kernel/file-system/VFS/VFSFile.rlx"
+
 declare IDirectoryPrototype* GetVFSDirectoryPrototype()
 
 struct VFSDirectoryEnumerateState {
@@ -70,6 +72,10 @@ struct VFSDirectory {
         return VFSDirectory:New()
     }
 
+    define IFile* CreateFile() {
+        return VFSFile:New(VFSFileHandle:New())
+    }
+
     define i8 Insert(VFSDirectoryEntry* Entry) {
         this->Children->Insert(FNV1A(Entry->Name), Entry)
 
@@ -89,6 +95,7 @@ IDirectoryPrototype VFSDirectoryPrototype {
     Next: &VFSDirectory.Next,
     IsEphemeral: &VFSDirectory.IsEphemeral,
     CreateDirectory: &VFSDirectory.CreateDirectory,
+    CreateFile: &VFSDirectory.CreateFile,
     Insert: &VFSDirectory.Insert,
     Remove: &VFSDirectory.Remove
 }

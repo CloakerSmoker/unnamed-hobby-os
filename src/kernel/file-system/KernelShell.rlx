@@ -37,6 +37,7 @@ IDirectory* DevicesDirectory := null
 #Require "./src/kernel/file-system/VFS/shell/Loop.rlx"
 #Require "./src/kernel/file-system/VFS/shell/Mount.rlx"
 #Require "./src/kernel/file-system/VFS/shell/GPT.rlx"
+#Require "./src/kernel/file-system/VFS/shell/Format.rlx"
 
 define void VFSExecuteShellCommand(i8* Line) {
     i64 ArgC := 0

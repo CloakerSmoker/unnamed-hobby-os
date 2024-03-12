@@ -1,0 +1,113 @@
+
+#Require "./src/kernel/file-system/Handle.rlx"
+
+declare FileHandlePrototype* GetVFSFileHandlePrototype()
+
+struct VFSFileHandle {
+    #Include "./src/kernel/file-system/HandleInstance.rlx"
+
+    void* Buffer
+    i32 Size
+
+    i32 Offset
+
+	static FileHandle* New() {
+		self* this := Alloc(#self)
+
+		this->Prototype := GetVFSFileHandlePrototype()
+
+		this->Buffer := Alloc(1)
+
+		return this->AsHandle()
+	}
+
+    define void Seek(i32 Destination, SeekMode Mode) {
+		if (Mode = SeekMode:Set) {
+			this->Offset := Destination
+		}
+		else if (Mode = SeekMode:Offset) {
+			this->Offset += Destination
+		}
+		else if (Mode = SeekMode:End) {
+			this->Offset := this->Size + Destination
+		}
+		
+		if (this->Offset < 0) {
+			this->Offset := 0
+			
+			;Throw(HANDLE_ERROR_BAD_PARAMETER)
+		}
+	}
+
+	define i32 Tell() {
+		return this->Offset
+	}
+
+    define i32 Read(void* Buffer, i32 Size) {
+        i32 Remaining := this->Size - this->Offset
+
+        if (Remaining < Size) {
+            Size := Remaining
+        }
+
+        MoveMemory(Buffer, this->Buffer + this->Offset, Size)
+
+		return Size
+	}
+	define i32 Write(void* Buffer, i32 Size) {
+        if (this->Offset + Size > this->Size) {
+            this->Size := this->Offset + Size
+            this->Buffer := ReAlloc(Buffer, this->Size)
+        }
+
+		MoveMemory(this->Buffer + this->Offset, Buffer, Size)
+
+        return Size
+	}
+}
+
+FileHandlePrototype VFSFileHandlePrototype {
+	;Status: &VFSFile.Status,
+	Read: &VFSFileHandle.Read,
+	Write: &VFSFileHandle.Write,
+	Seek: &VFSFileHandle.Seek,
+	Tell: &VFSFileHandle.Tell
+}
+
+define FileHandlePrototype* GetVFSFileHandlePrototype() {
+    return &VFSFileHandlePrototype
+}
+
+declare IFilePrototype* GetVFSFilePrototype()
+
+struct VFSFile {
+    #Include "./src/kernel/file-system/VFS/IFile.rlx"
+
+    VFSFileHandle* Handle
+
+    static IFile* New(void* Handle) {
+        self* this := Alloc(#self)
+
+        this->Prototype := GetVFSFilePrototype()
+        this->Handle := Handle
+
+        return this As void*
+    }
+
+    define i8 IsEphemeral() {
+        return true
+    }
+
+    define FileHandle* Open() {
+        return this->Handle->AsHandle()
+    }
+}
+
+IFilePrototype VFSFilePrototype {
+    IsEphemeral: &VFSFile.IsEphemeral,
+    Open: &VFSFile.Open
+}
+
+define IFilePrototype* GetVFSFilePrototype() {
+    return &VFSFilePrototype
+}
