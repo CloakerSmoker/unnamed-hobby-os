@@ -1,6 +1,7 @@
 #Require "./src/drivers/block-device/BlockDevice.rlx"
 #Require "$/MemoryBase.rlx"
 #Require "./src/utility/x64.rlx"
+#Require "./src/utility/Random.rlx"
 
 ;#Require "./src/kernel/file-system/FileSystem.rlx"
 #Require "./src/kernel/file-system/Handle.rlx"
@@ -51,7 +52,37 @@ struct Ext2SuperBlock {
 	i32 RevisionLevel,
 	
 	i16 DefaultUserID,
-	i16 DefaultGroupID
+	i16 DefaultGroupID,
+
+	i32 FirstUsableINode
+	i16 INodeSize
+
+	i16 BlockGroupNumberOfSelf
+
+	i32 CompatibleFeatures
+	i32 IncompatibleFeatures
+	i32 ReadOnlyFeatures
+
+	i8[16] VolumeGUID
+	i8[16] VolumeLabel
+
+	i8[64] LastMountPoint
+
+	i32 CompressionMethods
+
+	i8 PreAllocateFileBlocks
+	i8 PreAllocateDirectoryBlocks
+
+	i8[16] JournalGUID
+
+	i32 JournalFileDevice
+	i32 LastOrphanINode
+
+	i32[4] HashSeeds
+
+	i8 DefaultHashVersion
+
+	i32 DefaultMountOptions
 	
 	define void SetFieldDefaults() {
 		this->ReservedBlocks := 100
@@ -280,7 +311,7 @@ struct Ext2CreationParameters {
 		this->BlockCount := Size / this->BlockSize
 		this->BlockGroupCount := (this->BlockCount / this->BlocksPerGroup) + 1
 		this->INodeCount := this->BlockGroupCount * this->INodesPerGroup
-		this->INodeTableSize := (this->INodeCount * #Ext2INode) / this->BlockSize
+		this->INodeTableSize := (this->INodesPerGroup * #Ext2INode) / this->BlockSize
 		this->FinalGroupSize := this->BlockCount % this->BlocksPerGroup
 	}
 	
@@ -1021,7 +1052,7 @@ struct Ext2 {
 		
 		NextEntry->INode := NewNodeNumber
 		NextEntry->NameLength := NameLength As i8
-		NextEntry->Flags := Flags
+		;NextEntry->Flags := Flags
 		
 		; Write the name into the entry
 		MoveMemory(NextEntry~>Name, Name, NameLength)
@@ -1271,11 +1302,14 @@ struct Ext2 {
 		;Print("Building super block...\n")
 		
 		this->SuperBlock->SetFieldDefaults()
+
+		FillRandom(this->SuperBlock->VolumeGUID, 16)
+
 		this->SuperBlock->TotalBlocks := Parameters->BlockCount
 		this->SuperBlock->TotalINodes := Parameters->INodeCount
 		
-		this->SuperBlock->UnallocatedBlocks := Parameters->BlockCount - 1
-		this->SuperBlock->UnallocatedINodes := Parameters->INodeCount - 11
+		this->SuperBlock->UnallocatedBlocks := Parameters->BlockCount
+		this->SuperBlock->UnallocatedINodes := Parameters->INodeCount - 10
 		
 		this->SuperBlock->ReservedBlocks := this->SuperBlock->UnallocatedBlocks / 10
 		
@@ -1291,6 +1325,7 @@ struct Ext2 {
 		
 		this->CommitSuperBlock()
 		
+		; Superblock Backup, BGD Table, Block Bitmap, INode Bitmap
 		i32 ReservedBlockCount := Parameters->INodeTableSize + 4 ; Number of blocks each group has reserved for FS stuff
 		
 		Parameters->ReservedBlocksPerGroup := ReservedBlockCount
@@ -1322,9 +1357,21 @@ struct Ext2 {
 			}
 			
 			this->EndReserveInBitmap(Descriptor->BlockBitmap, BlockBitmap)
+
+			; Reserve tail of inode bitmap
+
+			i8* INodeBitmap := this->StartReserveInBitmap(Descriptor->INodeBitmap)
+
+			for (i32 ReserveIndex := Parameters->INodesPerGroup, ReserveIndex < 8192, ReserveIndex++) {
+				this->ReserveInBitmap(INodeBitmap, ReserveIndex)
+			}
+			
+			this->EndReserveInBitmap(Descriptor->INodeBitmap, INodeBitmap)
 		}
 		
 		this->CommitSuperBlock()
+
+		Info("FGS: %i, RBC: %i\n", Parameters->FinalGroupSize, ReservedBlockCount)
 		
 		if (Parameters->FinalGroupSize < ReservedBlockCount) {
 			; If the final group can't hold an entire INode table, it isn't possible to use it in the FS, so we just
@@ -1348,6 +1395,7 @@ struct Ext2 {
 			this->SuperBlock->TotalINodes -= Parameters->INodesPerGroup
 			
 			this->SuperBlock->UnallocatedBlocks += ReservedBlockCount
+			this->SuperBlock->UnallocatedINodes -= Parameters->INodesPerGroup
 			
 			Parameters->TotalSize := this->SuperBlock->TotalBlocks * Parameters->BlockSize
 		}
@@ -1389,12 +1437,12 @@ struct Ext2 {
 		
 		Ext2BlockGroupDescriptor* FirstDescriptor := this->GetBlockGroupDescriptor(0)
 		
-		FirstDescriptor->UnallocatedBlocks -= 1
-		FirstDescriptor->UnallocatedINodes -= 11
+		FirstDescriptor->UnallocatedINodes -= 10
+		FirstDescriptor->DirectoryCount += 1
 		
 		i8* FirstINodeBitmap := this->StartReserveInBitmap(FirstDescriptor->INodeBitmap)
 		
-		for (Index := 0, Index < 11, Index++) {
+		for (Index := 0, Index < 10, Index++) {
 			; Last reserved INode = 11, which isn't defined
 			
 			this->ReserveInBitmap(FirstINodeBitmap, Index)

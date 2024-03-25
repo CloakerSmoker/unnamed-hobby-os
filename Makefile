@@ -90,8 +90,8 @@ mount ext2 /dev/loop0p1 /root
 
 install /host/build/Kernel.elf /root/Kernel.elf
 
-install /host/sponge.six /root/usr/share/demo/sponge.six
-install /host/dum.six /root/usr/share/demo/dum.six
+install /host/misc/files/sponge.six /root/usr/share/demo/sponge.six
+install /host/misc/files/dum.six /root/usr/share/demo/dum.six
 
 $(shell python3 src/host/busybox.py --install $(BUSYBOX_SRC) | tr '\n' '\1')
 
