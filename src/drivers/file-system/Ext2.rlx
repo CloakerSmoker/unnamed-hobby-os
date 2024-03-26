@@ -439,6 +439,10 @@ define i8* Ext2ExceptionToString(i64 Exception) {
 struct Ext2 {
 	Ext2SuperBlock* SuperBlock
 	Ext2BlockGroupDescriptor* BlockGroupTable
+
+	i8 NeedsSync
+
+	i32 BlockGroupCount
 	
 	void* TempINode
 	
@@ -473,9 +477,24 @@ struct Ext2 {
 		
 		this->SuperBlock := SuperBlockBuffer
 		this->BlockGroupTable := SuperBlockBuffer + 1024 As Ext2BlockGroupDescriptor*
-		
+	}
+
+	define i8 Open() {
 		this->ReadBlock(EXT2_SUPERBLOCK_NUMBER, this->SuperBlock As void*)
+
+		if (this->SuperBlock->Magic != EXT2_SUPER_MAGIC) {
+			return false
+		}
+
 		this->ReadBlock(EXT2_BLOCK_GROUP_DESCRIPTOR_TABLE_NUMBER, this->BlockGroupTable As void*)
+
+		this->BlockGroupCount := this->SuperBlock->TotalBlocks / this->SuperBlock->BlocksPerGroup
+
+		if (this->SuperBlock->TotalBlocks % this->SuperBlock->BlocksPerGroup) {
+			this->BlockGroupCount += 1
+		}
+
+		return true
 	}
 	
 	define void SwapTempBlocks() {
@@ -543,24 +562,31 @@ struct Ext2 {
 		return false
 	}
 
-	define void Sync() {
-		i32 Count := 0 ;this->SuperBlock->BlockGroupCount
+	define void CommitSuperBlock(i32 BlockGroupNumber) {
+		i32 BlockNumber := (BlockGroupNumber * this->SuperBlock->BlocksPerGroup) + 1
 
-		for (i32 Index := 0, Index < Count, Index++) {
+		this->SuperBlock->BlockGroupNumberOfSelf := BlockGroupNumber As i16
+
+		;Info("BG %i SB Backup @ %i\n", BlockGroupNumber, BlockNumber)
+
+		this->WriteBlock(BlockNumber, this->SuperBlock)
+		this->WriteBlock(BlockNumber + 1, this->BlockGroupTable)
+	}
+
+	define void Sync(i8 Force) {
+		if !(this->NeedsSync || Force) {
+			return
+		}
+
+		for (i32 Index := 0, Index < this->BlockGroupCount, Index++) {
 			i8 ShouldContainBackup := this->BlockGroupHasSuperBlockBackup(Index)
 
+			Info("Sync. BG %i Should Backup? %i\n", Index, ShouldContainBackup)
+
 			if (ShouldContainBackup) {
-				; pass
+				this->CommitSuperBlock(Index)
 			}
 		}
-		
-	}
-
-	define void CommitBlockGroupDescriptors() {
-		this->WriteBlock(EXT2_BLOCK_GROUP_DESCRIPTOR_TABLE_NUMBER, this->BlockGroupTable)
-	}
-	define void CommitSuperBlock() {
-		this->WriteBlock(EXT2_SUPERBLOCK_NUMBER, this->SuperBlock)
 	}
 	
 	define i32 FindINodeBlock(i32 INodeNumber, i32* OutINodeOffset) {
@@ -934,8 +960,7 @@ struct Ext2 {
 				this->SuperBlock->UnallocatedINodes -= 1
 			}
 			
-			this->CommitBlockGroupDescriptors()
-			this->CommitSuperBlock()
+			this->NeedsSync := true
 			
 			;Print("Block group %i bitmap%i at %i\n", BlockGroupIndex, GetBlock, BitmapBlock)
 			
@@ -1412,8 +1437,6 @@ struct Ext2 {
 		
 		Parameters->TotalSize := Parameters->BlockCount * Parameters->BlockSize
 		
-		this->CommitSuperBlock()
-		
 		; Superblock Backup, BGD Table, Block Bitmap, INode Bitmap
 		i32 ReservedBlockCount := Parameters->INodeTableSize + 4 ; Number of blocks each group has reserved for FS stuff
 		
@@ -1457,10 +1480,6 @@ struct Ext2 {
 			
 			this->EndReserveInBitmap(Descriptor->INodeBitmap, INodeBitmap)
 		}
-		
-		this->CommitSuperBlock()
-
-		Info("FGS: %i, RBC: %i\n", Parameters->FinalGroupSize, ReservedBlockCount)
 		
 		if (Parameters->FinalGroupSize < ReservedBlockCount) {
 			; If the final group can't hold an entire INode table, it isn't possible to use it in the FS, so we just
@@ -1515,8 +1534,6 @@ struct Ext2 {
 			this->EndReserveInBitmap(Descriptor->BlockBitmap, FinalGroupBlocks)
 		}
 		
-		this->CommitSuperBlock()
-		
 		Parameters->FreeBlocks := this->SuperBlock->UnallocatedBlocks
 		Parameters->FreeINodes := this->SuperBlock->UnallocatedINodes
 		
@@ -1538,8 +1555,10 @@ struct Ext2 {
 		}
 		
 		this->EndReserveInBitmap(FirstDescriptor->INodeBitmap, FirstINodeBitmap)
-		
-		this->CommitBlockGroupDescriptors()
+
+		this->CommitSuperBlock(0) ; Write the first copy of the superblock
+		this->Open() ; Open using first (and only copy) of the superblock
+		this->Sync(true) ; Use the info from the superblock to write all backup superblocks
 		
 		; Alright, so we've got a mostly functional FS now, but it doesn't have a root INode set, and is pretty useless
 		;  so we just need to grab INode 2 (EXT2_ROOT_INODE) and set it up as a directory, along with creating
@@ -1554,6 +1573,8 @@ struct Ext2 {
 		
 		this->DirectoryAppendEntry(RootNode, ".", 2, DIRECTORY_ENTRY_DIRECTORY)
 		this->DirectoryAppendEntry(RootNode, "..", 2, DIRECTORY_ENTRY_DIRECTORY)
+
+		this->Sync(false)
 		
 		; And that's that. Now we've got a functional FS, ready to be used.
 	}
@@ -1722,6 +1743,8 @@ struct Ext2 {
 		
 		Node->FileSizeLow := *OutOffset
 		this->WriteINode(Node)
+
+		this->Sync(false)
 	}
 	
 	define void Status(Ext2INode* Node, FileStatus* Out) {

@@ -20,6 +20,8 @@ define IDirectory* OpenExt2(BlockDevice* Device) {
 	
 	FS->Initialize(SB, TI, TB1, TB2, BMP)
 
+    FS->Open()
+
     Ext2INode* RootINode := CloneMemory(FS->ReadINode(2), #Ext2INode)
     return VFSExt2Directory:New(FS, RootINode)
 }

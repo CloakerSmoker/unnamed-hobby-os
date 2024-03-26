@@ -89,6 +89,7 @@ define i64 ParseBlockCount(i8* ValueString, i8* Scale) {
 #Require "./src/kernel/file-system/VFS/ZeroDevice.rlx"
 
 define void Main(i64 _ArgC, i8** _ArgV) {
+    i8* ScriptFile := null
     i8 ScriptedInput := false
     i8 SilentMode := false
 
@@ -98,6 +99,14 @@ define void Main(i64 _ArgC, i8** _ArgV) {
         }
         else if (StringEquals(_ArgV[1], "--silent")) {
             SilentMode := true
+        }
+    }
+    else if (_ArgC = 3) {
+        if (StringEquals(_ArgV[1], "--script-file")) {
+            ScriptedInput := true
+            ScriptFile := _ArgV[2]
+
+            STDIN := FileOpen(ScriptFile, FILE_READ)
         }
     }
 
