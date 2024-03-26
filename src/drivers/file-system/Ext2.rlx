@@ -9,10 +9,25 @@
 
 i16 EXT2_SUPER_MAGIC := 0xEF53 As i16
 
-i16 EXT2_VALID_FS := 1
-i16 EXT2_ERROR_FS := 2
+enum Ext2RevisionLevel As i32 {
+	Old := 0
+	Dynamic := 1
+}
 
-i16 EXT2_IGNORE_ERROR := 1
+enum Ext2ErrorState As i16 {
+	Valid := 1,
+	Error := 2
+}
+
+enum Ext2ErrorMode As i16 {
+	Ignore := 1,
+	ReadOnly := 2,
+	Panic := 3
+}
+
+;set substitute-path ../../../ /home/connor/ThirdParty/e2fsprogs/e2fsprogs-1.47.0
+;set substitute-path ../../../.. /home/connor/ThirdParty/e2fsprogs/e2fsprogs-1.47.0
+;set substitute-path ../../../.. /home/connor/ThirdParty/e2fsprogs/e2fsprogs-1.47.0
 
 struct Ext2SuperBlock {
 	i32 TotalINodes,
@@ -39,8 +54,8 @@ struct Ext2SuperBlock {
 	i16 MaxMountCount,
 	
 	i16 Magic,
-	i16 State,
-	i16 ErrorMode,
+	Ext2ErrorState State,
+	Ext2ErrorMode ErrorMode,
 	
 	i16 MinorRevision,
 	
@@ -49,7 +64,7 @@ struct Ext2SuperBlock {
 	
 	i32 CreatorOS,
 	
-	i32 RevisionLevel,
+	Ext2RevisionLevel RevisionLevel,
 	
 	i16 DefaultUserID,
 	i16 DefaultGroupID,
@@ -59,9 +74,27 @@ struct Ext2SuperBlock {
 
 	i16 BlockGroupNumberOfSelf
 
-	i32 CompatibleFeatures
+	union {
+		i32 CompatibleFeatures
+
+		bits As i32 {
+			[0] EnableDirectoryPreAllocation
+			[2] EnableJournal
+			[3] EnableExtendedAttributes
+			[4] EnableNonStandardINodeSize
+			[5] EnableDirectoryIndexing
+		}
+	}
+
 	i32 IncompatibleFeatures
-	i32 ReadOnlyFeatures
+
+	union {
+		i32 ReadOnlyFeatures
+
+		bits As i32 {
+			[0] EnableSparseSuperBlockBackups
+		}
+	}
 
 	i8[16] VolumeGUID
 	i8[16] VolumeLabel
@@ -85,25 +118,26 @@ struct Ext2SuperBlock {
 	i32 DefaultMountOptions
 	
 	define void SetFieldDefaults() {
-		this->ReservedBlocks := 100
+		this->ReservedBlocks := 0
 		
 		this->SuperBlockNumber := 1
 		this->BlockSize := 0
 		this->FragmentSize := 0
 		
-		this->MountCount := 1
+		this->MountCount := 0
 		this->MaxMountCount := 0xFFFF As i16
 		
 		this->Magic := EXT2_SUPER_MAGIC
-		this->State := EXT2_VALID_FS
-		this->ErrorMode := EXT2_IGNORE_ERROR
+
+		this->State := Ext2ErrorState::Valid
+		this->ErrorMode := Ext2ErrorMode::Ignore
 		
 		this->MinorRevision := 0
 		
 		this->CheckInterval := 0
 		
 		this->CreatorOS := 0
-		this->RevisionLevel := 0
+		this->RevisionLevel := Ext2RevisionLevel::Old
 	}
 }
 
@@ -475,6 +509,53 @@ struct Ext2 {
 	define Ext2BlockGroupDescriptor* GetBlockGroupDescriptor(i32 GroupNumber) {
 		return this->BlockGroupTable + (GroupNumber * #Ext2BlockGroupDescriptor)
 	}
+
+	define i8 IsPowerOf(i32 X, i32 Y) {
+		if (X < Y) {
+			return false
+		}
+
+		while (X % Y = 0) {
+			X /= Y
+		}
+
+		return X = 1
+	}
+
+	define i8 BlockGroupHasSuperBlockBackup(i32 BlockGroupNumber) {
+		if !(this->SuperBlock->EnableSparseSuperBlockBackups) {
+			return true
+		}
+
+		if (BlockGroupNumber = 0 || BlockGroupNumber = 1) {
+			return true
+		}
+		else if (this->IsPowerOf(BlockGroupNumber, 3)) {
+			return true
+		}
+		else if (this->IsPowerOf(BlockGroupNumber, 5)) {
+			return true
+		}
+		else if (this->IsPowerOf(BlockGroupNumber, 7)) {
+			return true
+		}
+
+		return false
+	}
+
+	define void Sync() {
+		i32 Count := 0 ;this->SuperBlock->BlockGroupCount
+
+		for (i32 Index := 0, Index < Count, Index++) {
+			i8 ShouldContainBackup := this->BlockGroupHasSuperBlockBackup(Index)
+
+			if (ShouldContainBackup) {
+				; pass
+			}
+		}
+		
+	}
+
 	define void CommitBlockGroupDescriptors() {
 		this->WriteBlock(EXT2_BLOCK_GROUP_DESCRIPTOR_TABLE_NUMBER, this->BlockGroupTable)
 	}
@@ -1303,6 +1384,12 @@ struct Ext2 {
 		
 		this->SuperBlock->SetFieldDefaults()
 
+		this->SuperBlock->RevisionLevel := Ext2RevisionLevel::Dynamic
+		this->SuperBlock->INodeSize := 128
+
+		this->SuperBlock->BlockSize := 0
+		this->SuperBlock->FragmentSize := 0
+
 		FillRandom(this->SuperBlock->VolumeGUID, 16)
 
 		this->SuperBlock->TotalBlocks := Parameters->BlockCount
@@ -1310,6 +1397,8 @@ struct Ext2 {
 		
 		this->SuperBlock->UnallocatedBlocks := Parameters->BlockCount
 		this->SuperBlock->UnallocatedINodes := Parameters->INodeCount - 10
+
+		this->SuperBlock->FirstUsableINode := 11
 		
 		this->SuperBlock->ReservedBlocks := this->SuperBlock->UnallocatedBlocks / 10
 		
