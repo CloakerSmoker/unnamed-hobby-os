@@ -7,18 +7,7 @@ define FAT32Device* RawOpenFAT32(BlockDevice* Device) {
 }
 
 define Ext2* RawOpenExt2(BlockDevice* Device) {
-    Ext2* FS := Alloc(#Ext2)
-	FS->Device := Device
-	
-	void* SB := Alloc(2048)
-	void* TI := Alloc(1024)
-	void* TB1 := Alloc(1024)
-	void* TB2 := Alloc(1024)
-	void* BMP := Alloc(1024)
-	
-	FS->Initialize(SB, TI, TB1, TB2, BMP)
-
-    return FS
+    return Ext2:New(Device)
 }
 
 define void ExecuteFormat(i64 ArgC, i8** ArgV) {

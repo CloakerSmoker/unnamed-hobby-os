@@ -414,11 +414,9 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	EFIBlockDeviceInstance* BootDisk := NewBlockDevice(null, &EFIBlockDevicePrototype) 
 	SystemTable->BootServices->HandleProtocol(OSPartition, EFI_BLOCK_IO_PROTOCOL_GUID, BootDisk~>BlockIO As void**)
 	
-	Ext2* FS := Alloc(#Ext2)
-	FS->Device := BootDisk->AsBlockDevice()
-	
-	void* Temp := SystemTable->BootServices->AllocatePages(2)
-	FS->Initialize(Temp, Temp + 0x800, Temp + 0xC00, Temp + 0x1000, Temp + 0x1400)
+	Ext2* FS := Ext2:New(BootDisk->AsBlockDevice())
+
+	FS->Open()
 	
 	RootDirectory := Ext2OpenINodeNumber(FS, 2)
 	
@@ -491,9 +489,9 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	Print("Kernel entry: %x\n", KernelEntryPoint)
 	
 	SystemTable->BootServices->FreePages(KernelFile, KernelPageCount)
+	Free(FS->SuperBlock)
 	Free(FS)
 	Free(BootDisk)
-	SystemTable->BootServices->FreePages(Temp, 2)
 	
 	
 	i64 MemoryMapSize := 0

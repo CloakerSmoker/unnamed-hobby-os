@@ -564,11 +564,11 @@ define void ExecuteLine(Ext2* FS, Ext2INode** pRootINode, i8* Line) {
 		
 		Print("Linked entry '%s' to INode %i\n", Path, LinkToNodeNumber)
 	}
-	else if (StringEquals(Command, "hard-link")) {
-		FS->MakeHardLink(RootINode, ArgV[1], ArgV[2])
-		
-		Print("Linked '%s' -> '%s'\n", ArgV[1], ArgV[2])
-	}
+	;else if (StringEquals(Command, "hard-link")) {
+	;	FS->MakeHardLink(RootINode, ArgV[1], ArgV[2])
+	;	
+	;	Print("Linked '%s' -> '%s'\n", ArgV[1], ArgV[2])
+	;}
 	else if (StringEquals(Command, "quit")) {
 		Free(ArgV)
 		Exit(0)
@@ -606,17 +606,9 @@ define i32 Main(i64 ArgC, i8** ArgV) {
 	
 	Print("Device = %x\n", Device)
 	
-	Ext2* FS := Alloc(#Ext2)
-	
-	FS->Device := Device
-	
-	void* SB := Alloc(2048)
-	void* TI := Alloc(1024)
-	void* TB1 := Alloc(1024)
-	void* TB2 := Alloc(1024)
-	void* BMP := Alloc(1024)
-	
-	FS->Initialize(SB, TI, TB1, TB2, BMP)
+	Ext2* FS := Ext2:New(Device)
+
+	FS->Open()
 	
 	;Print("SB data\n Block size = %i\n Blocks per group = %i\n INodes per group = %i\n\n", 1024 << (FS->SuperBlock->BlockSize As i8), FS->SuperBlock->BlocksPerGroup, FS->SuperBlock->INodesPerGroup)
 	

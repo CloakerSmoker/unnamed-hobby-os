@@ -436,6 +436,14 @@ define i8* Ext2ExceptionToString(i64 Exception) {
 	}
 }
 
+i32 EXT2_SCRATCH_SIZE_BYTES := 0x2000
+i32 EXT2_SCRATCH_SIZE_PAGES := 2
+
+enum Ext2AllocateType {
+	Block,
+	INode
+}
+
 struct Ext2 {
 	Ext2SuperBlock* SuperBlock
 	Ext2BlockGroupDescriptor* BlockGroupTable
@@ -468,15 +476,27 @@ struct Ext2 {
 		
 		return Buffer
 	}
-	
-	define void Initialize(void* SuperBlockBuffer, void* TempINode, void* TempBlock, void* ExtraTempBlock, void* TempBitmap) {
-		this->TempINode := TempINode
-		this->TempBlock := TempBlock
-		this->ExtraTempBlock := ExtraTempBlock
-		this->TempBitmap := TempBitmap
-		
-		this->SuperBlock := SuperBlockBuffer
-		this->BlockGroupTable := SuperBlockBuffer + 1024 As Ext2BlockGroupDescriptor*
+
+	define void Initialize(BlockDevice* Device, void* Scratch) {
+		this->Device := Device
+
+		this->SuperBlock := Scratch
+		this->BlockGroupTable := (Scratch + 1024) As Ext2BlockGroupDescriptor*
+
+		this->TempINode := Scratch + 2048
+		this->TempBlock := Scratch + 3072
+		this->ExtraTempBlock := Scratch + 4092
+		this->TempBitmap := Scratch + 5120
+	}
+
+	static self* New(BlockDevice* Device) {
+		self* this := Alloc(#self)
+
+		void* Scratch := Alloc(EXT2_SCRATCH_SIZE_BYTES)
+
+		this->Initialize(Device, Scratch)
+
+		return this
 	}
 
 	define i8 Open() {
@@ -925,49 +945,41 @@ struct Ext2 {
 		
 		return 0
 	}
-	define i32 Allocate(i8 GetBlock) {
-		i32 BlocksPerGroup := this->SuperBlock->BlocksPerGroup
-		i32 TotalBlockGroups := this->SuperBlock->TotalBlocks / BlocksPerGroup + 1
-		i32 INodesPerGroup := this->SuperBlock->INodesPerGroup
+	define i32 Allocate(Ext2AllocateType Type) {
+		i32 MaxPerGroup := 0
 		
-		i32 MaxPerGroup := INodesPerGroup
-		
-		if (GetBlock) {
-			MaxPerGroup := BlocksPerGroup
+		if (Type = Ext2AllocateType::Block) {
+			MaxPerGroup := this->SuperBlock->BlocksPerGroup
+		}
+		else if (Type = Ext2AllocateType::INode) {
+			MaxPerGroup := this->SuperBlock->INodesPerGroup
 		}
 		
-		for (i32 BlockGroupIndex := 0, BlockGroupIndex < TotalBlockGroups, BlockGroupIndex += 1) {
-			Ext2BlockGroupDescriptor* BGD := this->GetBlockGroupDescriptor(BlockGroupIndex)
+		for (i32 Index := 0, Index < this->BlockGroupCount, Index += 1) {
+			Ext2BlockGroupDescriptor* BGD := this->GetBlockGroupDescriptor(Index)
+			i32 BitmapBlockNumber := 0
 			
-			i32 BitmapBlock := BGD->INodeBitmap
-			
-			if (GetBlock) {
+			if (Type = Ext2AllocateType::Block) {
 				if (BGD->UnallocatedBlocks <= 0) {
 					continue
 				}
 				
-				BitmapBlock := BGD->BlockBitmap
-				
-				BGD->UnallocatedBlocks -= 1
-				this->SuperBlock->UnallocatedBlocks -= 1
+				BitmapBlockNumber := BGD->BlockBitmap
 			}
-			else {
+			else if (Type = Ext2AllocateType::INode) {
 				if (BGD->UnallocatedINodes <= 0) {
 					continue
 				}
-			
-				BGD->UnallocatedINodes -= 1
-				this->SuperBlock->UnallocatedINodes -= 1
+
+				BitmapBlockNumber := BGD->INodeBitmap
 			}
 			
-			this->NeedsSync := true
+			;Print("Block group %i bitmap%i at %i\n", Index, GetBlock, BitmapBlock)
 			
-			;Print("Block group %i bitmap%i at %i\n", BlockGroupIndex, GetBlock, BitmapBlock)
-			
-			i8* Bitmap := this->ReadBitmap(BitmapBlock)
+			i8* Bitmap := this->ReadBitmap(BitmapBlockNumber)
 			
 			try {
-				i32 Result := (BlockGroupIndex * MaxPerGroup) + this->AllocateInBitmap(Bitmap, MaxPerGroup)
+				i32 Result := (Index * MaxPerGroup) + this->AllocateInBitmap(Bitmap, MaxPerGroup)
 			}
 			catch (i64 Exception) {
 				if (Exception = EXT2_EXCEPTION_BAD_PARAMETER) {
@@ -979,34 +991,46 @@ struct Ext2 {
 			}
 			
 			if (Result) {
+				if (Type = Ext2AllocateType::Block) {
+					BGD->UnallocatedBlocks -= 1
+					this->SuperBlock->UnallocatedBlocks -= 1
+				}
+				else if (Type = Ext2AllocateType::INode) {
+					BGD->UnallocatedINodes -= 1
+					this->SuperBlock->UnallocatedINodes -= 1
+				}
+
+				this->NeedsSync := true
+
 				/* Commit the allocation to the file system */
-				this->WriteBlock(BitmapBlock, Bitmap)
+				this->WriteBlock(BitmapBlockNumber, Bitmap)
 				
 				return Result
 			}
 		}
 		
-		if (GetBlock) {
+		if (Type = Ext2AllocateType::Block) {
 			Throw(EXT2_EXCEPTION_OUT_OF_BLOCKS)
 		}
-		else {
+		else if (Type = Ext2AllocateType::INode) {
 			Throw(EXT2_EXCEPTION_OUT_OF_INODES)
 		}
 		
 		return 0
 	}
 	define i32 AllocateINode() {
-		return this->Allocate(0)
+		return this->Allocate(Ext2AllocateType::INode)
 	}
 	define i32 AllocateBlock() {
-		return this->Allocate(1)
+		return this->Allocate(Ext2AllocateType::Block)
 	}
 	
 	define void FreeBlock(i32 BlockNumber) {
+		; TODO: this
+
 		BlockNumber -= 1
 		
 		i32 BlocksPerGroup := this->SuperBlock->BlocksPerGroup
-		i32 TotalBlockGroups := this->SuperBlock->TotalBlocks / BlocksPerGroup + 1
 		
 		i32 TargetGroup := BlockNumber / BlocksPerGroup
 		i32 TargetOffset := BlockNumber % BlocksPerGroup
@@ -1235,30 +1259,12 @@ struct Ext2 {
 		return TailIndex
 	}
 	
-	define i32 MakeFile(Ext2INode* At, i8* Path, i8 EntryType, Ext2INode** OutNode, i32* OutContainingNodeNumber) {
-		i32 NameIndex := this->GetPathTail(Path)
-		i8* FileName := &Path[NameIndex]
-		
-		Ext2INode* ContainingNode := At
-		
-		if (NameIndex != 0) {
-			i8* PathHead := Path
-			
-			i8 OldPathHeadEnd := PathHead[NameIndex]
-			
-			PathHead[NameIndex] := 0
-			
-			Ext2DirectoryEntry* ContainingEntry := this->FindDirectoryEntryByPath(At, PathHead)
-			ContainingNode := this->ReadINode(ContainingEntry->INode)
-			
-			PathHead[NameIndex] := OldPathHeadEnd
-		}
-		
+	define i32 MakeFile(Ext2INode* At, i8* Name, i8 EntryType, Ext2INode** OutNode, i32* OutContainingNodeNumber) {
 		if (OutContainingNodeNumber != null) {
-			*OutContainingNodeNumber := ContainingNode->INodeNumber
+			*OutContainingNodeNumber := At->INodeNumber
 		}
 		
-		Ext2DirectoryEntry* ExistingEntry := this->FindDirectoryEntryByName(ContainingNode, FileName)
+		Ext2DirectoryEntry* ExistingEntry := this->FindDirectoryEntryByName(At, Name)
 		
 		if (ExistingEntry != null) {
 			Throw(EXT2_EXCEPTION_PATH_ALREADY_EXISTS)
@@ -1268,7 +1274,7 @@ struct Ext2 {
 		
 		i32 NewFileNodeNumber := this->AllocateINode()
 		
-		this->DirectoryAppendEntry(ContainingNode, FileName, NewFileNodeNumber, EntryType)
+		this->DirectoryAppendEntry(At, Name, NewFileNodeNumber, EntryType)
 		
 		Ext2INode* NewNode := this->ReadINode(NewFileNodeNumber)
 		NewNode->SetFieldDefaults()
@@ -1295,13 +1301,13 @@ struct Ext2 {
 		return NewFileNodeNumber
 	}
 	
-	define i32 MakeFile(Ext2INode* At, i8* Path) {
-		return this->MakeFile(At, Path, DIRECTORY_ENTRY_FILE, 0 As Ext2INode**, null)
+	define i32 MakeFile(Ext2INode* At, i8* Name) {
+		return this->MakeFile(At, Name, DIRECTORY_ENTRY_FILE, 0 As Ext2INode**, null)
 	}
 	
-	define i32 MakeMagicFile(Ext2INode* At, i8* Path, i8 EntryType, i32 Major, i32 Minor) {
+	define i32 MakeMagicFile(Ext2INode* At, i8* Name, i8 EntryType, i32 Major, i32 Minor) {
 		Ext2INode* ResultNode := null
-		i32 Result := this->MakeFile(At, Path, EntryType, &ResultNode, null)
+		i32 Result := this->MakeFile(At, Name, EntryType, &ResultNode, null)
 		
 		ResultNode->DirectBlocks[0] := (Major << 8) | Minor
 		this->WriteINode(ResultNode)
@@ -1309,11 +1315,11 @@ struct Ext2 {
 		return Result
 	}
 	
-	define i32 MakeDirectory(Ext2INode* At, i8* Path) {
+	define i32 MakeDirectory(Ext2INode* At, i8* Name) {
 		Ext2INode* NewNode := null
 		i32 ContainingNodeNumber := 0
 		
-		i32 NewNodeNumber := this->MakeFile(At, Path, DIRECTORY_ENTRY_DIRECTORY, &NewNode, &ContainingNodeNumber)
+		i32 NewNodeNumber := this->MakeFile(At, Name, DIRECTORY_ENTRY_DIRECTORY, &NewNode, &ContainingNodeNumber)
 		
 		this->DirectoryAppendEntry(NewNode, ".", NewNodeNumber, DIRECTORY_ENTRY_DIRECTORY)
 		this->DirectoryAppendEntry(NewNode, "..", ContainingNodeNumber, DIRECTORY_ENTRY_DIRECTORY)
@@ -1321,13 +1327,16 @@ struct Ext2 {
 		return NewNodeNumber
 	}
 	
-	define void MakeHardLink(Ext2INode* At, i8* Path, i8* TargetPath) {
+	/*
+	TODO: this
+	define void MakeHardLink(Ext2INode* At, i8* Path, Ext2) {
 		Ext2DirectoryEntry* TargetEntry := this->FindDirectoryEntryByPath(At, TargetPath)
 		i8 TargetEntryType := TargetEntry->Flags
 		i32 TargetNodeNumber := TargetEntry->INode
 		
 		this->DirectoryAppendEntry(At, Path, TargetNodeNumber, TargetEntryType)
 	}
+	;*/
 
 	define i32 CreateINode(Ext2INode** pResult) {
 		i32 NodeNumber := this->AllocateINode()
