@@ -1410,8 +1410,11 @@ struct Ext2 {
 		this->SuperBlock->SetFieldDefaults()
 
 		this->SuperBlock->RevisionLevel := Ext2RevisionLevel::Dynamic
-		this->SuperBlock->INodeSize := 128
 
+		this->SuperBlock->EnableSparseSuperBlockBackups := true
+
+		this->SuperBlock->INodeSize := 128
+		
 		this->SuperBlock->BlockSize := 0
 		this->SuperBlock->FragmentSize := 0
 
@@ -1446,17 +1449,25 @@ struct Ext2 {
 		;  but since they still need to be initialized just like the other block groups, we handle them afterwards
 		
 		for (i32 Index := 0, Index < Parameters->BlockGroupCount, Index++) {
-			this->SuperBlock->UnallocatedBlocks -= ReservedBlockCount
+			i32 FirstBlockOffset := 1
+			i32 LocalReservedBlockCount := Parameters->INodeTableSize + 2
+
+			if (this->BlockGroupHasSuperBlockBackup(Index)) {
+				LocalReservedBlockCount += 2
+				FirstBlockOffset += 2
+			}
+
+			this->SuperBlock->UnallocatedBlocks -= LocalReservedBlockCount
 			
 			Ext2BlockGroupDescriptor* Descriptor := this->GetBlockGroupDescriptor(Index)
 			
-			i32 DescriptorBaseBlock := Index * Parameters->BlocksPerGroup
+			i32 DescriptorBaseBlock := (Index * Parameters->BlocksPerGroup) + FirstBlockOffset
 			
-			Descriptor->BlockBitmap := DescriptorBaseBlock + 3
-			Descriptor->INodeBitmap := DescriptorBaseBlock + 4
-			Descriptor->INodeTable := DescriptorBaseBlock + 5
+			Descriptor->BlockBitmap := DescriptorBaseBlock + 0
+			Descriptor->INodeBitmap := DescriptorBaseBlock + 1
+			Descriptor->INodeTable := DescriptorBaseBlock + 2
 			
-			Descriptor->UnallocatedBlocks := (Parameters->BlocksPerGroup - ReservedBlockCount) As i16
+			Descriptor->UnallocatedBlocks := (Parameters->BlocksPerGroup - LocalReservedBlockCount) As i16
 			Descriptor->UnallocatedINodes := Parameters->INodesPerGroup As i16
 			
 			; We've initialized the group descriptor well enough that we can build the block bitmap now, with blocks
@@ -1464,7 +1475,7 @@ struct Ext2 {
 			
 			i8* BlockBitmap := this->StartReserveInBitmap(Descriptor->BlockBitmap)
 			
-			for (i32 ReserveIndex := 0, ReserveIndex < ReservedBlockCount, ReserveIndex++) {
+			for (i32 ReserveIndex := 0, ReserveIndex < LocalReservedBlockCount, ReserveIndex++) {
 				this->ReserveInBitmap(BlockBitmap, ReserveIndex)
 			}
 			
@@ -1501,8 +1512,14 @@ struct Ext2 {
 			
 			this->SuperBlock->TotalBlocks -= Parameters->FinalGroupSize
 			this->SuperBlock->TotalINodes -= Parameters->INodesPerGroup
+
+			i32 LocalReservedBlockCount := Parameters->INodeTableSize + 2
+
+			if (this->BlockGroupHasSuperBlockBackup(Parameters->BlockGroupCount - 1)) {
+				LocalReservedBlockCount += 2
+			}
 			
-			this->SuperBlock->UnallocatedBlocks += ReservedBlockCount
+			this->SuperBlock->UnallocatedBlocks += LocalReservedBlockCount
 			this->SuperBlock->UnallocatedINodes -= Parameters->INodesPerGroup
 			
 			Parameters->TotalSize := this->SuperBlock->TotalBlocks * Parameters->BlockSize
