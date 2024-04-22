@@ -181,19 +181,19 @@ define void* MapKernel(KernelInstanceInfo* Info, void* KernelFileData, i32 Kerne
 				FinalFlags |= PAGE_WRITE
 			}
 
-            ;i64 Physical := Info->PhysicalMemory->Allocate(SectionPageCount)
-            ;Info~>VirtualMemory->MapRange(SectionVirtualPage, Physical / PAGE_SIZE, SectionPageCount, TempFlags)
+            i64 Physical := Info->PhysicalMemory->Allocate(SectionPageCount)
+            Info~>VirtualMemory->MapRange(SectionVirtualPage, Physical / PAGE_SIZE, SectionPageCount, TempFlags)
 			
 			if (Next->MemorySize > Next->FileSize) {
 				void* ZeroArea := SectionMemory + Next->FileSize
 				i64 ZeroSize := Next->MemorySize - Next->FileSize
 				
-				;FastSetMemory8(ZeroArea, 0, ZeroSize)
+				FastSetMemory8(ZeroArea, 0, ZeroSize)
 			}
 			
-			;FastMoveMemory(SectionMemory, SectionData, Next->FileSize)
+			FastMoveMemory(SectionMemory, SectionData, Next->FileSize)
 
-            ;Info~>VirtualMemory->MapRange(SectionVirtualPage, Physical / PAGE_SIZE, SectionPageCount, FinalFlags)
+            Info~>VirtualMemory->MapRange(SectionVirtualPage, Physical / PAGE_SIZE, SectionPageCount, FinalFlags)
 		}
 	}
 
@@ -206,9 +206,9 @@ define void MainContinuation(KernelInstanceInfo* Info) {
     SetupHeap(Info, ADDRESS_OF_KERNEL_HEAP, PAGES_FOR_KERNEL_HEAP)
     Info("heap!\n")
 
-    ;void(KernelInstanceInfo*) KernelEntryPoint := MapKernel(Info, Info~>BootInfo->KernelData, Info~>BootInfo->KernelSize)
+    void(KernelInstanceInfo*) KernelEntryPoint := MapKernel(Info, Info~>BootInfo->KernelData, Info~>BootInfo->KernelSize)
 
-    ;Info("kernel! %x\n", KernelEntryPoint)
+    Info("kernel! %x\n", KernelEntryPoint)
 
 
     loop {}
