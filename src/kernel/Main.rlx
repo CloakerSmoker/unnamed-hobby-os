@@ -1,7 +1,5 @@
 
 
-#Require "./src/kernel/Config.rlx"
-
 #Require "$/MemoryBase.rlx"
 #Require "$/StringBase.rlx"
 
@@ -26,6 +24,20 @@ BootloaderInfo* BootInfo := &RawBootInfo
 #Require "$/Memory.rlx"
 #Require "$/String.rlx"
 
+; Config extracts
+
+void* BOOT_FONT_FON := i8[#File "./misc/fonts/OlivettiThin_8x14.fon"]
+
+#PhysicalImageBase 0x20_0000
+i64 PHYSICAL_ADDRESS_OF_KERNEL := 0x20_0000
+
+#ImageBase 0x7F00_0000_0000
+void* ADDRESS_OF_KERNEL       := 0x7F00_0000_0000 As void*
+
+; end
+
+#Require "./src/kernel/Config.rlx"
+
 define void PrintCharacter(i8 Character) {
 	; Pre-terminal print function
 }
@@ -44,6 +56,8 @@ define void PrintCharacters(i8* Character, i32 Count) {
 PixelBuffer* PrimaryDisplay := null
 
 #Require "./src/kernel/core/PageHeap.rlx"
+PageHeap* PhysicalMemory := PageHeap:Adopt(ADDRESS_OF_PHYSICAL_MEMORY_ALLOCATOR, 0x500)
+
 ;#Require "./src/kernel/core/Heap.rlx"
 #Require "./src/kernel/core/PalHeap.rlx"
 
@@ -179,6 +193,17 @@ define void* EarlyPhysicalToVirtual(void* Where) {
 ; Dummy parameters are 100% needed since the kernel is compiled as a linux program
 ;  and the compiler automatically sets argc/argv when Main takes <=2 parameters
 
+class EarlyPhysicalAllocator implements IPhysicalAllocator {
+	i64 Tail
+
+	define i64 Allocate() {
+		return this->Tail++
+	}
+	define void Free(i64 Page) {
+
+	}
+}
+
 define void Main(BootloaderInfo* RawInfo, i32 Dummy1, i32 Dummy2) {
 	; First, null out the IDT to allow for qemu to catch interrupts instead of TianoCore
 
@@ -228,13 +253,18 @@ define void Main(BootloaderInfo* RawInfo, i32 Dummy1, i32 Dummy2) {
 		EarlyKernel->KernelPages     := KernelPages
 		
 		AddressSpaceManager* BootStrapAddressSpace := 0x14_0000 As void*
+
+		EarlyPhysicalAllocator _Allocator
+		EarlyPhysicalAllocator* Allocator := &_Allocator
+		Allocator->Initialize()
 		
-		BootStrapAddressSpace->Initialize(0x15_0000 As void*, 0x15_0000, 0x40)
+		BootStrapAddressSpace->Initialize(0x15_0000 As void*, 0x15_0000, Allocator)
 		
 		BootStrapAddressSpace->MapRange(0x10_0000 As void*, 0x100, 0x10)
 		BootStrapAddressSpace->MapRange(0x15_0000 As void*, 0x150, 0x45)
 		BootStrapAddressSpace->MapRange(ADDRESS_OF_KERNEL, KernelLoadPages / PAGE_SIZE, EarlyKernel->PageCount)
-		
+
+		BootStrapAddressSpace->MapRange(PageFramesPages As void*, PageFramesPages / PAGE_SIZE, PAGE_COUNT_FOR_1MB)
 		BootStrapAddressSpace->MapRange(ADDRESS_OF_PAGE_FRAMES, PageFramesPages / PAGE_SIZE, PAGE_COUNT_FOR_1MB)
 		BootStrapAddressSpace->MapRange(ADDRESS_OF_KERNEL_STACK, KernelStackPages / PAGE_SIZE, 40)
 		
@@ -283,10 +313,26 @@ stop:
 	jmp, stop
 }
 
+class RuntimePageAllocator implements IPhysicalAllocator {
+	PageHeap* Heap
+
+	define i64 Allocate() {
+		return this->Heap->Allocate(1)
+	}
+	define void Free(i64 Page) {
+		this->Heap->Free(Page)
+	}
+}
+
+RuntimePageAllocator _RuntimeAllocator
+
 define void BootStrap() {
 	Info("Switched\n")
+
+	RuntimePageAllocator* RuntimeAllocator := &_RuntimeAllocator
+	RuntimeAllocator->Initialize()
 	
-	KernelAddressSpace->Initialize(ADDRESS_OF_PAGE_FRAMES, Kernel->PageFramesPages, BYTES_IN_1MB / PAGE_SIZE)
+	KernelAddressSpace->Initialize(ADDRESS_OF_PAGE_FRAMES, Kernel->PageFramesPages, RuntimeAllocator)
 	
 	KernelAddressSpace->MapRange(ADDRESS_OF_PHYSICAL_MEMORY_ALLOCATOR, (ADDRESS_OF_PHYSICAL_MEMORY_ALLOCATOR / PAGE_SIZE) As i64, 0x10)
 	KernelAddressSpace->MapRange(ADDRESS_OF_KERNEL, PHYSICAL_ADDRESS_OF_KERNEL / PAGE_SIZE, Kernel->PageCount)

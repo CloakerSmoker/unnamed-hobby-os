@@ -1,0 +1,27 @@
+
+declare void PrintCharacter(i8)
+declare void PrintCharacters(i8*, i32)
+declare void Info(i8*, ...)
+
+#Require "$/PrintBase.rlx"
+
+define i8 IsSchedulerActive() {
+    return false
+}
+define void SchedulerYield() {}
+
+#Require "./src/drivers/SerialBase.rlx"
+
+SerialPort COM_0
+
+define void PrintCharacter(i8 Character) {
+    COM_0.Write(&Character, 1)
+}
+
+define void PrintCharacters(i8* Characters, i32 Count) {
+    COM_0.Write(Characters, Count)
+}
+
+define void Info(i8* Format, ... Args) {
+    RawPrint(Format, Args)
+}

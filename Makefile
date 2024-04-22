@@ -6,6 +6,7 @@ RLX_FLAGS?= --crlf --dwarf --debug --silent
 EFI_RLX_FLAGS?= $(RLX_FLAGS) --pe-reloc --pe --efi
 ELF_RLX_FLAGS?= $(RLX_FLAGS) --linux
 KERNEL_RLX_FLAGS?= $(RLX_FLAGS) --standalone-elf --platform kernel --platform-dir src/kernel/lib
+TRAMPOLINE_RLX_FLAGS?= $(RLX_FLAGS) --standalone-elf --platform trampoline --platform-dir src/trampoline/lib
 
 RLX?=compiler/build/linux_compiler.elf
 
@@ -88,6 +89,7 @@ format ext2 /dev/loop0p1 70M
 
 mount ext2 /dev/loop0p1 /root
 
+install /host/build/Trampoline.elf /root/Trampoline.elf
 install /host/build/Kernel.elf /root/Kernel.elf
 
 install /host/misc/files/sponge.six /root/usr/share/demo/sponge.six
@@ -118,8 +120,8 @@ endef
 export GET_GUIDS_SCRIPT
 
 $(BUILD)/Disk.img: $(BUILD)/GPTTool.elf
-$(BUILD)/Disk.img: $(BUILD)/FAT32Tool.elf $(BUILD)/Boot.efi
-$(BUILD)/Disk.img: $(BUILD)/Ext2Tool.elf $(BUILD)/Kernel.elf
+$(BUILD)/Disk.img: $(BUILD)/FAT32Tool.elf $(BUILD)/Ext2Tool.elf
+$(BUILD)/Disk.img: $(BUILD)/Boot.efi $(BUILD)/Trampoline.elf $(BUILD)/Kernel.elf
 $(BUILD)/Disk.img: $(BUILD)/HostFileShell.elf
 $(BUILD)/Disk.img: $(BUSYBOX_SRC)/busybox.links $(shell python3 src/host/busybox.py --src $(BUSYBOX_SRC))
 $(BUILD)/Disk.img:
@@ -219,6 +221,20 @@ $(BUILD)/Boot.d: $(RLX)
 
 LIGHT_CLEAN_FILES+= $(BUILD)/Boot.efi $(BUILD)/Boot.d
 
+# Trampoline
+
+$(BUILD)/Trampoline.elf: $(RLX)
+$(BUILD)/Trampoline.elf: $(BUILD)/Trampoline.d
+$(BUILD)/Trampoline.elf: $(shell cat $(BUILD)/Trampoline.d 2>/dev/null)
+	$(RLX) -i ./src/trampoline/Main.rlx -o $@ $(TRAMPOLINE_RLX_FLAGS)
+
+secret-internal-deps: $(BUILD)/Trampoline.d
+
+$(BUILD)/Trampoline.d: $(RLX)
+	$(RLX) -i ./src/trampoline/Main.rlx -o $@ --makedep $(TRAMPOLINE_RLX_FLAGS)
+
+LIGHT_CLEAN_FILES+= $(BUILD)/Trampoline.elf $(BUILD)/Trampoline.d
+
 # Kernel
 
 $(BUILD)/Kernel.elf: $(RLX)
@@ -272,12 +288,17 @@ depend dep deps:
 
 all: Disk.qcow2
 
+STDIO=serial
 QEMU?=qemu-system-x86_64
-QEMU_FLAGS=-machine q35 -bios misc/files/OVMF.fd -hda Disk.qcow2 -serial stdio --cpu max,la57=off
+QEMU_FLAGS=-machine q35 -bios misc/files/OVMF.fd -hda Disk.qcow2 -$(STDIO) stdio --cpu max,la57=off
 DEBUG_FLAGS=
 
 ifneq (,$(findstring --gdb,$(flags)))
 	DEBUG_FLAGS=-s
+endif
+
+ifneq (,$(findstring --monitor,$(flags)))
+	STDIO=monitor
 endif
 
 ifneq (,$(findstring --wait,$(flags)))

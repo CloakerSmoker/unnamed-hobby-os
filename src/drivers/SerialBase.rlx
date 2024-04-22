@@ -1,0 +1,284 @@
+#Require "$/StringBase.rlx"
+#Require "./src/utility/x64.rlx"
+
+#Require "./src/utility/MemoryFIFO.rlx"
+
+declare i8 IsSchedulerActive()
+declare void SchedulerYield()
+
+i16 COM_PORT_0 := 0x3F8
+i16 COM_PORT_1 := 0x2F8
+i16 COM_PORT_2 := 0x3E8
+i16 COM_PORT_3 := 0x2E8
+
+i16 COM_REGISTER_DATA             := 0
+i16 COM_REGISTER_DIVISOR_LSB      := 0
+i16 COM_REGISTER_INTERRUPT_ENABLE := 1
+i16 COM_REGISTER_DIVISOR_MSB      := 1
+i16 COM_REGISTER_INTERRUPT_ID     := 2
+i16 COM_REGISTER_LINE_CONTROL     := 3
+i16 COM_REGISTER_MODEM_CONTROL    := 4
+i16 COM_REGISTER_LINE_STATUS      := 5
+i16 COM_REGISTER_MODEM_STATUS     := 6
+i16 COM_REGISTER_SCRATCH          := 7
+
+i8 COM_DLAB := 0b1000_0000 As i8
+
+i16 COM_DIVISOR_115200 := 1
+i16 COM_DIVISOR_57600  := 2
+i16 COM_DIVISOR_38400  := 3
+i16 COM_DIVISOR_19200  := 6
+i16 COM_DIVISOR_9600   := 12
+
+i8 COM_DATA_BITS_MASK := 0b00_000_0_11
+i8 COM_DATA_BITS_5    := 0b00_000_0_00
+i8 COM_DATA_BITS_6    := 0b00_000_0_01
+i8 COM_DATA_BITS_7    := 0b00_000_0_10
+i8 COM_DATA_BITS_8    := 0b00_000_0_11
+
+i8 COM_STOP_BITS_MASK := 0b00_000_1_00
+i8 COM_STOP_BITS_1    := 0b00_000_0_00
+i8 COM_STOP_BITS_2    := 0b00_000_1_00
+
+i8 COM_PARITY_MASK  := 0b00_111_0_00
+i8 COM_PARITY_NONE  := 0b00_000_0_00
+i8 COM_PARITY_ODD   := 0b00_001_0_00
+i8 COM_PARITY_EVEN  := 0b00_011_0_00
+i8 COM_PARITY_MARK  := 0b00_101_0_00
+i8 COM_PARITY_SPACE := 0b00_111_0_00
+
+i8 COM_LINE_8N1 := COM_DATA_BITS_8 | COM_PARITY_NONE | COM_STOP_BITS_1
+
+i8 COM_INTERRUPT_ENABLE_MASK   := 0b0000_1111
+i8 COM_INTERRUPT_ENABLE_DATA   := 0b0000_0001
+i8 COM_INTERRUPT_ENABLE_EMPTY  := 0b0000_0010
+i8 COM_INTERRUPT_ENABLE_BREAK  := 0b0000_0100
+i8 COM_INTERRUPT_ENABLE_STATUS := 0b0000_1000
+
+i8 COM_INTERRUPT_ID_NOT_PENDING := 0b0000_000_1
+i8 COM_INTERRUPT_ID_CAUSE_MASK  := 0b0000_111_0
+i8 COM_INTERRUPT_ID_STATUS      := 0b0000_000_0
+i8 COM_INTERRUPT_ID_EMPTY       := 0b0000_001_0
+i8 COM_INTERRUPT_ID_DATA        := 0b0000_010_0
+i8 COM_INTERRUPT_ID_BREAK       := 0b0000_011_0
+i8 COM_INTERRUPT_ID_TIMEOUT     := 0b0000_110_0
+
+i8 COM_DATA_TERMINAL_READY_MASK := 0b000_00001
+i8 COM_REQUEST_TO_SEND_MASK     := 0b000_00010
+i8 COM_LOOP_MASK                := 0b000_10000
+
+i8 COM_STATUS_DATA_READY    := 0b0000_0001
+i8 COM_STATUS_OVERRUN_ERROR := 0b0000_0010
+i8 COM_STATUS_PARITY_ERROR  := 0b0000_0100
+i8 COM_STATUS_FRAMING_ERROR := 0b0000_1000
+i8 COM_STATUS_BREAK_MARKER  := 0b0001_0000
+i8 COM_STATUS_CAN_SEND      := 0b0010_0000
+;i8 COM_STATUS_CAN_SEND_2 := 0b0100_0000
+i8 COM_STATUS_HAS_ERROR     := 0b1000_0000 As i8
+
+struct SerialPort {
+	i16 PortBase
+	
+	define void PortWrite(i16 Register, i8 Value) {
+		OutB(this->PortBase + Register, Value)
+	}
+	define i8 PortRead(i16 Register) {
+		return InB(this->PortBase + Register)
+	}
+	
+	define void SetBuad(i16 Divisor) {
+		this->PortWrite(COM_REGISTER_LINE_CONTROL, this->PortRead(COM_REGISTER_LINE_CONTROL) | COM_DLAB)
+		this->PortWrite(COM_REGISTER_DIVISOR_LSB, (Divisor & 0xFF) As i8)
+		this->PortWrite(COM_REGISTER_DIVISOR_MSB, ((Divisor >> 8) & 0xFF) As i8)
+		this->PortWrite(COM_REGISTER_LINE_CONTROL, this->PortRead(COM_REGISTER_LINE_CONTROL) & ~COM_DLAB)
+	}
+	
+	define void SetLineControlField(i8 Mask, i8 NewValue) {
+		i8 Value := this->PortRead(COM_REGISTER_LINE_CONTROL)
+		
+		Value &= ~Mask
+		Value |= NewValue
+		
+		this->PortWrite(COM_REGISTER_LINE_CONTROL, Value)
+	}
+	
+	define void SetDataBits(i8 Mode) {
+		this->SetLineControlField(COM_DATA_BITS_MASK, Mode)
+	}
+	define void SetStopBits(i8 Mode) {
+		this->SetLineControlField(COM_STOP_BITS_MASK, Mode)
+	}
+	define void SetParity(i8 Mode) {
+		this->SetLineControlField(COM_PARITY_MASK, Mode)
+	}
+	
+	define void SetInterruptMode(i8 Mode) {
+		this->PortWrite(COM_REGISTER_INTERRUPT_ENABLE, Mode)
+	}
+	
+	define void SetModemControlField(i8 Mask, i8 NewValue) {
+		i8 Value := this->PortRead(COM_REGISTER_MODEM_CONTROL)
+		
+		Value &= ~Mask
+		Value |= NewValue
+		
+		this->PortWrite(COM_REGISTER_MODEM_CONTROL, Value)
+	}
+	
+	define void SetDataTerminalReady(i8 Value) {
+		this->SetModemControlField(COM_DATA_TERMINAL_READY_MASK, Value)
+	}
+	define void SetRequestToSend(i8 Value) {
+		this->SetModemControlField(COM_REQUEST_TO_SEND_MASK, Value)
+	}
+	define void SetLoop(i8 Value) {
+		this->SetModemControlField(COM_LOOP_MASK, Value)
+	}
+	
+	define i8 GetLineStatus() {
+		return this->PortRead(COM_REGISTER_LINE_STATUS)
+	}
+	
+	define i8 ReadByte() {
+		return this->PortRead(COM_REGISTER_DATA)
+	}
+	define void WriteByte(i8 Byte) {
+		this->PortWrite(COM_REGISTER_DATA, Byte)
+	}
+	
+	i8[64] RawWriteBuffer
+	MemoryFIFO WriteBuffer
+	
+	i8[64] RawReadBuffer
+	MemoryFIFO ReadBuffer
+	
+	define void Initialize(i16 PortBase, i16 Divisor, i8 LineControl) {
+		this->PortBase := PortBase
+		
+		this~>WriteBuffer->Initialize(this~>RawWriteBuffer, 64)
+		this~>ReadBuffer->Initialize(this~>RawReadBuffer, 64)
+		
+		this->SetBuad(Divisor)
+		this->PortWrite(COM_REGISTER_LINE_CONTROL, LineControl)
+		this->SetInterruptMode(COM_INTERRUPT_ENABLE_DATA | COM_INTERRUPT_ENABLE_EMPTY)
+		this->PortWrite(COM_REGISTER_MODEM_CONTROL, COM_REQUEST_TO_SEND_MASK)
+	}
+	
+	define i8 CanRead() {
+		return this->GetLineStatus() & COM_STATUS_DATA_READY
+	}
+	define i8 ReadSingle() {
+		while !(this->GetLineStatus() & COM_STATUS_DATA_READY) {}
+		
+		return this->ReadByte()
+	}
+	
+	define i8 CanWrite() {
+		return this->GetLineStatus() & COM_STATUS_CAN_SEND
+	}
+	define void WriteSingle(i8 Character) {
+		while !(this->GetLineStatus() & COM_STATUS_CAN_SEND) {}
+		
+		this->WriteByte(Character)
+	}
+	
+	define void ReadInterrupt() {
+		i8 Next := this->ReadSingle()
+		
+		this~>ReadBuffer->Write(&Next, 1)
+	}
+	define void ReadWake() {
+		while (this->CanRead()) {
+			this->ReadInterrupt()
+		}
+	}
+	define void WriteInterrupt() {
+		if (this~>WriteBuffer->Available()) {
+			i8 Next := 0
+			this~>WriteBuffer->Read(&Next, 1)
+			
+			this->WriteSingle(Next)
+		}
+	}
+	define void WriteWake() {
+		while (this->CanWrite() && this~>WriteBuffer->Available()) {
+			this->WriteInterrupt()
+		}
+	}
+	
+	define i32 ReadBuffered(void* Out, i32 Count) {
+		i32 Available := this~>ReadBuffer->Available()
+		
+		if (Available > Count) {
+			Available := Count
+		}
+		
+		this~>ReadBuffer->Read(Out, Available)
+		
+		return Available
+	}
+	
+	define i32 Read(void* Buffer, i32 Count) {
+		; Needs to block until there is at least some data to return, but also might be called
+		;  without the scheduler enabled, so we need both a multitasking block and a monotasking block
+		
+		this->ReadWake()
+		i32 Available := this~>ReadBuffer->Available()
+		
+		if !(Available) {
+			; We need to block for more data
+			
+			if (IsSchedulerActive()) {
+				; Multitasking block, yields our time slice until the read interrupt fires and fills the buffer
+				
+				while !(Available) {
+					SchedulerYield()
+					
+					this->ReadWake()
+					Available := this~>ReadBuffer->Available()
+				}
+			}
+			else {
+				; Monotasking block, spins until we've got at least one byte
+				
+				while !(Available) {
+					this->ReadWake()
+					Available := this~>ReadBuffer->Available()
+				}
+			}
+		}
+		
+		return this->ReadBuffered(Buffer, Count)
+	}
+
+	define void Write(void* Buffer, i32 Count) {
+		if (IsSchedulerActive()) {
+			i32 Written := 0
+			
+			while (Written != Count) {
+				i32 Space := this~>WriteBuffer->Space()
+				
+				if (Space > Count) {
+					Space := Count
+				}
+				
+				this~>WriteBuffer->Write(Buffer, Space)
+				this->WriteWake()
+				
+				Buffer += Space
+				Written += Space
+				
+				if (Written != Count) {
+					SchedulerYield()
+				}
+			}
+		}
+		else {
+			i8* Characters := Buffer
+			
+			for (i32 Index := 0, Index < Count, Index++) {
+				this->WriteSingle(Characters[Index])
+			}
+		}
+	}
+}

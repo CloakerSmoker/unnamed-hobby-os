@@ -239,8 +239,6 @@ define void OnCommand(i8* CommandLine) {
 		PhysicalMemory->Print()
 	}
 	else if (StringEquals(Command, "virt")) {
-		KernelAddressSpace->PrintMeta()
-		Print("\n")
 		KernelAddressSpace->PrintMappings()
 	}
 	else if (StringEquals(Command, "heap")) {

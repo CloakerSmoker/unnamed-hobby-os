@@ -1,0 +1,194 @@
+
+
+; Loaded with the leftover EFI identity map
+
+; Kernel ELF pointer is passed
+
+/*
+We need to get things set up for the kernel, mainly:
+
+* Physical memory allocator (0x1000 onwards)
+* Kernel text physical memory
+* Kernel page tables
+* Kernel Stack
+* Kernel Heap
+* Kernel page mappings
+
+<128mb all identity mapped
+
+*/
+
+#ImageBase 0x400_0000
+
+#Require "$/MemoryBase.rlx"
+
+#Require "@/PrintBase.rlx"
+#Require "@/ExceptionBase.rlx"
+
+#Require "./src/bootloader/BootInfo.rlx"
+
+#Require "./src/kernel/core/Paging.rlx"
+#Require "./src/kernel/core/PageHeap.rlx"
+#Require "./src/kernel/core/PalHeap.rlx"
+
+#Require "./src/kernel/Config.rlx"
+
+class PhysicalPageAllocator implements IPhysicalAllocator {
+	PageHeap* Heap
+
+	define i64 Allocate() {
+		return this->Heap->Allocate(1)
+	}
+	define void Free(i64 Page) {
+        this->Heap->Free(Page)
+	}
+}
+
+struct KernelInstanceInfo {
+    BootloaderInfo BootInfo
+
+    PageHeap* PhysicalMemory
+    PhysicalPageAllocator PhysicalMemoryAllocator
+
+    AddressSpaceManager VirtualMemory
+
+    PalHeap Heap
+}
+
+define i64 IdentityVirtualToPhysical(void* Pointer) {
+    return Pointer As i64
+}
+
+declare void MainContinuation(KernelInstanceInfo*)
+
+define void Main(BootInfo* RawInfo) {
+    ; nuke IDT to kill TianoCore
+
+    asm {
+		xor, rax, rax
+		push, rax
+		push, rax
+		mov, rax, rsp
+		lidt, {rax} As i64*
+		pop, rax
+		pop, rax
+	}
+
+    COM_0.Initialize(COM_PORT_0, COM_DIVISOR_115200, COM_LINE_8N1)
+
+    Print("sup\n")
+
+    ; Usable memory = (TOTAL_MEMORY - FIRST_USABLE_PHYSICAL_ADDRESS)
+    i32 UsablePages := SizeToPageCount(TOTAL_MEMORY) - SizeToPageCount(FIRST_USABLE_PHYSICAL_ADDRESS As i32)
+
+    PageHeap* PhysicalMemory := PageHeap:Adopt(FIRST_USABLE_PHYSICAL_ADDRESS, UsablePages)
+
+    ; Allocate the KernelInstanceInfo (and populated it from the BootInfo)
+
+    KernelInstanceInfo* Info := PhysicalMemory->AllocateVirtual(1)
+    MoveMemory(Info, RawInfo, #BootloaderInfo)
+    BootloaderInfo* BootInfo := Info~>BootInfo
+
+    Info->PhysicalMemory := PhysicalMemory
+
+    ; Set up the PhysicalPageAllocator
+
+    PhysicalPageAllocator* Physical := Info~>PhysicalMemoryAllocator
+    Physical->Initialize()
+    Physical->Heap := PhysicalMemory
+
+    ; Set up the AddressSpaceManager
+
+    void* PML4 := PhysicalMemory->AllocateVirtual(1)
+
+    AddressSpaceManager* VirtualMemory := Info~>VirtualMemory
+    VirtualMemory->Initialize(PML4, IdentityVirtualToPhysical(PML4), Physical)
+
+    ; Identity map low memory
+    VirtualMemory->MapRange(FIRST_USABLE_PHYSICAL_ADDRESS, IdentityVirtualToPhysical(FIRST_USABLE_PHYSICAL_ADDRESS) / PAGE_SIZE, LOW_IDENTITY_MAP_SIZE, PAGE_PRESENT | PAGE_WRITE)
+
+    i64 KernelStackPhysical := PhysicalMemory->Allocate(PAGES_FOR_KERNEL_STACK)
+    VirtualMemory->MapRange(ADDRESS_OF_KERNEL_STACK, KernelStackPhysical / PAGE_SIZE, PAGES_FOR_KERNEL_STACK, PAGE_PRESENT | PAGE_WRITE)
+
+    void* KernelStack := ADDRESS_OF_KERNEL_STACK + (PAGE_SIZE * (PAGES_FOR_KERNEL_STACK - 1))
+
+    VirtualMemory->Takeover(&MainContinuation, Info, KernelStack)
+/*
+    ; KernelInstanceInfo @ after PhysicalMemory heap
+    SimpleMapping DummyMapping
+    KernelMappings* Mappings := &DummyMapping As void*
+
+    KernelInstanceInfo* Info := AllocateAndIdentityMap(SizeToPageCount(#KernelInstanceInfo), Mappings~>BootInfo)
+    MoveMemory(Info, RawInfo, #BootloaderInfo)
+
+    BootloaderInfo* BootInfo := Info~>BootInfo
+
+    Mappings := Info~>Mappings ; hopefully you remember why this is here
+    MoveMemory(Mappings~>BootInfo, &DummyMapping, #SimpleMapping)
+
+    ; Physical Memory Manager
+
+    Map(PhysicalMemory, IdentityVirtualToPhysical(PhysicalMemory), SizeToPageCount(PhysicalMemory->AllocationMapSize), Mappings~>PhysicalAllocator)
+
+    ; Kernel physical memory
+
+    void* Kernel := PhysicalMemory->AllocateVirtual(SizeToPageCount(BootInfo->KernelSize))
+
+    ; Address space management memory
+
+    PhysicalPageAllocator* Physical := Info~>Physical
+    Physical->Initialize()
+    Physical->Heap := PhysicalMemory
+
+    void* PML4 := PhysicalMemory->AllocateVirtual(1)
+
+    AddressSpaceManager* AddressSpace := Info~>AddressSpace
+    AddressSpace->Initialize(PML4, IdentityVirtualToPhysical(PML4), Physical)
+
+    ; Stack
+
+    void* Stack := AllocateAndMap(ADDRESS_OF_KERNEL_STACK, PAGES_FOR_KERNEL_STACK, Mappings~>Stack)
+
+    ; Heap
+    
+    AllocateAndMap(ADDRESS_OF_KERNEL_HEAP, PAGES_FOR_KERNEL_HEAP, Mappings~>Heap)
+
+    ; Identity map TOTAL_MEMORY worth of pages at FIRST_USABLE_PHYSICAL_ADDRESS
+
+    Map(FIRST_USABLE_PHYSICAL_ADDRESS, FIRST_USABLE_PHYSICAL_ADDRESS As i64, PAGE_COUNT_FOR_1MB * 128, Mappings~>First128MB)
+
+    ; Mappings
+
+    i32 Count := #KernelMappings / #SimpleMapping
+
+    for (i32 Index := 0, Index < Count, Index++) {
+        SimpleMapping* Mapping := Mappings~>All[Index]
+
+        Print("%s: ", KernelMappingNames[Index])
+
+        AddressSpace->MapRange(Mapping->Virtual, Mapping->Physical / PAGE_SIZE, Mapping->PageCount, PAGE_PRESENT | PAGE_WRITE)
+    }
+*/
+}
+
+define void SetupHeap(KernelInstanceInfo* Info, void* VirtualAddress, i32 PageCount) {
+    i64 HeapPhysicalPages := Info->PhysicalMemory->Allocate(PageCount)
+
+    Info~>VirtualMemory->MapRange(VirtualAddress, HeapPhysicalPages / PAGE_SIZE, PageCount, PAGE_PRESENT | PAGE_WRITE)
+
+    Info~>Heap->Initialize(VirtualAddress, PageCount)
+}
+
+define void MapKernel(KernelInstanceInfo* Info, void* KernelFileData, i32 KernelFileSize) {
+    
+}
+
+define void MainContinuation(KernelInstanceInfo* Info) {
+    Info("Continuation\n")
+
+    SetupHeap(Info, ADDRESS_OF_KERNEL_HEAP, PAGES_FOR_KERNEL_HEAP)
+
+    Info("heap!\n")
+
+    loop {}
+}

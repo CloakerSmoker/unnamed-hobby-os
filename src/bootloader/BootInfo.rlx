@@ -30,8 +30,15 @@ struct BootloaderInfo {
 
 	i8[256] KernelCommandLine
 
-	void* Data
-	i32 Size
+	union {
+		void* Data
+		void* KernelData
+	}
+	
+	union {
+		i32 Size
+		i32 KernelSize
+	}
 
 	i8 Relocated
 

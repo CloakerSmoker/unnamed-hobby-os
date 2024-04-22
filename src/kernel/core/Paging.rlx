@@ -1,3 +1,6 @@
+
+#Require "./src/utility/x64.rlx"
+
 i32 PAGE_COUNT_FOR_1MB := 0x100
 i32 PAGE_COUNT_FOR_2MB := 0x200
 i32 PAGE_COUNT_FOR_4MB := 0x400
@@ -126,89 +129,33 @@ struct PagePath {
 	i32 PTIndex
 }
 
-struct AddressSpaceManager {
-	i8* Bitmap
-	
+interface IPhysicalAllocator {
+	virtual i64 Allocate()
+	virtual void Free(i64)
+}
+
+struct AddressSpaceManager {	
 	i64 PhysicalPML4
 	i64* VirtualPML4
-	
-	i32 PageFrameCount
+
+	IPhysicalAllocator* PhysicalAllocator
+
+	define i64 AllocatePageFrame() {
+		return this->PhysicalAllocator->Allocate()
+	}
+	define void FreePageFrame(i64* Frame) {
+		this->PhysicalAllocator->Free(Frame As i64)
+	}
 	
 	define i64* PhysicalToVirtual(i64 Physical) {
 		return this->VirtualPML4 + (Physical - this->PhysicalPML4)
 	}
 	
-	define i32 AllocatePageFrameIndex() {
-		for (i32 Index := 0, Index < this->PageFrameCount, Index++) {
-			i32 Byte := Index / 8
-			i32 Bit := Index % 8
-			
-			i32 Mask := 1 << (Bit As i8)
-			
-			if (this->Bitmap[Byte] & Mask = 0) {
-				this->Bitmap[Byte] |= (Mask As i8)
-				
-				return Index
-			}
-		}
-		
-		return -1
-	}
-	define void FreePageFrameIndex(i32 Index) {
-		i32 Byte := Index / 8
-		i32 Bit := Index % 8
-		
-		i32 Mask := 1 << (Bit As i8)
-		
-		this->Bitmap[Byte] &= ~(Mask As i8)
-	}
-	define i32 GetPageFrameIndexStatus(i32 Index) {
-		i32 Byte := Index / 8
-		i32 Bit := Index % 8
-		
-		i32 Mask := 1 << (Bit As i8)
-		
-		return (this->Bitmap[Byte] & Mask) >> (Bit As i8)
-	}
-	
-	define i64 GetPageFrame(i32 Index) {
-		return this->PhysicalPML4 + (Index * PAGE_SIZE)
-	}
-	define i64 AllocatePageFrame() {
-		i32 Index := this->AllocatePageFrameIndex()
-		i32 Offset := Index * PAGE_SIZE
-		i64* Virtual := this->VirtualPML4 + Offset
-		
-		SetMemory(Virtual, PAGE_SIZE, 0)
-		
-		return this->PhysicalPML4 + Offset
-	}
-	
-	define i32 PageFramePointerToIndex(void* PageFrame) {
-		return PointerToPageNumber(PageFrame - this->VirtualPML4) As i32
-	}
+	define void Initialize(void* VirtualBase, i64 PhysicalBase, IPhysicalAllocator* Allocator) {
+		this->PhysicalPML4 := PhysicalBase
+		this->VirtualPML4 := VirtualBase
 
-	define void FreePageFrame(void* PageFrame) {
-		this->FreePageFrameIndex(this->PageFramePointerToIndex(PageFrame))
-	}
-	
-	define void Initialize(void* VirtualBase, i64 PhysicalBase, i32 FrameCount) {
-		i32 BitmapSize := FrameCount / 8 
-		i32 BitmapPages := BitmapSize / PAGE_SIZE
-		
-		if (BitmapSize % PAGE_SIZE) {
-			BitmapPages += 1
-		}
-		
-		FrameCount -= BitmapPages
-		
-		this->Bitmap := VirtualBase
-		this->PageFrameCount := FrameCount
-		
-		this->PhysicalPML4 := PhysicalBase + (BitmapPages * PAGE_SIZE)
-		this->VirtualPML4 := VirtualBase + (BitmapPages * PAGE_SIZE)
-		
-		this->AllocatePageFrame()
+		this->PhysicalAllocator := Allocator
 		
 		SetMemory(this->VirtualPML4, PAGE_SIZE, 0)
 	}
@@ -407,35 +354,8 @@ struct AddressSpaceManager {
 		SetCR3(this->PhysicalPML4, Continuation, Parameter, Stack)
 	}
 	
-	
-	define void PrintMeta() {
-		i32 Index := 0
-		
-		i32 Rows := this->PageFrameCount / 40
-		
-		for (i32 RowIndex := 0, RowIndex < Rows, RowIndex++) {
-			for (i32 ColumnIndex := 0, ColumnIndex < 40, ColumnIndex++) {
-				i32 Allocated := this->GetPageFrameIndexStatus(Index++)
-				
-				Info("%b", Allocated)
-			}
-			
-			Info("\n")
-		}
-		
-		i32 Remainder := this->PageFrameCount % 40
-		
-		for (i32 ColumnIndex := 0, ColumnIndex < Remainder, ColumnIndex++) {
-			i32 Allocated := this->GetPageFrameIndexStatus(Index++)
-			
-			Info("%b", Allocated)
-		}
-		
-		Info("\n")
-	}
-	
-	define void PrintPTE(i64 Virtual, i64 Entry) {
-		Info("%x -> %x ", Virtual, RemovePageFlags(Entry As void*))
+	define void PrintPTE(i64 VirtualAddress, i64 Entry) {
+		Info("%x -> %x ", VirtualAddress, RemovePageFlags(Entry As void*))
 		
 		if (Entry & PAGE_PRESENT) {
 			Info("[Present] ")
@@ -546,8 +466,8 @@ AddressSpaceManager RawKernelAddressSpace
 AddressSpaceManager* KernelAddressSpace := &RawKernelAddressSpace
 
 define i64 VirtualToPhysical(void* RawVirtual) {
-	i64 Virtual := RawVirtual As i64
-	i64 Lower := Virtual & 0xFFF
+	i64 VirtualAddress := RawVirtual As i64
+	i64 Lower := VirtualAddress & 0xFFF
 
 	return KernelAddressSpace->VirtualToPhysical(RawVirtual) | Lower
 }

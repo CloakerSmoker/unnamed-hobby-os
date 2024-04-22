@@ -171,5 +171,3 @@ struct PageHeap {
 		}
 	}
 }
-
-PageHeap* PhysicalMemory := PageHeap:Adopt(ADDRESS_OF_PHYSICAL_MEMORY_ALLOCATOR, 0x500)

@@ -1439,10 +1439,6 @@ struct Ext2 {
 		
 		this->SuperBlock->ReservedBlocks := this->SuperBlock->UnallocatedBlocks / 10
 		
-		; TODO: Actually set these fields, since they are log2 fields, they are left out for now
-		;this->SuperBlock->BlockSize := Parameters->BlockSize
-		;this->SuperBlock->FragmentSize := Parameters->BlockSize
-		
 		this->SuperBlock->BlocksPerGroup := Parameters->BlocksPerGroup
 		this->SuperBlock->FragmentsPerGroup := Parameters->BlocksPerGroup
 		this->SuperBlock->INodesPerGroup := Parameters->INodesPerGroup

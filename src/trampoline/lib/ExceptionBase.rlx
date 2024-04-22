@@ -1,0 +1,4 @@
+
+define void Throw(i64 Value) {
+    loop {}
+}

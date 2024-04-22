@@ -213,5 +213,6 @@ define void GenericInterrupt(AMD64Context* Context, i32 InterruptNumber) {
 	loop {}
 }
 
+#Require "./src/utility/Exception.rlx"
 #Require "./src/kernel/core/InterruptStubs.rlx"
 #Require "./src/kernel/core/InterruptHandlers.rlx"

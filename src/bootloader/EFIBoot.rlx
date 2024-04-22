@@ -75,6 +75,48 @@ define void* EFILoadELF(EFI_SYSTEM_TABLE* SystemTable, ELFHeader* Header) {
 
 #Require "./src/utility/ProgressBar.rlx"
 
+define i32 SizeToPageCount(i64 Size) {
+	i32 Result := (Size / 0x1000) As i32
+
+	if (Size % 0x1000) {
+		Result += 1
+	}
+
+	return Result
+}
+
+define i8 LoadFile(FileHandle* RootDirectory, i8* FileName, void** OutFileData, i32* OutFileSize) {
+	FileHandle* Handle := RootDirectory->Open(FileName)
+
+	if (Handle = null) {
+		Print("Could not find '%s'\n", FileName)
+		return true
+	}
+
+	FileStatus Status
+	Handle->Status(&Status)
+
+	i32 Size := Status.Size As i32
+	i32 PageCount := SizeToPageCount(Size)
+
+	Print("%s is %i bytes (%x pages)\n", FileName, Size, PageCount)
+
+	void* File := SYSTEM_TABLE->BootServices->AllocatePages(PageCount)
+	
+	Print("Reading %s...\n", FileName)
+	
+	Handle->Read(File, Size)
+	
+	Print("Done, %s read to %x\n", FileName, File)
+	
+	Handle->Close()
+
+	*OutFileData := File
+	*OutFileSize := Size
+
+	return false
+}
+
 define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
     i64 Status := 0
 	
@@ -415,80 +457,34 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	SystemTable->BootServices->HandleProtocol(OSPartition, EFI_BLOCK_IO_PROTOCOL_GUID, BootDisk~>BlockIO As void**)
 	
 	Ext2* FS := Ext2:New(BootDisk->AsBlockDevice())
-
 	FS->Open()
-	
 	RootDirectory := Ext2OpenINodeNumber(FS, 2)
-	
-	FileHandle* KernelHandle := RootDirectory->Open("Kernel.elf")
-	
-	if (KernelHandle = null) {
-		Print("Could not find `kernel.elf`\n")
+
+	; Load Trampoline.elf into memory
+
+	i32 TrampolineSize := 0
+	void* TrampolineData := null
+
+	if (LoadFile(RootDirectory, "Trampoline.elf", &TrampolineData, &TrampolineSize)) {
 		return -1
 	}
-	
-	FileStatus KernelStatus
-	KernelHandle->Status(&KernelStatus)
-	
-	i32 KernelSize := KernelStatus.Size As i32
-	i32 KernelPageCount := KernelSize / 0x1000
-	
-	if (KernelSize % 0x1000) {
-		KernelPageCount += 1
+
+	; Read Kernel.elf into memory
+
+	i32 KernelSize := 0
+	void* KernelData := null
+
+	if (LoadFile(RootDirectory, "Kernel.elf", &KernelData, &KernelSize)) {
+		return -1
 	}
 
-	Print("Kernel is %i bytes (%x pages)\n", KernelStatus.Size, KernelPageCount)
+	; Prep to call into trampoline
 	
-	void* KernelFile := SystemTable->BootServices->AllocatePages(KernelPageCount)
+	void(BootloaderInfo*) TrampolineEntryPoint := EFILoadELF(SystemTable, TrampolineData)
 	
-	Print("Reading kernel...\n")
+	Print("Trampoline entry: %x\n", TrampolineEntryPoint)
 	
-	KernelHandle->Read(KernelFile, KernelSize)
-	
-	Print("\nDone\n")
-
-	Print("Kernel read to %x\n", KernelFile)
-	
-	KernelHandle->Close()
-	
-	ELFHeader* KernelELF := KernelFile
-	
-	i64 MaxKernelAddress := 0
-	void* Data := null
-	i32 Size := 0
-
-	ELFProgramHeader* ProgramHeaders := KernelELF->GetProgramHeaders()
-	ELFProgramHeader* PHDR := null
-	
-	for (i32 Index := 0, Index < KernelELF->ProgramHeaderEntryCount, Index++) {
-		ELFProgramHeader* NextProgramHeader := ProgramHeaders[Index]
-
-		if (NextProgramHeader->Type = ELF_SEGMENT_TYPE_PHDR) {
-			PHDR := NextProgramHeader
-		}
-		else if (NextProgramHeader->Type = ELF_SEGMENT_TYPE_LOAD) {
-			i64 NextEnd := NextProgramHeader->VirtualAddress + NextProgramHeader->MemorySize
-			
-			if (NextEnd > MaxKernelAddress) {
-				MaxKernelAddress := NextEnd
-			}
-
-			if (NextProgramHeader->Flags & ELF_SEGMENT_FLAGS_EXECUTE = 0) {
-				if (NextProgramHeader->PhysicalAddress != PHDR->PhysicalAddress) {
-					Data := null + NextProgramHeader->PhysicalAddress
-					Size := NextProgramHeader->MemorySize As i32
-				}
-			}
-		}
-	}
-	
-	Print("Max kernel address: %x\n", MaxKernelAddress)
-	
-	void(BootloaderInfo*) KernelEntryPoint := EFILoadELF(SystemTable, KernelELF)
-	
-	Print("Kernel entry: %x\n", KernelEntryPoint)
-	
-	SystemTable->BootServices->FreePages(KernelFile, KernelPageCount)
+	;SystemTable->BootServices->FreePages(KernelFile, KernelPageCount)
 	Free(FS->SuperBlock)
 	Free(FS)
 	Free(BootDisk)
@@ -521,13 +517,12 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	
 	BootloaderInfo BootInfo {
 		PhysicalFrameBuffer: FrameBuffer As i64,
-		MaxKernelAddress: MaxKernelAddress,
 		IOAPICBase: IOAPICBase,
 
 		PCISegmentGroupCount: SegmentGroupCount,
 
-		Data: Data,
-		Size: Size
+		KernelData: KernelData,
+		KernelSize: KernelSize
 	}
 
 	MoveMemory(BootInfo~>KernelCommandLine, CommandLineBuffer, CommandLineLength)
@@ -543,7 +538,7 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	
 	asm {cli}
 	
-	KernelEntryPoint(&BootInfo)
+	TrampolineEntryPoint(&BootInfo)
 	
 	;i32 SizeNeeded := 0
 	;SystemTable->BootServices->LocateHandle(EFI_LOCATE_SEARCH_TYPE_BY_PROTOCOL, EFI_BLOCK_IO_PROTOCOL_GUID, null, &SizeNeeded, null)
