@@ -141,7 +141,11 @@ struct AddressSpaceManager {
 	IPhysicalAllocator* PhysicalAllocator
 
 	define i64 AllocatePageFrame() {
-		return this->PhysicalAllocator->Allocate()
+		i64 Result := this->PhysicalAllocator->Allocate()
+
+		Info("Allocated %x for page frame\n", Result)
+
+		return Result
 	}
 	define void FreePageFrame(i64* Frame) {
 		this->PhysicalAllocator->Free(Frame As i64)

@@ -33,6 +33,8 @@ We need to get things set up for the kernel, mainly:
 
 #Require "./src/kernel/Config.rlx"
 
+#Require "./src/utility/ELF.rlx"
+
 class PhysicalPageAllocator implements IPhysicalAllocator {
 	PageHeap* Heap
 
@@ -81,15 +83,32 @@ define void Main(BootInfo* RawInfo) {
     ; Usable memory = (TOTAL_MEMORY - FIRST_USABLE_PHYSICAL_ADDRESS)
     i32 UsablePages := SizeToPageCount(TOTAL_MEMORY) - SizeToPageCount(FIRST_USABLE_PHYSICAL_ADDRESS As i32)
 
+    Print("Usable Memory: %i pages\n", UsablePages)
+
     PageHeap* PhysicalMemory := PageHeap:Adopt(FIRST_USABLE_PHYSICAL_ADDRESS, UsablePages)
 
-    ; Allocate the KernelInstanceInfo (and populated it from the BootInfo)
+    ;PhysicalMemory->Reserve(0xA_0000, SizeToPageCount(0x2_0000))
+
+    ; Allocate the KernelInstanceInfo (and populate it from the BootInfo)
 
     KernelInstanceInfo* Info := PhysicalMemory->AllocateVirtual(1)
     MoveMemory(Info, RawInfo, #BootloaderInfo)
     BootloaderInfo* BootInfo := Info~>BootInfo
 
     Info->PhysicalMemory := PhysicalMemory
+
+    Print("Instance Info: %x\n", Info)
+
+    ; Relocate kernel data into memory we manage
+    ; (We'll end up freeing this once we've mapped the kernel into memory)
+    ; (It's just too annoying to map the kernel without virtual memory properly wired up)
+
+    void* NewKernelData := PhysicalMemory->AllocateVirtual(SizeToPageCount(BootInfo->KernelSize))
+    MoveMemory(NewKernelData, BootInfo->KernelData, BootInfo->KernelSize)
+
+    BootInfo->KernelData := NewKernelData
+
+    Print("Relocated Kernel File: %x\n", BootInfo->KernelData)
 
     ; Set up the PhysicalPageAllocator
 
@@ -100,6 +119,8 @@ define void Main(BootInfo* RawInfo) {
     ; Set up the AddressSpaceManager
 
     void* PML4 := PhysicalMemory->AllocateVirtual(1)
+
+    Print("PML4: %x\n", PML4)
 
     AddressSpaceManager* VirtualMemory := Info~>VirtualMemory
     VirtualMemory->Initialize(PML4, IdentityVirtualToPhysical(PML4), Physical)
@@ -112,63 +133,9 @@ define void Main(BootInfo* RawInfo) {
 
     void* KernelStack := ADDRESS_OF_KERNEL_STACK + (PAGE_SIZE * (PAGES_FOR_KERNEL_STACK - 1))
 
+    VirtualMemory->PrintMappings()
+
     VirtualMemory->Takeover(&MainContinuation, Info, KernelStack)
-/*
-    ; KernelInstanceInfo @ after PhysicalMemory heap
-    SimpleMapping DummyMapping
-    KernelMappings* Mappings := &DummyMapping As void*
-
-    KernelInstanceInfo* Info := AllocateAndIdentityMap(SizeToPageCount(#KernelInstanceInfo), Mappings~>BootInfo)
-    MoveMemory(Info, RawInfo, #BootloaderInfo)
-
-    BootloaderInfo* BootInfo := Info~>BootInfo
-
-    Mappings := Info~>Mappings ; hopefully you remember why this is here
-    MoveMemory(Mappings~>BootInfo, &DummyMapping, #SimpleMapping)
-
-    ; Physical Memory Manager
-
-    Map(PhysicalMemory, IdentityVirtualToPhysical(PhysicalMemory), SizeToPageCount(PhysicalMemory->AllocationMapSize), Mappings~>PhysicalAllocator)
-
-    ; Kernel physical memory
-
-    void* Kernel := PhysicalMemory->AllocateVirtual(SizeToPageCount(BootInfo->KernelSize))
-
-    ; Address space management memory
-
-    PhysicalPageAllocator* Physical := Info~>Physical
-    Physical->Initialize()
-    Physical->Heap := PhysicalMemory
-
-    void* PML4 := PhysicalMemory->AllocateVirtual(1)
-
-    AddressSpaceManager* AddressSpace := Info~>AddressSpace
-    AddressSpace->Initialize(PML4, IdentityVirtualToPhysical(PML4), Physical)
-
-    ; Stack
-
-    void* Stack := AllocateAndMap(ADDRESS_OF_KERNEL_STACK, PAGES_FOR_KERNEL_STACK, Mappings~>Stack)
-
-    ; Heap
-    
-    AllocateAndMap(ADDRESS_OF_KERNEL_HEAP, PAGES_FOR_KERNEL_HEAP, Mappings~>Heap)
-
-    ; Identity map TOTAL_MEMORY worth of pages at FIRST_USABLE_PHYSICAL_ADDRESS
-
-    Map(FIRST_USABLE_PHYSICAL_ADDRESS, FIRST_USABLE_PHYSICAL_ADDRESS As i64, PAGE_COUNT_FOR_1MB * 128, Mappings~>First128MB)
-
-    ; Mappings
-
-    i32 Count := #KernelMappings / #SimpleMapping
-
-    for (i32 Index := 0, Index < Count, Index++) {
-        SimpleMapping* Mapping := Mappings~>All[Index]
-
-        Print("%s: ", KernelMappingNames[Index])
-
-        AddressSpace->MapRange(Mapping->Virtual, Mapping->Physical / PAGE_SIZE, Mapping->PageCount, PAGE_PRESENT | PAGE_WRITE)
-    }
-*/
 }
 
 define void SetupHeap(KernelInstanceInfo* Info, void* VirtualAddress, i32 PageCount) {
@@ -179,16 +146,70 @@ define void SetupHeap(KernelInstanceInfo* Info, void* VirtualAddress, i32 PageCo
     Info~>Heap->Initialize(VirtualAddress, PageCount)
 }
 
-define void MapKernel(KernelInstanceInfo* Info, void* KernelFileData, i32 KernelFileSize) {
-    
+define void* MapKernel(KernelInstanceInfo* Info, void* KernelFileData, i32 KernelFileSize) {
+    ELFHeader* Image := KernelFileData
+    ELFProgramHeader* ProgramHeaders := Image->GetProgramHeaders()
+
+    for (i32 Index := 0, Index < Image->ProgramHeaderEntryCount, Index++) {
+		ELFProgramHeader* Next := ProgramHeaders[Index]
+		
+		if (Next->Type = ELF_SEGMENT_TYPE_LOAD) {
+			void* SectionData := Image + Next->FileOffset
+			void* SectionMemory := Next->VirtualAddress As void*
+			void* SectionVirtualPage := SectionMemory & 0xFFFF_FFFF_FFFF_F000
+			
+			;Print("Section %i is %i (%x) bytes\n", Index, Next->MemorySize, Next->MemorySize)
+			
+			i32 SectionPageCount := (Next->MemorySize As i32) / PAGE_SIZE
+			
+			if (Next->MemorySize % PAGE_SIZE) {
+				SectionPageCount += 1
+			}
+			
+			if (Next->FileOffset % PAGE_SIZE) {
+				SectionPageCount += 1
+			}
+			
+			if (SectionPageCount = 0) {
+				continue
+			}
+			
+			i64 TempFlags := PAGE_PRESENT | PAGE_WRITE ; Map as PRESENT|WRITE so we can... actually load the section into memory
+			i64 FinalFlags := PAGE_PRESENT | PAGE_USER
+			
+			if (Next->Flags & ELF_SEGMENT_FLAGS_WRITE) {
+				FinalFlags |= PAGE_WRITE
+			}
+
+            ;i64 Physical := Info->PhysicalMemory->Allocate(SectionPageCount)
+            ;Info~>VirtualMemory->MapRange(SectionVirtualPage, Physical / PAGE_SIZE, SectionPageCount, TempFlags)
+			
+			if (Next->MemorySize > Next->FileSize) {
+				void* ZeroArea := SectionMemory + Next->FileSize
+				i64 ZeroSize := Next->MemorySize - Next->FileSize
+				
+				;FastSetMemory8(ZeroArea, 0, ZeroSize)
+			}
+			
+			;FastMoveMemory(SectionMemory, SectionData, Next->FileSize)
+
+            ;Info~>VirtualMemory->MapRange(SectionVirtualPage, Physical / PAGE_SIZE, SectionPageCount, FinalFlags)
+		}
+	}
+
+    return Image->EntryPoint As void*
 }
 
 define void MainContinuation(KernelInstanceInfo* Info) {
     Info("Continuation\n")
 
     SetupHeap(Info, ADDRESS_OF_KERNEL_HEAP, PAGES_FOR_KERNEL_HEAP)
-
     Info("heap!\n")
+
+    ;void(KernelInstanceInfo*) KernelEntryPoint := MapKernel(Info, Info~>BootInfo->KernelData, Info~>BootInfo->KernelSize)
+
+    ;Info("kernel! %x\n", KernelEntryPoint)
+
 
     loop {}
 }
