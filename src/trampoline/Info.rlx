@@ -1,0 +1,28 @@
+
+#Require "./src/bootloader/BootInfo.rlx"
+
+#Require "./src/kernel/core/Paging.rlx"
+#Require "./src/kernel/core/PageHeap.rlx"
+#Require "./src/kernel/core/PalHeap.rlx"
+
+class PhysicalPageAllocator implements IPhysicalAllocator {
+	PageHeap* Heap
+
+	define i64 Allocate() {
+		return this->Heap->Allocate(1)
+	}
+	define void Free(i64 Page) {
+        this->Heap->Free(Page)
+	}
+}
+
+struct TrampolineInfo {
+    BootloaderInfo BootInfo
+
+    PageHeap* PhysicalMemory
+    PhysicalPageAllocator PhysicalMemoryAllocator
+
+    AddressSpaceManager VirtualMemory
+
+    PalHeap Heap
+}

@@ -293,37 +293,37 @@ QEMU?=qemu-system-x86_64
 QEMU_FLAGS=-machine q35 -bios misc/files/OVMF.fd -hda Disk.qcow2 -$(STDIO) stdio --cpu max,la57=off
 DEBUG_FLAGS=
 
-ifneq (,$(findstring --gdb,$(flags)))
+ifneq (,$(findstring gdb,$(flags)))
 	DEBUG_FLAGS=-s
 endif
 
-ifneq (,$(findstring --monitor,$(flags)))
+ifneq (,$(findstring monitor,$(flags)))
 	STDIO=monitor
 endif
 
-ifneq (,$(findstring --wait,$(flags)))
+ifneq (,$(findstring wait,$(flags)))
 	DEBUG_FLAGS=-s -S
 endif
 
-ifneq (,$(findstring --no-reset,$(flags)))
+ifneq (,$(findstring no-reset,$(flags)))
 	QEMU_FLAGS+=-no-reboot -no-shutdown
 endif
 
-ifneq (,$(findstring --achi-debug,$(flags)))
+ifneq (,$(findstring achi-debug,$(flags)))
 	QEMU_FLAGS+=--trace "ahci_*" --trace "handle_*" --trace "ide_*"
 endif
 
-ifneq (,$(findstring --net-user,$(flags)))
+ifneq (,$(findstring net-user,$(flags)))
 	COMMA:=,
 	QEMU_FLAGS+=-device e1000e,netdev=hub0port0 -netdev user,id=hub0port0$(if $(HOSTFWD),$(COMMA)hostfwd=$(HOSTFWD),)
 endif
 
-ifneq (,$(findstring --net-tap,$(flags)))
+ifneq (,$(findstring net-tap,$(flags)))
 	QEMU:=sudo $(QEMU)
 	QEMU_FLAGS+=-device e1000e,netdev=hub0port0 -netdev tap,ifname=vm0,id=hub0port0
 endif
 
-ifneq (,$(findstring --net-capture,$(flags)))
+ifneq (,$(findstring net-capture,$(flags)))
 	QEMU_FLAGS+=-object filter-dump,id=f1,netdev=hub0port0,file=dump.pcap
 endif
 

@@ -25,43 +25,17 @@ We need to get things set up for the kernel, mainly:
 #Require "@/PrintBase.rlx"
 #Require "@/ExceptionBase.rlx"
 
-#Require "./src/bootloader/BootInfo.rlx"
-
-#Require "./src/kernel/core/Paging.rlx"
-#Require "./src/kernel/core/PageHeap.rlx"
-#Require "./src/kernel/core/PalHeap.rlx"
+#Require "./src/trampoline/Info.rlx"
 
 #Require "./src/kernel/Config.rlx"
 
 #Require "./src/utility/ELF.rlx"
 
-class PhysicalPageAllocator implements IPhysicalAllocator {
-	PageHeap* Heap
-
-	define i64 Allocate() {
-		return this->Heap->Allocate(1)
-	}
-	define void Free(i64 Page) {
-        this->Heap->Free(Page)
-	}
-}
-
-struct KernelInstanceInfo {
-    BootloaderInfo BootInfo
-
-    PageHeap* PhysicalMemory
-    PhysicalPageAllocator PhysicalMemoryAllocator
-
-    AddressSpaceManager VirtualMemory
-
-    PalHeap Heap
-}
-
 define i64 IdentityVirtualToPhysical(void* Pointer) {
     return Pointer As i64
 }
 
-declare void MainContinuation(KernelInstanceInfo*)
+declare void MainContinuation(TrampolineInfo*)
 
 define void Main(BootInfo* RawInfo) {
     ; nuke IDT to kill TianoCore
@@ -89,9 +63,9 @@ define void Main(BootInfo* RawInfo) {
 
     ;PhysicalMemory->Reserve(0xA_0000, SizeToPageCount(0x2_0000))
 
-    ; Allocate the KernelInstanceInfo (and populate it from the BootInfo)
+    ; Allocate the TrampolineInfo (and populate it from the BootInfo)
 
-    KernelInstanceInfo* Info := PhysicalMemory->AllocateVirtual(1)
+    TrampolineInfo* Info := PhysicalMemory->AllocateVirtual(1)
     MoveMemory(Info, RawInfo, #BootloaderInfo)
     BootloaderInfo* BootInfo := Info~>BootInfo
 
@@ -138,15 +112,16 @@ define void Main(BootInfo* RawInfo) {
     VirtualMemory->Takeover(&MainContinuation, Info, KernelStack)
 }
 
-define void SetupHeap(KernelInstanceInfo* Info, void* VirtualAddress, i32 PageCount) {
+define void SetupHeap(TrampolineInfo* Info, void* VirtualAddress, i32 PageCount) {
     i64 HeapPhysicalPages := Info->PhysicalMemory->Allocate(PageCount)
 
     Info~>VirtualMemory->MapRange(VirtualAddress, HeapPhysicalPages / PAGE_SIZE, PageCount, PAGE_PRESENT | PAGE_WRITE)
 
-    Info~>Heap->Initialize(VirtualAddress, PageCount)
+    Info~>Heap->Initialize(VirtualAddress, PageCount * PAGE_SIZE)
+    Info~>Heap->Bootstrap()
 }
 
-define void* MapKernel(KernelInstanceInfo* Info, void* KernelFileData, i32 KernelFileSize) {
+define void* MapKernel(TrampolineInfo* Info, void* KernelFileData, i32 KernelFileSize) {
     ELFHeader* Image := KernelFileData
     ELFProgramHeader* ProgramHeaders := Image->GetProgramHeaders()
 
@@ -200,16 +175,25 @@ define void* MapKernel(KernelInstanceInfo* Info, void* KernelFileData, i32 Kerne
     return Image->EntryPoint As void*
 }
 
-define void MainContinuation(KernelInstanceInfo* Info) {
+define void MainContinuation(TrampolineInfo* Info) {
     Info("Continuation\n")
 
     SetupHeap(Info, ADDRESS_OF_KERNEL_HEAP, PAGES_FOR_KERNEL_HEAP)
     Info("heap!\n")
 
-    void(KernelInstanceInfo*) KernelEntryPoint := MapKernel(Info, Info~>BootInfo->KernelData, Info~>BootInfo->KernelSize)
+    void(TrampolineInfo*) KernelEntryPoint := MapKernel(Info, Info~>BootInfo->KernelData, Info~>BootInfo->KernelSize)
 
-    Info("kernel! %x\n", KernelEntryPoint)
+    Info("Kernel Main: %x\n", KernelEntryPoint)
 
+    ELFHeader* KernelELF := Info~>BootInfo->KernelData
+
+    ELFSymbol* PreMainSymbol := KernelELF->FindSymbol("PreMain(TrampolineInfo*)")
+    void(TrampolineInfo*) PreMain := KernelELF->GetSymbolAddress(PreMainSymbol)
+
+    Print("Kernel PreMain: %x\n", PreMain)
+
+    PreMain(Info)
+    KernelEntryPoint(Info)
 
     loop {}
 }

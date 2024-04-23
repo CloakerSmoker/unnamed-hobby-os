@@ -144,6 +144,7 @@ struct AddressSpaceManager {
 		i64 Result := this->PhysicalAllocator->Allocate()
 
 		Info("Allocated %x for page frame\n", Result)
+		FastZeroMemory(Result As void*, PAGE_SIZE)
 
 		return Result
 	}
@@ -464,14 +465,4 @@ struct AddressSpaceManager {
 		
 		RunLength := this->EndRun(RunStartAddress, RunStart, RunLastAddress, RunLast, RunLength)
 	}
-}
-
-AddressSpaceManager RawKernelAddressSpace
-AddressSpaceManager* KernelAddressSpace := &RawKernelAddressSpace
-
-define i64 VirtualToPhysical(void* RawVirtual) {
-	i64 VirtualAddress := RawVirtual As i64
-	i64 Lower := VirtualAddress & 0xFFF
-
-	return KernelAddressSpace->VirtualToPhysical(RawVirtual) | Lower
 }

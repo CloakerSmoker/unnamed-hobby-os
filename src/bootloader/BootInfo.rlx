@@ -1,24 +1,5 @@
 #Require "./src/drivers/ACPI.rlx"
 
-struct KernelInfo {
-	i32 Size
-	i32 PageCount
-	
-	void* InterruptStack
-	
-	i64 FrameBufferPages
-	
-	i64 Pages
-	i64 PageFramesPages
-	i64 StackPages
-	i64 HeapPages
-	i64 KernelPages
-	i64 UserPages
-
-	i8* RootPartitionGUID
-	i8* EFISystemPartitionGUID
-}
-
 struct BootloaderInfo {
 	i64 PhysicalFrameBuffer
 	i64 MaxKernelAddress
@@ -30,18 +11,7 @@ struct BootloaderInfo {
 
 	i8[256] KernelCommandLine
 
-	union {
-		void* Data
-		void* KernelData
-	}
-	
-	union {
-		i32 Size
-		i32 KernelSize
-	}
-
-	i8 Relocated
-
-	KernelInfo Kernel
+	void* KernelData
+	i32 KernelSize
 }
 

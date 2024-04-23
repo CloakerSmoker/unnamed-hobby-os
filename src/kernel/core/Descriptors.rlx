@@ -128,7 +128,7 @@ define void SetCSHelper() asm {
 	emit, 0xCB
 }
 
-define void SetupGDT() {
+define void SetupGDT(void* InterruptStack) {
 	; 2 null descriptors, 2 code/data pairs, one system descriptor (for the TSS)
 	i16 Limit := ((8 + 8) + (8 + 8) + (8 + 8) + 16) As i8
 	
@@ -177,6 +177,6 @@ define void SetupGDT() {
 		emit, 0xD2
 	}
 	
-	TSS->RSP0 := Kernel->InterruptStack
-	TSS->IST1 := Kernel->InterruptStack - (PAGE_SIZE * 5)
+	TSS->RSP0 := InterruptStack
+	TSS->IST1 := InterruptStack - (PAGE_SIZE * 5)
 }

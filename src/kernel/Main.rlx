@@ -13,12 +13,11 @@ declare void Info(i8*, ...)
 declare void Print(i8*, ...)
 
 #Require "./src/bootloader/BootInfo.rlx"
+#Require "./src/trampoline/Info.rlx"
 
-KernelInfo RawKernelInfo
-KernelInfo* Kernel := &RawKernelInfo
-
-BootloaderInfo RawBootInfo
-BootloaderInfo* BootInfo := &RawBootInfo
+TrampolineInfo* Trampoline
+KernelInfo* Kernel
+BootloaderInfo* BootInfo
 
 #Require "./src/kernel/core/Paging.rlx"
 #Require "$/Memory.rlx"
@@ -28,8 +27,8 @@ BootloaderInfo* BootInfo := &RawBootInfo
 
 void* BOOT_FONT_FON := i8[#File "./misc/fonts/OlivettiThin_8x14.fon"]
 
-#PhysicalImageBase 0x20_0000
-i64 PHYSICAL_ADDRESS_OF_KERNEL := 0x20_0000
+;#PhysicalImageBase 0x20_0000
+;i64 PHYSICAL_ADDRESS_OF_KERNEL := 0x20_0000
 
 #ImageBase 0x7F00_0000_0000
 void* ADDRESS_OF_KERNEL       := 0x7F00_0000_0000 As void*
@@ -47,65 +46,82 @@ define void PrintCharacters(i8* Character, i32 Count) {
 
 #Require "$/Print.rlx"
 
+#Require "./src/kernel/core/PageHeap.rlx"
+;#Require "./src/kernel/core/Heap.rlx"
+#Require "./src/kernel/core/PalHeap.rlx"
+
+PageHeap* PhysicalMemory
+AddressSpaceManager* KernelAddressSpace
+PalHeap* KernelHeap
+
+define void PreMain(TrampolineInfo* Info) {
+	; Called before main by the bootloader
+
+	Trampoline := Info
+	BootInfo := Info~>BootInfo
+
+	PhysicalMemory := Trampoline->PhysicalMemory
+	KernelAddressSpace := Trampoline~>VirtualMemory
+	KernelHeap := Trampoline~>Heap
+}
+
+define i64 VirtualToPhysical(void* RawVirtual) {
+	i64 VirtualAddress := RawVirtual As i64
+	i64 Lower := VirtualAddress & 0xFFF
+
+	return KernelAddressSpace->VirtualToPhysical(RawVirtual) | Lower
+}
+
+define void* KernelHeapAllocate(i64 Tag, i32 Size) {
+	if (DEBUG_HEAP_ALLOC_FREE) {
+		Info("Allocate(%l, %x) = ", Tag, Size)
+		void* Result := KernelHeap->Allocate(Size)
+		Info("%x ", Result)
+
+		AllocatorUsage Usage
+		Usage.Zero()
+		KernelHeap->GetUsage(&Usage)
+		
+		Info("(Usage Percent: %i%%)\n", GetUsagePercent(&Usage))
+
+		;KernelHeap->DumpAllocations()
+
+		return Result
+	}
+	else {
+		return KernelHeap->Allocate(Size)
+	}
+}
+define void* KernelHeapExtendAllocation(void* Memory, i32 Size) {
+	if (DEBUG_HEAP_ALLOC_FREE) {
+		Info("Extend(%x, %x) = ", Memory, Size)
+		void* Result := KernelHeap->Extend(Memory, Size)
+		Info("%x\n", Result)
+		return Result
+	}
+	else {
+		return KernelHeap->Extend(Memory, Size)
+	}
+}
+define void KernelHeapFree(void* Memory) {
+	if (DEBUG_HEAP_ALLOC_FREE) {
+		Info("Free(%x)\n", Memory)
+		KernelHeap->Free(Memory)
+	}
+	else {
+		KernelHeap->Free(Memory)
+	}
+}
+
+PageHeap* KernelPageAllocator
+
 #Require "./src/utility/PrintHelpers.rlx"
 #Require "./src/utility/DebugOutput.rlx"
 
 #Require "./src/kernel/graphics/PixelBuffer.rlx"
 #Require "./src/kernel/graphics/Font.rlx"
 
-PixelBuffer* PrimaryDisplay := null
-
-#Require "./src/kernel/core/PageHeap.rlx"
-PageHeap* PhysicalMemory := PageHeap:Adopt(ADDRESS_OF_PHYSICAL_MEMORY_ALLOCATOR, 0x500)
-
-;#Require "./src/kernel/core/Heap.rlx"
-#Require "./src/kernel/core/PalHeap.rlx"
-
-PalHeap RawKernelHeap
-PalHeap* _KernelHeap := &RawKernelHeap
-
-PageHeap* KernelPageAllocator := null
-
-define void* KernelHeapAllocate(i64 Tag, i32 Size) {
-	if (DEBUG_HEAP_ALLOC_FREE) {
-		Info("Allocate(%l, %x) = ", Tag, Size)
-		void* Result := _KernelHeap->Allocate(Size)
-		Info("%x ", Result)
-
-		AllocatorUsage Usage
-		Usage.Zero()
-		_KernelHeap->GetUsage(&Usage)
-		
-		Info("(Usage Percent: %i%%)\n", GetUsagePercent(&Usage))
-
-		;_KernelHeap->DumpAllocations()
-
-		return Result
-	}
-	else {
-		return _KernelHeap->Allocate(Size)
-	}
-}
-define void* KernelHeapExtendAllocation(void* Memory, i32 Size) {
-	if (DEBUG_HEAP_ALLOC_FREE) {
-		Info("Extend(%x, %x) = ", Memory, Size)
-		void* Result := _KernelHeap->Extend(Memory, Size)
-		Info("%x\n", Result)
-		return Result
-	}
-	else {
-		return _KernelHeap->Extend(Memory, Size)
-	}
-}
-define void KernelHeapFree(void* Memory) {
-	if (DEBUG_HEAP_ALLOC_FREE) {
-		Info("Free(%x)\n", Memory)
-		_KernelHeap->Free(Memory)
-	}
-	else {
-		_KernelHeap->Free(Memory)
-	}
-}
+PixelBuffer* PrimaryDisplay
 
 #Require "./src/kernel/core/Descriptors.rlx"
 
@@ -173,180 +189,6 @@ IDirectory* VFSDevicesDirectory := null
 #Require "./src/drivers/PCI/PCIe.rlx"
 
 ;#Require "./src/drivers/networking/E1000.rlx"
-
-declare void BootStrap()
-
-define void RawBootStrap(void* Stack) asm {
-	mov, rsp, rdi
-	mov, rbp, 0
-	
-	call, @BootStrap
-
-stop:
-	jmp, stop
-}
-
-define void* EarlyPhysicalToVirtual(void* Where) {
-	return ADDRESS_OF_KERNEL + ((Where As i64) - PHYSICAL_ADDRESS_OF_KERNEL)	
-}
-
-; Dummy parameters are 100% needed since the kernel is compiled as a linux program
-;  and the compiler automatically sets argc/argv when Main takes <=2 parameters
-
-class EarlyPhysicalAllocator implements IPhysicalAllocator {
-	i64 Tail
-
-	define i64 Allocate() {
-		return this->Tail++
-	}
-	define void Free(i64 Page) {
-
-	}
-}
-
-define void Main(BootloaderInfo* RawInfo, i32 Dummy1, i32 Dummy2) {
-	; First, null out the IDT to allow for qemu to catch interrupts instead of TianoCore
-
-	asm {
-		xor, rax, rax
-		push, rax
-		push, rax
-		mov, rax, rsp
-		lidt, {rax} As i64*
-		pop, rax
-		pop, rax
-	}
-
-	MoveMemory(BootInfo, RawInfo, #BootloaderInfo)
-	MoveMemory(Kernel, RawInfo~>Kernel, #KernelInfo)
-	
-	if (BootInfo->Relocated) {
-		RawBootStrap(ADDRESS_OF_KERNEL_STACK + (PAGE_SIZE * 40))
-	}
-	else {
-		StopSound()
-
-		Info("Main, FrameBuffer @ %x\n", RawInfo->PhysicalFrameBuffer)
-
-		KernelInfo* EarlyKernel := RawInfo~>Kernel
-		
-		EarlyKernel->FrameBufferPages := RawInfo->PhysicalFrameBuffer
-		
-		;PhysicalMemory->AddReserved(0, 0x10_0000) ; < 1mb, bootloader reserved
-		;PhysicalMemory->Add(0x10_0000, 0x350_0000) ; free memory
-		
-		i32 KernelSize := (RawInfo->MaxKernelAddress - (ADDRESS_OF_KERNEL As i64)) As i32
-		
-		EarlyKernel->Size := KernelSize
-		EarlyKernel->PageCount := SizeToPageCount(KernelSize) + 1
-		
-		i64 KernelLoadPages  := PhysicalMemory->Reserve(PHYSICAL_ADDRESS_OF_KERNEL, EarlyKernel->PageCount) ; Reserve the memory the kernel lives in
-		i64 PageFramesPages  := PhysicalMemory->Allocate(PAGE_COUNT_FOR_1MB)
-		i64 KernelStackPages := PhysicalMemory->Allocate(40)
-		i64 KernelHeapPages  := PhysicalMemory->Allocate(PAGE_COUNT_FOR_2MB)
-		i64 KernelPages      := PhysicalMemory->Allocate(NUMBER_OF_KERNEL_PAGES)
-		
-		EarlyKernel->Pages           := KernelLoadPages
-		EarlyKernel->PageFramesPages := PageFramesPages
-		EarlyKernel->StackPages      := KernelStackPages
-		EarlyKernel->HeapPages       := KernelHeapPages
-		EarlyKernel->KernelPages     := KernelPages
-		
-		AddressSpaceManager* BootStrapAddressSpace := 0x14_0000 As void*
-
-		EarlyPhysicalAllocator _Allocator
-		EarlyPhysicalAllocator* Allocator := &_Allocator
-		Allocator->Initialize()
-		
-		BootStrapAddressSpace->Initialize(0x15_0000 As void*, 0x15_0000, Allocator)
-		
-		BootStrapAddressSpace->MapRange(0x10_0000 As void*, 0x100, 0x10)
-		BootStrapAddressSpace->MapRange(0x15_0000 As void*, 0x150, 0x45)
-		BootStrapAddressSpace->MapRange(ADDRESS_OF_KERNEL, KernelLoadPages / PAGE_SIZE, EarlyKernel->PageCount)
-
-		BootStrapAddressSpace->MapRange(PageFramesPages As void*, PageFramesPages / PAGE_SIZE, PAGE_COUNT_FOR_1MB)
-		BootStrapAddressSpace->MapRange(ADDRESS_OF_PAGE_FRAMES, PageFramesPages / PAGE_SIZE, PAGE_COUNT_FOR_1MB)
-		BootStrapAddressSpace->MapRange(ADDRESS_OF_KERNEL_STACK, KernelStackPages / PAGE_SIZE, 40)
-		
-		; Preserve BootInfo/KernelInfo
-
-		void* RoundedInfo := RawInfo & 0x7FFF_FFFF_FFFF_F000
-		i64 InfoPages := (RoundedInfo As i64) / PAGE_SIZE
-
-		BootStrapAddressSpace->MapRange(RoundedInfo, InfoPages, 2)
-
-		; Preserve SetCR3 (so it can jump to the relocated kernel)
-
-		void* PhysicalSetCR3 := &SetCR3
-		i64 PhysicalSetCR3Page := (PhysicalSetCR3 As i64) / PAGE_SIZE
-
-		BootStrapAddressSpace->MapRange(PhysicalSetCR3, PhysicalSetCR3Page, 1)
-
-		; Figure out where `Main()` will end up, and wipe globals
-		;  (so to the relocated kernel, it is as if it was loaded directly to
-		;    the destination)
-
-		void* VirtualMain := EarlyPhysicalToVirtual(&Main)
-
-		Info("Wiping globals (%x, %x)", RawInfo->Data, RawInfo->Size)
-		Info("(and then) Calling virtual main at %x\n", VirtualMain)
-		;breakpoint:()
-
-		; Zero all globals so everything reinitializes
-		FastSetMemory8(RawInfo->Data, 0, RawInfo->Size)
-
-		RawInfo->Relocated := true
-
-		BootStrapAddressSpace->Takeover(VirtualMain, RawInfo, ADDRESS_OF_KERNEL_STACK + (PAGE_SIZE * 40))
-	}
-}
-
-declare void MainContinuation()
-
-define void RawMainContinuation(void* Stack) asm {
-	mov, rsp, rdi
-	mov, rbp, 0
-	
-	call, @MainContinuation
-
-stop:
-	jmp, stop
-}
-
-class RuntimePageAllocator implements IPhysicalAllocator {
-	PageHeap* Heap
-
-	define i64 Allocate() {
-		return this->Heap->Allocate(1)
-	}
-	define void Free(i64 Page) {
-		this->Heap->Free(Page)
-	}
-}
-
-RuntimePageAllocator _RuntimeAllocator
-
-define void BootStrap() {
-	Info("Switched\n")
-
-	RuntimePageAllocator* RuntimeAllocator := &_RuntimeAllocator
-	RuntimeAllocator->Initialize()
-	
-	KernelAddressSpace->Initialize(ADDRESS_OF_PAGE_FRAMES, Kernel->PageFramesPages, RuntimeAllocator)
-	
-	KernelAddressSpace->MapRange(ADDRESS_OF_PHYSICAL_MEMORY_ALLOCATOR, (ADDRESS_OF_PHYSICAL_MEMORY_ALLOCATOR / PAGE_SIZE) As i64, 0x10)
-	KernelAddressSpace->MapRange(ADDRESS_OF_KERNEL, PHYSICAL_ADDRESS_OF_KERNEL / PAGE_SIZE, Kernel->PageCount)
-	
-	KernelAddressSpace->MapRange(ADDRESS_OF_PAGE_FRAMES, Kernel->PageFramesPages / PAGE_SIZE, PAGE_COUNT_FOR_1MB)
-	KernelAddressSpace->MapRange(ADDRESS_OF_KERNEL_STACK, Kernel->StackPages / PAGE_SIZE, 40)
-	KernelAddressSpace->MapRange(ADDRESS_OF_KERNEL_HEAP, Kernel->HeapPages / PAGE_SIZE, BYTES_IN_2MB / PAGE_SIZE)
-	
-	KernelAddressSpace->MapRange(ADDRESS_OF_KERNEL_PAGES, Kernel->KernelPages / PAGE_SIZE, NUMBER_OF_KERNEL_PAGES)
-	
-	void* Stack := ADDRESS_OF_KERNEL_STACK + (PAGE_SIZE * 40)
-
-	KernelAddressSpace->Takeover(&RawMainContinuation, Stack, Stack)
-}
 
 #Require "./src/kernel/networking/Stack.rlx"
 
@@ -600,9 +442,9 @@ define IDirectory* OpenFSFromPath(OpenFSErrors* Errors, i8* Path, IDirectory*(Bl
 	return OpenDevice(RootDevice)
 }
 
-define void MountPartitions() {
-	i8* EFISystemPartitionPath := FormatString("/dev/disk/gpt/%s", Kernel->EFISystemPartitionGUID)
-	i8* RootPartitionPath := FormatString("/dev/disk/gpt/%s", Kernel->RootPartitionGUID)
+define void MountPartitions(i8* RootPartitionGUID, i8* EFISystemPartitionGUID) {
+	i8* EFISystemPartitionPath := FormatString("/dev/disk/gpt/%s", EFISystemPartitionGUID)
+	i8* RootPartitionPath := FormatString("/dev/disk/gpt/%s", RootPartitionGUID)
 
 	IDirectory* EFISystemRootDirectory := OpenFSFromPath(&OpenEFISystemErrors, EFISystemPartitionPath, &OpenFAT32)
 	IDirectory* RootDirectory := OpenFSFromPath(&OpenRootErrors, RootPartitionPath, &OpenExt2)
@@ -622,7 +464,12 @@ define void NetworkSetupTask() {
     Interface->SetKnobToggle("ARP.SpewGateway", true)
 }
 
-define void MainContinuation() {
+; Dummy to ensure a function isn't optimized away
+define void DO_NOT_OPTIMIZE_AWAY(void* Function) asm { ret }
+
+define void Main(TrampolineInfo* Info) {
+	DO_NOT_OPTIMIZE_AWAY(&PreMain)
+
 	DisableInterrupts()
 
 	CurrentTask := KernelSetupTask
@@ -631,27 +478,28 @@ define void MainContinuation() {
 	i8*[10] ArgV
 
 	ParseCommandLine(BootInfo~>KernelCommandLine, &ArgC, ArgV)
+
+	i8* RootPartitionGUID := null
+	i8* EFISystemPartitionGUID := null
 	
 	for (i32 Index := 0, Index < ArgC, Index++) {
 		i8* Next := ArgV[Index]
 
 		if (StringEquals(Next, "--efi-system-guid")) {
-			Kernel->EFISystemPartitionGUID := ArgV[++Index]
+			EFISystemPartitionGUID := ArgV[++Index]
 		}
 		else if (StringEquals(Next, "--root-guid")) {
-			Kernel->RootPartitionGUID := ArgV[++Index]
+			RootPartitionGUID := ArgV[++Index]
 		}
 	}
 
 	;KernelAddressSpace->PrintMappings()
 
-	Info("Root Partition       GUID: %s\n", Kernel->RootPartitionGUID)
-	Info("EFI System Partition GUID: %s\n", Kernel->EFISystemPartitionGUID)
-
-	;Halt()
+	Info("Root Partition       GUID: %s\n", RootPartitionGUID)
+	Info("EFI System Partition GUID: %s\n", EFISystemPartitionGUID)
 	
-	Info("Paging initialized, AddressSpaceManager in control\n")
-	
+	i64 KernelPages := PhysicalMemory->Allocate(NUMBER_OF_KERNEL_PAGES)
+	KernelAddressSpace->MapRange(ADDRESS_OF_KERNEL_PAGES, KernelPages / PAGE_SIZE, NUMBER_OF_KERNEL_PAGES, PAGE_PRESENT | PAGE_WRITE)
 	KernelPageAllocator := PageHeap:Adopt(ADDRESS_OF_KERNEL_PAGES, NUMBER_OF_KERNEL_PAGES)
 	
 	Info("Built kernel virtual allocator\n")
@@ -662,14 +510,10 @@ define void MainContinuation() {
 	
 	; Remap the next available `FRAMEBUFFER_SIZE` bytes of virtual memory to 0xE000_0000 (or wherever int10 says)
 	i32 FrameBufferPageCount := SizeToPageCount(FRAMEBUFFER_SIZE)
-	KernelAddressSpace->MapRange(ADDRESS_OF_FRAME_BUFFER, Kernel->FrameBufferPages / PAGE_SIZE, FrameBufferPageCount)
+	KernelAddressSpace->MapRange(ADDRESS_OF_FRAME_BUFFER, BootInfo->PhysicalFrameBuffer / PAGE_SIZE, FrameBufferPageCount)
 	
 	Info("Mapped the framebuffer\n")
 	
-	_KernelHeap->Initialize(ADDRESS_OF_KERNEL_HEAP, BYTES_IN_2MB)
-	_KernelHeap->Bootstrap()
-	Info("Initialized heap (%x - %x)\n", ADDRESS_OF_KERNEL_HEAP, ADDRESS_OF_KERNEL_HEAP + BYTES_IN_2MB)
-
 	Scheduler->Initialize()
 
 	PixelBuffer* FrameBuffer := Alloc(#PixelBuffer)
@@ -690,9 +534,8 @@ define void MainContinuation() {
 	void* InterruptStackTop    := ADDRESS_OF_KERNEL_STACK + (10 * PAGE_SIZE)
 	void* InterruptStackBottom := ADDRESS_OF_KERNEL_STACK
 	KernelAddressSpace->UnmapRange(InterruptStackBottom, 1)
-	Kernel->InterruptStack := InterruptStackTop
 	
-	SetupGDT()
+	SetupGDT(InterruptStackTop)
 	
 	Print("BOOT: Setup GDT and TSS\n")
 	
@@ -730,7 +573,7 @@ define void MainContinuation() {
 	Mount(null, "/dev", VFSDevicesDirectory)
 
 	PopulateDevicesDirectory(VFSDevicesDirectory)
-	MountPartitions()
+	MountPartitions(RootPartitionGUID, EFISystemPartitionGUID)
 
 	;NetworkSetupTask()
 
