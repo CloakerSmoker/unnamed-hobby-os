@@ -1,4 +1,28 @@
 
+#Require "$/AVLTree.rlx"
+
+struct ShellCommand {
+    i8* Name,
+    void(i64, i8**) Callback
+}
+
+AVLTree* Commands := AVLTree:New(#ShellCommand)
+
+define i32 RegisterCommand(i8* Name, void(i64, i8**) Callback) {
+    ShellCommand Command {
+        Name: Name,
+        Callback: Callback
+    }
+
+    Commands->Insert(FNV1A(Name), &Command)
+
+    return Commands->Count()
+}
+
+define ShellCommand* LookupCommand(i8* Name) {
+    return Commands->Get(FNV1A(Name))
+}
+
 enum DataScale {
     Count := 1,
     Block := 512,

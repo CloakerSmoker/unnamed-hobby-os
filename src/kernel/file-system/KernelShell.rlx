@@ -1,33 +1,4 @@
 
-struct ShellCommand {
-    i8* Name,
-    void(i64, i8**) Callback
-}
-
-i32 CommandCount := 0
-ShellCommand[20] Commands
-
-define i32 RegisterCommand(i8* Name, void(i64, i8**) Callback) {
-    ShellCommand* Command := Commands[CommandCount++]
-
-    Command->Name := Name
-    Command->Callback := Callback
-
-    return CommandCount
-}
-
-define ShellCommand* LookupCommand(i8* Name) {
-    for (i32 Index := 0, Index < CommandCount, Index++) {
-        ShellCommand* Check := Commands[Index]
-
-        if (StringEquals(Check->Name, Name)) {
-            return Check
-        }
-    }
-
-    return null
-}
-
 IDirectory* CurrentDirectory := null
 IDirectory* DevicesDirectory := null
 
