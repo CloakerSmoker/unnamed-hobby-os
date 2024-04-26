@@ -263,7 +263,8 @@ define void ExecuteLine(GPTDevice* Device, i8* Line) {
 	else if (StringEquals(Command, "create")) {
 		GPTPartitionEntry* NewEntry := Alloc(#GPTPartitionEntry)
 		
-		GenerateGUID(NewEntry->PartitionGUID)
+		;GenerateGUID(NewEntry->PartitionGUID)
+		FillRandom(NewEntry->PartitionGUID, 16)
 
 		UpdatePartition(Device, NewEntry, ArgC - 1, &ArgV[1])
 		

@@ -272,7 +272,7 @@ define void ExecuteGPT(i64 ArgC, i8** ArgV) {
                     return
                 }
 
-                Device->WriteHeader(Device->Header)
+                Device->Sync()
 
                 Print("Set disk.guid = %guid\n", Device->Header~>DiskGUID)
             }

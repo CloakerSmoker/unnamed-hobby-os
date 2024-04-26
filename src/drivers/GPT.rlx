@@ -53,23 +53,7 @@ struct GPTPartitionEntry {
 
 i8* GPT_PARTITION_GUID_TEMPLATE := i8[0xDB, 0x5B, 0xD6, 0xDA, 0x7D, 0x88, 0x45, 0x39, 0x9C, 0xBF, 0xBF, 0xA8, 0x05, 0x2A, 0x54, 0x2D]
 
-i32 GUIDCounter := 0
-
-define void GPTSeedRandom(i32 Value) {
-	GUIDCounter := Value
-}
-
-define void GenerateGUID(i8* Out) {
-	MoveMemory(Out, GPT_PARTITION_GUID_TEMPLATE, 16)
-	
-	Out[4] := GUIDCounter As i8
-	Out[7] := (Out As i8) ^ (GUIDCounter As i8)
-	
-	GUIDCounter += 0x123F_ABCD ^ (Out As i32)
-}
-
 i8* GPT_PARTITION_TYPE_NONE := i8[0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
-
 i8* GPT_PARTITION_TYPE_SYSTEM := i8[0x28, 0x73, 0x2A, 0xC1, 0x1F, 0xF8, 0xD2, 0x11, 0xBA, 0x4B, 0x00, 0xA0, 0xC9, 0x3E, 0xC9, 0x3B]
 
 ; chosen by 16 fair dice rolls
@@ -97,6 +81,21 @@ struct GPTDevice {
 	}
 	define void WriteHeader(GPTPartitionTableHeader* Header) {
 		this->Device->Write(Header->ThisHeaderLBA, 1, Header)
+	}
+
+	define void Sync() {
+		i64 ThisHeaderLBA := this->Header->ThisHeaderLBA
+		i64 OtherHeaderLBA := this->Header->AlternateHeaderLBA
+
+		this->Header->UpdateCRC()
+		
+		this->WriteHeader(this->Header)
+		
+		this->Header->ThisHeaderLBA := OtherHeaderLBA
+		this->Header->AlternateHeaderLBA := ThisHeaderLBA
+		this->Header->UpdateCRC()
+		
+		this->WriteHeader(this->Header)
 	}
 	
 	define i32 CalculatePartitionEntryArrayCRC() {
@@ -180,15 +179,7 @@ struct GPTDevice {
 		this->Header->PartitionEntrySize := #GPTPartitionEntry
 		this->Header->PartitionEntryArrayChecksum := 0
 		
-		this->Header->UpdateCRC()
-		
-		this->WriteHeader(this->Header)
-		
-		this->Header->ThisHeaderLBA := LastLBA
-		this->Header->AlternateHeaderLBA := 1
-		this->Header->UpdateCRC()
-		
-		this->WriteHeader(this->Header)
+		this->Sync()
 	}
 	
 	define i32 AddPartition(GPTPartitionEntry* Entry) {
