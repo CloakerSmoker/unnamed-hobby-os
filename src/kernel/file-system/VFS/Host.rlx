@@ -8,14 +8,16 @@ struct HostFileInstance {
 
     IFile* VFS
     i64 Handle
+    i8 ReadOnly
 
-    static FileHandle* New(IFile* VFS, i64 Handle) {
+    static FileHandle* New(IFile* VFS, i64 Handle, i8 ReadOnly) {
         self* this := Alloc(#self)
         
         this->Prototype := GetHostFileHandlePrototype()
 
         this->VFS := VFS
         this->Handle := Handle
+        this->ReadOnly := ReadOnly
 
         return this As void*
     }
@@ -27,7 +29,12 @@ struct HostFileInstance {
         return FileRead(this->Handle, Buffer, Size)
     }
     define i32 Write(void* Buffer, i32 Size) {
-        return FileWrite(this->Handle, Buffer, Size)
+        if (this->ReadOnly) {
+            return 0
+        }
+        else {
+            return FileWrite(this->Handle, Buffer, Size)
+        }
     }
     define void Seek(i32 Destination, SeekMode Mode) {
         FileSeek(this->Handle, Destination, Mode As i32)
@@ -58,13 +65,15 @@ struct VFSHostFile {
     #Include "./src/kernel/file-system/VFS/IFile.rlx"
 
     i64 Handle
+    i8 ReadOnly
 
-    static IFile* New(i64 Handle) {
+    static IFile* New(i64 Handle, i8 ReadOnly) {
         self* this := Alloc(#self)
 
         this->Prototype := GetVFSHostFilePrototype()
 
         this->Handle := Handle
+        this->ReadOnly := ReadOnly
 
         return this As void*
     }
@@ -74,7 +83,7 @@ struct VFSHostFile {
     }
 
     define FileHandle* Open() {
-        return HostFileInstance:New(this->AsFile(), this->Handle)
+        return HostFileInstance:New(this->AsFile(), this->Handle, this->ReadOnly)
     }
     define void Close(FileHandle* Handle) {
         Free(Handle)
@@ -97,15 +106,17 @@ struct VFSHostDirectory {
     #Include "./src/kernel/file-system/VFS/IDirectory.rlx"
 
     i64 Handle
+    i8 ReadOnly
 
     AVLTree* Cache ; <i8*, VFSDirectoryEntry>
 
-    static IDirectory* New(i64 Handle) {
+    static IDirectory* New(i64 Handle, i8 ReadOnly) {
         self* this := Alloc(#self)
 
         this->Prototype := GetVFSHostDirectoryPrototype()
         
         this->Handle := Handle
+        this->ReadOnly := ReadOnly
 
         this->Cache := AVLTree:New(#VFSDirectoryEntry)
 
@@ -139,7 +150,11 @@ struct VFSHostDirectory {
             return ExistingCacheEntry
         }
         
-        i64 Handle := FileOpenAt(this->Handle, Name, FILE_READ_WRITE)
+        i64 Handle := -1
+
+        if (this->ReadOnly = false) {
+            Handle := FileOpenAt(this->Handle, Name, FILE_READ_WRITE)
+        }
 
         if (Handle <= 0) {
             Handle := FileOpenAt(this->Handle, Name, FILE_READ)
@@ -152,7 +167,9 @@ struct VFSHostDirectory {
         VFSDirectoryEntryType Type := VFSDirectoryEntryType::Hole
 
         if (ExistingEntry) {
-            if (ExistingEntry->Type = DirectoryEntryType::File) {
+            Print("Type = %s\n", nameof:(ExistingEntry->Type))
+
+            if (ExistingEntry->Type = DirectoryEntryType::File || ExistingEntry->Type = DirectoryEntryType::BlockDevice || ExistingEntry->Type = FileStatusType::CharacterDevice) {
                 Type := VFSDirectoryEntryType::File
             }
             else if (ExistingEntry->Type = DirectoryEntryType::Directory) {
@@ -163,7 +180,9 @@ struct VFSHostDirectory {
             FileStatus Status
             FileGetStatus(Handle, &Status)
 
-            if (Status.Type = FileStatusType::File) {
+            Print("Type = %s\n", nameof:(Status.Type))
+
+            if (Status.Type = FileStatusType::File || Status.Type = FileStatusType::BlockDevice || Status.Type = FileStatusType::CharacterDevice) {
                 Type := VFSDirectoryEntryType::File
             }
             else if (Status.Type = FileStatusType::Directory) {
@@ -177,10 +196,10 @@ struct VFSHostDirectory {
         }
 
         if (Type = VFSDirectoryEntryType::File) {
-            NewCacheEntry.File := VFSHostFile:New(Handle)
+            NewCacheEntry.File := VFSHostFile:New(Handle, this->ReadOnly)
         }
         else if (Type = VFSDirectoryEntryType::Directory) {
-            NewCacheEntry.Directory := VFSHostDirectory:New(Handle)
+            NewCacheEntry.Directory := VFSHostDirectory:New(Handle, this->ReadOnly)
         }
 
         this->Cache->Insert(NameHash, &NewCacheEntry)
@@ -210,6 +229,7 @@ struct VFSHostDirectory {
         DirectoryEntry Entry
 
         if (WalkDirectoryNext(RawState, &Entry)) {
+            Print("Entry: %s\n", Entry.Name)
             VFSDirectoryEntry* Cached := this->FindOrCacheEntry(Entry.Name, &Entry)
 
             if (Cached) {
