@@ -315,6 +315,26 @@ define void ExecuteLine(FAT32Device* Device, i32* pCurrentDirectoryCluster, i8* 
 		Device->MakeDirectoryEntry(CurrentDirectoryCluster, Destination, 0, ImportSize, FirstCluster)
 		Device->WriteClusterData(FirstCluster, ImportData, ImportSize)
 	}
+	else if (StringEquals(Command, "disklabel")) {
+		i8* Label := ArgV[1]
+
+		Device->BurnLabel(Label)
+
+		/*
+		for (i32 Index := 0, Index < 11, Index++) {
+			Device->Header->VolumeLabel[Index] := ' '
+		}
+
+		i32 Length := StringLength(Label)
+
+		if (Length > 11) {
+			Length := 11
+		}
+
+		MoveMemory(Device->Header->VolumeLabel, Label, Length)
+
+		Device->Sync()*/
+	}
 	else {
 		Exit(0)
 	}

@@ -257,6 +257,12 @@ struct FAT32Device {
 		
 		return this
 	}
+
+	define FAT32Info* ReadInfo() {
+		this->Device->Read(this->Header->FSInfoSector, 1, this->Info)
+		
+		return this->Info
+	}
 	
 	define FAT32BootSector* ReadHeader() {
 		this->Device->Read(0, 1, this->Header)
@@ -268,6 +274,8 @@ struct FAT32Device {
 			this->RootDirectoryCluster := this->Header->RootDirectoryCluster
 			this->ClusterCount := this->Header->SectorsPerFAT * FAT32_FAT_ENTRIES_PER_SECTOR
 			this->ClusterSize := this->SectorsPerCluster * this->Header->BytesPerSector
+
+			this->ReadInfo()
 		}
 		
 		return this->Header
@@ -277,11 +285,6 @@ struct FAT32Device {
 		this->Device->Write(this->Header->BackupBootSector, 1, this->Header)
 	}
 	
-	define FAT32Info* ReadInfo() {
-		this->Device->Read(this->Header->FSInfoSector, 1, this->Info)
-		
-		return this->Info
-	}
 	define void WriteInfo() {
 		this->Device->Write(this->Header->FSInfoSector, 1, this->Info)
 	}
@@ -665,7 +668,8 @@ struct FAT32Device {
 		
 		this->Device->Write(FinalSector, 1, this->Header)
 		
-		MoveMemory(this->Header->OEMIdentitier, "FAT32rlx", 8)
+		MoveMemory(this->Header->JumpStub, i8[0xEB, 0x3C, 0x90], 3)
+		MoveMemory(this->Header->OEMIdentitier, "MSDOS5.0", 8)
 		
 		this->Header->BytesPerSector      := 0x200
 		this->Header->SectorsPerCluster   := 1
@@ -708,6 +712,31 @@ struct FAT32Device {
 		this->WriteFAT(0, 0xFFFFF00 | FAT32_MEDIA_TYPE_FIXED)
 		this->WriteFAT(1, FAT32_FAT_ENTRY_RESERVED_OR_EOF)
 		this->WriteFAT(2, FAT32_FAT_ENTRY_RESERVED_OR_EOF)
+
+		FAT32DirectoryEntry* VolumeIDEntry := Alloc(#FAT32DirectoryEntry)
+
+		VolumeIDEntry->Attributes := FAT32_DIRECTORY_ENTRY_ATTRIBUTE_VOLUME_ID
+		MoveMemory(VolumeIDEntry->Name, "NO NAME    ", 11)
+
+		this->AddDirectoryEntry(this->Header->RootDirectoryCluster, VolumeIDEntry)
+	}
+
+	define void BurnLabel(i8* Label) {
+		FAT32DirectoryEntry* VolumeIDEntry := this->GetDirectoryEntry(this->Header->RootDirectoryCluster, 0)
+
+		for (i32 Index := 0, Index < 11, Index++) {
+			VolumeIDEntry->Name[Index] := ' '
+		}
+
+		i32 Length := StringLength(Label)
+
+		if (Length > 11) {
+			Length := 11
+		}
+
+		MoveMemory(VolumeIDEntry->Name, Label, Length)
+
+		this->UpdateDirectoryEntry(this->Header->RootDirectoryCluster, 0, VolumeIDEntry)
 	}
 }
 
