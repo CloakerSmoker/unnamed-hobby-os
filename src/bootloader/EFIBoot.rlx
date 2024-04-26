@@ -4,6 +4,8 @@ i8 DEBUG_EXT2_OPTIMIZATION := false
 #Require "@/Console.rlx"
 #Require "$/Memory.rlx"
 
+#Require "./src/utility/GUID.rlx"
+
 #Require "./src/drivers/block-device/BlockDevice.rlx"
 #Require "./src/drivers/block-device/EFIBlockDevice.rlx"
 
@@ -16,9 +18,10 @@ define void SchedulerYield() {
 #Require "./src/drivers/file-system/FAT32.rlx"
 #Require "./src/drivers/file-system/Ext2.rlx"
 #Require "./src/drivers/GPT.rlx"
-#Require "./src/utility/ELF.rlx"
 
+#Require "./src/utility/ELF.rlx"
 #Require "./src/utility/PrintHelpers.rlx"
+#Require "./src/utility/CommandLine.rlx"
 
 #Require "./src/bootloader/BootInfo.rlx"
 
@@ -119,6 +122,30 @@ define i8 LoadFile(FileHandle* RootDirectory, i8* FileName, void** OutFileData, 
 
 define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
     i64 Status := 0
+
+	Print("Switching mode\n")
+	
+	EFI_GRAPHICS_OUTPUT_PROTOCOL* Graphics := null
+	SystemTable->BootServices->LocateProtocol(EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID, &Graphics As void**)
+	
+	Print("Device has %i modes\n", Graphics->Mode->MaxMode)
+	
+	for (i32 Index := 0, Index < Graphics->Mode->MaxMode, Index++) {
+		EFI_GRAPHICS_OUTPUT_MODE_INFORMATION* Mode := Graphics->QueryMode(Index)
+		
+		Print("\t%ix%i %x\n", Mode->HorizontalResolution, Mode->VerticalResolution, Mode->PixelFormat)
+		
+		if (Mode->HorizontalResolution = 1024 && Mode->VerticalResolution = 768) {
+			if (Graphics->Mode->CurrentMode != Index) {
+				WaitKey()
+				Graphics->SetMode(Index)
+			}
+			
+			break
+		}
+	}
+	
+	SystemTable->ConsoleOutput->Reset()
 	
 	Print("Hello new EFI world!\n")
 	
@@ -332,100 +359,8 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	Print("Boot Device Parent Path: %w\n", RootDevicePathText)
 	
 	SystemTable->BootServices->FreePool(RootDevicePathText)
-	
-	i32 SizeNeeded := 0
-	SystemTable->BootServices->LocateHandle(EFI_LOCATE_SEARCH_TYPE_BY_PROTOCOL, EFI_BLOCK_IO_PROTOCOL_GUID, null, &SizeNeeded, null)
-	EFI_HANDLE** Handles := SystemTable->BootServices->AllocatePool(SizeNeeded)
-	SystemTable->BootServices->LocateHandle(EFI_LOCATE_SEARCH_TYPE_BY_PROTOCOL, EFI_BLOCK_IO_PROTOCOL_GUID, null, &SizeNeeded, Handles)
-	i32 Count := SizeNeeded / 8
-	
-	i32 ChildIndex := 0
-	
-	EFI_HANDLE* SystemPartition := null
-	EFI_PARTITION_ENTRY* SystemPartitionEntry := null
-	
-	EFI_HANDLE* OSPartition := null
-	EFI_PARTITION_ENTRY* OSPartitionEntry := null
-	
-	for (i32 Index := 0, Index < Count, Index++) {
-		EFI_HANDLE* Next := Handles[Index]
-		
-		EFI_DEVICE_PATH_PROTOCOL* HandlePath := null
-		
-		SystemTable->BootServices->HandleProtocol(Next, EFI_DEVICE_PATH_PROTOCOL_GUID, &HandlePath As void**)
-		
-		if (HandlePath->Equals(RootDevicePath)) {
-			continue
-		}
-		
-		EFI_DEVICE_PATH_PROTOCOL* HandleParentPath := DevicePathHelpers->DuplicateDevicePath(HandlePath)
-		
-		HandleParentPath->PopNode()
-		
-		if (HandleParentPath->Equals(RootDevicePath)) {
-			i16* DeviceText := ToText->ConvertDevicePathToText(HandlePath, true, true)
-			
-			Print("Child #%i:\n\t%w\n", ChildIndex++, DeviceText)
-			
-			SystemTable->BootServices->FreePool(DeviceText)
-			
-			EFI_PARTITION_INFO_PROTOCOL* ChildPartitionInfo := null
-			
-			SystemTable->BootServices->HandleProtocol(Next, EFI_PARTITION_INFO_PROTOCOL_GUID, &ChildPartitionInfo As void**)
-			
-			if !(ChildPartitionInfo) {
-				Print("\tNo partition info\n")
-				continue
-			}
-			
-			if (ChildPartitionInfo->Type != EFI_PARTITION_INFO_TYPE_GPT) {
-				Print("\tNon-GPT partition\n")
-				continue
-			}
-			
-			Print("\tType: %guid\n\tGUID: %guid\n", ChildPartitionInfo~>Entry~>Type, ChildPartitionInfo~>Entry~>GUID)
-			
-			if (CompareMemory(ChildPartitionInfo~>Entry~>Type, GPT_PARTITION_TYPE_SYSTEM, 16)) {
-				SystemPartition := Next
-				SystemPartitionEntry := ChildPartitionInfo~>Entry
-				
-				Print("\tIs system partition\n")
-			}
-			else if (CompareMemory(ChildPartitionInfo~>Entry~>Type, GPT_PARTITION_TYPE_CUSTOM, 16)) {
-				OSPartition := Next
-				OSPartitionEntry := ChildPartitionInfo~>Entry
-				
-				Print("\tIs OS partition\n")
-			}
-		}
-		
-		SystemTable->BootServices->FreePool(HandleParentPath)
-	}
-	
-	SystemTable->BootServices->FreePool(Handles)
-	
-	Print("Switching mode\n")
-	
-	EFI_GRAPHICS_OUTPUT_PROTOCOL* Graphics := null
-	SystemTable->BootServices->LocateProtocol(EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID, &Graphics As void**)
-	
-	Print("Device has %i modes\n", Graphics->Mode->MaxMode)
-	
-	for (i32 Index := 0, Index < Graphics->Mode->MaxMode, Index++) {
-		EFI_GRAPHICS_OUTPUT_MODE_INFORMATION* Mode := Graphics->QueryMode(Index)
-		
-		Print("\t%ix%i %x\n", Mode->HorizontalResolution, Mode->VerticalResolution, Mode->PixelFormat)
-		
-		if (Mode->HorizontalResolution = 1024 && Mode->VerticalResolution = 768) {
-			if (Graphics->Mode->CurrentMode != Index) {
-				Graphics->SetMode(Index)
-			}
-			
-			break
-		}
-	}
-	
-	SystemTable->ConsoleOutput->Reset()
+
+	; Load kernel command line
 
 	EFI_SIMPLE_FILE_SYSTEM_PROTOCOL* SimpleFS := null
 	SystemTable->BootServices->HandleProtocol(LoadedImage->DeviceHandle, EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID, &SimpleFS As void**)
@@ -447,13 +382,102 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 
 	Print("CommandLineBuffer: %s\n", CommandLineBuffer)
 
+	; Parse kernel command line
+
+	i64 ArgC := 0
+	i8*[10] ArgV
+
+	ParseCommandLine(CloneMemory(CommandLineBuffer, CommandLineLength), &ArgC, ArgV)
+
+	i8[16] RootPartitionGUID
+	i8[16] EFISystemPartitionGUID
+	
+	for (i32 Index := 0, Index < ArgC, Index++) {
+		i8* Argument := ArgV[Index]
+
+		if (StringEquals(Argument, "--efi-system-guid")) {
+			;EFISystemPartitionGUID := ArgV[++Index]
+			ParseGUID(ArgV[++Index], EFISystemPartitionGUID)
+		}
+		else if (StringEquals(Argument, "--root-guid")) {
+			;RootPartitionGUID := ArgV[++Index]
+			ParseGUID(ArgV[++Index], RootPartitionGUID)
+		}
+	}
+
+	Print("EFI System GUID: %guid\n", EFISystemPartitionGUID)
+	Print("Root Partition GUID: %guid\n", RootPartitionGUID)
+
+	WaitKey()
+
+	; Find partitions listed on command line
+	
+	i32 SizeNeeded := 0
+	SystemTable->BootServices->LocateHandle(EFI_LOCATE_SEARCH_TYPE_BY_PROTOCOL, EFI_BLOCK_IO_PROTOCOL_GUID, null, &SizeNeeded, null)
+	EFI_HANDLE** Handles := SystemTable->BootServices->AllocatePool(SizeNeeded)
+	SystemTable->BootServices->LocateHandle(EFI_LOCATE_SEARCH_TYPE_BY_PROTOCOL, EFI_BLOCK_IO_PROTOCOL_GUID, null, &SizeNeeded, Handles)
+	i32 Count := SizeNeeded / 8
+	
+	EFI_HANDLE* SystemPartition := null
+	EFI_HANDLE* OSPartition := null
+
+	void* GPTHeaderBuffer := SystemTable->BootServices->AllocatePages(2)
+	
+	for (i32 Index := 0, Index < Count, Index++) {
+		EFI_HANDLE* Next := Handles[Index]
+
+		EFI_DEVICE_PATH_PROTOCOL* HandlePath := null
+		SystemTable->BootServices->HandleProtocol(Next, EFI_DEVICE_PATH_PROTOCOL_GUID, &HandlePath As void**)
+
+		i16* DeviceText := ToText->ConvertDevicePathToText(HandlePath, true, true)
+		Print("Block IO %i: %w\n", Index, DeviceText)
+		SystemTable->BootServices->FreePool(DeviceText)
+
+		EFI_DEVICE_PATH_PROTOCOL* Node := HandlePath
+
+		while !(Node->IsEndNode()) {
+			Print("Node: %x\n", Node)
+
+			i16* NodeText := ToText->ConvertDeviceNodeToText(Node, true, true)
+			Print("Node Text: %w\n", NodeText)
+
+			if (Node->Type = EFI_DEVICE_PATH_NODE_TYPE_MEDIA_DEVICE && Node->SubType = EFI_DEVICE_PATH_NODE_SUBTYPE_HARD_DRIVE) {
+				EFI_DEVICE_PATH_HARD_DRIVE_NODE* HardDrive := Node As void*
+
+				Print("Is Hard Drive\n")
+				Print("PartitionNumber: %i, PartitionFormat: %i, SignatureType: %i\n", HardDrive->PartitionNumber, HardDrive->PartitionFormat, HardDrive->SignatureType)
+
+				if (HardDrive->PartitionNumber != 0 && HardDrive->PartitionFormat = EFI_DEVICE_PATH_HARD_DRIVE_FORMAT_GPT && HardDrive->SignatureType = EFI_DEVICE_PATH_HARD_DRIVE_SIGNATURE_GPT_GUID) {
+					void* GUID := HardDrive->PartitionSignature
+					
+					Print("Partition %i: %guid\n", HardDrive->PartitionNumber, GUID)
+
+					if (CompareMemory(GUID, RootPartitionGUID, 16)) {
+						Print("Is root partition\n")
+						OSPartition := Next
+					}
+					else if (CompareMemory(GUID, EFISystemPartitionGUID, 16)) {
+						Print("Is EFI system partition\n")
+						SystemPartition := Next
+					}
+				}
+			}
+
+			Node := Node->NextNode()
+		}
+
+		WaitKey()
+	}
+	
+	SystemTable->BootServices->FreePool(Handles)
+
 	;loop {}
 	
 	void* FrameBuffer := Graphics->Mode->FrameBufferBase
 	
 	Print("FrameBuffer @ %x\n", FrameBuffer)
 	
-	EFIBlockDeviceInstance* BootDisk := NewBlockDevice(null, &EFIBlockDevicePrototype) 
+	EFIBlockDeviceInstance* BootDisk := NewBlockDevice(null, &EFIBlockDevicePrototype)
 	SystemTable->BootServices->HandleProtocol(OSPartition, EFI_BLOCK_IO_PROTOCOL_GUID, BootDisk~>BlockIO As void**)
 	
 	Ext2* FS := Ext2:New(BootDisk->AsBlockDevice())
