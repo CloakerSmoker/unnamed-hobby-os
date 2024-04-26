@@ -1,0 +1,40 @@
+#Require "$/StringBase.rlx"
+
+define void ParseCommandLine(i8* CommandLine, i64* ArgC, i8** Args) {
+	i32 Length := StringLength(CommandLine)
+	i32 ArgCount := 0
+	
+	i32 CurrentArgStart := 0
+	
+	for (i32 Index := 0, Index < Length, Index += 1) {
+		i8 NextCharacter := CommandLine[Index]
+		
+		if (NextCharacter = ' ') {
+			Args[ArgCount] := CommandLine + CurrentArgStart
+			ArgCount += 1
+			
+			CommandLine[Index] := 0
+			
+			while (CommandLine[Index + 1] = ' ') {
+				Index += 1
+			}
+			
+			CurrentArgStart := Index + 1
+		}
+		else if (NextCharacter = '"') {
+			CurrentArgStart += 1
+			CommandLine[Index] := 0
+			
+			while (CommandLine[Index] != '"') {
+				Index += 1
+			}
+			
+			CommandLine[Index] := 0
+		}
+	}
+	
+	Args[ArgCount] := CommandLine + CurrentArgStart
+	ArgCount += 1
+	
+	ArgC[0] := ArgCount
+}

@@ -71,14 +71,16 @@ gpt /dev/loop0 set partition 0 start 10M
 gpt /dev/loop0 set partition 0 end 50M
 gpt /dev/loop0 set partition 0 name "EFI System"
 gpt /dev/loop0 set partition 0 type system
-gpt /dev/loop0 set partition 0 guid random
+#gpt /dev/loop0 set partition 0 guid random
+gpt /dev/loop0 set partition 0 guid {4D5DA455-8101-EDEF-B110-1E59234ABFDF}
 
 gpt /dev/loop0 create 1
 gpt /dev/loop0 set partition 1 start 51M
 gpt /dev/loop0 set partition 1 end 127M
 gpt /dev/loop0 set partition 1 name "Boot"
 gpt /dev/loop0 set partition 1 type custom
-gpt /dev/loop0 set partition 1 guid random
+#gpt /dev/loop0 set partition 1 guid random
+gpt /dev/loop0 set partition 1 guid {E8AB429D-FF25-7E05-9F30-B0C209E4F834}
 
 gpt /dev/loop0 show partitions
 
@@ -107,6 +109,19 @@ endef
 
 export MAKE_DISK_SCRIPT
 
+define MAKE_USB_SCRIPT =
+dd bs=1M count=128M if=/host/build/Disk.img of=/host/build/USB.img
+
+loop open /host/build/USB.img
+
+gpt /dev/loop0 set partition 0 type {EBD0A0A2-B9E5-4433-87C0-68B6B72699C7}
+gpt /dev/loop0 set partition 0 name "Main Data Partition"
+
+exit
+endef
+
+export MAKE_USB_SCRIPT
+
 define GET_GUIDS_SCRIPT =
 loop open /host/build/Disk.img
 @echo "--efi-system-guid "
@@ -131,6 +146,7 @@ $(BUILD)/Disk.img:
 	echo "$$GET_GUIDS_SCRIPT" | tr '\1' '\n' | $(BUILD)/HostFileShell.elf --silent | tr '\n' ' ' > $(BUILD)/KernelCommandLine.txt
 	
 	$(BUILD)/FAT32Tool.elf "File($@,512)>GPT(0)" \
+		"disklabel HOS-BOOT" \
 		"mkdir EFI" \
 		"cd EFI" \
 		"mkdir BOOT" \
@@ -147,6 +163,8 @@ $(BUILD)/Disk.img:
 		"hard-link console tty1" \
 		"mknod pc-speaker c 10 129" \
 		"quit"
+	
+	echo "$$MAKE_USB_SCRIPT" | tr '\1' '\n' | $(BUILD)/HostFileShell.elf --script
 
 LIGHT_CLEAN_FILES+= $(BUILD)/Disk.img
 
@@ -290,7 +308,8 @@ all: Disk.qcow2
 
 STDIO=serial
 QEMU?=qemu-system-x86_64
-QEMU_FLAGS=-machine q35 -bios misc/files/OVMF.fd -hda Disk.qcow2 -$(STDIO) stdio --cpu max,la57=off
+QEMU_FLAGS=-machine q35 -bios misc/files/OVMF.fd $(DISK_FLAGS) -$(STDIO) stdio --cpu max,la57=off
+DISK_FLAGS=-hda Disk.qcow2
 DEBUG_FLAGS=
 
 ifneq (,$(findstring gdb,$(flags)))
@@ -325,6 +344,10 @@ endif
 
 ifneq (,$(findstring net-capture,$(flags)))
 	QEMU_FLAGS+=-object filter-dump,id=f1,netdev=hub0port0,file=dump.pcap
+endif
+
+ifneq (,$(findstring usb,$(flags)))
+	DISK_FLAGS:=-drive if=none,id=stick,format=raw,file=build/USB.img -device nec-usb-xhci,id=xhci -device usb-storage,bus=xhci.0,drive=stick
 endif
 
 boot: Disk.qcow2

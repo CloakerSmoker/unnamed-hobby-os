@@ -61,6 +61,34 @@ struct EFI_FILE_PROTOCOL {
 	}
 }
 
+i8 EFI_DEVICE_PATH_NODE_TYPE_HARDWARE_DEVICE := 0x1
+i8 EFI_DEVICE_PATH_NODE_TYPE_ACPI_DEVICE := 0x2
+i8 EFI_DEVICE_PATH_NODE_TYPE_MESSAGING_DEVICE := 0x3
+i8 EFI_DEVICE_PATH_NODE_TYPE_MEDIA_DEVICE := 0x4
+
+i8 EFI_DEVICE_PATH_NODE_SUBTYPE_PCI := 1
+i8 EFI_DEVICE_PATH_NODE_SUBTYPE_HARD_DRIVE := 1
+
+struct EFI_DEVICE_PATH_HARD_DRIVE_NODE {
+	i8 Type
+	i8 SubType
+	i16 Length
+	i32 PartitionNumber
+	i64 PartitionLBA
+	i64 PartitionSize
+
+	i8[16] PartitionSignature
+	i8 PartitionFormat
+	i8 SignatureType
+}
+
+i8 EFI_DEVICE_PATH_HARD_DRIVE_FORMAT_MBR := 1
+i8 EFI_DEVICE_PATH_HARD_DRIVE_FORMAT_GPT := 2
+
+i8 EFI_DEVICE_PATH_HARD_DRIVE_SIGNATURE_NONE := 0
+i8 EFI_DEVICE_PATH_HARD_DRIVE_SIGNATURE_MBR_ID := 1
+i8 EFI_DEVICE_PATH_HARD_DRIVE_SIGNATURE_GPT_GUID := 2
+
 define void Info(i8* Format, ... Parameters) {
 	
 }
@@ -70,6 +98,11 @@ declare i64 EFIMain(EFI_HANDLE*, EFI_SYSTEM_TABLE*)
 define void OnEFIException(i32 ExceptionType, EFI_SYSTEM_CONTEXT_X64* Context) x64 {
 	Print("Unhandled EFI exception %x\n", ExceptionType)
 	PrintStackDump(Context->RBP As void*)
+}
+
+define void WaitKey() {
+	SYSTEM_TABLE->ConsoleInput->Reset()
+	SYSTEM_TABLE->BootServices->WaitForEvent(SYSTEM_TABLE->ConsoleInput->WaitForKey)
 }
 
 define i64 Main(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) x64 {
