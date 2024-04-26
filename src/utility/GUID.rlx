@@ -3,19 +3,19 @@ define void DoGUIDPrint(PrintOutputAdapterPrototype* this, i8* Format, i32* Form
 	
 	this->Print("{")
 	
-	for (i32 Index := 0, Index < 4, Index++) {
+	for (i32 Index := 3, Index >= 0, Index--) {
 		this->PrintByte(GUID[Index])
 	}
 	
 	this->Print("-")
 	
-	for (i32 Index := 4, Index < 6, Index++) {
+	for (i32 Index := 5, Index >= 4, Index--) {
 		this->PrintByte(GUID[Index])
 	}
 	
 	this->Print("-")
 	
-	for (i32 Index := 6, Index < 8, Index++) {
+	for (i32 Index := 7, Index >= 6, Index--) {
 		this->PrintByte(GUID[Index])
 	}
 	
@@ -112,7 +112,7 @@ struct GUIDReader {
             Wrapped := true
         }
 
-        for (i32 Index := 0, Index < 4, Index++) {
+        for (i32 Index := 3, Index >= 0, Index--) {
             if !(this->ReadByte(&Out[Index])) {
                 return false
             }
@@ -122,7 +122,7 @@ struct GUIDReader {
             return false
         }
 
-        for (i32 Index := 4, Index < 6, Index++) {
+        for (i32 Index := 5, Index >= 4, Index--) {
             if !(this->ReadByte(&Out[Index])) {
                 return false
             }
@@ -132,7 +132,7 @@ struct GUIDReader {
             return false
         }
 
-        for (i32 Index := 6, Index < 8, Index++) {
+        for (i32 Index := 7, Index >= 6, Index--) {
             if !(this->ReadByte(&Out[Index])) {
                 return false
             }
