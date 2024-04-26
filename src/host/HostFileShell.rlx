@@ -22,10 +22,16 @@ define void Info(i8* Format, ... Args) {
 
 #Require "./src/kernel/file-system/VFS/Root.rlx"
 
-define IDirectory* OpenHostDirectory(i8* Path) {
+define IDirectory* OpenHostDirectory(i8* Path, i8 ReadOnly) {
     i64 Handle := FileOpen(Path, FILE_READ)
 
-    return VFSHostDirectory:New(Handle)
+    return VFSHostDirectory:New(Handle, ReadOnly)
+}
+
+define IFile* OpenHostFile(i8* Path, i8 ReadOnly) {
+    i64 Handle := FileOpen(Path, FILE_READ)
+
+    return VFSHostFile:New(Handle, ReadOnly)
 }
 
 IDirectory* CurrentDirectory := null
@@ -71,20 +77,25 @@ define void Main(i64 _ArgC, i8** _ArgV) {
     i8 ScriptedInput := false
     i8 SilentMode := false
 
-    if (_ArgC = 2) {
-        if (StringEquals(_ArgV[1], "--script")) {
+    PointerArray* HostDeviceFilePaths := PointerArray:New()
+
+    for (i32 Index := 1, Index < _ArgC, Index++) {
+        i8* Arg := _ArgV[Index]
+
+        if (StringEquals(Arg, "--script")) {
             ScriptedInput := true
         }
-        else if (StringEquals(_ArgV[1], "--silent")) {
+        else if (StringEquals(Arg, "--silent")) {
             SilentMode := true
         }
-    }
-    else if (_ArgC = 3) {
-        if (StringEquals(_ArgV[1], "--script-file")) {
+        else if (StringEquals(Arg, "--script-file")) {
             ScriptedInput := true
-            ScriptFile := _ArgV[2]
+            ScriptFile := _ArgV[++Index]
 
             STDIN := FileOpen(ScriptFile, FILE_READ)
+        }
+        else if (StringEquals(Arg, "--host-device")) {
+            HostDeviceFilePaths->Push(_ArgV[++Index])
         }
     }
 
@@ -107,7 +118,26 @@ define void Main(i64 _ArgC, i8** _ArgV) {
 
     DevicesDirectory->Insert(&Entry)
 
-    Mount(Root, "/host", OpenHostDirectory("."))
+    i32 Count := HostDeviceFilePaths->Count()
+
+    for (i32 Index := 0, Index < Count, Index++) {
+        i8* HostDeviceName := HostDeviceFilePaths->At(Index)
+
+        i8* HostDeviceFilePath := FormatString("/dev/%s", HostDeviceName)
+        IFile* HostDeviceFile := OpenHostFile(HostDeviceFilePath, true)
+
+        VFSDirectoryEntry HostDeviceEntry {
+            Type: VFSDirectoryEntryType::File,
+            Name: HostDeviceName,
+            File: HostDeviceFile
+        }
+
+        DevicesDirectory->Insert(&HostDeviceEntry)
+    }
+
+    IDirectory* HostDirectory := OpenHostDirectory(".", false)
+
+    Mount(Root, "/host", HostDirectory)
 
     CurrentDirectory := VFSRootDirectory
 
