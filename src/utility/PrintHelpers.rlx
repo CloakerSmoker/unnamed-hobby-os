@@ -105,3 +105,77 @@ PrintFormatPrototype SpecificStackDumpFormatPrototype {
 }
 
 i32 SPECIFIC_STACK_DUMP_FORMAT_PROTOTYPE_ID := AddPrintFormat(&SpecificStackDumpFormatPrototype)
+
+define void PrintPadLeft(PrintOutputAdapterPrototype* this, i32 Length, i8* Format, ... Args) {
+	i32 ActualLength := RawFormatLength(Format, Args)
+
+	while (ActualLength < Length) {
+		this->PrintCharacter(' ')
+		ActualLength++
+	}
+
+	this->RawPrint(Format, Args)
+}
+
+define void DoContextDump(PrintOutputAdapterPrototype* this, i8* Format, i32* FormatIndex, void* Parameters, i32 ParameterCount, i32* ParameterIndex) {
+	AMD64Context* Context := Parameters[*ParameterIndex] As void*
+
+	Print("RIP: ")
+	PrintPadLeft(this, 16, "%X", Context->RIP)
+	Print(" | FLG: ")
+	PrintPadLeft(this, 16, "%X", Context->Flags)
+	Print(" | CS : ")
+	PrintPadLeft(this, 16, "%X", Context->CS)
+	Print(" | SS : ")
+	PrintPadLeft(this, 16, "%X", Context->SS)
+	Print("\n")
+
+	Print("RAX: ")
+	PrintPadLeft(this, 16, "%X", Context->RAX)
+	Print(" | RBX: ")
+	PrintPadLeft(this, 16, "%X", Context->RBX)
+	Print(" | RCX: ")
+	PrintPadLeft(this, 16, "%X", Context->RCX)
+	Print(" | RDX: ")
+	PrintPadLeft(this, 16, "%X", Context->RDX)
+	Print("\n")
+
+	Print("RSI: ")
+	PrintPadLeft(this, 16, "%X", Context->RSI)
+	Print(" | RDI: ")
+	PrintPadLeft(this, 16, "%X", Context->RDI)
+	Print(" | RBP: ")
+	PrintPadLeft(this, 16, "%X", Context->RBP)
+	Print(" | RSP: ")
+	PrintPadLeft(this, 16, "%X", Context->RSP)
+	Print("\n")
+
+	Print("R8 : ")
+	PrintPadLeft(this, 16, "%X", Context->R8)
+	Print(" | R9 : ")
+	PrintPadLeft(this, 16, "%X", Context->R9)
+	Print(" | R10: ")
+	PrintPadLeft(this, 16, "%X", Context->R10)
+	Print(" | R11: ")
+	PrintPadLeft(this, 16, "%X", Context->R11)
+	Print("\n")
+
+	Print("R12: ")
+	PrintPadLeft(this, 16, "%X", Context->R12)
+	Print(" | R13: ")
+	PrintPadLeft(this, 16, "%X", Context->R13)
+	Print(" | R14: ")
+	PrintPadLeft(this, 16, "%X", Context->R14)
+	Print(" | R15: ")
+	PrintPadLeft(this, 16, "%X", Context->R15)
+	Print("\n")
+
+	*ParameterIndex += 1
+}
+
+PrintFormatPrototype ContextDumpFormatPrototype {
+	Name: "context",
+	Format: &DoContextDump
+}
+
+i32 CONTEXT_DUMP_FORMAT_PROTOTYPE_ID := AddPrintFormat(&ContextDumpFormatPrototype)

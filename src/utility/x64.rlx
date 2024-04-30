@@ -148,6 +148,9 @@ struct AMD64Context {
 		i32 EAX
 		i16 AX
 	}
+
+	i32 CS
+	i32 SS
 	
 	define AMD64Context* Zero() {
 		FastSetMemory8(this, 0, #AMD64Context)
