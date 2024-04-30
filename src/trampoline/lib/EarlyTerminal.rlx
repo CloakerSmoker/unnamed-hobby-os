@@ -1,0 +1,138 @@
+
+#Require "./src/utility/NE.rlx"
+#Require "./src/utility/FNT.rlx"
+#Require "./src/kernel/graphics/PixelBuffer.rlx"
+
+struct EarlyTerminal {
+    void* FontFileData
+    NEFile FontNE
+    NEResource* FontResource
+    FNTHeader* FNT
+
+    i32 X
+    i32 Y
+    i32 Width
+    i32 Height
+
+    PixelBuffer FrameBuffer
+
+    define void LoadFON(void* Data) {
+        NEFile* NE := this~>FontNE
+        
+        NE->Initialize(Data, 0)
+        
+        this->FontResource := NE->FindResource(NE_RESOURCE_TYPE_ID_FONT, 0)
+        this->FNT := NE->GetResourceData(this->FontResource)
+    }
+
+    define void SetFrameBuffer(void* FrameBuffer, PixelFormat* Format, i32 Width, i32 Height) {
+        this~>FrameBuffer->Initialize(FrameBuffer, Format, Width, Height)
+
+        this->Width := Width / this->FNT->PixelWidth
+        this->Height := Height / this->FNT->PixelHeight
+    }
+
+    define void Clear() {
+        this~>FrameBuffer->Clear(0x00_00_00)
+    }
+
+    define void DrawCharacter(i32 ScreenX, i32 ScreenY, i8 Character) {
+        PixelBuffer* FrameBuffer := this~>FrameBuffer
+        FNTHeader* FNT := this->FNT
+
+        if (Character = ' ') {
+            this~>FrameBuffer->DrawRectangle(ScreenX, ScreenY, FNT->PixelWidth, FNT->PixelHeight, 0x00_00_00)
+            return
+        }
+
+        i8* GlyphData := FNT->GetCharacterData(Character)
+        
+        i32 ColumnSize := FNT->PixelHeight
+        i32 ColumnBytes := FNT->PixelWidth / 8
+        
+        if (FNT->PixelWidth % 8) {
+            ColumnBytes += 1
+        }
+        
+        for (i32 Row := 0, Row < FNT->PixelHeight, Row++) {
+            i32 ActualColumn := 0
+            
+            for (i32 ColumnByte := 0, ColumnByte < ColumnBytes, ColumnByte++) {
+                i32 ColumnBase := (ColumnByte * ColumnSize) + Row
+                i8 ColumnData := GlyphData[ColumnBase]
+                
+                i32 ColumnEnd := 0
+                
+                if (ColumnByte + 1 = ColumnBytes && FNT->PixelWidth % 8) {
+                    ColumnEnd := 8 - (FNT->PixelWidth % 8)
+                }
+                
+                for (i32 Column := 7, Column >= ColumnEnd, Column--) {
+                    i32 Value := (ColumnData & (1 << (Column As i8))) != 0
+                    
+                    FrameBuffer->SetPixelColor(ScreenX + ActualColumn, ScreenY + Row, Value * 0xFF_FF_FF)
+                    
+                    ActualColumn++
+                }
+            }
+        }
+    }
+
+    define void PrintCharacter(i8 Character) {
+        ;Print("Char: %x\n", Character)
+
+        ;this~>FrameBuffer->DrawRectangle(50 + (20 * this->X), 100, 20, 20 + (Character * 2), 0x00_FF_00)
+
+        if (Character = 0xD) {
+            ;Print("CR\n")
+
+            ; CR
+            this->X := 0
+        }
+        else if (Character = 0xA) {
+            ;Print("LF\n")
+
+            ; LF
+            this->Y += 1
+        }
+        else if (Character = 0x9) {
+            ; Tab
+            for (i32 Index := 0, Index < 4, Index++) {
+                this->PrintCharacter(' ')
+            }
+        }
+        else {
+            i32 ScreenX := this->X * this->FNT->PixelWidth 
+            i32 ScreenY := this->Y * this->FNT->PixelHeight
+
+            ;Print("DrawCharacter %i,%i => %i,%i\n", this->X, this->Y, ScreenX, ScreenY)
+            this->DrawCharacter(ScreenX, ScreenY, Character)
+
+            this->X += 1
+        }
+
+        if (this->X >= this->Width) {
+            this->X := 0
+            this->Y += 1
+        }
+
+        if (this->Y >= this->Height) {
+            this~>FrameBuffer->VerticalScroll(this->FNT->PixelHeight * -10, 0x00_00_00)
+            this->Y -= 10
+        }
+    }
+
+    define void PrintCharacters(i8* Characters, i32 Count) {
+        ;this~>FrameBuffer->DrawRectangle(400, 200, 200, 200, 0x00_00_FF)
+
+        i32 X := this->X
+        ;this~>FrameBuffer->DrawRectangle(200, 400, 200, 200, 0xFF_00_00 | (X + 255))
+
+        for (i32 Index := 0, Index < Count, Index++) {
+            i8 Character := Characters[Index]
+            ;this~>FrameBuffer->DrawRectangle(600, 200, 200, 200, 0xFF_00_FF)
+            ;this~>FrameBuffer->DrawRectangle(500 + (20 * this->X), 400, 20, 20 + (Character * 2), 0x00_FF_00)
+            this->PrintCharacter(Character)
+        }
+    }
+}

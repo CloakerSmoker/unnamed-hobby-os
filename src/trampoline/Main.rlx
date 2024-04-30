@@ -18,13 +18,15 @@ We need to get things set up for the kernel, mainly:
 
 */
 
-#ImageBase 0x400_0000
+#ImageBase 0x80_0000
+void* TRAMPOLINE_ADDRESS := 0x80_0000 As void*
 
 #Require "$/MemoryBase.rlx"
 
 #Require "@/PrintBase.rlx"
 #Require "@/ExceptionBase.rlx"
 
+#Require "./src/bootloader/BootInfo.rlx"
 #Require "./src/trampoline/Info.rlx"
 
 #Require "./src/kernel/Config.rlx"
@@ -37,7 +39,7 @@ define i64 IdentityVirtualToPhysical(void* Pointer) {
 
 declare void MainContinuation(TrampolineInfo*)
 
-define void Main(BootInfo* RawInfo) {
+define void Main(BootloaderInfo* RawInfo) {
     ; nuke IDT to kill TianoCore
 
     asm {
@@ -50,22 +52,41 @@ define void Main(BootInfo* RawInfo) {
 		pop, rax
 	}
 
+    FastZeroMemory(&COM_0, #SerialPort)
+    FastZeroMemory(&Terminal, #EarlyTerminal)
+
     COM_0.Initialize(COM_PORT_0, COM_DIVISOR_115200, COM_LINE_8N1)
 
-    Print("sup\n")
+    Terminal.LoadFON(i8[#File "./misc/fonts/OlivettiThin_8x14.fon"])
+    Terminal.SetFrameBuffer(RawInfo->PhysicalFrameBuffer As void*, RGB32, 1024, 768)
+    Terminal.Clear()
 
     ; Usable memory = (TOTAL_MEMORY - FIRST_USABLE_PHYSICAL_ADDRESS)
     i32 UsablePages := SizeToPageCount(TOTAL_MEMORY) - SizeToPageCount(FIRST_USABLE_PHYSICAL_ADDRESS As i32)
 
-    Print("Usable Memory: %i pages\n", UsablePages)
+    Print("Usable Memory: %x pages\n", UsablePages)
 
     PageHeap* PhysicalMemory := PageHeap:Adopt(FIRST_USABLE_PHYSICAL_ADDRESS, UsablePages)
+    
+    Print("Adopted %x as physical memory allocator\n")
+
+    PhysicalMemory->FreeAll()
+
+    Print("Zeroed allocation map\n")
+
+    i64 TrampolineBytes := RawInfo->TrampolineMaxAddress - (TRAMPOLINE_ADDRESS As i64)
+    i32 TrampolinePages := SizeToPageCount(TrampolineBytes As i32)
+
+    Print("Reserving %x - %x for trampoline\n", TRAMPOLINE_ADDRESS, TRAMPOLINE_ADDRESS + (TrampolinePages * PAGE_SIZE))
+
+    PhysicalMemory->Reserve(TRAMPOLINE_ADDRESS As i64, TrampolinePages)
 
     ;PhysicalMemory->Reserve(0xA_0000, SizeToPageCount(0x2_0000))
 
     ; Allocate the TrampolineInfo (and populate it from the BootInfo)
 
     TrampolineInfo* Info := PhysicalMemory->AllocateVirtual(1)
+    FastZeroMemory(Info, PAGE_SIZE)
     MoveMemory(Info, RawInfo, #BootloaderInfo)
     BootloaderInfo* BootInfo := Info~>BootInfo
 
@@ -93,11 +114,17 @@ define void Main(BootInfo* RawInfo) {
     ; Set up the AddressSpaceManager
 
     void* PML4 := PhysicalMemory->AllocateVirtual(1)
+    FastZeroMemory(PML4, PAGE_SIZE)
 
     Print("PML4: %x\n", PML4)
 
     AddressSpaceManager* VirtualMemory := Info~>VirtualMemory
     VirtualMemory->Initialize(PML4, IdentityVirtualToPhysical(PML4), Physical)
+
+    ; Identity map the framebuffer
+    void* FrameBuffer := Info~>BootInfo->PhysicalFrameBuffer As void*
+
+    VirtualMemory->MapRange(FrameBuffer, IdentityVirtualToPhysical(FrameBuffer) / PAGE_SIZE, SizeToPageCount(1024 * 786 * 4), PAGE_PRESENT | PAGE_WRITE)
 
     ; Identity map low memory
     VirtualMemory->MapRange(FIRST_USABLE_PHYSICAL_ADDRESS, IdentityVirtualToPhysical(FIRST_USABLE_PHYSICAL_ADDRESS) / PAGE_SIZE, LOW_IDENTITY_MAP_SIZE, PAGE_PRESENT | PAGE_WRITE)
@@ -116,9 +143,14 @@ define void SetupHeap(TrampolineInfo* Info, void* VirtualAddress, i32 PageCount)
     i64 HeapPhysicalPages := Info->PhysicalMemory->Allocate(PageCount)
 
     Info~>VirtualMemory->MapRange(VirtualAddress, HeapPhysicalPages / PAGE_SIZE, PageCount, PAGE_PRESENT | PAGE_WRITE)
+    FastZeroMemory(VirtualAddress, PageCount * PAGE_SIZE)
 
     Info~>Heap->Initialize(VirtualAddress, PageCount * PAGE_SIZE)
+
+    Print("Heap Initialized\n")
     Info~>Heap->Bootstrap()
+
+    Print("Heap Bootstrapped!\n")
 }
 
 define void* MapKernel(TrampolineInfo* Info, void* KernelFileData, i32 KernelFileSize) {
@@ -193,6 +225,9 @@ define void MainContinuation(TrampolineInfo* Info) {
     Print("Kernel PreMain: %x\n", PreMain)
 
     PreMain(Info)
+
+    Print("Returned from PreMain\n")
+
     KernelEntryPoint(Info)
 
     loop {}

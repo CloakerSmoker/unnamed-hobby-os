@@ -11,15 +11,19 @@ define i8 IsSchedulerActive() {
 define void SchedulerYield() {}
 
 #Require "./src/drivers/SerialBase.rlx"
+#Require "./src/trampoline/lib/EarlyTerminal.rlx"
 
 SerialPort COM_0
+EarlyTerminal Terminal
 
 define void PrintCharacter(i8 Character) {
     COM_0.Write(&Character, 1)
+    Terminal.PrintCharacter(Character)
 }
 
 define void PrintCharacters(i8* Characters, i32 Count) {
     COM_0.Write(Characters, Count)
+    Terminal.PrintCharacters(Characters, Count)
 }
 
 define void Info(i8* Format, ... Args) {
