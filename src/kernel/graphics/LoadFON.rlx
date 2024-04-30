@@ -26,7 +26,10 @@ define Font* LoadFON(Font* Result, void* Data, i32 Size) {
 	i32 PagesForRenders := SizeToPageCount(BytesForRenders)
 	
 	Glyph* Glyphs := KernelPageAllocator->AllocateVirtual(1)
+	FastZeroMemory(Glyphs, PAGE_SIZE)
+
 	void* Renders := KernelPageAllocator->AllocateVirtual(PagesForRenders)
+	FastZeroMemory(Renders, PagesForRenders)
 	
 	for (i32 Index := 0, Index < 256, Index++) {
 		Glyph* Next := Glyphs[Index]
