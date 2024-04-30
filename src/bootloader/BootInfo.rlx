@@ -11,6 +11,8 @@ struct BootloaderInfo {
 
 	i8[256] KernelCommandLine
 
+	i64 TrampolineMaxAddress
+
 	void* KernelData
 	i32 KernelSize
 }
