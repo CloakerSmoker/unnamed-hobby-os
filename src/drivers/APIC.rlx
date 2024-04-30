@@ -148,6 +148,28 @@ i8  IO_APIC_ENTRY_DESTINATION_SHIFT := 56
 i64 IO_APIC_ENTRY_VECTOR_MASK       := 0xFF
 i8  IO_APIC_ENTRY_VECTOR_SHIFT      := 0
 
+i32 IO_APIC_REGISTER_ID := 0
+i32 IO_APIC_REGISTER_VERSION := 1
+i32 IO_APIC_REGISTER_ARBITRATION_ID := 2
+
+i32 IO_APIC_REGISTER_FIRST_IRQ := 0x10
+
+bits IOAPICRedirection As i64 {
+	[0:7] Vector
+	[8:10] DeliveryMode
+	[11] DestinationMode
+	[12] DeliveryStatus
+	[13] PinPolarity
+	[14] RemoteIRR
+	[15] TriggerMode
+	[16] Mask
+	[56:63] Destination
+
+	define void Print() {
+		Print("%B %B %B %B %B %B %B %B %B", this.Vector, this.DeliveryMode, this.DestinationMode, this.DeliveryStatus, this.PinPolarity, this.RemoteIRR, this.TriggerMode, this.Mask, this.Destination)
+	}
+}
+
 struct IOAPIC {
 	i64 PhysicalMMIO
 	
@@ -222,6 +244,25 @@ struct IOAPIC {
 		Old |= (Vector As i64) << IO_APIC_ENTRY_VECTOR_SHIFT
 		
 		this->WriteVector(Index, Old)
+	}
+
+	define void DumpMappings() {
+		i32 Version := this->Read(IO_APIC_REGISTER_VERSION)
+
+		i32 MaxRedirectionEntry := (Version >> 16) & 0xFF
+
+		Print("%i Total Redirection Entries:\n", MaxRedirectionEntry)
+
+		for (i32 Index := 0, Index < MaxRedirectionEntry, Index++) {
+			i64 Vector := this->ReadVector(Index)
+
+			Print("Vector %i: ", Index)
+
+			IOAPICRedirection Redirection := Vector As IOAPICRedirection
+
+			Redirection.Print()
+			Print("\n")
+		}
 	}
 	
 	define void Setup() {
