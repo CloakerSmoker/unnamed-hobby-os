@@ -206,16 +206,15 @@ define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Devic
 	Print("\n")
 
 	if (Device->Status & PCI_STATUS_REGISTER_HAS_CAPABILITIES) {
+		Print("\tHas Capabilities\n")
 		;Print("\tCaps @ %x\n", Device->CapabilitiesPointer)
 		;Print("\tOffset %x + %x\n", Device, (Device~>CapabilitiesPointer As i64) - (Device As i64))
 		;Print("\tOffset %x + %x\n", Device, (Device~>FirstCapability As i64) - (Device As i64))
 
-		Info("%x/%x/%x\n", Bus, Slot, Function)
-
 		PCICapability* Current := Device->FirstPCICapability()
 
 		loop {
-			Info("\tHas capability %x\n", Current->ID & 0xFF)
+			Print("\tHas capability %x\n", Current->ID & 0xFF)
 
 			if (Current->Next = 0) {
 				break
@@ -224,7 +223,7 @@ define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Devic
 			Current := Device->NextPCICapability(Current)
 		}
 
-		;Print("%x %x\n", Device->ClassCode, Device->SubClass)
+		Print("\t\t%x %x\n", Device->ClassCode, Device->SubClass)
 
 		if (Device->ClassCode = PCI_CLASS_CODE_NETWORK_CONTROLLER && Device->SubClass = PCI_SUBCLASS_NETWORK_ETHERNET) {
 			Print("Network interface %x:%x\n", Device->VendorID, Device->DeviceID)
@@ -242,7 +241,7 @@ define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Devic
 			}
 		}
 		else if (Device->ClassCode = PCI_CLASS_CODE_MASS_STORAGE_CONTROLLER && Device->SubClass = PCI_SUBCLASS_SATA_CONTROLLER) {
-			Info("SATA Controller found:\n%hexdump\n", Device, 0x40)
+			Print("SATA Controller found:\n%hexdump\n", Device, 0x40)
 
 			Info("SATA Controller %x:%x\n", Device->VendorID, Device->DeviceID)
 			Info("Supports MSI? %i\n", Device->CanUseMSI())
@@ -500,6 +499,7 @@ define void Main(TrampolineInfo* Info) {
 	
 	i64 KernelPages := PhysicalMemory->Allocate(NUMBER_OF_KERNEL_PAGES)
 	KernelAddressSpace->MapRange(ADDRESS_OF_KERNEL_PAGES, KernelPages / PAGE_SIZE, NUMBER_OF_KERNEL_PAGES, PAGE_PRESENT | PAGE_WRITE)
+	FastZeroMemory(ADDRESS_OF_KERNEL_PAGES, NUMBER_OF_KERNEL_PAGES * PAGE_SIZE)
 	KernelPageAllocator := PageHeap:Adopt(ADDRESS_OF_KERNEL_PAGES, NUMBER_OF_KERNEL_PAGES)
 	
 	Info("Built kernel virtual allocator\n")
@@ -544,6 +544,8 @@ define void Main(TrampolineInfo* Info) {
 	SetPITMode(PIT_100HZ)
 	SetupTimers()
 	RegisterSerialInterrupts()
+
+	;EnableInterrupts()
 	
 	Print("Set up PIT/timers/serial\n")
 	
@@ -554,13 +556,27 @@ define void Main(TrampolineInfo* Info) {
 	VFSDevicesDirectory := VFSDirectory:New()
 	Mount(null, "/dev", VFSDevicesDirectory)
 
+	Print("Created /dev\n")
+
 	Network := NetworkStack:New()
 
 	Network->AddInterface(MakeLoopbackNetworkInterface(IPv4("127.0.0.1")))
 
+	Print("Created loopback interface\n")
+
+	Print("Enumerating PCIe devices:\n")
+
+	;loop {}
+
+	;i32 Y := StringLength(RootPartitionGUID) / 0
+
+	;loop {}
+
 	EnableInterrupts()
 	InitializePCIe(&VisitPCIeFunction)
 	DisableInterrupts()
+
+	Print("Done enumerating PCIe\n")
 
 	;/*
 	if (SATAController = null) {

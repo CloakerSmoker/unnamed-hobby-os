@@ -231,6 +231,8 @@ struct PalHeap {
     define PalFreeListEntry* PreAllocate(i32 Size) {
         i32 Rank := this->PowerForSize(Size)
 
+        ;Print("PreAllocate %x %i (rank %i)\n", Size, Size, Rank)
+
         ;Print("\nAllocating %x bytes (rank %i)\n", Size, Rank)
 
         if (this->Ranks[Rank] != null) {
@@ -363,7 +365,11 @@ struct PalHeap {
     define void Bootstrap() {
         i32 MaximumChunks := this->Size / PAL_RANK_MINIMUM
 
+        ;Print("MaximumChunks: %x\n", MaximumChunks)
+
         PalFreeListEntry* MetadataEntry := this->PreAllocate(MaximumChunks)
+
+        ;Print("MetadataEntry: %x\n", MetadataEntry)
 
         this->AllocationMap := MetadataEntry As void*
 
