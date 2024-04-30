@@ -32,6 +32,8 @@ define void InterruptCodeSetup() asm {
 	mov, {rdi} As i64*, rbx        ; Context.RIP = rbx
 	
 	pop, rbx                       ; Pop CS
+	mov, {rdi + AMD64Context.CS} As i32*, ebx
+
 	pop, rbx                       ; Pop RFLAGS
 	mov, {rdi + 0x80} As i64*, rbx ; Context.Flags = rbx
 	
@@ -39,6 +41,7 @@ define void InterruptCodeSetup() asm {
 	mov, {rdi + 0x20} As i64*, rbx ; Context.RSP = rbx
 	
 	pop, rbx                       ; Pop SS
+	mov, {rdi + AMD64Context.SS} As i32*, ebx
 	
 	jmp, rax
 }
@@ -73,12 +76,16 @@ define void InterruptSetup() asm {
 	mov, {rdi} As i64*, rbx        ; Context.RIP = rax
 	
 	pop, rbx                       ; Pop CS
+	mov, {rdi + AMD64Context.CS} As i32*, ebx
 	
 	pop, rbx                       ; Pop RFLAGS
 	mov, {rdi + 0x80} As i64*, rbx ; Context.Flags = rax
 	
 	pop, rbx                       ; Pop RSP
 	mov, {rdi + 0x20} As i64*, rbx ; Context.RSP = rax
+
+	pop, rbx                       ; Pop SS
+	mov, {rdi + AMD64Context.SS} As i32*, ebx
 	
 	jmp, rax
 }
@@ -150,6 +157,10 @@ define void SetupInterrupts() {
 		
 		FirstIOAPIC->Initialize(BootInfo->IOAPICBase, 0)
 		FirstIOAPIC->Setup()
+
+		FirstIOAPIC->DumpMappings()
+
+		loop {}
 	}
 	
 	if (USE_INTERRUPT_STUBS) {
@@ -164,45 +175,49 @@ define void SetupInterrupts() {
 	}
 }
 
-define i8* InterruptToName(i32 Index) {
-	i8*[17] Names {
-		"divide-by-zero",
-		"debug",
-		"non-maskable-interrupt",
-		"breakpoint",
-		"overflow",
-		"bound-range",
-		"invalid-opcode",
-		"device-not-available",
-		"double-fault",
-		"reserved",
-		"invalid-TSS",
-		"segment-not-present",
-		"stack",
-		"general-protection",
-		"page-fault",
-		"reserved",
-		"x87 FPU"
-	}
-	
-	if (Index < 17) {
-		return Names[Index]
-	}
-	
-	return "unknown"
+enum AMD64InterruptNumber {
+	DivideByZero
+	Debug
+	NonMaskableInterrupt
+	Breakpoint
+	Overflow
+	BoundRange
+	InvalidOpcode
+	DeviceNotAvailable
+	DoubleFault
+	Reserved1
+	InvalidTSS
+	SegmentNotPresent
+	Stack
+	GeneralProtection
+	PageFault
+	Reserved2
+	FPU
 }
 
 i8 INTERRUPT_IS_FIRST_CHANCE := true
 
-define void GenericInterrupt(AMD64Context* Context, i32 InterruptNumber) {
+define void GenericInterrupt(AMD64Context* Context, i32 RawInterruptNumber) {
 	if !(INTERRUPT_IS_FIRST_CHANCE) {
 		asm {cli}
 		loop {}
 	}
 	
 	INTERRUPT_IS_FIRST_CHANCE := false
-	
-	Info("UNHANDLED INTERRUPT %s (%i %x)\n", InterruptToName(InterruptNumber), InterruptNumber, InterruptNumber)
+
+	AMD64InterruptNumber InterruptNumber := RawInterruptNumber As AMD64InterruptNumber
+
+	Print("^H1^SF\e[0J                      PANIC!!!! NOW!!!!!!!                  \n")
+	Print("                  %s\n", nameof:(InterruptNumber))
+
+	if (InterruptNumber = AMD64InterruptNumber::GeneralProtection) {
+		Print("%context", Context)
+		Print("Code Bytes (RIP %x):\n%hexdump\n", Context->RIP, Context->RIP, 15)
+	}
+
+	Print("%stackdump")
+
+	Halt()
 	
 	;Context->PrintContext()
 	;Context->PrintRegisters()
