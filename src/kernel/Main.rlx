@@ -130,6 +130,14 @@ PixelBuffer* PrimaryDisplay
 declare void SchedulerYield()
 
 #Require "./src/kernel/core/Interrupts.rlx"
+
+#Require "./src/kernel/time/Tick.rlx"
+#Require "./src/kernel/time/Sleep.rlx"
+
+#Require "./src/drivers/HPET.rlx"
+HPETDriver::HPET* HPET := null
+#Require "./src/kernel/time/sources/HPET.rlx"
+
 #Require "./src/kernel/core/Devices.rlx"
 
 #Require "./src/kernel/multitasking/Tasks.rlx"
@@ -541,11 +549,21 @@ define void Main(TrampolineInfo* Info) {
 	
 	SetupInterrupts()
 	
-	SetPITMode(PIT_100HZ)
+	if (BootInfo->HPETBase) {
+		UseHPETSystemClock(10)
+	}
+	else {
+	}
+
+
+	EnableInterrupts()
+
+	;loop {}
+
 	SetupTimers()
 	RegisterSerialInterrupts()
 
-	;EnableInterrupts()
+	EnableInterrupts()
 	
 	Print("Set up PIT/timers/serial\n")
 	

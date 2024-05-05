@@ -167,15 +167,6 @@ define void OnCommand(i8* CommandLine) {
 			KernelPageAllocator->FreeVirtual(FileData, 1)
 		}
 	}
-	else if (StringEquals(Command, "reset_time")) {
-		asm {cli}
-		
-		PITWhole := 0
-		PITFraction := 0
-		TickCount := 0
-		
-		asm {sti}
-	}
 	else if (StringEquals(Command, "clear")) {
 		Print("\e[H\e[J")
 	}

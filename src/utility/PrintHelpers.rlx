@@ -179,3 +179,48 @@ PrintFormatPrototype ContextDumpFormatPrototype {
 }
 
 i32 CONTEXT_DUMP_FORMAT_PROTOTYPE_ID := AddPrintFormat(&ContextDumpFormatPrototype)
+
+define void DoEasyIntegerFormat(PrintOutputAdapterPrototype* this, i8* Format, i32* FormatIndex, void* Parameters, i32 ParameterCount, i32* ParameterIndex) {
+	i64 Value := Parameters[*ParameterIndex] As i64
+	
+	i8[100] Buffer
+
+	i8 Sign := 0
+
+	if (Value < 0) {
+		Sign := true
+		Value := -Value
+	}
+
+	for (i32 Index := 0, Value != 0, Index += 1) {
+		Buffer[Index] := NumberToCharacter((Value % 10) As i8)
+		Value := Value / 10
+
+		if (Value != 0 && Index % 4 = 2) {
+			Buffer[++Index] := '_'
+		}
+	}
+
+	if (Index = 0) {
+		Buffer[0] := '0'
+		Index := 1
+	}
+
+	if (Sign) {
+		Buffer[++Index] := '-'
+	}
+
+	MemoryReverse(Buffer, Index)
+	Buffer[Index] := 0
+
+	this->Print("%s", Buffer)
+
+	*ParameterIndex += 1
+}
+
+PrintFormatPrototype EasyIntegerFormatPrototype {
+	Name: "ei",
+	Format: &DoEasyIntegerFormat
+}
+
+i32 EASY_INTEGER_FORMAT_PROTOTYPE_ID := AddPrintFormat(&EasyIntegerFormatPrototype)
