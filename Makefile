@@ -283,10 +283,10 @@ LIGHT_CLEAN_FILES+= $(BUILD)/Beep.elf $(BUILD)/Beep.d
 
 # Generated
 
-./src/kernel/core/%.rlx: ./src/kernel/core/generated/%.py
+./src/kernel/core/generated/%.rlx: ./src/kernel/core/generated/%.py
 	python3 $^
 
-gen: kernel/core/*.rlx
+gen: ./src/kernel/core/generated/*.rlx
 
 # Helper targets
 
@@ -308,7 +308,7 @@ all: Disk.qcow2
 
 STDIO=serial
 QEMU?=qemu-system-x86_64
-QEMU_FLAGS=-machine q35 -bios misc/files/OVMF.fd $(DISK_FLAGS) -$(STDIO) stdio --cpu max,la57=off
+QEMU_FLAGS=-machine q35 -bios misc/files/OVMF.fd $(DISK_FLAGS) -$(STDIO) stdio --cpu max,la57=off -global hpet.msi=true
 DISK_FLAGS=-hda Disk.qcow2
 DEBUG_FLAGS=
 
@@ -348,6 +348,14 @@ endif
 
 ifneq (,$(findstring usb,$(flags)))
 	DISK_FLAGS:=-drive if=none,id=stick,format=raw,file=build/USB.img -device nec-usb-xhci,id=xhci -device usb-storage,bus=xhci.0,drive=stick
+endif
+
+ifneq (,$(findstring dry,$(flags)))
+	QEMU:=echo $(QEMU)
+endif
+
+ifneq (,$(findstring host-gdb,$(flags)))
+	QEMU:=gdb -q --args $(QEMU)
 endif
 
 boot: Disk.qcow2
