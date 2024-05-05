@@ -1,9 +1,5 @@
-
-i8 HPET_USES_IOAPIC := true
-i32 HPET_IOAPIC_IRQ := 0
-
 define void OnHPETInterrupt() {
-    Print("HPET!")
+    ;Print("HPET!")
 
     GenericTimerInterrupt()
 
@@ -18,9 +14,7 @@ define void OnHPETInterrupt() {
         }
     }
 
-    if (HPET_USES_IOAPIC) {
-        LocalAPIC->EOI()
-    }
+    LocalAPIC->EOI()
 }
 
 define void HPETInterrupt() asm {
@@ -31,16 +25,12 @@ define void HPETInterrupt() asm {
 
 declare void HangPITChannel(i8)
 
-define i8 UseHPETSystemClock(i32 HZ) {
+define i8 ConfigureHPETSystemClock(i32 HZ) {
     HangPITChannel(0)
 
     HPET := HPETDriver::HPET:New(BootInfo->HPETBase)
 
     Print("HPET Has %i Timers\n", HPET->TimerCount)
-
-    i8 MSI := false
-    i32 CandidateTimer := -1
-    i32 CandidateIRQ := -1
 
     for (i32 Index := 0, Index < HPET->TimerCount, Index++) {
         HPETDriver::TimerRegisters* Registers := HPET->Timers[Index]
@@ -48,12 +38,6 @@ define i8 UseHPETSystemClock(i32 HZ) {
         Print("Timer %i supports:\n", Index)
         Print("\tPeriodic: %i\n", Registers->IsPeriodicSupported)
         Print("\tFSB Delivery: %i\n", Registers->IsFSBDeliverySupported)
-
-        if (CandidateTimer = -1 && Registers->IsPeriodicSupported && Registers->IsFSBDeliverySupported) {
-            ;FSB := true
-            ;CandidateTimer := Index
-        }
-
         Print("\tInterrupts: ")
 
         for (i32 Interrupt := 0, Interrupt < 24, Interrupt++) {
@@ -61,28 +45,52 @@ define i8 UseHPETSystemClock(i32 HZ) {
 
             if (Registers->SupportedIOAPICInterruptMask & Mask) {
                 Print("%i ", Interrupt)
-
-                if (CandidateTimer = -1 && Registers->IsPeriodicSupported) {
-                    if (Interrupt != 0 && Interrupt != 2 && Interrupt != 8) {
-                        CandidateTimer := Index
-                        CandidateIRQ := Interrupt
-                    }
-                }
             }
         }
 
         Print("\n")
     }
 
-    if (CandidateTimer = -1) {
-        Info("Can't find HPET candidate for system timer")
+    i8 MSI := false
+    i32 Timer := -1
+    i32 IRQ := -1
+
+    for (i32 Index := 0, Index < HPET->TimerCount, Index++) {
+        HPETDriver::TimerRegisters* Registers := HPET->Timers[Index]
+
+        if (HPET_CAN_USE_MSI_DELIVERY) {
+            if (Registers->IsPeriodicSupported && Registers->IsFSBDeliverySupported) {
+                MSI := true
+                Timer := Index
+                break
+            }
+        }
+
+        for (i32 Interrupt := 0, Interrupt < 24, Interrupt++) {
+            i32 Mask := 1 << Interrupt
+
+            if (Registers->SupportedIOAPICInterruptMask & Mask) {
+                if (Registers->IsPeriodicSupported) {
+                    if (Interrupt != 0 && Interrupt != 2 && Interrupt != 8) {
+                        Timer := Index
+                        IRQ := Interrupt
+                        break
+                    }
+                }
+            }
+        }
     }
 
-    if (FSB) {
-        Info("Best option is timer %i with FSB delivery to vector 0x30\n", CandidateTimer)
+    if (Timer = -1) {
+        Info("Can't find HPET candidate for system timer")
+        return false
+    }
+
+    if (MSI) {
+        Info("Best option is timer %i with FSB/MSI delivery to vector 0x30\n", Timer)
     }
     else {
-        Info("Best option is timer %i with IRQ #%i\n", CandidateTimer, CandidateIRQ)
+        Info("Best option is timer %i with IRQ #%i\n", Timer, IRQ)
     }
 
     i64 Base := HPET->GetBaseFrequency()
@@ -102,33 +110,30 @@ define i8 UseHPETSystemClock(i32 HZ) {
     HPET->Enable(false)
     HPET->Reset()
 
-    i32 Index := HPET->AllocateSpecificTimer(CandidateTimer)
+    HPET->AllocateSpecificTimer(Timer)
 
-    Info("Allocated Timer %i for system timer\n", Index)
+    Info("Allocated Timer %i for system timer\n", Timer)
 
     ;loop {}
 
-    HPET->MakePeriodic(Index, Period)
-    HPET->EnableTimerInterrupts(Index, false)
+    HPET->MakePeriodic(Timer, Period)
+    HPET->EnableTimerInterrupts(Timer, false)
 
     InsertIDTEntry(0x30, &HPETInterrupt, true)
 
-    if (FSB) {
-        HPET->ConnectFSBInterrupt(Index, LocalAPIC->ID, 0x30)
+    if (MSI) {
+        HPET->ConnectFSBInterrupt(Timer, LocalAPIC->ID, 0x30)
     }
     else {
-        HPET->ConnectIOAPICInterrupt(Index, CandidateIRQ)
+        HPET->ConnectIOAPICInterrupt(Timer, IRQ)
         
-        FirstIOAPIC->ForwardInterrupt(CandidateIRQ, LocalAPIC->ID, 0x30)
-        FirstIOAPIC->Mask(CandidateIRQ, false)
-
-        FirstIOAPIC->DumpMappings()
-        ;loop{}
+        FirstIOAPIC->ForwardInterrupt(IRQ, LocalAPIC->ID, 0x30)
+        FirstIOAPIC->Mask(IRQ, false)
     }
 
     Info("Enabling timer interrupts\n")
 
-    HPET->EnableTimerInterrupts(Index, true)
+    HPET->EnableTimerInterrupts(Timer, true)
 
     Info("Enabling CPU interrupts\n")
 

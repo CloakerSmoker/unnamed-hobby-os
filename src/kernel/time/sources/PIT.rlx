@@ -22,12 +22,18 @@ define void PITInterrupt() asm {
 	jmp, @InterruptReturn
 }
 
-define void UsePITSystemClock(PITCounterMode* Mode) {
-    InsertIDTEntry(0x20, &PITInterrupt, true)
-    EnablePICLine(0, true)
+define void ConfigurePITSystemClock(i32 HZ) {
+	if (HZ != 100) {
+		Info("WARNING: PIT System Clock only supports 100hz period\n")
+	}
 
-    CurrentPITMode := Mode
-    SetPITMode(Mode)
+	InsertIDTEntry(0x20, &PITInterrupt, true)
+
+	FirstIOAPIC->ForwardInterrupt(0x0, LocalAPIC->ID, 0x20)
+	FirstIOAPIC->Mask(0x0, false)
+
+    CurrentPITMode := PIT_100HZ
+    SetPITMode(PIT_100HZ)
 
     EnableInterrupts()
 }

@@ -14,8 +14,10 @@ i8 USE_INTERRUPT_STUBS := true
 i8 USE_PAGE_FAULT_HANDLER := false
 i8 RECOVER_FROM_USER_PAGE_FAULT := false
 
-i8 ALLOW_HPET_SYSTEM_CLOCK := true
-i8 ALLOW_HPET_MSI_DELIVERY := true
+i32 SYSTEM_CLOCK_HZ := 10
+
+i8 HPET_CAN_PROVIDE_SYSTEM_CLOCK := true
+i8 HPET_CAN_USE_MSI_DELIVERY := true
 
 i8 DEBUG_SCHEDULER         := false ; Logs task switches plus why
 i8 DEBUG_SLOW_CLOCK        := false ; Uses a very low clock speed to reduce output clutter

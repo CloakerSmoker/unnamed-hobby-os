@@ -138,6 +138,9 @@ declare void SchedulerYield()
 HPETDriver::HPET* HPET := null
 #Require "./src/kernel/time/sources/HPET.rlx"
 
+#Require "./src/drivers/PIT.rlx"
+#Require "./src/kernel/time/sources/PIT.rlx"
+
 #Require "./src/kernel/core/Devices.rlx"
 
 #Require "./src/kernel/multitasking/Tasks.rlx"
@@ -549,16 +552,20 @@ define void Main(TrampolineInfo* Info) {
 	
 	SetupInterrupts()
 	
+	i8 ClockRunning := false
+	
 	if (BootInfo->HPETBase) {
-		UseHPETSystemClock(10)
+		if (HPET_CAN_PROVIDE_SYSTEM_CLOCK && ConfigureHPETSystemClock(SYSTEM_CLOCK_HZ)) {
+			ClockRunning := true
+		}
 	}
-	else {
+
+	if !(ClockRunning) {
+		ConfigurePITSystemClock(SYSTEM_CLOCK_HZ)
+		ClockRunning := true
 	}
 
-
-	EnableInterrupts()
-
-	;loop {}
+	loop {}
 
 	SetupTimers()
 	RegisterSerialInterrupts()
