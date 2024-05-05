@@ -1,0 +1,33 @@
+PITCounterMode* CurrentPITMode := null
+
+i64 PITWhole 	:= 0 ; Number of milliseconds since the PIT was initialized
+i64 PITFraction := 0 ; Counter mode specific fraction, used to track sub-millisecond time since PITWhole is an integer
+
+define void OnPITInterrupt(InterruptContext* Context) {
+	GenericTimerInterrupt()
+
+	PITWhole += CurrentPITMode->WholePerTick
+	PITFraction += CurrentPITMode->FractionPerTick
+	
+	PITWhole += PITFraction / CurrentPITMode->FractionToWholeDivisor
+	PITFraction %= CurrentPITMode->FractionToWholeDivisor
+
+    TIME_UPTIME_MS := PITWhole
+	
+	SendEOI(0)
+}
+define void PITInterrupt() asm {
+	call, @InterruptSetup
+	call, @OnPITInterrupt
+	jmp, @InterruptReturn
+}
+
+define void UsePITSystemClock(PITCounterMode* Mode) {
+    InsertIDTEntry(0x20, &PITInterrupt, true)
+    EnablePICLine(0, true)
+
+    CurrentPITMode := Mode
+    SetPITMode(Mode)
+
+    EnableInterrupts()
+}

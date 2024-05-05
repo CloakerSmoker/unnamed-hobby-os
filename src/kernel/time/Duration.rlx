@@ -1,0 +1,39 @@
+
+
+i64 NANOSECOND_IN_FEMTOSECONDS  :=             1_000_000
+i64 MICROSCOND_IN_FEMTOSECONDS  :=         1_000_000_000
+i64 MILLISECOND_IN_FEMTOSECONDS :=     1_000_000_000_000
+i64 SECOND_IN_FEMTOSECONDS      := 1_000_000_000_000_000
+i64 MINUTE_IN_FEMTOSECONDS      := SECOND_IN_FEMTOSECONDS * 60
+i64 HOUR_IN_FEMTOSECONDS        := MINUTE_IN_FEMTOSECONDS * 60
+
+struct TimeDuration {
+    i64 Hours ; 0-23
+    i64 Minutes ; 0-59
+    i64 Seconds ; 0-59
+    i64 Milliseconds ; 0-999
+
+    define void FromFemtoseconds(i64 Femtoseconds) {
+        this->Hours := Femtoseconds / HOUR_IN_FEMTOSECONDS
+        Femtoseconds %= HOUR_IN_FEMTOSECONDS
+
+        this->Minutes := Femtoseconds / MINUTE_IN_FEMTOSECONDS
+        Femtoseconds %= MINUTE_IN_FEMTOSECONDS
+
+        this->Seconds := Femtoseconds / SECOND_IN_FEMTOSECONDS
+        Femtoseconds %= SECOND_IN_FEMTOSECONDS
+
+        this->Milliseconds := Femtoseconds / MILLISECOND_IN_FEMTOSECONDS
+    }
+
+    define i64 ToFemtoseconds() {
+        i64 Femtoseconds := 0
+
+        Femtoseconds += this->Hours * HOUR_IN_FEMTOSECONDS
+        Femtoseconds += this->Minutes * MINUTE_IN_FEMTOSECONDS
+        Femtoseconds += this->Seconds * SECOND_IN_FEMTOSECONDS
+        Femtoseconds += this->Milliseconds * MILLISECOND_IN_FEMTOSECONDS
+
+        return Femtoseconds
+    }
+}

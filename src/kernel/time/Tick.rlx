@@ -1,0 +1,29 @@
+
+
+
+i64 TIME_TICK_COUNT := 0
+i64 TIME_UPTIME_MS := 0
+
+define i64 GetTickCount() {
+	return TIME_TICK_COUNT
+}
+define i64 GetUptimeMS() {
+	return TIME_UPTIME_MS
+}
+
+#Require "./src/kernel/core/Events.rlx"
+
+Event* OnHardwareTimerTick := Event:New("Hardware Timer Tick")
+
+define void GenericTimerInterrupt() {
+    TIME_TICK_COUNT += 1
+
+    if (DEBUG_SLOW_CLOCK) {
+		if (TIME_TICK_COUNT % DEBUG_SLOW_CLOCK = 0) {
+			OnHardwareTimerTick->Fire(TIME_UPTIME_MS As void*)
+		}
+	}
+	else {
+		OnHardwareTimerTick->Fire(TIME_UPTIME_MS As void*)
+	}
+}
