@@ -1,0 +1,291 @@
+
+#Require "./src/drivers/MSI.rlx"
+#Require "./src/kernel/time/Duration.rlx"
+
+namespace HPETDriver {
+    struct TimerRegisters {
+        ; @ 0x0
+        bits As i32 {
+            [1] IsLevelTriggered
+            [2] EnableInterrupt
+            [3] EnablePeriodic
+            [4] IsPeriodicSupported
+            [5] Is64Bits
+            [6] SetPeriodicComparator
+            [8] Enable32BitMode
+            [9:13] IOAPICInterruptRoute
+            [14] EnableFSBDelivery
+            [15] IsFSBDeliverySupported
+        }
+
+        i32 SupportedIOAPICInterruptMask
+
+        ; @0x8
+        union {
+            i32 ComparatorLow
+            i32 AccumulatorLow
+        }
+
+        union {
+            i32 ComparatorHigh
+            i32 AccumulatorHigh
+        }
+
+        define void SplitHighLow(i64 Value, i32* Low, i32* High) {
+            Low[0] := (Value & 0xFFFF_FFFF) As i32
+            High[0] := ((Value >> 32) & 0xFFFF_FFFF) As i32
+        }
+
+        define void SetComparator(i64 Value) {
+            i32 Low := 0
+            i32 High := 0
+            this->SplitHighLow(Value, &Low, &High)
+
+            if (this->EnablePeriodic) {
+                this->SetPeriodicComparator := true
+                this->ComparatorLow := Low
+
+                this->SetPeriodicComparator := true
+                this->ComparatorHigh := High
+
+                this->SetPeriodicComparator := false
+            }
+            else {
+                this->ComparatorLow := Low
+                this->ComparatorHigh := High
+            }
+        }
+
+        define void SetPeriod(i64 Value) {
+            i32 Low := 0
+            i32 High := 0
+            this->SplitHighLow(Value, &Low, &High)
+
+            this->SetPeriodicComparator := false
+            this->AccumulatorLow := Low
+            this->AccumulatorHigh := High
+        }
+
+        ; 0x10
+        i32 FSBInterruptValue
+        i32 FSBInterruptAddress
+
+        ; 0x18
+        i64 _
+
+        define i8 IsIOAPICInterruptSupported(i32 Index) {
+            i32 Mask := 1 << Index
+
+            return (this->SupportedIOAPICInterruptMask & Mask) != 0
+        }
+    }
+
+    struct MainRegisters {
+        bits As i32 {
+            [0:7] RevisionID
+            [8:12] TimerCount
+            [13] CounterIs64Bit
+            [15] LegacyInterruptRoutingSupported
+            [16:31] VendorID
+        }
+
+        i32 MainCounterTickPeriod
+
+        i64 _
+
+        bits As i32 {
+            [0:1] Enable
+            [1:2] EnableLegacyInterruptRouting
+        }
+
+        i32 _
+
+        i64 _
+        
+        union {
+            i64 AllTimersInterruptStatus
+
+            bits As i64 {
+                [0] Timer0InterruptStatus
+                [1] Timer1InterruptStatus
+                [2] Timer2InterruptStatus
+            }
+        }
+
+        define i8 GetTimerInterruptStatus(i32 Index) {
+            i64 Mask := 1 << Index
+
+            return (this->AllTimersInterruptStatus & Mask) != 0
+        }
+        define void ClearTimerInterruptStatus(i32 Index) {
+            i64 Mask := 1 << Index
+
+            this->AllTimersInterruptStatus |= Mask
+        }
+
+        i64 _
+
+        i64[24] _
+
+        i64 MainCounterValue
+        i64 _
+
+        TimerRegisters[0] Timers
+    }
+
+    struct TimerAllocation {
+        i8 IsAllocated
+        i8 IsPeriodic
+
+        union {
+            i64 Period
+            i64 Cutoff
+        }
+    }
+
+    class HPET derives INew {
+        MainRegisters* IO
+        TimerRegisters* Timers
+        TimerAllocation[32] Allocations
+
+        i32 TimerCount
+
+        define void New(i64 PhysicalIO) {
+            void* IO := PhysicalIO As void*
+
+            KernelAddressSpace->MapRange(IO, PhysicalIO / PAGE_SIZE, 1, PAGE_PRESENT | PAGE_WRITE)
+
+            this->IO := IO
+            this->Timers := this->IO->Timers[0]
+
+            this->TimerCount := this->IO->TimerCount
+        }
+
+        define i32 GetBaseFrequency() {
+            return this->IO->MainCounterTickPeriod
+        }
+
+        define i8 IsEnabled() {
+            MainRegisters* Registers := this->IO
+
+            return Registers->Enable != 0
+        }
+        define void Enable(i8 Enabled) {
+            MainRegisters* Registers := this->IO
+
+            Registers->Enable := Enabled
+        }
+
+        define i8 IsInterruptSource() {
+            return this->IO->AllTimersInterruptStatus != 0
+        }
+
+        define i32 AllocateTimer(i8 Periodic, i8 UseFSB, i8 UseIOAPIC, i32 InterruptNumber) {
+            for (i32 Index := 0, Index < this->TimerCount, Index++) {
+                TimerRegisters* Registers := this->Timers[Index]
+                TimerAllocation* Allocation := this->Allocations[Index]
+
+                if (Allocation->IsAllocated) {
+                    continue
+                }
+
+                if (Periodic && !Registers->IsPeriodicSupported) {
+                    continue
+                }
+
+                if (UseFSB && !Registers->IsFSBDeliverySupported) {
+                    continue
+                }
+
+                if (UseIOAPIC && !Registers->IsIOAPICInterruptSupported(InterruptNumber)) {
+                    continue
+                }
+
+                Allocation->IsAllocated := true
+                Allocation->IsPeriodic := Periodic
+
+                return Index
+            }
+
+            return -1
+        }
+
+        define i32 AllocateSpecificTimer(i32 Index) {
+            this->Allocations[Index]->IsAllocated := true
+
+            return Index
+        }
+
+        define void ServiceInterrupt() {
+            for (i32 Index := 0, Index < this->TimerCount, Index++) {
+                if (this->IO->GetTimerInterruptStatus(Index)) {
+                    TimerRegisters* Registers := this->Timers[Index]
+                    TimerAllocation* Allocation := this->Allocations[Index]
+
+                    if !(Allocation->IsPeriodic) {
+                        Allocation->IsAllocated := false
+                        Registers->EnableInterrupt := false
+                    }
+
+                    this->IO->ClearTimerInterruptStatus(Index)
+                }
+            }
+        }
+
+        define void Reset() {
+            i8 Enabled := this->IsEnabled()
+            this->Enable(false)
+
+            i64 OldMainCounter := this->IO->MainCounterValue
+            this->IO->MainCounterValue := 0
+
+            for (i32 Index := 0, Index < this->TimerCount, Index++) {
+                TimerRegisters* Registers := this->Timers[Index]
+                
+                Registers->EnableInterrupt := false
+            }
+
+            this->Enable(Enabled)
+        }
+
+        define void MakePeriodic(i32 Index, i64 Period) {
+            i8 Enabled := this->IsEnabled()
+            this->Enable(false)
+
+            TimerRegisters* Registers := this->Timers[Index]
+            TimerAllocation* Allocation := this->Allocations[Index]
+
+            Allocation->Period := Period
+
+            Registers->EnablePeriodic := true
+            
+            Info("SetComparator\n")
+            Registers->SetComparator(Period)
+            Info("SetPeriod\n")
+            Registers->SetPeriod(Period)
+            Info("Done\n")
+
+            this->Enable(Enabled)
+        }
+
+        define void ConnectIOAPICInterrupt(i32 Index, i32 Interrupt) {
+            TimerRegisters* Registers := this->Timers[Index]
+
+            Registers->EnableFSBDelivery := false
+            Registers->IOAPICInterruptRoute := Interrupt As i8
+        }
+        define void ConnectFSBInterrupt(i32 Index, i8 LAPICID, i8 Vector) {
+            TimerRegisters* Registers := this->Timers[Index]
+
+            Registers->EnableFSBDelivery := true
+            Registers->FSBInterruptAddress := PackMSIAddress(LAPICID)
+            Registers->FSBInterruptValue := PackMSIData(Vector)
+        }
+
+        define void EnableTimerInterrupts(i32 Index, i8 Enable) {
+            TimerRegisters* Registers := this->Timers[Index]
+
+            Registers->EnableInterrupt := Enable
+        }
+    }
+}

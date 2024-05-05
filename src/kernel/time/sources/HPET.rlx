@@ -1,0 +1,144 @@
+
+i8 HPET_USES_IOAPIC := true
+i32 HPET_IOAPIC_IRQ := 0
+
+define void OnHPETInterrupt() {
+    Print("HPET!")
+
+    GenericTimerInterrupt()
+
+    i64 UptimeFS := TIME_TICK_COUNT * HPET->GetBaseFrequency()
+
+    TIME_UPTIME_MS := UptimeFS / MILLISECOND_IN_FEMTOSECONDS
+    i64 Remainder := UptimeFS % MILLISECOND_IN_FEMTOSECONDS
+
+    if (Remainder) {
+        if (Remainder >= (MILLISECOND_IN_FEMTOSECONDS / 2)) {
+            TIME_UPTIME_MS += 1
+        }
+    }
+
+    if (HPET_USES_IOAPIC) {
+        LocalAPIC->EOI()
+    }
+}
+
+define void HPETInterrupt() asm {
+    call, @InterruptSetup
+    call, @OnHPETInterrupt
+    jmp, @InterruptReturn
+}
+
+declare void HangPITChannel(i8)
+
+define i8 UseHPETSystemClock(i32 HZ) {
+    HangPITChannel(0)
+
+    HPET := HPETDriver::HPET:New(BootInfo->HPETBase)
+
+    Print("HPET Has %i Timers\n", HPET->TimerCount)
+
+    i8 MSI := false
+    i32 CandidateTimer := -1
+    i32 CandidateIRQ := -1
+
+    for (i32 Index := 0, Index < HPET->TimerCount, Index++) {
+        HPETDriver::TimerRegisters* Registers := HPET->Timers[Index]
+
+        Print("Timer %i supports:\n", Index)
+        Print("\tPeriodic: %i\n", Registers->IsPeriodicSupported)
+        Print("\tFSB Delivery: %i\n", Registers->IsFSBDeliverySupported)
+
+        if (CandidateTimer = -1 && Registers->IsPeriodicSupported && Registers->IsFSBDeliverySupported) {
+            ;FSB := true
+            ;CandidateTimer := Index
+        }
+
+        Print("\tInterrupts: ")
+
+        for (i32 Interrupt := 0, Interrupt < 24, Interrupt++) {
+            i32 Mask := 1 << Interrupt
+
+            if (Registers->SupportedIOAPICInterruptMask & Mask) {
+                Print("%i ", Interrupt)
+
+                if (CandidateTimer = -1 && Registers->IsPeriodicSupported) {
+                    if (Interrupt != 0 && Interrupt != 2 && Interrupt != 8) {
+                        CandidateTimer := Index
+                        CandidateIRQ := Interrupt
+                    }
+                }
+            }
+        }
+
+        Print("\n")
+    }
+
+    if (CandidateTimer = -1) {
+        Info("Can't find HPET candidate for system timer")
+    }
+
+    if (FSB) {
+        Info("Best option is timer %i with FSB delivery to vector 0x30\n", CandidateTimer)
+    }
+    else {
+        Info("Best option is timer %i with IRQ #%i\n", CandidateTimer, CandidateIRQ)
+    }
+
+    i64 Base := HPET->GetBaseFrequency()
+
+    Info("HPET Base Frequency: %eifs\n", Base)
+
+    i64 TicksPerMillisecond := MILLISECOND_IN_FEMTOSECONDS / Base
+    i64 TicksPerSecond := SECOND_IN_FEMTOSECONDS / Base
+    i64 Period := TicksPerSecond / HZ
+
+    Info("HPET Ticks:\n")
+    Info("\tPer MS: %ei\n", TicksPerMillisecond)
+    Info("\tPer  S: %ei\n", TicksPerSecond)
+
+    Info("For %ihz: %ei ticks\n", HZ, Period)
+
+    HPET->Enable(false)
+    HPET->Reset()
+
+    i32 Index := HPET->AllocateSpecificTimer(CandidateTimer)
+
+    Info("Allocated Timer %i for system timer\n", Index)
+
+    ;loop {}
+
+    HPET->MakePeriodic(Index, Period)
+    HPET->EnableTimerInterrupts(Index, false)
+
+    InsertIDTEntry(0x30, &HPETInterrupt, true)
+
+    if (FSB) {
+        HPET->ConnectFSBInterrupt(Index, LocalAPIC->ID, 0x30)
+    }
+    else {
+        HPET->ConnectIOAPICInterrupt(Index, CandidateIRQ)
+        
+        FirstIOAPIC->ForwardInterrupt(CandidateIRQ, LocalAPIC->ID, 0x30)
+        FirstIOAPIC->Mask(CandidateIRQ, false)
+
+        FirstIOAPIC->DumpMappings()
+        ;loop{}
+    }
+
+    Info("Enabling timer interrupts\n")
+
+    HPET->EnableTimerInterrupts(Index, true)
+
+    Info("Enabling CPU interrupts\n")
+
+    EnableInterrupts()
+
+    Info("Enabling HPET\n")
+
+    HPET->Enable(true)
+
+    loop {}
+
+    return true
+}
