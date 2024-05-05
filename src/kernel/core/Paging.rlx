@@ -143,7 +143,7 @@ struct AddressSpaceManager {
 	define i64 AllocatePageFrame() {
 		i64 Result := this->PhysicalAllocator->Allocate()
 
-		Info("Allocated %x for page frame\n", Result)
+		;Info("Allocated %x for page frame\n", Result)
 		FastZeroMemory(Result As void*, PAGE_SIZE)
 
 		return Result

@@ -26,6 +26,14 @@ struct Event {
 	EventListener* FirstListener
 	i8* Name
 	i32 FireCounter
+
+	static self* New(i8* Name) {
+		self* this := Alloc(#self)	
+
+		this->Name := Name
+
+		return this
+	}
 	
 	define EventListener* ListenMethod(EventState(void*, void*, Event*) Method, void* Parameter) {
 		EventListener* Result := Alloc(#EventListener)
