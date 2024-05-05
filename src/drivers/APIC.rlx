@@ -19,7 +19,7 @@ i32 APIC_REGISTER_INTERRUPT_REQUEST_BASE := 0x200
 i32 APIC_REGISTER_INTERRUPT_REQUEST_SIZE := 8
 
 i32 APIC_REGISTER_ERROR_STATUS := 0x280
-i32 APIC_REGISTER_MACHINE_CHECK := 0x2F0
+i32 APIC_REGISTER_LVT_MACHINE_CHECK := 0x2F0
 i32 APIC_REGISTER_INTERRUPT_COMMAND_1 := 0x300
 i32 APIC_REGISTER_INTERRUPT_COMMAND_2 := 0x310
 i32 APIC_REGISTER_LVT_TIMER := 0x320
@@ -51,6 +51,9 @@ i8 APIC_TRIGGER_MODE_SHIFT := 15
 i8 APIC_TRIGGER_MODE_EDGE  := 0
 i8 APIC_TRIGGER_MODE_LEVEL := 1
 
+i32 APIC_VECTOR_MASK := 0xFF
+i32 APIC_VECTOR_SHIFT := 0
+
 i32 APIC_MASKED  := 1 << 16
 
 declare void DisablePIC()
@@ -62,7 +65,7 @@ struct APIC {
 		void* MMIO
 	}
 	
-	i32 ID
+	i8 ID
 	
 	define i64 GetBase() {
 		return ReadMSR(X64_MSR_APIC_BASE) & X64_MSR_APIC_BASE_MASK
@@ -118,9 +121,9 @@ struct APIC {
 		this->EnableHardware()
 		DisablePIC()
 		
-		this->ID := this->Read(APIC_REGISTER_LOCAL_ID)
+		this->ID := this->Read(APIC_REGISTER_LOCAL_ID) As i8
 		
-		this->Set(APIC_REGISTER_SPURIOUS_VECTOR, 0x100)
+		this->Set(APIC_REGISTER_SPURIOUS_VECTOR, 0x1FF)
 		this->IsEnabled := true
 	}
 	
@@ -135,6 +138,45 @@ struct APIC {
 		
 		KernelAddressSpace->MapRange(MMIO, BasePage, 1, PAGE_PRESENT | PAGE_WRITE)
 	}
+
+	define void SetLVTEntryMask(i32 Address, i8 Mode) {
+		i32 Value := this->Read(Address)
+
+		if (Mode) {
+			Value |= APIC_MASKED
+		}
+		else {
+			Value &= ~APIC_MASKED
+		}
+
+		this->Write(Address, Value)
+	}
+
+	define void MaskAll(i8 Mask) {
+		this->SetLVTEntryMask(APIC_REGISTER_LVT_MACHINE_CHECK, Mask)
+		this->SetLVTEntryMask(APIC_REGISTER_LVT_TIMER, Mask)
+		this->SetLVTEntryMask(APIC_REGISTER_LVT_THERMAL_SENSOR, Mask)
+		this->SetLVTEntryMask(APIC_REGISTER_LVT_PERFORMANCE, Mask)
+		this->SetLVTEntryMask(APIC_REGISTER_LVT_LINT0, Mask)
+		this->SetLVTEntryMask(APIC_REGISTER_LVT_LINT1, Mask)
+		this->SetLVTEntryMask(APIC_REGISTER_LVT_ERROR, Mask)
+	}
+
+	define void DumpLVTEntry(i8* Name, i32 Offset) {
+		i32 Info := this->Read(Offset)
+
+		Print("LAPIC LVT Entry %s: Mask %i, Vector %x, Raw %b\n", Name, Info & APIC_MASKED != 0, Info & APIC_VECTOR_MASK, (Info As i64) & 0xFFFF_FFFF)
+	}
+
+	define void DumpLVT() {
+		this->DumpLVTEntry("MCE  ", APIC_REGISTER_LVT_MACHINE_CHECK)
+		this->DumpLVTEntry("TIMER", APIC_REGISTER_LVT_TIMER)
+		this->DumpLVTEntry("THERM", APIC_REGISTER_LVT_THERMAL_SENSOR)
+		this->DumpLVTEntry("PERF ", APIC_REGISTER_LVT_PERFORMANCE)
+		this->DumpLVTEntry("LINT0", APIC_REGISTER_LVT_LINT0)
+		this->DumpLVTEntry("LINT1", APIC_REGISTER_LVT_LINT1)
+		this->DumpLVTEntry("ERROR", APIC_REGISTER_LVT_ERROR)
+	}
 }
 
 APIC RawAPIC
@@ -142,6 +184,8 @@ APIC* LocalAPIC := &RawAPIC
 
 i32 IO_APIC_SELECTION := 0
 i32 IO_APIC_WINDOW := 0x10
+
+i64 IO_APIC_ENTRY_MASK := 1 << 16
 
 i64 IO_APIC_ENTRY_DESTINATION_MASK  := 0xFFFF_FFFF_0000_0000
 i8  IO_APIC_ENTRY_DESTINATION_SHIFT := 56
@@ -154,19 +198,48 @@ i32 IO_APIC_REGISTER_ARBITRATION_ID := 2
 
 i32 IO_APIC_REGISTER_FIRST_IRQ := 0x10
 
+enum IOAPICDeliveryMode As i8 {
+	Normal := 0
+	LowPriority := 1
+	SMI := 2
+	NMI := 4
+	INIT := 5
+	`External` := 7
+}
+
+enum IOAPICDestinationMode {
+	Physical := 0
+	Logical := 1
+}
+
+enum IOAPICPolarity {
+	ActiveHigh := 0
+	ActiveLow := 1
+}
+
+enum IOAPICTriggerMode {
+	Edge := 0
+	Level := 1
+}
+
+enum IOAPICMask {
+	UnMasked := 0
+	Masked := 1
+}
+
 bits IOAPICRedirection As i64 {
-	[0:7] Vector
-	[8:10] DeliveryMode
-	[11] DestinationMode
+	i8 [0:7] Vector
+	IOAPICDeliveryMode [8:10] DeliveryMode
+	IOAPICDestinationMode [11] DestinationMode
 	[12] DeliveryStatus
-	[13] PinPolarity
+	IOAPICPolarity [13] PinPolarity
 	[14] RemoteIRR
-	[15] TriggerMode
-	[16] Mask
+	IOAPICTriggerMode [15] TriggerMode
+	IOAPICMask [16] Mask
 	[56:63] Destination
 
 	define void Print() {
-		Print("%B %B %B %B %B %B %B %B %B", this.Vector, this.DeliveryMode, this.DestinationMode, this.DeliveryStatus, this.PinPolarity, this.RemoteIRR, this.TriggerMode, this.Mask, this.Destination)
+		Print("Redirection(%x, %s, %s, %i, %s, %i, %s, %s, %x)", this.Vector & 0xFF, nameof:(this.DeliveryMode), nameof:(this.DestinationMode), this.DeliveryStatus, nameof:(this.PinPolarity), this.RemoteIRR, nameof:(this.TriggerMode), nameof:(this.Mask), this.Destination & 0xFF)
 	}
 }
 
@@ -201,9 +274,7 @@ struct IOAPIC {
 	}
 	
 	define i32 IRQToOffset(i32 IRQ) {
-		i32 Index := BootInfo->IRQMappings[IRQ]
-		
-		return 0x10 + (Index * 2)
+		return IO_APIC_REGISTER_FIRST_IRQ + (IRQ * 2)
 	}
 	
 	define void WriteVector(i32 Index, i64 Value) {
@@ -237,13 +308,48 @@ struct IOAPIC {
 	}
 	
 	define void ForwardInterrupt(i32 Index, i32 APICID, i32 Vector) {
+		IOAPICRedirection Redirection := 0 As IOAPICRedirection
+		
+		Redirection.Vector := Vector As i8
+		Redirection.DeliveryMode := IOAPICDeliveryMode::Normal
+		Redirection.DestinationMode := IOAPICDestinationMode::Physical
+		Redirection.PinPolarity := IOAPICPolarity::ActiveHigh
+		Redirection.TriggerMode := IOAPICTriggerMode::Edge
+		Redirection.Destination := APICID As i8
+		
+		this->WriteVector(Index, Redirection As i64)
+	}
+
+	define void Mask(i32 Index, i8 Value) {
 		i64 Old := this->ReadVector(Index)
-		
-		Old &= IO_APIC_ENTRY_DESTINATION_MASK | IO_APIC_ENTRY_VECTOR_MASK
-		Old |= (APICID As i64) << IO_APIC_ENTRY_DESTINATION_SHIFT
-		Old |= (Vector As i64) << IO_APIC_ENTRY_VECTOR_SHIFT
-		
+
+		if (Value) {
+			Old |= IO_APIC_ENTRY_MASK
+		}
+		else {
+			Old &= ~IO_APIC_ENTRY_MASK
+		}
+
 		this->WriteVector(Index, Old)
+	}
+
+	define void MaskAll(i8 Mask) {
+		i32 Version := this->Read(IO_APIC_REGISTER_VERSION)
+
+		i32 MaxRedirectionEntry := (Version >> 16) & 0xFF
+
+		for (i32 Index := 0, Index < MaxRedirectionEntry, Index++) {
+			i64 Old := this->ReadVector(Index)
+
+			if (Mask) {
+				Old |= IO_APIC_ENTRY_MASK
+			}
+			else {
+				Old &= ~IO_APIC_ENTRY_MASK
+			}
+
+			this->WriteVector(Index, Old)
+		}
 	}
 
 	define void DumpMappings() {
