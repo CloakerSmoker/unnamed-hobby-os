@@ -1,34 +1,48 @@
 
-i16 MASTER_PIC := 0x20
-i16 SLAVE_PIC := 0xA0
+i16 PIC_1_COMMAND := 0x20
+i16 PIC_1_DATA := 0x21
 
-i16 MASTER_PIC_DATA := 0x21
-i16 SLAVE_PIC_DATA  := 0xA1
+i16 PIC_2_COMMAND := 0xA0
+i16 PIC_2_DATA  := 0xA1
 
-i32 PIC_MASTER_OFFSET
-i32 PIC_SLAVE_OFFSET
+i8 PIC_ICW1_ICW4 := 0x1
+i8 PIC_ICW1_SINGLE := 0x2
+i8 PIC_ICW1_INTERVAL4 := 0x4
+i8 PIC_ICW1_LEVEL := 0x8
+i8 PIC_ICW1_INIT := 0x10
 
-define void RemapPIC(i8 MasterOffset, i8 SlaveOffset) {
-	PIC_MASTER_OFFSET := MasterOffset
-	PIC_SLAVE_OFFSET := SlaveOffset
+i8 PIC_ICW4_8086 := 0x1
+i8 PIC_ICW4_AUTO := 0x2
+i8 PIC_ICW4_BUFFERED_SLAVE := 0x8
+i8 PIC_ICW4_BUFFERED_MASTER := 0xC
+i8 PIC_ICW4_SFNM := 0x10
+
+i8 PIC_1_OFFSET
+i8 PIC_2_OFFSET
+
+define void OutPIC(i16 Port, i8 Value) {
+	OutB(Port, Value)
+	IOWait()
+}
+
+define void RemapPIC(i8 Offset) {
+	PIC_1_OFFSET := Offset
+	PIC_2_OFFSET := (Offset + 8) As i8
 	
-	i8 OldMaster := InB(MASTER_PIC_DATA)
-	i8 OldSlave := InB(SLAVE_PIC_DATA)
+	OutPIC(PIC_1_COMMAND, PIC_ICW1_INIT | PIC_ICW1_ICW4)
+	OutPIC(PIC_2_COMMAND, PIC_ICW1_INIT | PIC_ICW1_ICW4)
 	
-	OutB(MASTER_PIC, 0x11)
-	OutB(SLAVE_PIC, 0x11)
+	OutPIC(PIC_1_DATA, PIC_1_OFFSET)
+	OutPIC(PIC_2_DATA, PIC_2_OFFSET)
 	
-	OutB(MASTER_PIC_DATA, MasterOffset)
-	OutB(SLAVE_PIC_DATA, SlaveOffset)
+	OutPIC(PIC_1_DATA, 0x4)
+	OutPIC(PIC_2_DATA, 0x02)
 	
-	OutB(MASTER_PIC_DATA, 0x04)
-	OutB(SLAVE_PIC_DATA, 0x02)
+	OutPIC(PIC_1_DATA, PIC_ICW4_8086)
+	OutPIC(PIC_2_DATA, PIC_ICW4_8086)
 	
-	OutB(MASTER_PIC_DATA, 0x01)
-	OutB(SLAVE_PIC_DATA, 0x01)
-	
-	OutB(MASTER_PIC_DATA, 0xFF As i8)
-	OutB(SLAVE_PIC_DATA, 0xFF As i8)
+	OutPIC(PIC_1_DATA, 0xFF As i8)
+	OutPIC(PIC_2_DATA, 0xFF As i8)
 }
 
 define i32 IRQToIDT(i32 IRQ) {
@@ -37,10 +51,10 @@ define i32 IRQToIDT(i32 IRQ) {
 	}
 
 	if (IRQ >= 8) {
-		return PIC_SLAVE_OFFSET + IRQ - 8
+		return PIC_2_OFFSET + IRQ - 8
 	}
 	else {
-		return PIC_MASTER_OFFSET + IRQ
+		return PIC_1_OFFSET + IRQ
 	}
 }
 
@@ -51,23 +65,23 @@ define void SendEOI(i8 IRQLine) {
 	}
 	
 	if (IRQLine >= 8) {
-		OutB(SLAVE_PIC, 0x20)
+		OutPIC(PIC_2_COMMAND, 0x20)
 	}
 	
-	OutB(MASTER_PIC, 0x20)
+	OutPIC(PIC_1_COMMAND, 0x20)
 }
 
 define void EnablePICLine(i8 IRQLine, i8 Enabled) {
 	if (LocalAPIC->IsEnabled) {
-		FirstIOAPIC->ForwardInterrupt(IRQLine, LocalAPIC->ID, PIC_MASTER_OFFSET + IRQLine)
+		FirstIOAPIC->ForwardInterrupt(IRQLine, LocalAPIC->ID, PIC_1_OFFSET + IRQLine)
 		
 		return
 	}
 	
-	i16 Port := MASTER_PIC_DATA
+	i16 Port := PIC_1_DATA
 	
 	if (IRQLine >= 8) {
-		Port := SLAVE_PIC_DATA
+		Port := PIC_2_DATA
 		IRQLine -= 8
 	}
 	
@@ -80,10 +94,10 @@ define void EnablePICLine(i8 IRQLine, i8 Enabled) {
 		Value |= (1 << IRQLine)
 	}
 	
-	OutB(Port, Value As i8)
+	OutPIC(Port, Value As i8)
 }
 
 define void DisablePIC() {
-	OutB(MASTER_PIC_DATA, 0)
-	OutB(SLAVE_PIC_DATA, 0)
+	OutPIC(PIC_1_DATA, 0xFF As i8)
+	OutPIC(PIC_2_DATA, 0xFF As i8)
 }

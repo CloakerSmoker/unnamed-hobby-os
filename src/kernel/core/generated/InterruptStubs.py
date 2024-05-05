@@ -1,4 +1,4 @@
-out = open('kernel/core/InterruptStubs.rlx', 'w')
+out = open('src/kernel/core/generated/InterruptStubs.rlx', 'w')
 
 error_code_stub = '''
 define void OnInterrupt{}() asm {{
@@ -68,11 +68,13 @@ adds = ''
 
 index = 0
 
-for i in has_error_code:
-	if i:
+NUMBER_OF_STUBS = 256
+
+for i in range(NUMBER_OF_STUBS):
+	single_stub_template = no_error_code_stub
+
+	if i in has_error_code and has_error_code[1]:
 		single_stub_template = error_code_stub
-	else:
-		single_stub_template = no_error_code_stub
 	
 	out.write(single_stub_template.format(index, index))
 	adds += single_stub_add_template.format(index, index)

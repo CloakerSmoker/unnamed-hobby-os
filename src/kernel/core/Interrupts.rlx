@@ -24,9 +24,11 @@ define void InterruptCodeSetup() asm {
 	
 	pop, rax
 	mov, {rdi + 0x88} As i64*, rax ; Context.RAX = OldRAX
-	
+
 	pop, rax                       ; Pop original return address
-	pop, rsi                       ; Pop error code as second parameter
+
+	pop, rbx
+	mov, {rdi + AMD64Context.LastInterruptCode} As i64*, rbx
 	
 	pop, rbx                       ; Pop RIP
 	mov, {rdi} As i64*, rbx        ; Context.RIP = rbx
@@ -69,6 +71,9 @@ define void InterruptSetup() asm {
 	
 	pop, rax
 	mov, {rdi + 0x88} As i64*, rax ; Context.RAX = OldRAX
+
+	xor, eax, eax
+	mov, {rdi + AMD64Context.LastInterruptCode} As i64*, rax
 	
 	pop, rax                       ; Pop original return address
 	
@@ -131,7 +136,7 @@ define void InsertIDTEntry(i32 Index, void* Function, i8 Present) {
 	InsertIDTEntry(Index, Function, Present, IST_NONE)
 }
 
-i32 IDT_MAX := 50
+i32 IDT_MAX := 256
 i32 IDT_SIZE := IDT_MAX * #IDTEntry
 
 declare void AddHandlerStubs()
@@ -143,56 +148,75 @@ declare void SetupDeviceInterrupts()
 
 define void SetupInterrupts() {
 	DescriptorTableHeader IDTHeader
-	
-	IDT := Alloc('IDT', IDT_SIZE)
+
+	IDT := KernelPageAllocator->AllocateVirtual(1)
 	
 	IDTHeader.Base := IDT
 	IDTHeader.Limit := IDT_SIZE As i16
 	
-	RemapPIC(0x20, 0x28)
-	
-	if (USE_APIC) {
-		LocalAPIC->Initialize()
-		LocalAPIC->Setup()
-		
-		FirstIOAPIC->Initialize(BootInfo->IOAPICBase, 0)
-		FirstIOAPIC->Setup()
-
-		FirstIOAPIC->DumpMappings()
-
-		loop {}
-	}
+	RemapPIC(0x20)
 	
 	if (USE_INTERRUPT_STUBS) {
 		AddHandlerStubs()
 	}
 	
 	AddKernelHandlers()
-	SetupDeviceInterrupts()
+	;SetupDeviceInterrupts()
 	
 	asm (rax := &IDTHeader) {
 		lidt, {rax} As i64*
 	}
+
+	if (USE_APIC) {
+		LocalAPIC->Initialize()
+		LocalAPIC->Setup()
+
+		LocalAPIC->MaskAll(true)
+		LocalAPIC->DumpLVT()
+		
+		FirstIOAPIC->Initialize(BootInfo->IOAPICBase, 0)
+		FirstIOAPIC->Setup()
+
+		Print("Local APIC ID: %x\n", LocalAPIC->ID)
+
+		FirstIOAPIC->MaskAll(true)
+		FirstIOAPIC->DumpMappings()
+	}
 }
 
 enum AMD64InterruptNumber {
-	DivideByZero
-	Debug
-	NonMaskableInterrupt
-	Breakpoint
-	Overflow
-	BoundRange
-	InvalidOpcode
-	DeviceNotAvailable
-	DoubleFault
-	Reserved1
-	InvalidTSS
-	SegmentNotPresent
-	Stack
-	GeneralProtection
-	PageFault
-	Reserved2
-	FPU
+	DivideByZero := 0
+	Debug := 1
+	NonMaskableInterrupt := 2
+	Breakpoint := 3
+	Overflow := 4
+	BoundRange := 5
+	InvalidOpcode := 6
+	DeviceNotAvailable := 7
+	DoubleFault := 8
+	Reserved1 := 9
+	InvalidTSS := 10
+	SegmentNotPresent := 11
+	Stack := 12
+	GeneralProtection := 13
+	PageFault := 14
+	Reserved2 := 15
+	FPU := 16
+	Alignment := 17
+	MachineCheck := 18
+	SIMD := 19
+	Virtualization := 20
+	ControlProtection := 21
+	Reserved3 := 22
+	Reserved4 := 23
+	Reserved5 := 24
+	Reserved6 := 25
+	Reserved7 := 26
+	Reserved8 := 27
+	Hypervisor := 28
+	VMM := 29
+	Security := 30
+	Reserved9 := 31
 }
 
 i8 INTERRUPT_IS_FIRST_CHANCE := true
@@ -208,14 +232,22 @@ define void GenericInterrupt(AMD64Context* Context, i32 RawInterruptNumber) {
 	AMD64InterruptNumber InterruptNumber := RawInterruptNumber As AMD64InterruptNumber
 
 	Print("^H1^SF\e[0J                      PANIC!!!! NOW!!!!!!!                  \n")
-	Print("                  %s\n", nameof:(InterruptNumber))
 
-	if (InterruptNumber = AMD64InterruptNumber::GeneralProtection) {
-		Print("%context", Context)
-		Print("Code Bytes (RIP %x):\n%hexdump\n", Context->RIP, Context->RIP, 15)
+	if (nameof:(InterruptNumber) = null) {
+		Print("              INT%i (%x) (code: %i %x)\n", RawInterruptNumber, RawInterruptNumber, Context->LastInterruptCode, Context->LastInterruptCode)
+	}
+	else {
+		Print("                  %s (code: %i %x)\n", nameof:(InterruptNumber), Context->LastInterruptCode, Context->LastInterruptCode)
 	}
 
-	Print("%stackdump")
+	Print("%context", Context)
+	Print("Code Bytes (RIP %x):\n%hexdump\n", Context->RIP, Context->RIP, 15)
+
+	Print("GDT:\n%hexdump", GLOBAL_GDT, 64)
+
+	;Print("%stackdump")
+
+	FirstIOAPIC->DumpMappings()
 
 	Halt()
 	
@@ -229,5 +261,5 @@ define void GenericInterrupt(AMD64Context* Context, i32 RawInterruptNumber) {
 }
 
 #Require "./src/utility/Exception.rlx"
-#Require "./src/kernel/core/InterruptStubs.rlx"
+#Require "./src/kernel/core/generated/InterruptStubs.rlx"
 #Require "./src/kernel/core/InterruptHandlers.rlx"

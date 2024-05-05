@@ -35,6 +35,10 @@ define void OutL(i16 Port, i32 Data) asm {
 	ret
 }
 
+define void IOWait() {
+	OutB(0x80, 0)
+}
+
 define void* GetRSP() asm {
 	lea, rax, {rsp - 8} As i64*
 	ret
@@ -151,6 +155,8 @@ struct AMD64Context {
 
 	i32 CS
 	i32 SS
+
+	i64 LastInterruptCode
 	
 	define AMD64Context* Zero() {
 		FastSetMemory8(this, 0, #AMD64Context)
