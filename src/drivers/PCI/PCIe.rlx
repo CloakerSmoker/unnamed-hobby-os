@@ -151,37 +151,7 @@ bits PCIMSIControlRegister As i16 {
     }
 }
 
-i16 AMD64_MSI_ADDRESS_MAGIC := 0x0FEE
-
-bits AMD64MessageAddressRegister As i32 {
-    [1:2] DestinationMode
-    [2:3] RedirectionHint
-    [12:19] DestinationID
-    [20:31] Magic
-
-    i32 [0:31] Value
-}
-
-i8 AMD64_MSI_DATA_TRIGGER_EDGE := 0
-i8 AMD64_MSI_DATA_TRIGGER_LEVEL := 1
-
-i8 AMD64_MSI_DATA_LEVEL_MODE_DEASSERT := 0
-i8 AMD64_MSI_DATA_LEVEL_MODE_ASSERT := 1
-
-i8 AMD64_MSI_DELIVERY_MODE_FIXED := 0
-i8 AMD64_MSI_DELIVERY_MODE_LOW_PRIORITY := 1
-i8 AMD64_MSI_DELIVERY_MODE_SMI := 2
-i8 AMD64_MSI_DELIVERY_MODE_NMI := 4
-i8 AMD64_MSI_DELIVERY_MODE_INIT := 5
-
-bits AMD64MessageAddressData As i16 {
-    [0:7] Vector
-    [8:10] DeliveryMode
-    [13:14] LevelMode
-    [14:15] TriggerMode
-
-    i16 [0:15] Value
-}
+#Require "./src/drivers/MSI.rlx"
 
 struct PCIMSICapability32Bit {
     PCICapability Header
@@ -417,20 +387,8 @@ struct PCIeDevice {
         PCICapability* RawMSI := this->FindPCICapability(PCI_CAPABILITY_ID_MSI)
         PCIMSICapability64Bit* MSI := RawMSI As void*
 
-        AMD64MessageAddressRegister Address := 0 As AMD64MessageAddressRegister
-
-        Address.Magic := AMD64_MSI_ADDRESS_MAGIC
-        Address.DestinationID := LocalAPIC->ID As i8
-
-        MSI->MessageAddressLow := Address.Value
-        
-        AMD64MessageAddressData Data := 0 As AMD64MessageAddressData
-
-        Data.Vector := Vector
-        Data.DeliveryMode := AMD64_MSI_DELIVERY_MODE_FIXED
-        Data.TriggerMode := AMD64_MSI_DATA_TRIGGER_EDGE
-
-        MSI->MessageData := Data.Value
+        MSI->MessageAddressLow := PackMSIAddress(LocalAPIC->ID As i8)
+        MSI->MessageData := PackMSIData(Vector, AMD64_MSI_DELIVERY_MODE_FIXED, AMD64_MSI_DATA_TRIGGER_EDGE)
 
         PCIMSIControlRegister Control := MSI->Control
 

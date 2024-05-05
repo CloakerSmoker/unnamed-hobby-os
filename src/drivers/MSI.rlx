@@ -1,0 +1,57 @@
+
+i16 AMD64_MSI_ADDRESS_MAGIC := 0x0FEE
+
+namespace MSI {
+    bits Address As i32 {
+        [1:2] DestinationMode
+        [2:3] RedirectionHint
+        [12:19] DestinationID
+        [20:31] Magic
+
+        i32 [0:31] Value
+    }
+
+    bits Data As i16 {
+        [0:7] Vector
+        [8:10] DeliveryMode
+        [13:14] LevelMode
+        [14:15] TriggerMode
+
+        i16 [0:15] Value
+    }
+}
+
+i8 AMD64_MSI_DATA_TRIGGER_EDGE := 0
+i8 AMD64_MSI_DATA_TRIGGER_LEVEL := 1
+
+i8 AMD64_MSI_DATA_LEVEL_MODE_DEASSERT := 0
+i8 AMD64_MSI_DATA_LEVEL_MODE_ASSERT := 1
+
+i8 AMD64_MSI_DELIVERY_MODE_FIXED := 0
+i8 AMD64_MSI_DELIVERY_MODE_LOW_PRIORITY := 1
+i8 AMD64_MSI_DELIVERY_MODE_SMI := 2
+i8 AMD64_MSI_DELIVERY_MODE_NMI := 4
+i8 AMD64_MSI_DELIVERY_MODE_INIT := 5
+
+define i32 PackMSIAddress(i8 LAPICID) {
+    MSI::Address Address := 0 As MSI::Address
+
+    Address.Magic := AMD64_MSI_ADDRESS_MAGIC
+    Address.DestinationID := LAPICID
+
+    return Address.Value
+}
+
+define i16 PackMSIData(i8 Vector, i8 DeliveryMode, i8 TriggerMode) {
+    MSI::Data Data := 0 As MSI::Data
+
+    Data.Vector := Vector
+    Data.DeliveryMode := DeliveryMode
+    Data.TriggerMode := TriggerMode
+
+    return Data.Value
+}
+
+define i16 PackMSIData(i8 Vector) {
+    return PackMSIData(Vector, AMD64_MSI_DELIVERY_MODE_FIXED, AMD64_MSI_DATA_TRIGGER_EDGE)
+}
