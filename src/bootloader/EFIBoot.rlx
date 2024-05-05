@@ -197,6 +197,7 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	}
 	
 	i64 IOAPICBase := 0
+	i64 HPETBase := 0
 
 	i32 SegmentGroupCount := 0
 	ACPI_MCFG_ENTRY* SegmentGroups := null
@@ -245,7 +246,7 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 					Print("\t\t\tBase: %x\n", IO->GlobalInterruptBase)
 					Print("\t\t}\n")
 
-					WaitKey()
+					;WaitKey()
 				}
 				else if (Current->Type = ACPI_APIC_ENTRY_TYPE_INTERRUPT_OVERRIDE_SOURCE) {
 					ACPI_INTERRUPT_OVERRIDE* Override := Current->Data()
@@ -318,6 +319,20 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 				Print("\t%i @ %x: %i.%i - %i.%i\n", MCFGIndex, Entry->BaseAddress, Entry->SegmentGroup, Entry->StartBusNumber, Entry->SegmentGroup, Entry->EndBusNumber)
 			}
 		}
+		else if (Signature = ACPI_TABLE_SIGNATURE_HPET_DESCRIPTION) {
+			ACPI_HPET_TABLE* HPET := NextACPITable->Data()
+
+			Print("HPET {\n")
+			Print("    EventTimerBlockID: %x\n", HPET->EventTimerBlockID)
+			Print("    Address: %s: %x\n", nameof:(HPET~>Address->Type), HPET~>Address->Address)
+			Print("    HPETNumber: %i\n", HPET->HPETNumber)
+			Print("    MinimumPeriod: %i\n", HPET->MinimumPeriod)
+			Print("}\n")
+
+			HPETBase := HPET~>Address->Address
+
+			;WaitKey()
+		}
 	}
 	
 	;SystemTable->ConsoleInput->Reset()
@@ -342,6 +357,8 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 			Print("%x - %x  ", Index, IRQMappings[Index])
 		}
 	}
+
+	;WaitKey()
 	
 	EFI_LOADED_IMAGE_PROTOCOL* LoadedImage := null
 	SystemTable->BootServices->HandleProtocol(ImageHandle, EFI_LOADED_IMAGE_PROTOCOL_GUID, &LoadedImage As void**)
@@ -543,7 +560,9 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	
 	BootloaderInfo BootInfo {
 		PhysicalFrameBuffer: FrameBuffer As i64,
+
 		IOAPICBase: IOAPICBase,
+		HPETBase: HPETBase,
 
 		PCISegmentGroupCount: SegmentGroupCount,
 

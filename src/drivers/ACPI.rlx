@@ -247,6 +247,30 @@ struct ACPI_LOCAL_APIC_NMI unaligned {
 i32 ACPI_LOCAL_APIC_FLAG_ENABLED := 0b1
 i32 ACPI_LOCAL_APIC_FLAG_CAN_GO_ONLINE := 0b10
 
+enum ACPI_ADDRESS_TYPE As i8 {
+	Memory := 0
+	Port := 1
+}
+
+struct ACPI_ADDRESS unaligned {
+	ACPI_ADDRESS_TYPE Type
+	i8 RegisterBitWidth
+	i8 RegisterBitOffset
+	i8 Reserved
+	i64 Address
+}
+
+struct ACPI_HPET_TABLE unaligned {
+	ACPI_DESCRIPTION_HEADER Header
+
+	i32 EventTimerBlockID
+	ACPI_ADDRESS Address
+	i8 HPETNumber
+	i16 MinimumPeriod
+}
+
+i32 ACPI_TABLE_SIGNATURE_HPET_DESCRIPTION := 'HPET'
+
 struct ACPI_MCFG_ENTRY {
 	i64 BaseAddress
 	i16 SegmentGroup
