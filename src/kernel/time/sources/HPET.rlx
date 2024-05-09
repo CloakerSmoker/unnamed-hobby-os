@@ -1,9 +1,14 @@
+
+i64 HPET_SYSTEM_CLOCK_FS_PER_TICK := 0
+
 define void OnHPETInterrupt() {
     ;Print("HPET!")
 
     GenericTimerInterrupt()
 
-    i64 UptimeFS := TIME_TICK_COUNT * HPET->GetBaseFrequency()
+    i64 UptimeFS := TIME_TICK_COUNT * HPET_SYSTEM_CLOCK_FS_PER_TICK
+
+    ;Print("FS(%ei)", UptimeFS)
 
     TIME_UPTIME_MS := UptimeFS / MILLISECOND_IN_FEMTOSECONDS
     i64 Remainder := UptimeFS % MILLISECOND_IN_FEMTOSECONDS
@@ -13,6 +18,8 @@ define void OnHPETInterrupt() {
             TIME_UPTIME_MS += 1
         }
     }
+
+    ;Print("T(%i)M(%i) ", TIME_TICK_COUNT, TIME_UPTIME_MS)
 
     LocalAPIC->EOI()
 }
@@ -107,6 +114,8 @@ define i8 ConfigureHPETSystemClock(i32 HZ) {
 
     Info("For %ihz: %ei ticks\n", HZ, Period)
 
+    HPET_SYSTEM_CLOCK_FS_PER_TICK := Base * Period
+
     HPET->Enable(false)
     HPET->Reset()
 
@@ -143,7 +152,7 @@ define i8 ConfigureHPETSystemClock(i32 HZ) {
 
     HPET->Enable(true)
 
-    loop {}
+    ;loop {}
 
     return true
 }
