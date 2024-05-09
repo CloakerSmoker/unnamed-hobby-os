@@ -1,0 +1,263 @@
+namespace PCIe {
+    struct DeviceEntry {
+        i32 ID
+        i32 NameOffset
+    }
+
+    struct VendorEntry unaligned {
+        i32 ID
+        i32 NameOffset
+        i32 DeviceCount
+        i32 FirstDeviceIndex
+    }
+
+    struct ProgramInterfaceEntry unaligned {
+        i32 ID
+        i32 NameOffset
+    }
+
+    struct SubClassEntry unaligned {
+        i32 ID
+        i32 NameOffset
+        i32 ProgramInterfaceCount
+        i32 FirstProgramInterfaceIndex
+    }
+
+    struct ClassEntry unaligned {
+        i32 ID
+        i32 NameOffset
+        i32 SubClassCount
+        i32 FirstSubClassIndex
+    }
+
+    struct FileHeader unaligned {
+        i32 VendorCount
+        i32 ClassCount
+
+        i32 VendorsOffset
+        i32 DevicesOffset
+
+        i32 ClassesOffset
+        i32 SubClassesOffset
+        i32 ProgramInterfacesOffset
+
+        i32 StringsOffset
+    }
+
+    class IDDatabase derives INew {
+        FileHeader* Header
+
+        VendorEntry* Vendors
+        DeviceEntry* Devices
+
+        ClassEntry* Classes
+        SubClassEntry* SubClasses
+        ProgramInterfaceEntry* ProgramInterfaces
+
+        i8* Strings
+
+        define void New(void* Buffer) {
+            this->Header := Buffer
+
+            this->Vendors := Buffer + this->Header->VendorsOffset
+            this->Devices := Buffer + this->Header->DevicesOffset
+
+            this->Classes := Buffer + this->Header->ClassesOffset
+            this->SubClasses := Buffer + this->Header->SubClassesOffset
+            this->ProgramInterfaces := Buffer + this->Header->ProgramInterfacesOffset
+
+            this->Strings := Buffer + this->Header->StringsOffset
+        }
+
+        define i8* GetString(i32 Offset) {
+            return &this->Strings[Offset]
+        }
+
+        define i32 Cast(i16 ID) {
+            return (ID As i32) & 0xFFFF
+        }
+
+        define VendorEntry* FindVendor(i16 RawID) {
+            i32 ID := this->Cast(RawID)
+
+            i32 Count := this->Header->VendorCount
+
+            for (i32 Index := 0, Index < Count, Index++) {
+                VendorEntry* Vendor := this->Vendors[Index]
+
+                ;Print("[%i]: %X (%s)\n", Index, Vendor->ID, this->GetString(Vendor->NameOffset))
+
+                if (Vendor->ID = ID) {
+                    return Vendor
+                }
+            }
+
+            return null
+        }
+
+        define i8* GetVendorName(i16 ID) {
+            VendorEntry* Vendor := this->FindVendor(ID)
+
+            if !(Vendor) {
+                return null
+            }
+
+            return this->GetString(Vendor->NameOffset)
+        }
+
+        define DeviceEntry* FindDevice(VendorEntry* Vendor, i16 RawID) {
+            i32 ID := this->Cast(RawID)
+
+            DeviceEntry* Devices := this->Devices[Vendor->FirstDeviceIndex]
+            i32 Count := Vendor->DeviceCount
+
+            for (i32 Index := 0, Index < Count, Index++) {
+                DeviceEntry* Device := Devices[Index]
+
+                if (Device->ID = ID) {
+                    return Device
+                }
+            }
+
+            return null
+        }
+
+        define i8* GetDeviceName(VendorEntry* Vendor, i16 ID) {
+            DeviceEntry* Device := this->FindDevice(Vendor, ID)
+
+            if !(Device) {
+                return null
+            }
+
+            return this->GetString(Device->NameOffset)
+        }
+
+        define i8* GetDeviceName(i16 VendorID, i16 DeviceID) {
+            VendorEntry* Vendor := this->FindVendor(VendorID)
+
+            if !(Vendor) {
+                return null
+            }
+
+            return this->GetDeviceName(Vendor, DeviceID)
+        }
+
+        define ClassEntry* FindClass(i8 ID) {
+            i32 Count := this->Header->ClassCount
+
+            for (i32 Index := 0, Index < Count, Index++) {
+                ClassEntry* Entry := this->Classes[Index]
+
+                if (Entry->ID = ID) {
+                    return Entry
+                }
+            }
+
+            return null
+        }
+
+        define i8* GetClassName(i8 ID) {
+            ClassEntry* Entry := this->FindClass(ID)
+
+            if !(Entry) {
+                return null
+            }
+
+            return this->GetString(Entry->NameOffset)
+        }
+
+        define SubClassEntry* FindSubClass(ClassEntry* _Class, i8 ID) {
+            SubClassEntry* SubClasses := this->SubClasses[_Class->FirstSubClassIndex]
+            i32 Count := _Class->SubClassCount
+
+            for (i32 Index := 0, Index < Count, Index++) {
+                SubClassEntry* Entry := SubClasses[Index]
+
+                if (Entry->ID = ID) {
+                    return Entry
+                }
+            }
+
+            return null
+        }
+
+        define i8* GetSubClassName(ClassEntry* _Class, i8 SubClassID) {
+            SubClassEntry* Entry := this->FindSubClass(_Class, SubClassID)
+
+            if !(Entry) {
+                return null
+            }
+
+            return this->GetString(Entry->NameOffset)
+        }
+
+        define i8* GetSubClassName(i8 ClassID, i8 SubClassID) {
+            return this->GetSubClassName(this->FindClass(ClassID), SubClassID)
+        }
+
+        define ProgramInterfaceEntry* FindProgramInterface(SubClassEntry* SubClass, i8 ID) {
+            ProgramInterfaceEntry* ProgramInterfaces := this->ProgramInterfaces[SubClass->FirstProgramInterfaceIndex]
+            i32 Count := SubClass->ProgramInterfaceCount
+
+            for (i32 Index := 0, Index < Count, Index++) {
+                ProgramInterfaceEntry* Entry := ProgramInterfaces[Index]
+
+                if (Entry->ID = ID) {
+                    return Entry
+                }
+            }
+
+            return null
+        }
+
+        define i8* GetProgramInterfaceName(SubClassEntry* SubClass, i8 ID) {
+            ProgramInterfaceEntry* Entry := this->FindProgramInterface(SubClass, ID)
+
+            if !(Entry) {
+                return null
+            }
+
+            return this->GetString(Entry->NameOffset)
+        }
+
+        define i8* GetProgramInterfaceName(i8 ClassID, i8 SubClassID, i8 ProgramInterfaceID) {
+            ClassEntry* Entry := this->FindClass(ClassID)
+            SubClassEntry* SubClass := this->FindSubClass(Entry, SubClassID)
+
+            return this->GetProgramInterfaceName(SubClass, ProgramInterfaceID)
+        }
+
+        define i32 GetNames(i8 ClassID, i8 SubClassID, i8 ProgramInterfaceID, i8** OutNames) {
+            ClassEntry* _Class := this->FindClass(ClassID)
+
+            if (_Class) {
+                OutNames[0] := this->GetString(_Class->NameOffset)
+
+                SubClassEntry* SubClass := this->FindSubClass(_Class, SubClassID)
+
+                if (SubClass) {
+                    OutNames[1] := this->GetString(SubClass->NameOffset)
+
+                    ProgramInterfaceEntry* ProgramInterface := this->FindProgramInterface(SubClass, ProgramInterfaceID)
+
+                    if (ProgramInterface) {
+                        OutNames[2] := this->GetString(ProgramInterface->NameOffset)
+
+                        return 3
+                    }
+
+                    return 2
+                }
+                
+                return 1
+            }
+            else {
+                OutNames[0] := "Unknown"
+
+                return 1
+            }
+        }
+    }
+}
+
+PCIe::IDDatabase* PCIeIDs := PCIe::IDDatabase:New(i8[#file "./build/pciids.bin"])

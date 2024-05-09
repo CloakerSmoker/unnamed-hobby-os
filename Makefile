@@ -253,6 +253,17 @@ $(BUILD)/Trampoline.d: $(RLX)
 
 LIGHT_CLEAN_FILES+= $(BUILD)/Trampoline.elf $(BUILD)/Trampoline.d
 
+# PCI ID database
+
+$(BUILD)/pci.ids:
+	cd $(BUILD); wget https://pci-ids.ucw.cz/v2.2/pci.ids
+
+$(BUILD)/pciids.bin: $(BUILD)/pci.ids
+$(BUILD)/pciids.bin: ./src/drivers/PCI/BinarizeDatabase.py
+	python3 ./src/drivers/PCI/BinarizeDatabase.py $(BUILD)/pci.ids $(BUILD)/pciids.bin
+
+LIGHT_CLEAN_FILES+= $(BUILD)/pciids.bin
+
 # Kernel
 
 $(BUILD)/Kernel.elf: $(RLX)

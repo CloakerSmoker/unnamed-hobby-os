@@ -419,17 +419,61 @@ define void InitializePCIe(void(i32, i32, i32, PCIeDevice*) Visitor) {
 	Root->EnumerateAsBus(0, Visitor)
 }
 
-define void DoPCIeDevicePrint(PrintOutputAdapterPrototype* this, i8* Format, i32* FormatIndex, void* Parameters, i32 ParameterCount, i32* ParameterIndex) {
+#Require "./src/drivers/PCI/IDs.rlx"
+
+define void DoPCIeDeviceProductPrint(PrintOutputAdapterPrototype* this, i8* Format, i32* FormatIndex, void* Parameters, i32 ParameterCount, i32* ParameterIndex) {
     PCIeDevice* Device := Parameters[*ParameterIndex] As PCIeDevice*
     
-    this->Print("%X/%X", Device->VendorID & 0xFFFF, Device->DeviceID & 0xFFFF)
+    i8* VendorName := PCIeIDs->GetVendorName(Device->VendorID)
+
+    if (VendorName) {
+        this->Print("%s/", VendorName)
+    }
+    else {
+        this->Print("%X/", Device->VendorID & 0xFFFF)
+    }
+
+    i8* DeviceName := PCIeIDs->GetDeviceName(Device->VendorID, Device->DeviceID)
+
+    if (DeviceName) {
+        this->Print("%s", DeviceName)
+    }
+    else {
+        this->Print("%X", Device->DeviceID & 0xFFFF)
+    }
 
     *ParameterIndex += 1
 }
 
-PrintFormatPrototype PCIeDeviceFormatPrototype {
-	Name: "pcie",
-	Format: &DoPCIeDevicePrint
+PrintFormatPrototype PCIeDeviceProductFormatPrototype {
+	Name: "pcie-product",
+	Format: &DoPCIeDeviceProductPrint
 }
 
-i32 PCIE_DEVICE_FORMAT_PROTOTYPE_ID := AddPrintFormat(&PCIeDeviceFormatPrototype)
+i32 PCIE_DEVICE_PRODUCT_FORMAT_PROTOTYPE_ID := AddPrintFormat(&PCIeDeviceProductFormatPrototype)
+
+
+define void DoPCIeDevicePurposePrint(PrintOutputAdapterPrototype* this, i8* Format, i32* FormatIndex, void* Parameters, i32 ParameterCount, i32* ParameterIndex) {
+    PCIeDevice* Device := Parameters[*ParameterIndex] As PCIeDevice*
+    
+    i8*[3] Parts
+
+    i32 Count := PCIeIDs->GetNames(Device->ClassCode, Device->SubClass, Device->Interface, Parts)
+
+    for (i32 Index := 0, Index < Count, Index++) {
+        this->Print("%s", Parts[Index])
+
+        if (Index + 1 != Count) {
+            this->Print(" > ")
+        }
+    }
+
+    *ParameterIndex += 1
+}
+
+PrintFormatPrototype PCIeDevicePurposeFormatPrototype {
+	Name: "pcie-purpose",
+	Format: &DoPCIeDevicePurposePrint
+}
+
+i32 PCIE_DEVICE_PURPOSE_FORMAT_PROTOTYPE_ID := AddPrintFormat(&PCIeDevicePurposeFormatPrototype)

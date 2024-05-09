@@ -212,12 +212,10 @@ IDirectory* VFSDevicesDirectory := null
 ICH9::AHCI::Controller* SATAController := null
 
 define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Device) {
-	Print("%x/%x/%x: ", Bus, Slot, Function)
-	PCIClassCodes->Print(Device->ClassCode, Device->SubClass, Device->Interface)
-	Print("\n")
+	Print("%x/%x/%x:\n\t%pcie-product\n\t%pcie-purpose\n", Bus, Slot, Function, Device, Device)
 
 	if (Device->Status & PCI_STATUS_REGISTER_HAS_CAPABILITIES) {
-		Print("\tHas Capabilities\n")
+		Print("\tHas Capabilities: ")
 		;Print("\tCaps @ %x\n", Device->CapabilitiesPointer)
 		;Print("\tOffset %x + %x\n", Device, (Device~>CapabilitiesPointer As i64) - (Device As i64))
 		;Print("\tOffset %x + %x\n", Device, (Device~>FirstCapability As i64) - (Device As i64))
@@ -225,7 +223,7 @@ define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Devic
 		PCICapability* Current := Device->FirstPCICapability()
 
 		loop {
-			Print("\tHas capability %x\n", Current->ID & 0xFF)
+			Print("%x ", Current->ID & 0xFF)
 
 			if (Current->Next = 0) {
 				break
@@ -234,13 +232,15 @@ define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Devic
 			Current := Device->NextPCICapability(Current)
 		}
 
-		Print("\t\t%x %x\n", Device->ClassCode, Device->SubClass)
+		Print("\n")
 
 		if (Device->ClassCode = PCI_CLASS_CODE_NETWORK_CONTROLLER && Device->SubClass = PCI_SUBCLASS_NETWORK_ETHERNET) {
-			Print("Network interface %x:%x\n", Device->VendorID, Device->DeviceID)
+			;Print("Network interface\n", Device->VendorID, Device->DeviceID)
 			
 			if (Device->VendorID = PCI_VENDOR_INTEL && Device->DeviceID = PCI_DEVICE_INTEL_82574L) {
 				Print("Found E1000\n")
+
+				if (false) {
 
 				Device->EnableMSI(19)
 
@@ -249,6 +249,7 @@ define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Devic
 				Adapter->Setup()
 
 				Network->AddInterface(MakeNetworkInterfaceFromE1000(Adapter))
+				}
 			}
 		}
 		else if (Device->ClassCode = PCI_CLASS_CODE_MASS_STORAGE_CONTROLLER && Device->SubClass = PCI_SUBCLASS_SATA_CONTROLLER) {
@@ -257,12 +258,16 @@ define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Devic
 			Info("SATA Controller %x:%x\n", Device->VendorID, Device->DeviceID)
 			Info("Supports MSI? %i\n", Device->CanUseMSI())
 
+			if (false) {
 			Info("SATA MAP: %b\n", *((Device + 0x90) As i16*))
 
 			SATAController := Alloc(#ICH9::AHCI::Controller)
 			SATAController->Initialize(Device)
+			}
 		}
 	}
+
+	SleepMS(2000)
 }
 
 Task _KernelSetupTask
@@ -552,25 +557,28 @@ define void Main(TrampolineInfo* Info) {
 	
 	SetupInterrupts()
 	
-	i8 ClockRunning := false
-	
-	if (BootInfo->HPETBase) {
-		if (HPET_CAN_PROVIDE_SYSTEM_CLOCK && ConfigureHPETSystemClock(SYSTEM_CLOCK_HZ)) {
-			ClockRunning := true
+	if (BootInfo->HPETBase && HPET_CAN_PROVIDE_SYSTEM_CLOCK) {
+		Print("TIME: HPET is present and enabled, attempting to use as system clock\n")
+
+		if (ConfigureHPETSystemClock(SYSTEM_CLOCK_HZ)) {
+			SYSTEM_CLOCK_RUNNING := true
+			Print("TIME: HPET selected/configured as system clock\n")
+		}
+		else {
+			Print("TIME: HPET does not meet requirements for system clock\n")
 		}
 	}
 
-	if !(ClockRunning) {
+	if !(SYSTEM_CLOCK_RUNNING) {
 		ConfigurePITSystemClock(SYSTEM_CLOCK_HZ)
-		ClockRunning := true
+		SYSTEM_CLOCK_RUNNING := true
+		Print("TIME: PIT selected/configured as system clock\n")
 	}
 
-	loop {}
+	Print("TIME: System clock is running\n")
 
 	SetupTimers()
 	RegisterSerialInterrupts()
-
-	EnableInterrupts()
 	
 	Print("Set up PIT/timers/serial\n")
 	
@@ -597,11 +605,10 @@ define void Main(TrampolineInfo* Info) {
 
 	;loop {}
 
-	EnableInterrupts()
 	InitializePCIe(&VisitPCIeFunction)
-	DisableInterrupts()
 
 	Print("Done enumerating PCIe\n")
+	loop {}
 
 	;/*
 	if (SATAController = null) {

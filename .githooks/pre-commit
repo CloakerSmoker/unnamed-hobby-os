@@ -12,6 +12,12 @@ end
 set -l result 0
 
 for file in (cat build/Kernel.d | string split ' ' | uniq | grep -v compiler)
+	git check-ignore $file
+
+	if test $status = 0
+		continue
+	end
+
 	git ls-files --error-unmatch $file 2&> /dev/null
 	
 	if test $status = 1
