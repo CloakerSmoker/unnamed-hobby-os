@@ -396,6 +396,10 @@ struct PCIeDevice {
 
         MSI->Control := Control
     }
+
+    define i8 Is(i8 Class, i8 SubClass, i8 Interface) {
+        return this->ClassCode = Class && this->SubClass = SubClass && this->Interface = Interface
+    }
 }
 
 define void InitializePCIe(void(i32, i32, i32, PCIeDevice*) Visitor) {

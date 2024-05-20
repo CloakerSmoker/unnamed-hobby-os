@@ -358,7 +358,11 @@ ifneq (,$(findstring net-capture,$(flags)))
 endif
 
 ifneq (,$(findstring usb,$(flags)))
-	DISK_FLAGS:=-drive if=none,id=stick,format=raw,file=build/USB.img -device nec-usb-xhci,id=xhci -device usb-storage,bus=xhci.0,drive=stick
+	DISK_FLAGS:=-drive if=none,id=stick,format=raw,file=build/USB.img -usb -device usb-ehci,id=ehci -device usb-storage,bus=ehci.0,drive=stick
+endif
+
+ifneq (,$(findstring usb-debug,$(flags)))
+	QEMU_FLAGS+=--trace "usb_ehci*"
 endif
 
 ifneq (,$(findstring dry,$(flags)))

@@ -211,6 +211,8 @@ IDirectory* VFSDevicesDirectory := null
 
 ICH9::AHCI::Controller* SATAController := null
 
+#Require "./src/drivers/USB/EHCI/EHCI.rlx"
+
 define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Device) {
 	Print("%x/%x/%x:\n\t%pcie-product\n\t%pcie-purpose\n", Bus, Slot, Function, Device, Device)
 
@@ -267,7 +269,29 @@ define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Devic
 		}
 	}
 
-	SleepMS(2000)
+	if (Device->Is(PCI_CLASS_CODE_SERIAL_BUS_CONTROLLER, PCI_SUBCLASS_USB_CONTROLLER, PCI_INTERFACE_EHCI)) {
+		Print("\tFound EHCI controller!\n")
+
+		EHCIController* Controller := EHCIController:New(Device)
+
+		Print("\t%i ports present\n", Controller->PortCount)
+
+		Controller->Configure()
+
+		Print("\tConfigured\n")
+
+		for (i32 Index := 0, Index < Controller->PortCount, Index++) {
+			PortStatus Status := *Controller->GetPort(Index)
+
+			Print("PortStatus %i @ %x\n", Index, Status)
+
+			if (Status->CurrentConnectStatus) {
+				Print("\tPort %i connected\n", Index)
+			}
+		}
+
+		SleepMS(200000)
+	}
 }
 
 Task _KernelSetupTask

@@ -1,0 +1,393 @@
+
+enum PortRouting As i8 {
+    Dumb := 0
+    Mapped := 1
+}
+
+struct BaseRegisters {
+    i8 CapabilitiesLength
+    i8 _
+
+    i16 HostControllerInterfaceVersion
+
+    bits As i32 {
+        [0:3] PortCount
+        [4] PortPowerControlSupported
+        PortRouting [7] PortRoutingRule
+        [8:11] PortsPerCompanionController
+        [12:15] CompanionControllerCount
+        [16] PortIndicatorsSupported
+        [20:23] DebugPortNumber
+    }
+
+    bits As i32 {
+        [0] LargeAddressSupported
+        [1] ProgrammableFrameListSizeSupported
+        [2] AsynchronousScheduleParkSupported
+        [4:7] IsochronnousSchedulingThreshold
+        [8:15] ExtendedCapabilitiesPointer
+    }
+
+    i64 PortRouteMap
+}
+
+enum FrameListSize {
+    _1024 := 0
+    _512 := 1
+    _256 := 2
+}
+
+enum InterruptThreshold {
+    _1MF := 0x01
+    _2MF := 0x02
+    _4MF := 0x04
+    _8MF := 0x08
+    _1MS := 0x08
+    _2MS := 0x10
+    _4MS := 0x20
+    _8MS := 0x40
+}
+
+enum PortStatusTestMode As i8 {
+    Disabled := 0
+    J_STATE := 1
+    K_STATE := 2
+    SE0_NAK := 3
+    PACKET := 4
+    FORCE_ENABLE := 5
+}
+
+enum PortStatusIndicatorControl As i8 {
+    Off := 0
+    Amber := 1
+    Green := 2
+}
+
+bits PortStatus As i32 {
+    [0] CurrentConnectStatus
+    [1] ConnectStatusChange
+    [2] PortEnable
+    [3] PortEnableChange
+    [4] OverCurrentActive
+    [5] OverCurrentChange
+    [6] ForceResume
+    [7] Suspend
+    [8] Reset
+    [10:11] LineStatus
+    [12] Power
+    [13] Owned
+    PortStatusIndicatorControl [14:15] IndicatorControl
+    PortStatusTestMode [16:19] TestControl
+    [20] WakeOnConnect
+    [21] WakeOnDisconnect
+    [22] WakeOnOverCurrent
+}
+
+struct OperationalRegisters {
+    union {
+        i32 Command
+
+        bits As i32 {
+            [0] Run
+            [1] HostControllerReset
+            FrameListSize [2:3] FrameListSize
+            [4] PeriodicScheduleEnable
+            [5] AsyncScheduleEnable
+            [6] AsyncAdvanceInterruptDoorbell
+            [7] LightHostControllerReset
+            [8:9] AsyncScheduleParkModeCount
+            [11] AsyncScheduleParkModeEnable
+            InterruptThreshold [16:23] InterruptThresholdControl
+        }
+    }
+
+    union {
+        i32 Status
+
+        bits As i32 {
+            [0] InterruptIssued
+            [1] ErrorInterruptIssued
+            [2] PortChangeDetectInterruptIssued
+            [3] FrameListRolloverInterruptIssued
+            [4] HostSystemErrorInterruptIssued
+            [5] AsyncAdvanceInterruptIssued
+            [12] Halted
+            [13] AsyncScheduleEmpty
+            [14] PeriodicScheduleRunning
+            [15] AsyncScheduleRunning
+        }
+    }
+
+    union {
+        i32 AllInterruptEnable
+
+        bits As i32 {
+            [0] InterruptEnable
+            [1] ErrorInterruptEnable
+            [2] PortChangeInterruptEnable
+            [3] FrameListRolloverInterruptEnable
+            [4] HostSystemErrorInterruptEnable
+            [5] AsyncAdvanceInterruptEnable
+        }
+    }
+
+    i32 FrameIndex
+    i32 Top32Bits
+
+    i32 PeriodicFrameListBase
+    i32 NextAsynchronousAddress
+
+    i32[9] _
+
+    i32 Configured
+    PortStatus[0] Ports
+}
+
+enum FrameElementType As i8 {
+    Isochronous := 0
+    QueueHead := 1
+    SplitIsochronous := 2
+    FrameSpanTraversal := 3
+}
+
+bits FrameListLink As i32 {
+    [0] Terminate
+    FrameElementType [1:2] Type
+    [5:31] Pointer
+}
+
+bits IsochronousTransferDescriptorTransaction As i32 {
+    [0:11] DataOffset
+    [12:14] PageSelect
+    [15] InterruptOnComplete
+    [16:27] DataLength
+    [28] TransactionError
+    [29] BabbleDetected
+    [30] DataBufferError
+    [31] Active
+}
+
+bits IsochronousTransferDescriptorPage As i32 {
+    [12:31] BufferPointer
+}
+
+enum IsochronousTransferDirection As i8 {
+    OUT := 0
+    IN := 1
+}
+
+struct IsochronousTransferDescriptor {
+    FrameListLink Link
+
+    IsochronousTransferDescriptorTransaction[8] Transactions
+
+    union {
+        struct {
+            bits As i32 {
+                [0:6] DeviceAddress
+                [8:11] EndpointNumber
+            }
+
+            bits As i32 {
+                [0:10] MaximumPacketSize
+                [11] Direction
+            }
+
+            bits As i32 {
+                [0:1] MultiTransactionCount
+            }
+        }
+
+        IsochronousTransferDescriptorPage[7] Pages
+    }
+}
+
+bits QueueHeadDescriptorNext As i32 {
+    [0] Terminate
+    [5:31] NextPointer
+}
+
+enum QueueHeadPacketID {
+    OUT := 0
+    IN := 1
+    SETUP := 2
+}
+
+bits QueueHeadDescriptorBuffer As i32 {
+    [12:31] BufferPointer
+}
+
+struct QueueHeadDescriptor {
+    QueueHeadDescriptorNext Next
+    QueueHeadDescriptorNext AlternateNext
+
+    bits As i32 {
+        [0] PingState
+        [1] SplitState
+        [2] MissedMicroFrame
+        [3] TransactionError
+        [4] BabbleDetected
+        [5] DataBufferError
+        [6] Halted
+        [7] Active
+        
+        QueueHeadPacketID [8:9] PacketIDCode
+
+        [10:11] ErrorCounter
+        [12:14] CurrentPage
+        [15] InterruptOnComplete
+        [16:30] TotalBytesToTransfer
+        [31] DataToggle
+    }
+
+    union {
+        bits As i32 {
+            [0:11] CurrentOffset
+        }
+
+        QueueHeadDescriptorBuffer[5] Buffers
+    }
+}
+
+struct QueueHead {
+    FrameListLink Link
+
+    bits As i32 {
+        [0:6] DeviceAddress
+        [7] InactivateOnNextTransaction
+        [8:11] EndpointNumber
+        [12:13] EndpointSpeed
+        [14] DataToggleControl
+        [15] IsReclamationListHead
+        [16:26] MaximumPacketSize
+        [27] IsControlEndpoint
+        [28:31] NakCountReload
+    }
+
+    bits As i32 {
+        [0:7] InterruptScheduleMask
+        [8:15] SplitCompletionMask
+        [16:22] HubAddress
+        [23:29] PortNumber
+        [30:31] PipeMultiplier
+    }
+
+    bits As i32 {
+        [5:31] CurrentTransactionDescriptorPointer
+    }
+
+    i32 CurrentQueueDescriptorPointer
+
+    union {
+        QueueHeadDescriptor Descriptor
+
+        struct {
+            i32 _ ; Next qTD
+
+            bits As i32 { ; Alt next qTD
+                [1:4] NakCount
+            }
+
+            bits As i32 {
+                [0] PingState
+                [10:11] ErrorCounter
+                [15] InterruptOnComplete
+                [16:30] TotalBytesToTransfer
+                [31] DataToggle
+            }
+
+            i32 _ ; DWORD 7
+
+            bits As i32 {
+                [0:7] SplitTransactionProgress
+            }
+
+            bits As i32 {
+                [0:4] SplitTransactionFrameTag
+                [5:11] SplitBytes
+            }
+        }
+    }
+}
+
+struct FrameSpanTraversalNode {
+    FrameListLink Normal
+    FrameListLink Back
+}
+
+class EHCIController derives INew {
+    PCIeDevice* Device
+
+    union {
+        void* BAR0
+        BaseRegisters* Base
+    }
+
+    OperationalRegisters* Operational
+
+    i32 PortCount
+    PortStatus* Ports
+
+    i32 PeriodicFrameListLength
+    FrameListLink* PeriodicFrameList
+
+    define void New(PCIeDevice* Device) {
+        this->Device := Device
+
+        i32 Size := Device->GetBARSize(0)
+        i64 BAR0 := (Device->ReadBAR(0) As i64) & 0xFFFF_FFFF
+
+        this->BAR0 := BAR0 As void*
+
+        KernelAddressSpace->MapRange(this->BAR0, BAR0 / PAGE_SIZE, SizeToPageCount(Size))
+
+        i32 CapabilitiesLength := (this->Base->CapabilitiesLength As i32) & 0xFF
+        this->Operational := this->BAR0 + CapabilitiesLength
+
+        this->Ports := this->Operational->Ports
+        this->PortCount := this->Base->PortCount
+
+        this->PeriodicFrameList := KernelPageAllocator->AllocateVirtual(1)
+        
+        if (this->Operational->FrameListSize = FrameListSize::_256) {
+            this->PeriodicFrameListLength := 256
+        }
+        else if (this->Operational->FrameListSize = FrameListSize::_512) {
+            this->PeriodicFrameListLength := 512
+        }
+        else if (this->Operational->FrameListSize = FrameListSize::_1024) {
+            this->PeriodicFrameListLength := 1024
+        }
+    }
+
+    define void Configure() {
+        this->Operational->Top32Bits := 0
+
+        this->Operational->AllInterruptEnable := 0
+
+        this->Operational->InterruptEnable := true
+        this->Operational->ErrorInterruptEnable := true
+        this->Operational->HostSystemErrorInterruptEnable := true
+
+        for (i32 Index := 0, Index < this->PeriodicFrameListLength, Index++) {
+            FrameListLink* Link := &this->PeriodicFrameList[Index]
+
+            Link->Terminate := true
+        }
+
+        this->Operational->PeriodicFrameListBase := (VirtualToPhysical(this->PeriodicFrameList) & 0xFFFF_FFFF) As i32
+
+        this->Operational->InterruptThresholdControl := InterruptThreshold::_8MS
+
+        this->Operational->Run := true
+
+        this->Operational->Configured := true
+    }
+
+    define PortStatus* GetPort(i32 Index) {
+        return &this->Ports[Index]
+    }
+}
+
+i8 PCI_SUBCLASS_USB_CONTROLLER := 0x3
+i8 PCI_INTERFACE_EHCI := 0x20
