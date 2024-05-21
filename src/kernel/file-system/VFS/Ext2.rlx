@@ -4,23 +4,13 @@ i8 DEBUG_EXT2_OPTIMIZATION := false
 
 #Require "./src/drivers/file-system/Ext2.rlx"
 
-declare IFilePrototype* GetVFSExt2FilePrototype()
-
-struct VFSExt2File {
-    #Include "./src/kernel/file-system/VFS/IFile.rlx"
-
+class VFSExt2File implements aIFile, derives INew {
     Ext2* FS
     Ext2INode Node
 
-    static IFile* New(Ext2* FS, Ext2INode* Node) {
-        self* this := Alloc(#self)
-
-        this->Prototype := GetVFSExt2FilePrototype()
-
+    define void New(Ext2* FS, Ext2INode* Node) {
         this->FS := FS
         MoveMemory(this~>Node, Node, #Ext2INode)
-
-        return this As void*
     }
 
     define i8 IsEphemeral() {
@@ -32,39 +22,21 @@ struct VFSExt2File {
     }
 }
 
-IFilePrototype VFSExt2FilePrototype {
-    IsEphemeral: &VFSExt2File.IsEphemeral,
-    Open: &VFSExt2File.Open
-}
-
-define IFilePrototype* GetVFSExt2FilePrototype() {
-    return &VFSExt2FilePrototype
-}
-
-declare IDirectoryPrototype* GetVFSExt2DirectoryPrototype()
-
 struct VFSExt2DirectoryEnumerateState {
     i32 Handle
 }
 
-struct VFSExt2Directory {
-    #Include "./src/kernel/file-system/VFS/IDirectory.rlx"
-
+class VFSExt2Directory implements aIDirectory, derives INew {
     Ext2* FS
     Ext2INode Node
 
     AVLTree* Cache ; <i8*, VFSDirectoryEntry>
 
-    static IDirectory* New(Ext2* FS, Ext2INode* Node) {
-        self* this := Alloc(#self)
-
-        this->Prototype := GetVFSExt2DirectoryPrototype()
+    define void New(Ext2* FS, Ext2INode* Node) {
         this->FS := FS
         MoveMemory(this~>Node, Node, #Ext2INode)
 
         this->Cache := AVLTree:New(#VFSDirectoryEntry)
-
-        return this As void*
     }
 
     define i32 Count() {
@@ -182,12 +154,12 @@ struct VFSExt2Directory {
         return false
     }
 
-    define IDirectory* CreateDirectory() {
+    define aIDirectory* CreateDirectory() {
         i32 DirectoryNodeNumber := this->FS->CreateDirectory()
 
         return VFSExt2Directory:New(this->FS, this->FS->ReadINode(DirectoryNodeNumber))
     }
-    define IFile* CreateFile() {
+    define aIFile* CreateFile() {
         i32 FileNodeNumber := this->FS->CreateFile()
 
         return VFSExt2File:New(this->FS, this->FS->ReadINode(FileNodeNumber))
@@ -233,24 +205,4 @@ struct VFSExt2Directory {
 
         return true
     }
-}
-
-IDirectoryPrototype VFSExt2DirectoryPrototype {
-    Count: &VFSExt2Directory.Count,
-    Lookup: &VFSExt2Directory.Lookup,
-
-    Enumerate: &VFSExt2Directory.Enumerate,
-    Next: &VFSExt2Directory.Next,
-
-    IsEphemeral: &VFSExt2Directory.IsEphemeral,
-
-    CreateDirectory: &VFSExt2Directory.CreateDirectory,
-    CreateFile: &VFSExt2Directory.CreateFile,
-
-    Insert: &VFSExt2Directory.Insert,
-    Remove: &VFSExt2Directory.Remove
-}
-
-define IDirectoryPrototype* GetVFSExt2DirectoryPrototype() {
-    return &VFSExt2DirectoryPrototype
 }

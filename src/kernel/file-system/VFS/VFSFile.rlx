@@ -78,20 +78,13 @@ define FileHandlePrototype* GetVFSFileHandlePrototype() {
     return &VFSFileHandlePrototype
 }
 
-declare IFilePrototype* GetVFSFilePrototype()
+#Require "./src/kernel/file-system/VFS/VFS.rlx"
 
-struct VFSFile {
-    #Include "./src/kernel/file-system/VFS/IFile.rlx"
-
+class VFSFile implements aIFile, derives INew {
     VFSFileHandle* Handle
 
-    static IFile* New(void* Handle) {
-        self* this := Alloc(#self)
-
-        this->Prototype := GetVFSFilePrototype()
+    define void New(void* Handle) {
         this->Handle := Handle
-
-        return this As void*
     }
 
     define i8 IsEphemeral() {
@@ -101,13 +94,4 @@ struct VFSFile {
     define FileHandle* Open() {
         return this->Handle->AsHandle()
     }
-}
-
-IFilePrototype VFSFilePrototype {
-    IsEphemeral: &VFSFile.IsEphemeral,
-    Open: &VFSFile.Open
-}
-
-define IFilePrototype* GetVFSFilePrototype() {
-    return &VFSFilePrototype
 }

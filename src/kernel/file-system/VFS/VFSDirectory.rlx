@@ -2,25 +2,16 @@
 
 #Require "./src/kernel/file-system/VFS/VFSFile.rlx"
 
-declare IDirectoryPrototype* GetVFSDirectoryPrototype()
-
 struct VFSDirectoryEnumerateState {
     i32 Index
     i32 Count
 }
 
-struct VFSDirectory {
-    #Include "./src/kernel/file-system/VFS/IDirectory.rlx"
-
+class VFSDirectory implements aIDirectory, derives INew {
     AVLTree* Children ; <VFSDirectoryEntry*>
 
-    static IDirectory* New() {
-        self* this := Alloc(#self)
-
-        this->Prototype := GetVFSDirectoryPrototype()
+    define void New() {
         this->Children := AVLTree:New(#VFSDirectoryEntry)
-
-        return this As IDirectory*
     }
 
     define i32 Count() {
@@ -68,11 +59,24 @@ struct VFSDirectory {
         return true
     }
 
-    define IDirectory* CreateDirectory() {
-        return VFSDirectory:New()
+    static aIDirectory* OldNew() {
+        ; TODO: fuck.
+        ; Derived methods are only generated *after* the full class has been
+        ;  parsed. So we can't call `self:New()` inside of this class
+
+        self* this := Alloc(#self)
+
+        (this As IAny)->Initialize()
+        this->Children := AVLTree:New(#VFSDirectoryEntry)
+
+        return this As aIDirectory*
     }
 
-    define IFile* CreateFile() {
+    define aIDirectory* CreateDirectory() {
+        return VFSDirectory:OldNew()
+    }
+
+    define aIFile* CreateFile() {
         return VFSFile:New(VFSFileHandle:New())
     }
 
@@ -86,20 +90,4 @@ struct VFSDirectory {
 
         return true
     }
-}
-
-IDirectoryPrototype VFSDirectoryPrototype {
-    Count: &VFSDirectory.Count,
-    Lookup: &VFSDirectory.Lookup,
-    Enumerate: &VFSDirectory.Enumerate,
-    Next: &VFSDirectory.Next,
-    IsEphemeral: &VFSDirectory.IsEphemeral,
-    CreateDirectory: &VFSDirectory.CreateDirectory,
-    CreateFile: &VFSDirectory.CreateFile,
-    Insert: &VFSDirectory.Insert,
-    Remove: &VFSDirectory.Remove
-}
-
-define IDirectoryPrototype* GetVFSDirectoryPrototype() {
-    return &VFSDirectoryPrototype
 }

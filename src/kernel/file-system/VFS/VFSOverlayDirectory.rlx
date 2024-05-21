@@ -1,7 +1,5 @@
 #Require "$/Memory.rlx"
 
-declare IDirectoryPrototype* GetVFSOverlayDirectoryPrototype()
-
 struct VFSOverlayDirectoryEnumerateState {
     i32 Count
     i32 Index
@@ -13,11 +11,9 @@ enum VFSOverlayWriteMode {
     OnlyEphemeralToOverlay
 }
 
-struct VFSOverlayDirectory {
-    #Include "./src/kernel/file-system/VFS/IDirectory.rlx"
-    
-    IDirectory* Base
-    IDirectory* Overlay
+class VFSOverlayDirectory implements aIDirectory, derives INew {
+    aIDirectory* Base
+    aIDirectory* Overlay
 
     VFSOverlayWriteMode WriteMode
 
@@ -126,13 +122,19 @@ struct VFSOverlayDirectory {
         return this->Overlay->IsEphemeral()
     }
 
-    define IDirectory* CreateDirectory() {
+    define aIDirectory* CreateDirectory() {
         if (this->WriteMode = VFSOverlayWriteMode::OnlyEphemeralToOverlay) {
             return this->Base->CreateDirectory()
         }
         else if (this->WriteMode = VFSOverlayWriteMode::AllToOverlay) {
             return this->Overlay->CreateDirectory()
         }
+
+        return null
+    }
+
+    define aIFile* CreateFile() {
+        Throw('UNIMP')
 
         return null
     }
@@ -168,37 +170,13 @@ struct VFSOverlayDirectory {
         }
     }
 
-    static IDirectory* New(IDirectory* Base, IDirectory* Overlay, VFSOverlayWriteMode WriteMode) {
-        self* this := Alloc(#self)
-
-        this->Prototype := GetVFSOverlayDirectoryPrototype()
+    define void New(aIDirectory* Base, aIDirectory* Overlay, VFSOverlayWriteMode WriteMode) {
         this->Base := Base
         this->Overlay := Overlay
         this->WriteMode := WriteMode
-
-        return this As IDirectory*
     }
 
-    static IDirectory* New(IDirectory* Base, IDirectory* Overlay) {
-        return self:New(Base, Overlay, VFSOverlayWriteMode::AllToOverlay)
+    define void New(aIDirectory* Base, aIDirectory* Overlay) {
+        this->New(Base, Overlay, VFSOverlayWriteMode::AllToOverlay)
     }
-}
-
-IDirectoryPrototype VFSOverlayDirectoryPrototype {
-    Count: &VFSOverlayDirectory.Count,
-    Lookup: &VFSOverlayDirectory.Lookup,
-
-    Enumerate: &VFSOverlayDirectory.Enumerate,
-    Next: &VFSOverlayDirectory.Next,
-
-    IsEphemeral: &VFSOverlayDirectory.IsEphemeral,
-
-    CreateDirectory: &VFSOverlayDirectory.CreateDirectory,
-
-    Insert: &VFSOverlayDirectory.Insert,
-    Remove: &VFSOverlayDirectory.Remove
-}
-
-define IDirectoryPrototype* GetVFSOverlayDirectoryPrototype() {
-    return &VFSOverlayDirectoryPrototype
 }

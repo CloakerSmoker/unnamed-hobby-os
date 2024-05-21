@@ -1,9 +1,0 @@
-    IDirectoryPrototype* Prototype
-
-    define i8 Is(IDirectoryPrototype* Prototype) {
-        return this->Prototype = Prototype
-    }
-
-    define IDirectory* AsDirectory() {
-        return this As void*
-    }
