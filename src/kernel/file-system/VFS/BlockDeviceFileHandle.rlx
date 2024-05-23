@@ -81,21 +81,11 @@ define FileHandlePrototype* GetBlockDeviceFileHandlePrototype() {
     return &BlockDeviceFileHandlePrototype
 }
 
-declare IFilePrototype* GetVFSBlockDeviceFilePrototype()
-
-struct VFSBlockDeviceFile {
-    #Include "./src/kernel/file-system/VFS/IFile.rlx"
-
+class VFSBlockDeviceFile implements aIFile, derives INew {
     FileHandle* Handle
 
-    static IFile* New(FileHandle* Handle) {
-        self* this := Alloc(#self)
-
-        this->Prototype := GetVFSBlockDeviceFilePrototype()
-
+    define void New(FileHandle* Handle) {
         this->Handle := Handle
-
-        return this As void*
     }
 
     define i8 IsEphemeral() {
@@ -108,14 +98,4 @@ struct VFSBlockDeviceFile {
     define void Close(FileHandle* Handle) {
         
     }
-}
-
-IFilePrototype VFSBlockDeviceFilePrototype {
-    IsEphemeral: &VFSBlockDeviceFile.IsEphemeral,
-    Open: &VFSBlockDeviceFile.Open,
-    Close: &VFSBlockDeviceFile.Close
-}
-
-define IFilePrototype* GetVFSBlockDeviceFilePrototype() {
-    return &VFSBlockDeviceFilePrototype
 }

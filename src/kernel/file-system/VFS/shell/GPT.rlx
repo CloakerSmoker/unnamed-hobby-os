@@ -97,9 +97,9 @@ define void ExecuteGPT(i64 ArgC, i8** ArgV) {
         return
     }
 
-    IFile* File := Entry.File
+    aIFile* File := Entry.File
 
-    if !(File->Is(GetVFSBlockDeviceFilePrototype())) {
+    if (File->TypeID() != typeid:(VFSBlockDeviceFile)) {
         Print("'%s' not a block device", DevicePath)
         return
     }
@@ -148,7 +148,7 @@ define void ExecuteGPT(i64 ArgC, i8** ArgV) {
             
             BlockDevice* PartitionDevice := GPTBlockDevice:New(RawDevice, NextPartition)
             FileHandle* PartitionHandle := BlockDeviceFileHandle:New(PartitionDevice)
-            IFile* PartitionFile := VFSBlockDeviceFile:New(PartitionHandle)
+            aIFile* PartitionFile := VFSBlockDeviceFile:New(PartitionHandle)
 
             i8* FileName := FormatString("%sp%i", Entry.Name, Index)
 

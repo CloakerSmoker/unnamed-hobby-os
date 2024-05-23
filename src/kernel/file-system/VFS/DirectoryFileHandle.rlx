@@ -3,10 +3,10 @@ declare FileHandlePrototype* GetGenericDirectoryFileHandlePrototype()
 struct GenericDirectoryFileHandle {
 	#Include "./src/kernel/file-system/HandleInstance.rlx"
 	
-    IDirectory* Directory
+    aIDirectory* Directory
 	void* EnumerationState
 
-	static FileHandle* New(IDirectory* Directory) {
+	static FileHandle* New(aIDirectory* Directory) {
 		self* this := Alloc(#self)
 
 		this->Prototype := GetGenericDirectoryFileHandlePrototype()

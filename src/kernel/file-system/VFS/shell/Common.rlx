@@ -1,5 +1,5 @@
 define void ExecuteLS(i64 ArgC, i8** ArgV) {
-    IDirectory* Target := CurrentDirectory
+    aIDirectory* Target := CurrentDirectory
 
     if (ArgC = 2) {
         i8* Path := ArgV[1]
@@ -83,7 +83,7 @@ define void ExecuteTouch(i64 ArgC, i8** ArgV) {
     FilePath Path
     ParsePath(RawPath, &Path)
 
-    IDirectory* ParentDirectory := LookupParentDirectory(CurrentDirectory, &Path)
+    aIDirectory* ParentDirectory := LookupParentDirectory(CurrentDirectory, &Path)
 
     if !(ParentDirectory) {
         Print("'%s' not found\n", RawPath)
@@ -205,7 +205,7 @@ define void ExecuteDD(i64 ArgC, i8** ArgV) {
         return
     }
 
-    IFile* InputFile := InputEntry.File
+    aIFile* InputFile := InputEntry.File
     FileHandle* Input := InputFile->Open()
     Input->Seek(InputBase * BlockSize, SeekMode::Set)
 
@@ -222,7 +222,7 @@ define void ExecuteDD(i64 ArgC, i8** ArgV) {
         return
     }
 
-    IFile* OutputFile := OutputEntry.File
+    aIFile* OutputFile := OutputEntry.File
     FileHandle* Output := OutputFile->Open()
     Output->Seek(OutputBase * BlockSize, SeekMode::Set)
 
@@ -258,7 +258,7 @@ define void ExecuteInstall(i64 ArgC, i8** ArgV) {
         return
     }
 
-    IFile* SourceFile := SourceEntry.File
+    aIFile* SourceFile := SourceEntry.File
     FileHandle* Source := SourceFile->Open()
 
     Source->Seek(SeekMode::End, 0)
@@ -275,7 +275,7 @@ define void ExecuteInstall(i64 ArgC, i8** ArgV) {
     FilePath DestinationPath
     ParsePath(RawDestinationPath, &DestinationPath)
 
-    IDirectory* Current := CurrentDirectory
+    aIDirectory* Current := CurrentDirectory
 
     if (DestinationPath.Anchor = FilePathAnchor::Root) {
         Current := VFSRootDirectory
@@ -299,7 +299,7 @@ define void ExecuteInstall(i64 ArgC, i8** ArgV) {
         Current := Next.Directory
     }
     
-    IFile* Destination := Current->CreateFile()
+    aIFile* Destination := Current->CreateFile()
 
     VFSDirectoryEntry Entry {
         Type: VFSDirectoryEntryType::File,

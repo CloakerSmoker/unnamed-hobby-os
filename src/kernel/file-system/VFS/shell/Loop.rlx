@@ -18,7 +18,7 @@ struct ActiveLoopDevice {
 
     union {
         VFSBlockDeviceFile* File,
-        IFile* RawFile
+        aIFile* RawFile
     }
 
     static self* New() {
@@ -55,7 +55,7 @@ define void ExecuteLoop(i64 ArgC, i8** ArgV) {
             return
         }
 
-        IFile* File := Entry.File
+        aIFile* File := Entry.File
         FileHandle* Handle := File->Open()
 
         ActiveLoopDevice* Device := ActiveLoopDevice:New()

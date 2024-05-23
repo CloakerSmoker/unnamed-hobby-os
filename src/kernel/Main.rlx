@@ -188,7 +188,7 @@ PrintOutputAdapterPrototype KernelPrinter {
 #Require "./src/kernel/file-system/VFS/BlockDeviceFileHandle.rlx"
 #Require "./src/kernel/file-system/VFS/ZeroDevice.rlx"
 
-IDirectory* VFSDevicesDirectory := null
+aIDirectory* VFSDevicesDirectory := null
 
 #Require "./src/kernel/file-system/KernelShell.rlx"
 
@@ -312,7 +312,7 @@ define void InitializeTerminal() {
 	KernelTerminal := NewHandle(&TerminalFilePrototype, TERMINAL_MAJOR, TERMINAL_MINOR)
 }
 
-define void PopulateDevicesDirectory(IDirectory* DevicesDirectory) {
+define void PopulateDevicesDirectory(aIDirectory* DevicesDirectory) {
 	; Virtual Devices: /dev/zero
 
     DevicesDirectory->Insert("zero", ZeroDeviceFile:New())
@@ -329,12 +329,12 @@ define void PopulateDevicesDirectory(IDirectory* DevicesDirectory) {
 
 	; /dev/disk
 
-	IDirectory* DiskDirectory := DevicesDirectory->CreateDirectory()
+	aIDirectory* DiskDirectory := DevicesDirectory->CreateDirectory()
 	DevicesDirectory->Insert("disk", DiskDirectory)
 
 	; /dev/disk/gpt
 
-	IDirectory* GPTDirectory := DiskDirectory->CreateDirectory()
+	aIDirectory* GPTDirectory := DiskDirectory->CreateDirectory()
 	DiskDirectory->Insert("gpt", GPTDirectory)
 
 	; SATA Devices: /dev/sataX
@@ -355,7 +355,7 @@ define void PopulateDevicesDirectory(IDirectory* DevicesDirectory) {
 
 			BlockDevice* Device := ICH9::AHCI::PortBlockDevice:New(Port)
 			FileHandle* Handle := BlockDeviceFileHandle:New(Device)
-			IFile* File := VFSBlockDeviceFile:New(Handle)
+			aIFile* File := VFSBlockDeviceFile:New(Handle)
 
 			DevicesDirectory->Insert(FormatString("sata%i", Index), File)
 
@@ -386,7 +386,7 @@ define void PopulateDevicesDirectory(IDirectory* DevicesDirectory) {
 
 				BlockDevice* PartitionDevice := GPTBlockDevice:New(Device, NextPartition)
 				FileHandle* PartitionHandle := BlockDeviceFileHandle:New(PartitionDevice)
-				IFile* PartitionFile := VFSBlockDeviceFile:New(PartitionHandle)
+				aIFile* PartitionFile := VFSBlockDeviceFile:New(PartitionHandle)
 
 				DevicesDirectory->Insert(FileName, PartitionFile)
 				GPTDirectory->Insert(GUIDName, PartitionFile)
@@ -415,7 +415,7 @@ define void ExecuteExecute(i32 ArgC, i8** ArgV) {
         return
     }
 
-    IFile* InputFile := Entry.File
+    aIFile* InputFile := Entry.File
     FileHandle* Input := InputFile->Open()
 
 	Input->Seek(SeekMode::End, 0)
@@ -461,16 +461,16 @@ OpenFSErrors OpenEFISystemErrors {
 	NotABlockDevice: "EFI system device is not a block device. What?"
 }
 
-define IDirectory* OpenFSFromPath(OpenFSErrors* Errors, i8* Path, IDirectory*(BlockDevice*) OpenDevice) {
+define aIDirectory* OpenFSFromPath(OpenFSErrors* Errors, i8* Path, aIDirectory*(BlockDevice*) OpenDevice) {
 	VFSDirectoryEntry DeviceEntry
 
 	if !(Lookup(null, Path, &DeviceEntry)) {
 		Panic(Errors->NoEntry)
 	}
 
-    IFile* File := DeviceEntry.File
+    aIFile* File := DeviceEntry.File
 
-    if !(File->Is(GetVFSBlockDeviceFilePrototype())) {
+    if (File->TypeID() != typeid:(VFSBlockDeviceFile)) {
         Panic(Errors->NotABlockDevice)
     }
 
@@ -485,8 +485,8 @@ define void MountPartitions(i8* RootPartitionGUID, i8* EFISystemPartitionGUID) {
 	i8* EFISystemPartitionPath := FormatString("/dev/disk/gpt/%s", EFISystemPartitionGUID)
 	i8* RootPartitionPath := FormatString("/dev/disk/gpt/%s", RootPartitionGUID)
 
-	IDirectory* EFISystemRootDirectory := OpenFSFromPath(&OpenEFISystemErrors, EFISystemPartitionPath, &OpenFAT32)
-	IDirectory* RootDirectory := OpenFSFromPath(&OpenRootErrors, RootPartitionPath, &OpenExt2)
+	aIDirectory* EFISystemRootDirectory := OpenFSFromPath(&OpenEFISystemErrors, EFISystemPartitionPath, &OpenFAT32)
+	aIDirectory* RootDirectory := OpenFSFromPath(&OpenRootErrors, RootPartitionPath, &OpenExt2)
 
 	MountRoot(RootDirectory)
 	Mount(null, "/efi", EFISystemRootDirectory)

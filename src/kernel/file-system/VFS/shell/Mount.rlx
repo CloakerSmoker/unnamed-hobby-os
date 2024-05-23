@@ -1,5 +1,5 @@
 
-define IDirectory* OpenFAT32(BlockDevice* Device) {
+define aIDirectory* OpenFAT32(BlockDevice* Device) {
 	FAT32Device* FATDevice := Alloc(#FAT32Device)
 	FATDevice->Initialize(Device)
 
@@ -8,7 +8,7 @@ define IDirectory* OpenFAT32(BlockDevice* Device) {
     return FAT32Directory:New(FATDevice, FATDevice->Header->RootDirectoryCluster)
 }
 
-define IDirectory* OpenExt2(BlockDevice* Device) {
+define aIDirectory* OpenExt2(BlockDevice* Device) {
     Ext2* FS := Ext2:New(Device)
 
     FS->Open()
@@ -37,9 +37,9 @@ define void ExecuteMount(i64 ArgC, i8** ArgV) {
         return
     }
 
-    IFile* File := Entry.File
+    aIFile* File := Entry.File
 
-    if !(File->Is(GetVFSBlockDeviceFilePrototype())) {
+    if (File->TypeID() != typeid:(VFSBlockDeviceFile)) {
         Print("'%s' not a block device", DevicePath)
         return
     }
@@ -48,7 +48,7 @@ define void ExecuteMount(i64 ArgC, i8** ArgV) {
     BlockDeviceFileHandle* BlockDeviceHandle := BlockDeviceFile->Handle As void*
     BlockDevice* Device := BlockDeviceHandle->Device
 
-    IDirectory* DeviceRoot := null
+    aIDirectory* DeviceRoot := null
 
     if (StringEquals(Type, "ext2")) {
         DeviceRoot := OpenExt2(Device)

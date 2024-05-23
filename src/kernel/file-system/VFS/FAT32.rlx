@@ -1,29 +1,19 @@
 #Require "./src/drivers/file-system/FAT32.rlx"
 
-declare IDirectoryPrototype* GetFAT32DirectoryPrototype()
-
 struct FAT32DirectoryEnumerateState {
     i32 Handle
 }
 
-struct FAT32Directory {
-    #Include "./src/kernel/file-system/VFS/IDirectory.rlx"
-
+class FAT32Directory implements aIDirectory, derives INew {
     FAT32Device* FS
     i32 Cluster
 
     AVLTree* Cache ; <i8*, VFSDirectoryEntry>
 
-    static IDirectory* New(FAT32Device* FS, i32 Cluster) {
-        self* this := Alloc(#self)
-
-        this->Prototype := GetFAT32DirectoryPrototype()
-
+    define void New(FAT32Device* FS, i32 Cluster) {
         this->FS := FS
         this->Cluster := Cluster
         this->Cache := AVLTree:New(#VFSDirectoryEntry)
-        
-        return this As void*
     }
 
     define i32 Count() {
@@ -135,12 +125,12 @@ struct FAT32Directory {
         return false
     }
 
-    define IDirectory* CreateDirectory() {
+    define aIDirectory* CreateDirectory() {
         i32 DirectoryClusterNumber := this->FS->AllocateCluster()
 
         return FAT32Directory:New(this->FS, DirectoryClusterNumber)
     }
-    define IFile* CreateFile() {
+    define aIFile* CreateFile() {
         i32 FileClusterNumber := this->FS->AllocateCluster()
 
         return null
@@ -158,18 +148,4 @@ struct FAT32Directory {
 
         return true
     }
-}
-
-IDirectoryPrototype FAT32DirectoryPrototype {
-    Count: &FAT32Directory.Count,
-    Lookup: &FAT32Directory.Lookup,
-    Enumerate: &FAT32Directory.Enumerate,
-    Next: &FAT32Directory.Next,
-    IsEphemeral: &FAT32Directory.IsEphemeral,
-    Insert: &FAT32Directory.Insert,
-    Remove: &FAT32Directory.Remove
-}
-
-define IDirectoryPrototype* GetFAT32DirectoryPrototype() {
-    return &FAT32DirectoryPrototype
 }

@@ -1,6 +1,6 @@
 
-IDirectory* CurrentDirectory := null
-IDirectory* DevicesDirectory := null
+aIDirectory* CurrentDirectory := null
+aIDirectory* DevicesDirectory := null
 
 #Require "./src/kernel/file-system/VFS/shell/Utilities.rlx"
 

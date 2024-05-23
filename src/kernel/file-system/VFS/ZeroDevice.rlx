@@ -43,21 +43,11 @@ define FileHandlePrototype* GetZeroDeviceFileHandlePrototype() {
     return &ZeroDeviceFileHandlePrototype
 }
 
-declare IFilePrototype* GetZeroDeviceFilePrototype()
-
-struct ZeroDeviceFile {
-    #Include "./src/kernel/file-system/VFS/IFile.rlx"
-
+class ZeroDeviceFile implements aIFile, derives INew {
     FileHandle* Handle
 
-    static IFile* New() {
-        self* this := Alloc(#self)
-
-        this->Prototype := GetVFSBlockDeviceFilePrototype()
-
+    define void New() {
         this->Handle := ZeroDeviceFileInstance:New()
-
-        return this As void*
     }
 
     define i8 IsEphemeral() {
@@ -70,14 +60,4 @@ struct ZeroDeviceFile {
     define void Close(FileHandle* Handle) {
         
     }
-}
-
-IFilePrototype ZeroDeviceFilePrototype {
-    IsEphemeral: &ZeroDeviceFile.IsEphemeral,
-    Open: &ZeroDeviceFile.Open,
-    Close: &ZeroDeviceFile.Close
-}
-
-define IFilePrototype* GetZeroDeviceFilePrototype() {
-    return &ZeroDeviceFilePrototype
 }

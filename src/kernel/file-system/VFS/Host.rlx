@@ -6,11 +6,11 @@ declare FileHandlePrototype* GetHostFileHandlePrototype()
 struct HostFileInstance {
     #Include "./src/kernel/file-system/HandleInstance.rlx"
 
-    IFile* VFS
+    aIFile* VFS
     i64 Handle
     i8 ReadOnly
 
-    static FileHandle* New(IFile* VFS, i64 Handle, i8 ReadOnly) {
+    static FileHandle* New(aIFile* VFS, i64 Handle, i8 ReadOnly) {
         self* this := Alloc(#self)
         
         this->Prototype := GetHostFileHandlePrototype()
@@ -59,23 +59,13 @@ define FileHandlePrototype* GetHostFileHandlePrototype() {
     return &HostFileHandlePrototype
 }
 
-declare IFilePrototype* GetVFSHostFilePrototype()
-
-struct VFSHostFile {
-    #Include "./src/kernel/file-system/VFS/IFile.rlx"
-
+class VFSHostFile implements aIFile, derives INew {
     i64 Handle
     i8 ReadOnly
 
-    static IFile* New(i64 Handle, i8 ReadOnly) {
-        self* this := Alloc(#self)
-
-        this->Prototype := GetVFSHostFilePrototype()
-
+    define void New(i64 Handle, i8 ReadOnly) {
         this->Handle := Handle
         this->ReadOnly := ReadOnly
-
-        return this As void*
     }
 
     define i8 IsEphemeral() {
@@ -83,44 +73,24 @@ struct VFSHostFile {
     }
 
     define FileHandle* Open() {
-        return HostFileInstance:New(this->AsFile(), this->Handle, this->ReadOnly)
+        return HostFileInstance:New(this, this->Handle, this->ReadOnly)
     }
     define void Close(FileHandle* Handle) {
         Free(Handle)
     }
 }
 
-IFilePrototype VFSHostFilePrototype {
-    IsEphemeral: &VFSHostFile.IsEphemeral,
-    Open: &VFSHostFile.Open,
-    Close: &VFSHostFile.Close
-}
-
-define IFilePrototype* GetVFSHostFilePrototype() {
-    return &VFSHostFilePrototype
-}
-
-declare IDirectoryPrototype* GetVFSHostDirectoryPrototype()
-
-struct VFSHostDirectory {
-    #Include "./src/kernel/file-system/VFS/IDirectory.rlx"
-
+class VFSHostDirectory implements aIDirectory, derives INew {
     i64 Handle
     i8 ReadOnly
 
     AVLTree* Cache ; <i8*, VFSDirectoryEntry>
 
-    static IDirectory* New(i64 Handle, i8 ReadOnly) {
-        self* this := Alloc(#self)
-
-        this->Prototype := GetVFSHostDirectoryPrototype()
-        
+    define void New(i64 Handle, i8 ReadOnly) {
         this->Handle := Handle
         this->ReadOnly := ReadOnly
 
         this->Cache := AVLTree:New(#VFSDirectoryEntry)
-
-        return this As void*
     }
 
     define void Reset() {
@@ -248,14 +218,14 @@ struct VFSHostDirectory {
         return false
     }
 
-    define IDirectory* CreateDirectory() {
+    define aIDirectory* CreateDirectory() {
         ;i32 DirectoryNodeNumber := this->FS->CreateDirectory()
 
         ;return VFSHostDirectory:New(this->FS, this->FS->ReadINode(DirectoryNodeNumber))
 
         return null
     }
-    define IFile* CreateFile() {
+    define aIFile* CreateFile() {
         ;i32 FileNodeNumber := this->FS->CreateDirectory()
 
         ;return VFSHostFile:New(this->FS, this->FS->ReadINode(FileNodeNumber))
@@ -295,24 +265,4 @@ struct VFSHostDirectory {
 
         return false
     }
-}
-
-IDirectoryPrototype VFSHostDirectoryPrototype {
-    Count: &VFSHostDirectory.Count,
-    Lookup: &VFSHostDirectory.Lookup,
-
-    Enumerate: &VFSHostDirectory.Enumerate,
-    Next: &VFSHostDirectory.Next,
-
-    IsEphemeral: &VFSHostDirectory.IsEphemeral,
-
-    CreateDirectory: &VFSHostDirectory.CreateDirectory,
-    CreateFile: &VFSHostDirectory.CreateFile,
-
-    Insert: &VFSHostDirectory.Insert,
-    Remove: &VFSHostDirectory.Remove
-}
-
-define IDirectoryPrototype* GetVFSHostDirectoryPrototype() {
-    return &VFSHostDirectoryPrototype
 }

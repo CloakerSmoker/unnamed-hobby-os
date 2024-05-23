@@ -59,21 +59,8 @@ class VFSDirectory implements aIDirectory, derives INew {
         return true
     }
 
-    static aIDirectory* OldNew() {
-        ; TODO: fuck.
-        ; Derived methods are only generated *after* the full class has been
-        ;  parsed. So we can't call `self:New()` inside of this class
-
-        self* this := Alloc(#self)
-
-        (this As IAny)->Initialize()
-        this->Children := AVLTree:New(#VFSDirectoryEntry)
-
-        return this As aIDirectory*
-    }
-
     define aIDirectory* CreateDirectory() {
-        return VFSDirectory:OldNew()
+        return VFSDirectory:New()
     }
 
     define aIFile* CreateFile() {

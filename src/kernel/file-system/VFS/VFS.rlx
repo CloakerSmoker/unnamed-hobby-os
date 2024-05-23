@@ -31,7 +31,7 @@ interface aIDirectory {
 
     virtual i8 Insert(VFSDirectoryEntry*)
 
-    virtual i8 InsertFile(i8* Name, aIFile* File) {
+    virtual i8 Insert(i8* Name, aIFile* File) {
         _VFSDirectoryEntry Entry {
             Type: VFSDirectoryEntryType::File,
             Name: Name,
@@ -40,7 +40,8 @@ interface aIDirectory {
 
         return this->Insert(&Entry As void*)
     }
-    virtual i8 InsertDirectory(i8* Name, aIDirectory* Directory) {
+
+    virtual i8 Insert(i8* Name, aIDirectory* Directory) {
         _VFSDirectoryEntry Entry {
             Type: VFSDirectoryEntryType::Directory,
             Name: Name,

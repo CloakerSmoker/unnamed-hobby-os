@@ -17,6 +17,16 @@ class VFSOverlayDirectory implements aIDirectory, derives INew {
 
     VFSOverlayWriteMode WriteMode
 
+    define void New(aIDirectory* Base, aIDirectory* Overlay, VFSOverlayWriteMode WriteMode) {
+        this->Base := Base
+        this->Overlay := Overlay
+        this->WriteMode := WriteMode
+    }
+
+    define void New(aIDirectory* Base, aIDirectory* Overlay) {
+        this->New(Base, Overlay, VFSOverlayWriteMode::AllToOverlay)
+    }
+
     define i32 Count() {
         i32 Result := this->Base->Count()
 
@@ -168,15 +178,5 @@ class VFSOverlayDirectory implements aIDirectory, derives INew {
         else {
             return false
         }
-    }
-
-    define void New(aIDirectory* Base, aIDirectory* Overlay, VFSOverlayWriteMode WriteMode) {
-        this->Base := Base
-        this->Overlay := Overlay
-        this->WriteMode := WriteMode
-    }
-
-    define void New(aIDirectory* Base, aIDirectory* Overlay) {
-        this->New(Base, Overlay, VFSOverlayWriteMode::AllToOverlay)
     }
 }
