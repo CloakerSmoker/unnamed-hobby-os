@@ -9,8 +9,8 @@ struct _VFSDirectoryEntry {
     i8* Name
     
     union {
-        IDirectory* Directory
-        IFile* File
+        aIDirectory* Directory
+        aIFile* File
         void* Value
     }
 
@@ -69,8 +69,8 @@ struct bIDirectoryPrototype {
 
     i8(void*) IsEphemeral
 
-    IDirectory*(void*) CreateDirectory
-    IFile*(void*) CreateFile
+    bIDirectory*(void*) CreateDirectory
+    bIFile*(void*) CreateFile
 
     i8(void*, VFSDirectoryEntry*) Insert
     i8(void*, i8*) Remove
@@ -97,10 +97,10 @@ struct bIDirectory {
         return this->Prototype->IsEphemeral(this)
     }
 
-    define IDirectory* CreateDirectory() {
+    define bIDirectory* CreateDirectory() {
         return this->Prototype->CreateDirectory(this)
     }
-    define IFile* CreateFile() {
+    define bIFile* CreateFile() {
         return this->Prototype->CreateFile(this)
     }
     
@@ -116,10 +116,10 @@ struct bIDirectory {
 
         return this->Insert(&Entry As void*)
     }
-    define i8 Insert(i8* Name, IDirectory* Value) {
+    define i8 Insert(i8* Name, bIDirectory* Value) {
         return this->Insert(VFSDirectoryEntryType::Directory, Name, Value)
     }
-    define i8 Insert(i8* Name, IFile* Value) {
+    define i8 Insert(i8* Name, bIFile* Value) {
         return this->Insert(VFSDirectoryEntryType::File, Name, Value)
     }
     define i8 Has(i8* Name) {

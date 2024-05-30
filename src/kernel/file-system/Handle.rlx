@@ -96,9 +96,9 @@ struct FileHandlePrototype {
 		Free(this)
 	}
 
-	i32(void*, MemoryMappingGroup*, void*, i32, i32) MapIntoMemory
+	i32(void*, MemoryMapper*, void*, i32, i32) MapIntoMemory
 
-	define i32 DefaultMapIntoMemory(MemoryMappingGroup* Mappings, void* Virtual, i32 Offset, i32 Size) {
+	define i32 DefaultMapIntoMemory(MemoryMapper* Mappings, void* Virtual, i32 Offset, i32 Size) {
 		Throw(HANDLE_ERROR_NOT_SUPPORTED)
 		return 0
 	}
@@ -244,7 +244,7 @@ struct FileHandle {
 		return CloneMemory(this, this->Prototype->DataSize)
 	}
 
-	define i32 MapIntoMemory(MemoryMappingGroup* Mappings, void* Where, i32 Offset, i32 Size) {
+	define i32 MapIntoMemory(MemoryMapper* Mappings, void* Where, i32 Offset, i32 Size) {
 		return this->Prototype->MapIntoMemory(this, Mappings, Where, Offset, Size)
 	}
 
