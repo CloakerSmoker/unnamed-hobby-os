@@ -37,7 +37,7 @@ define void ExecuteFormat(i64 ArgC, i8** ArgV) {
         return
     }
 
-    VFSBlockDeviceFile* BlockDeviceFile := File As void*
+    VFSBlockDeviceFile* BlockDeviceFile := File
     BlockDeviceFileHandle* BlockDeviceHandle := BlockDeviceFile->Handle As void*
     BlockDevice* Device := BlockDeviceHandle->Device
 

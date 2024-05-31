@@ -104,7 +104,7 @@ define void ExecuteGPT(i64 ArgC, i8** ArgV) {
         return
     }
 
-    VFSBlockDeviceFile* BlockDeviceFile := File As void*
+    VFSBlockDeviceFile* BlockDeviceFile := File
     BlockDeviceFileHandle* BlockDeviceHandle := BlockDeviceFile->Handle As void*
     BlockDevice* RawDevice := BlockDeviceHandle->Device
 

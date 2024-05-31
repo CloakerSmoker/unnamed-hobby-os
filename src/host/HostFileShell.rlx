@@ -6,12 +6,9 @@ struct NetworkAddress {
     i8 _
 }
 
-struct MemoryM apper {
+struct MemoryMapper {
     i8 _
 }
-
-The bug is that initializers don't properly do dynamic casts.
-You need to go figure out the annoying ASTVisitor changes needed in the compiler
 
 define void SchedulerYield() {}
 
