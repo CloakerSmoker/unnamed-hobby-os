@@ -133,7 +133,7 @@ struct ELFHeader unaligned {
 			ELFSymbol* Symbols := (this As void*) + Section->FileOffset
 
 			i32 StringTableIndex := Section->AssociatedSectionIndex
-			ELFSectionHeader* StringSection := Sectionheaders[StringTableIndex]
+			ELFSectionHeader* StringSection := SectionHeaders[StringTableIndex]
 			i8* StringTable := (this As void*) + StringSection->FileOffset
 
 			for (i32 Index := 0, Index < SymbolCount, Index++) {
