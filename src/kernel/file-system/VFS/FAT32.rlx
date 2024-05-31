@@ -4,7 +4,7 @@ struct FAT32DirectoryEnumerateState {
     i32 Handle
 }
 
-class FAT32Directory implements aIDirectory, derives INew {
+class FAT32Directory implements IDirectory, derives INew {
     FAT32Device* FS
     i32 Cluster
 
@@ -125,12 +125,12 @@ class FAT32Directory implements aIDirectory, derives INew {
         return false
     }
 
-    define aIDirectory* CreateDirectory() {
+    define IDirectory* CreateDirectory() {
         i32 DirectoryClusterNumber := this->FS->AllocateCluster()
 
         return FAT32Directory:New(this->FS, DirectoryClusterNumber)
     }
-    define aIFile* CreateFile() {
+    define IFile* CreateFile() {
         i32 FileClusterNumber := this->FS->AllocateCluster()
 
         return null

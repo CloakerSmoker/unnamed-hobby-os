@@ -1,5 +1,5 @@
 
-class VFSDeviceSingletonFile implements aIFile, derives INew {
+class VFSDeviceSingletonFile implements IFile, derives INew {
     FileHandle* Handle
 
     define void New(FileHandle* Handle) {

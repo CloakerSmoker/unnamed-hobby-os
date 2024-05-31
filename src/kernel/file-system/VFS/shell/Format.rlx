@@ -30,7 +30,7 @@ define void ExecuteFormat(i64 ArgC, i8** ArgV) {
         return
     }
 
-    aIFile* File := Entry.File
+    IFile* File := Entry.File
 
     if (File->TypeID() != typeid:(VFSBlockDeviceFile)) {
         Print("'%s' not a block device", DevicePath)

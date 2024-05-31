@@ -11,19 +11,19 @@ enum VFSOverlayWriteMode {
     OnlyEphemeralToOverlay
 }
 
-class VFSOverlayDirectory implements aIDirectory, derives INew {
-    aIDirectory* Base
-    aIDirectory* Overlay
+class VFSOverlayDirectory implements IDirectory, derives INew {
+    IDirectory* Base
+    IDirectory* Overlay
 
     VFSOverlayWriteMode WriteMode
 
-    define void New(aIDirectory* Base, aIDirectory* Overlay, VFSOverlayWriteMode WriteMode) {
+    define void New(IDirectory* Base, IDirectory* Overlay, VFSOverlayWriteMode WriteMode) {
         this->Base := Base
         this->Overlay := Overlay
         this->WriteMode := WriteMode
     }
 
-    define void New(aIDirectory* Base, aIDirectory* Overlay) {
+    define void New(IDirectory* Base, IDirectory* Overlay) {
         this->New(Base, Overlay, VFSOverlayWriteMode::AllToOverlay)
     }
 
@@ -132,7 +132,7 @@ class VFSOverlayDirectory implements aIDirectory, derives INew {
         return this->Overlay->IsEphemeral()
     }
 
-    define aIDirectory* CreateDirectory() {
+    define IDirectory* CreateDirectory() {
         if (this->WriteMode = VFSOverlayWriteMode::OnlyEphemeralToOverlay) {
             return this->Base->CreateDirectory()
         }
@@ -143,7 +143,7 @@ class VFSOverlayDirectory implements aIDirectory, derives INew {
         return null
     }
 
-    define aIFile* CreateFile() {
+    define IFile* CreateFile() {
         Throw('UNIMP')
 
         return null

@@ -7,7 +7,7 @@ struct VFSDirectoryEnumerateState {
     i32 Count
 }
 
-class VFSDirectory implements aIDirectory, derives INew {
+class VFSDirectory implements IDirectory, derives INew {
     AVLTree* Children ; <VFSDirectoryEntry*>
 
     define void New() {
@@ -59,11 +59,11 @@ class VFSDirectory implements aIDirectory, derives INew {
         return true
     }
 
-    define aIDirectory* CreateDirectory() {
+    define IDirectory* CreateDirectory() {
         return VFSDirectory:New()
     }
 
-    define aIFile* CreateFile() {
+    define IFile* CreateFile() {
         return VFSFile:New(VFSFileHandle:New())
     }
 

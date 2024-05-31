@@ -9,15 +9,15 @@ struct _VFSDirectoryEntry {
     i8* Name
     
     union {
-        aIDirectory* Directory
-        aIFile* File
+        IDirectory* Directory
+        IFile* File
         void* Value
     }
 
     VFSDirectoryEntryType Type
 }
 
-interface aIDirectory {
+interface IDirectory {
     virtual i32 Count()
     virtual i8 Lookup(i8*, VFSDirectoryEntry*)
 
@@ -26,12 +26,12 @@ interface aIDirectory {
 
     virtual i8 IsEphemeral()
 
-    virtual aIDirectory* CreateDirectory()
-    virtual aIFile* CreateFile()
+    virtual IDirectory* CreateDirectory()
+    virtual IFile* CreateFile()
 
     virtual i8 Insert(VFSDirectoryEntry*)
 
-    virtual i8 Insert(i8* Name, aIFile* File) {
+    virtual i8 Insert(i8* Name, IFile* File) {
         _VFSDirectoryEntry Entry {
             Type: VFSDirectoryEntryType::File,
             Name: Name,
@@ -41,7 +41,7 @@ interface aIDirectory {
         return this->Insert(&Entry As void*)
     }
 
-    virtual i8 Insert(i8* Name, aIDirectory* Directory) {
+    virtual i8 Insert(i8* Name, IDirectory* Directory) {
         _VFSDirectoryEntry Entry {
             Type: VFSDirectoryEntryType::Directory,
             Name: Name,
@@ -60,113 +60,19 @@ interface aIDirectory {
     }
 }
 
-struct bIDirectoryPrototype {
-    i32(void*) Count
-    i8(void*, i8*, VFSDirectoryEntry*) Lookup
-
-    void*(void*) Enumerate
-    i8(void*, void**, VFSDirectoryEntry*) Next
-
-    i8(void*) IsEphemeral
-
-    bIDirectory*(void*) CreateDirectory
-    bIFile*(void*) CreateFile
-
-    i8(void*, VFSDirectoryEntry*) Insert
-    i8(void*, i8*) Remove
-}
-
-struct bIDirectory {
-    #Include "./src/kernel/file-system/VFS/bIDirectory.rlx"
-
-    define i32 Count() {
-        return this->Prototype->Count(this)
-    }
-    define i8 Lookup(i8* Name, VFSDirectoryEntry* Result) {
-        return this->Prototype->Lookup(this, Name, Result)
-    }
-
-    define void* Enumerate() {
-        return this->Prototype->Enumerate(this)
-    }
-    define i8 Next(void** State, VFSDirectoryEntry* Result) {
-        return this->Prototype->Next(this, State, Result)
-    }
-
-    define i8 IsEphemeral() {
-        return this->Prototype->IsEphemeral(this)
-    }
-
-    define bIDirectory* CreateDirectory() {
-        return this->Prototype->CreateDirectory(this)
-    }
-    define bIFile* CreateFile() {
-        return this->Prototype->CreateFile(this)
-    }
-    
-    define i8 Insert(VFSDirectoryEntry* Entry) {
-        return this->Prototype->Insert(this, Entry)
-    }
-    define i8 Insert(VFSDirectoryEntryType Type, i8* Name, void* Value) {
-        _VFSDirectoryEntry Entry {
-            Type: Type,
-            Name: Name,
-            Value: Value
-        }
-
-        return this->Insert(&Entry As void*)
-    }
-    define i8 Insert(i8* Name, bIDirectory* Value) {
-        return this->Insert(VFSDirectoryEntryType::Directory, Name, Value)
-    }
-    define i8 Insert(i8* Name, bIFile* Value) {
-        return this->Insert(VFSDirectoryEntryType::File, Name, Value)
-    }
-    define i8 Has(i8* Name) {
-        _VFSDirectoryEntry Entry
-
-        return this->Lookup(Name, &Entry As void*)
-    }
-
-    define i8 Remove(i8* Name) {
-        return this->Prototype->Remove(this, Name)
-    }
-}
-
-interface aIFile {
+interface IFile {
     virtual i8 IsEphemeral()
     virtual FileHandle* Open()
 
     virtual void Close(FileHandle* Handle) {}
 }
 
-struct bIFilePrototype {
-    i8(void*) IsEphemeral
-    FileHandle*(void*) Open
-    void(void*, FileHandle*) Close
-}
-
-struct bIFile {
-    #Include "./src/kernel/file-system/VFS/bIFile.rlx"
-
-    define i8 IsEphemeral() {
-        return this->Prototype->IsEphemeral(this)
-    }
-
-    define FileHandle* Open() {
-        return this->Prototype->Open(this)
-    }
-    define void Close(FileHandle* Target) {
-        this->Prototype->Close(this, Target)
-    }
-}
-
 struct VFSDirectoryEntry {
     i8* Name
     
     union {
-        aIDirectory* Directory
-        aIFile* File
+        IDirectory* Directory
+        IFile* File
         void* Value
     }
 

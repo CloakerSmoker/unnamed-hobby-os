@@ -81,7 +81,7 @@ define FileHandlePrototype* GetBlockDeviceFileHandlePrototype() {
     return &BlockDeviceFileHandlePrototype
 }
 
-class VFSBlockDeviceFile implements aIFile, derives INew {
+class VFSBlockDeviceFile implements IFile, derives INew {
     FileHandle* Handle
 
     define void New(FileHandle* Handle) {

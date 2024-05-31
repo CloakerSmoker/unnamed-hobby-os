@@ -30,20 +30,20 @@ define void Info(i8* Format, ... Args) {
 
 #Require "./src/kernel/file-system/VFS/Root.rlx"
 
-define aIDirectory* OpenHostDirectory(i8* Path, i8 ReadOnly) {
+define IDirectory* OpenHostDirectory(i8* Path, i8 ReadOnly) {
     i64 Handle := FileOpen(Path, FILE_READ)
 
     return VFSHostDirectory:New(Handle, ReadOnly)
 }
 
-define aIFile* OpenHostFile(i8* Path, i8 ReadOnly) {
+define IFile* OpenHostFile(i8* Path, i8 ReadOnly) {
     i64 Handle := FileOpen(Path, FILE_READ)
 
     return VFSHostFile:New(Handle, ReadOnly)
 }
 
-aIDirectory* CurrentDirectory := null
-aIDirectory* DevicesDirectory := null
+IDirectory* CurrentDirectory := null
+IDirectory* DevicesDirectory := null
 
 #Require "$/AVLTree.rlx"
 
@@ -113,7 +113,7 @@ define void Main(i64 _ArgC, i8** _ArgV) {
     }
 
     VFSDirectory* _Root := VFSDirectory:New()
-    aIDirectory* Root := _Root
+    IDirectory* Root := _Root
     MountRoot(Root)
 
     DevicesDirectory := VFSDirectory:New()
@@ -133,7 +133,7 @@ define void Main(i64 _ArgC, i8** _ArgV) {
         i8* HostDeviceName := HostDeviceFilePaths->At(Index)
 
         i8* HostDeviceFilePath := FormatString("/dev/%s", HostDeviceName)
-        aIFile* HostDeviceFile := OpenHostFile(HostDeviceFilePath, true)
+        IFile* HostDeviceFile := OpenHostFile(HostDeviceFilePath, true)
 
         VFSDirectoryEntry HostDeviceEntry {
             Type: VFSDirectoryEntryType::File,
@@ -144,7 +144,7 @@ define void Main(i64 _ArgC, i8** _ArgV) {
         DevicesDirectory->Insert(&HostDeviceEntry)
     }
 
-    aIDirectory* HostDirectory := OpenHostDirectory(".", false)
+    IDirectory* HostDirectory := OpenHostDirectory(".", false)
 
     Mount(Root, "/host", HostDirectory)
 

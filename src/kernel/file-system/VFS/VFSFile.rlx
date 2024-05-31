@@ -80,7 +80,7 @@ define FileHandlePrototype* GetVFSFileHandlePrototype() {
 
 #Require "./src/kernel/file-system/VFS/VFS.rlx"
 
-class VFSFile implements aIFile, derives INew {
+class VFSFile implements IFile, derives INew {
     VFSFileHandle* Handle
 
     define void New(void* Handle) {

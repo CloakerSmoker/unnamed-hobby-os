@@ -6,11 +6,11 @@ declare FileHandlePrototype* GetHostFileHandlePrototype()
 struct HostFileInstance {
     #Include "./src/kernel/file-system/HandleInstance.rlx"
 
-    aIFile* VFS
+    IFile* VFS
     i64 Handle
     i8 ReadOnly
 
-    static FileHandle* New(aIFile* VFS, i64 Handle, i8 ReadOnly) {
+    static FileHandle* New(IFile* VFS, i64 Handle, i8 ReadOnly) {
         self* this := Alloc(#self)
         
         this->Prototype := GetHostFileHandlePrototype()
@@ -59,7 +59,7 @@ define FileHandlePrototype* GetHostFileHandlePrototype() {
     return &HostFileHandlePrototype
 }
 
-class VFSHostFile implements aIFile, derives INew {
+class VFSHostFile implements IFile, derives INew {
     i64 Handle
     i8 ReadOnly
 
@@ -80,7 +80,7 @@ class VFSHostFile implements aIFile, derives INew {
     }
 }
 
-class VFSHostDirectory implements aIDirectory, derives INew {
+class VFSHostDirectory implements IDirectory, derives INew {
     i64 Handle
     i8 ReadOnly
 
@@ -218,14 +218,14 @@ class VFSHostDirectory implements aIDirectory, derives INew {
         return false
     }
 
-    define aIDirectory* CreateDirectory() {
+    define IDirectory* CreateDirectory() {
         ;i32 DirectoryNodeNumber := this->FS->CreateDirectory()
 
         ;return VFSHostDirectory:New(this->FS, this->FS->ReadINode(DirectoryNodeNumber))
 
         return null
     }
-    define aIFile* CreateFile() {
+    define IFile* CreateFile() {
         ;i32 FileNodeNumber := this->FS->CreateDirectory()
 
         ;return VFSHostFile:New(this->FS, this->FS->ReadINode(FileNodeNumber))

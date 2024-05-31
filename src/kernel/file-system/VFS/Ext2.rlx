@@ -4,7 +4,7 @@ i8 DEBUG_EXT2_OPTIMIZATION := false
 
 #Require "./src/drivers/file-system/Ext2.rlx"
 
-class VFSExt2File implements aIFile, derives INew {
+class VFSExt2File implements IFile, derives INew {
     Ext2* FS
     Ext2INode Node
 
@@ -26,7 +26,7 @@ struct VFSExt2DirectoryEnumerateState {
     i32 Handle
 }
 
-class VFSExt2Directory implements aIDirectory, derives INew {
+class VFSExt2Directory implements IDirectory, derives INew {
     Ext2* FS
     Ext2INode Node
 
@@ -154,12 +154,12 @@ class VFSExt2Directory implements aIDirectory, derives INew {
         return false
     }
 
-    define aIDirectory* CreateDirectory() {
+    define IDirectory* CreateDirectory() {
         i32 DirectoryNodeNumber := this->FS->CreateDirectory()
 
         return VFSExt2Directory:New(this->FS, this->FS->ReadINode(DirectoryNodeNumber))
     }
-    define aIFile* CreateFile() {
+    define IFile* CreateFile() {
         i32 FileNodeNumber := this->FS->CreateFile()
 
         return VFSExt2File:New(this->FS, this->FS->ReadINode(FileNodeNumber))

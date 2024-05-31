@@ -43,7 +43,7 @@ define FileHandlePrototype* GetZeroDeviceFileHandlePrototype() {
     return &ZeroDeviceFileHandlePrototype
 }
 
-class ZeroDeviceFile implements aIFile, derives INew {
+class ZeroDeviceFile implements IFile, derives INew {
     FileHandle* Handle
 
     define void New() {

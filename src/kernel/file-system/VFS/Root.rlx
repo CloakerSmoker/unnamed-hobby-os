@@ -1,14 +1,14 @@
-aIDirectory* VFSRootOverlayDirectory := null
-aIDirectory* VFSRootDirectory := null
+IDirectory* VFSRootOverlayDirectory := null
+IDirectory* VFSRootDirectory := null
 
-define void MountRoot(aIDirectory* NewRoot) {
-    aIDirectory* RootOverlay := VFSRootOverlayDirectory
+define void MountRoot(IDirectory* NewRoot) {
+    IDirectory* RootOverlay := VFSRootOverlayDirectory
 
     if (RootOverlay = null) {
         RootOverlay := VFSDirectory:New()
     }
 
-    aIDirectory* Root := VFSOverlayDirectory:New(NewRoot, RootOverlay, VFSOverlayWriteMode::OnlyEphemeralToOverlay) As aIDirectory*
+    IDirectory* Root := VFSOverlayDirectory:New(NewRoot, RootOverlay, VFSOverlayWriteMode::OnlyEphemeralToOverlay) As IDirectory*
 
     VFSRootOverlayDirectory:= RootOverlay
     VFSRootDirectory := Root
@@ -105,8 +105,8 @@ define void ParsePath(i8* Path, FilePath* Out) {
     ParsePath(Path, StringLength(Path), Out)
 }
 
-define i8 Lookup(aIDirectory* At, FilePath* Path, VFSDirectoryEntry* Result) {
-    aIDirectory* Current := At
+define i8 Lookup(IDirectory* At, FilePath* Path, VFSDirectoryEntry* Result) {
+    IDirectory* Current := At
 
     if (Path->Anchor = FilePathAnchor::Root) {
         if (Path->Count = 0) {
@@ -139,14 +139,14 @@ define i8 Lookup(aIDirectory* At, FilePath* Path, VFSDirectoryEntry* Result) {
     return Current->Lookup(Path->FileName, Result)
 }
 
-define i8 Lookup(aIDirectory* At, i8* RawPath, VFSDirectoryEntry* Result) {
+define i8 Lookup(IDirectory* At, i8* RawPath, VFSDirectoryEntry* Result) {
     FilePath Path
     ParsePath(RawPath, &Path)
 
     return Lookup(At, &Path, Result)
 }
 
-define i8 Mount(aIDirectory* At, i8* RawPath, aIDirectory* Root) {
+define i8 Mount(IDirectory* At, i8* RawPath, IDirectory* Root) {
     FilePath Path
     ParsePath(RawPath, &Path)
 
@@ -154,7 +154,7 @@ define i8 Mount(aIDirectory* At, i8* RawPath, aIDirectory* Root) {
         At := VFSRootDirectory
     }
 
-    aIDirectory* Current := At
+    IDirectory* Current := At
 
     for (i32 Index := 0, Index < Path->Count - 1, Index++) {
         i8* Part := Path->Parts[Index]
@@ -168,7 +168,7 @@ define i8 Mount(aIDirectory* At, i8* RawPath, aIDirectory* Root) {
         }
 
         if (ShouldCreateNew) {
-            aIDirectory* NewChild := VFSDirectory:New()
+            IDirectory* NewChild := VFSDirectory:New()
 
             VFSDirectoryEntry NewChildEntry {
                 Type: VFSDirectoryEntryType::Directory,
@@ -183,7 +183,7 @@ define i8 Mount(aIDirectory* At, i8* RawPath, aIDirectory* Root) {
         else {
             ; Entry exists, but we need to make sure it is ephemeral
 
-            aIDirectory* Entry := Next.Directory
+            IDirectory* Entry := Next.Directory
 
             if (Entry->IsEphemeral()) {
                 Current := Entry
@@ -191,9 +191,9 @@ define i8 Mount(aIDirectory* At, i8* RawPath, aIDirectory* Root) {
             else {
                 ; Entry isn't ephemeral, we need to replace it with an overlay based on itself
 
-                aIDirectory* Base := Entry
-                aIDirectory* Overlay := VFSDirectory:New()
-                aIDirectory* Replacement := VFSOverlayDirectory:New(Base, Overlay, VFSOverlayWriteMode::OnlyEphemeralToOverlay)
+                IDirectory* Base := Entry
+                IDirectory* Overlay := VFSDirectory:New()
+                IDirectory* Replacement := VFSOverlayDirectory:New(Base, Overlay, VFSOverlayWriteMode::OnlyEphemeralToOverlay)
 
                 VFSDirectoryEntry OverlayEntry {
                     Type: VFSDirectoryEntryType::Directory,
@@ -222,7 +222,7 @@ define i8 Mount(aIDirectory* At, i8* RawPath, aIDirectory* Root) {
     }
 }
 
-define aIDirectory* LookupParentDirectory(aIDirectory* At, FilePath* Path) {
+define IDirectory* LookupParentDirectory(IDirectory* At, FilePath* Path) {
     if (Path->Count = 1) {
         if (Path->Anchor = FilePathAnchor::Root) {
             return VFSRootDirectory
@@ -248,7 +248,7 @@ define aIDirectory* LookupParentDirectory(aIDirectory* At, FilePath* Path) {
     return ParentEntry.Directory
 }
 
-define aIDirectory* CreateDirectory(aIDirectory* At, i8* RawPath) {
+define IDirectory* CreateDirectory(IDirectory* At, i8* RawPath) {
     FilePath Path
     ParsePath(RawPath, &Path)
 
@@ -256,8 +256,8 @@ define aIDirectory* CreateDirectory(aIDirectory* At, i8* RawPath) {
         At := VFSRootDirectory
     }
 
-    aIDirectory* Parent := LookupParentDirectory(At, &Path)
-    aIDirectory* Result := Parent->CreateDirectory()
+    IDirectory* Parent := LookupParentDirectory(At, &Path)
+    IDirectory* Result := Parent->CreateDirectory()
 
     VFSDirectoryEntry Entry {
         Type: VFSDirectoryEntryType::Directory,
@@ -270,7 +270,7 @@ define aIDirectory* CreateDirectory(aIDirectory* At, i8* RawPath) {
     return Result
 }
 
-define aIFile* CreateFile(aIDirectory* At, i8* RawPath) {
+define IFile* CreateFile(IDirectory* At, i8* RawPath) {
     FilePath Path
     ParsePath(RawPath, &Path)
 
@@ -278,8 +278,8 @@ define aIFile* CreateFile(aIDirectory* At, i8* RawPath) {
         At := VFSRootDirectory
     }
 
-    aIDirectory* Parent := LookupParentDirectory(At, &Path)
-    aIFile* Result := Parent->CreateFile()
+    IDirectory* Parent := LookupParentDirectory(At, &Path)
+    IFile* Result := Parent->CreateFile()
 
     VFSDirectoryEntry Entry {
         Type: VFSDirectoryEntryType::File,
