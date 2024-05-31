@@ -16,7 +16,7 @@ declare void Print(i8*, ...)
 #Require "./src/trampoline/Info.rlx"
 
 TrampolineInfo* Trampoline
-KernelInfo* Kernel
+;KernelInfo* Kernel
 BootloaderInfo* BootInfo
 
 #Require "./src/kernel/core/Paging.rlx"

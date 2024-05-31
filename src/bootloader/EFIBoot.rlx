@@ -13,6 +13,14 @@ define void SchedulerYield() {
 	for (i32 Index := 0, Index < 0x10_0000, Index++) {}
 }
 
+struct NetworkAddress {
+	i8 _
+}
+
+struct MemoryMapper {
+	i8 _
+}
+
 #Require "./src/kernel/file-system/FileSystem.rlx"
 
 #Require "./src/drivers/file-system/FAT32.rlx"

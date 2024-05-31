@@ -3,7 +3,7 @@ PITCounterMode* CurrentPITMode := null
 i64 PITWhole 	:= 0 ; Number of milliseconds since the PIT was initialized
 i64 PITFraction := 0 ; Counter mode specific fraction, used to track sub-millisecond time since PITWhole is an integer
 
-define void OnPITInterrupt(InterruptContext* Context) {
+define void OnPITInterrupt() {
 	GenericTimerInterrupt()
 
 	PITWhole += CurrentPITMode->WholePerTick

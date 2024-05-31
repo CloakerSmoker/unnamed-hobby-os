@@ -7,6 +7,18 @@ define void SchedulerYield() {
 	
 }
 
+struct DirectoryEntry {
+	i8 _
+}
+
+struct NetworkAddress {
+	i8 _
+}
+
+struct MemoryMapper {
+	i8 _
+}
+
 #Require "./src/drivers/block-device/BlockDevice.rlx"
 #Require "./src/drivers/block-device/FileBlockDevice.rlx"
 #Require "./src/drivers/block-device/GPTBlockDevice.rlx"

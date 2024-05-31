@@ -86,9 +86,12 @@ define i64 PackPageFlags(i64 PageNumber, i64 Flags) {
 	return (PageNumber << 12) | Flags
 }
 
+struct _Page {
+	i8[0x1000] _
+}
 
 define i32 ExternalMapPage(void* CR3, void* RawTempPages, void* From, i64 To) {
-	Page* TempPages := RawTempPages
+	_Page* TempPages := RawTempPages
 	i32 TempPagesUsed := 0
 	
 	i64**** PML4E := GetPML4Entry(i64****{CR3}, From)

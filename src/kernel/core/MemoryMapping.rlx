@@ -108,7 +108,7 @@ struct MemoryMapper {
 	}
 	
 	define VirtualToPhysicalMapping* MapAnonymous(i32 Count, i64 Flags) {
-		VirtualAllocation* Virtual := this->VirtualAllocator->AllocateVirtual(Count)
+		void* Virtual := this->VirtualAllocator->AllocateVirtual(Count)
 		PhysicalAllocation* Physical := this->AllocatePhysical(Count)
 		
 		return this->Map(Virtual, Physical, Count, Flags)
