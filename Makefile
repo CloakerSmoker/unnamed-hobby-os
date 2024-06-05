@@ -3,7 +3,7 @@
 ROOT_EXTRA= TestFile.txt test.txt sponge.six dum.six
 
 RLX_FLAGS?= --crlf --dwarf --debug --silent
-EFI_RLX_FLAGS?= $(RLX_FLAGS) --pe-reloc --pe --efi
+EFI_RLX_FLAGS?= $(RLX_FLAGS) --pe-reloc --pe --efi --platform-dir src/efi
 ELF_RLX_FLAGS?= $(RLX_FLAGS) --linux
 KERNEL_RLX_FLAGS?= $(RLX_FLAGS) --standalone-elf --symbols --platform kernel --platform-dir src/kernel/lib
 TRAMPOLINE_RLX_FLAGS?= $(RLX_FLAGS) --standalone-elf --platform trampoline --platform-dir src/trampoline/lib

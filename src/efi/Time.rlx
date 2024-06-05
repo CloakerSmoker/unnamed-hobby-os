@@ -1,0 +1,6 @@
+
+i64 FakeTime := 0
+
+define i64 GetUptimeMS() {
+    return FakeTime++
+}
