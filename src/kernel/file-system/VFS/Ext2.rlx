@@ -168,31 +168,26 @@ class VFSExt2Directory implements IDirectory, derives INew {
     define i8 Insert(VFSDirectoryEntry* Entry) {
         ;this->Children->Insert(FNV1A(Entry->Name), Entry)
 
-        i8 ValidEntry := false
         i8 Type := 0
         i32 ChildNodeNumber := 0
 
         if (Entry->Type = VFSDirectoryEntryType::Directory) {
-            ;if (Entry->Directory->Is(GetVFSExt2DirectoryPrototype())) {
-                ValidEntry := true
-                Type := DIRECTORY_ENTRY_DIRECTORY
-
-                VFSExt2Directory* Directory := Entry->Directory As void*
-                ChildNodeNumber := Directory~>Node->INodeNumber
-            ;}
+            if (Entry->Directory->TypeID() != typeid:(VFSExt2Directory)) {
+                return false
+            }
+                
+            Type := DIRECTORY_ENTRY_DIRECTORY
+            VFSExt2Directory* Directory := Entry->Directory
+            ChildNodeNumber := Directory~>Node->INodeNumber
         }
         else if (Entry->Type = VFSDirectoryEntryType::File) {
-            ;if (Entry->File->Is(GetVFSExt2FilePrototype())) {
-                ValidEntry := true
-                Type := DIRECTORY_ENTRY_FILE
-
-                VFSExt2File* File := Entry->File As void*
-                ChildNodeNumber := File~>Node->INodeNumber
-            ;}
-        }
-
-        if !(ValidEntry) {
-            return false
+            if (Entry->File->TypeID() != typeid:(VFSExt2File)) {
+                return false
+            }
+            
+            Type := DIRECTORY_ENTRY_FILE
+            VFSExt2File* File := Entry->File
+            ChildNodeNumber := File~>Node->INodeNumber
         }
 
         this->FS->CreateDirectoryEntry(this~>Node, Entry->Name, ChildNodeNumber, Type)
