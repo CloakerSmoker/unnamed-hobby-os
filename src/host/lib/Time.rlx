@@ -1,0 +1,45 @@
+struct timeval {
+    i64 Seconds
+    i64 Microseconds        
+}
+
+struct timespec {
+    i64 Seconds
+    i64 Nanoseconds
+}
+
+struct timezone {
+    i32 MinutesWestOfGreenwich
+    i32 DayLightSavingsType
+}
+
+i64 SYS_NANOSLEEP := 35
+i64 SYS_GETTIMEOFDAY := 96
+
+define i32 NanoSleep(timespec* ts, timespec* rem) {
+    return syscall:(SYS_NANOSLEEP, ts, rem) As i32
+}
+define i32 Sleep(i32 Seconds) {
+    timespec spec {
+        Seconds: Seconds,
+        Nanoseconds: 0
+    }
+
+    return NanoSleep(&spec, null)
+}
+
+define i32 GetTimeOfDay(timeval* tv, timezone* tz) {
+    return syscall:(SYS_GETTIMEOFDAY, tv, tz) As i32
+}
+define i32 GetTimeOfDay(timeval* tv) {
+    return GetTimeOfDay(tv, null)
+}
+
+i64 MICROSECOND_TO_MILLISECOND := 1000
+
+define i64 GetUptimeMS() {
+    timeval Result
+    GetTimeOfDay(&Result)
+
+    return (Result.Seconds * 1000) + (Result.Microseconds / MICROSECOND_TO_MILLISECOND)
+}
