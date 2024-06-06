@@ -17,8 +17,8 @@ class VFSExt2File implements IFile, derives INew {
         return false
     }
 
-    define IFileHandle* Open() {
-        return this->FS->OpenINode(this~>Node)
+    define FileHandle* Open() {
+        return Ext2OpenINode(this->FS, this~>Node)
     }
 }
 

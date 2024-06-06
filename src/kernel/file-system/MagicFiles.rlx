@@ -7,10 +7,10 @@ struct MagicFileMinorRange {
 }
 
 struct MagicFilePrototype {
-	void* Prototype
+	FileHandlePrototype* Prototype
 	i8 MultipleInstances
 
-	IFileHandle* Instance
+	FileHandle* Instance
 	
 	i32 Major
 	
@@ -19,12 +19,12 @@ struct MagicFilePrototype {
 		MagicFileMinorRange MinorRange
 	}
 
-	define IFileHandle* GetInstance() {
+	define FileHandle* GetInstance() {
 		if (this->Instance && !this->MultipleInstances) {
 			return this->Instance
 		}
 		else {
-			;this->Instance := NewHandle(this->Prototype, this->Major, this->Minor)
+			this->Instance := NewHandle(this->Prototype, this->Major, this->Minor)
 
 			return this->Instance
 		}
@@ -44,11 +44,11 @@ struct MagicFilePrototype {
 MagicFilePrototype* FirstMagicPrototype := null
 
 define i32 RegisterMagicFile(MagicFilePrototype* Prototype) {
-	/*FileHandlePrototype* File := Prototype->Prototype
+	FileHandlePrototype* File := Prototype->Prototype
 	
 	if (File->Status = null || File->Status = &FileHandlePrototype.DefaultStatus) {
 		File->Status := &MagicFilePrototype.Status
-	}*/
+	}
 	
 	if !(FirstMagicPrototype) {
 		FirstMagicPrototype := Prototype

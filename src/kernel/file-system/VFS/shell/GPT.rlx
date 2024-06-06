@@ -147,7 +147,7 @@ define void ExecuteGPT(i64 ArgC, i8** ArgV) {
             }
             
             BlockDevice* PartitionDevice := GPTBlockDevice:New(RawDevice, NextPartition)
-            IFileHandle* PartitionHandle := BlockDeviceFileHandle:New(PartitionDevice)
+            FileHandle* PartitionHandle := BlockDeviceFileHandle:New(PartitionDevice)
             IFile* PartitionFile := VFSBlockDeviceFile:New(PartitionHandle)
 
             i8* FileName := FormatString("%sp%i", Entry.Name, Index)

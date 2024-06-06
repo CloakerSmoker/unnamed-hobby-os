@@ -1,6 +1,8 @@
 #Require "./src/kernel/file-system/FileSystem.rlx"
 
-class PCSpeakerHandle implements IFileHandle, derives INew {
+struct PCSpeakerInstance {
+    #Include "./src/kernel/file-system/HandleInstance.rlx"
+
     Timer* StopTimer
 
     define void DoStopTimerTick() {
@@ -37,8 +39,8 @@ class PCSpeakerHandle implements IFileHandle, derives INew {
         return 0
     }
 
-    define void New() {
-        Task* StopTimerTask := Scheduler->AddLightTask(&self.DoStopTimerTick)
+    define void Initialize(void** Options, i32 Count) {
+        Task* StopTimerTask := Scheduler->AddLightTask(&PCSpeakerInstance.DoStopTimerTick)
 		
 		StopTimerTask~>Context->RDI := this As i64
 		
@@ -46,11 +48,20 @@ class PCSpeakerHandle implements IFileHandle, derives INew {
     }
 }
 
+FileHandlePrototype PCSpeakerPrototype {
+	DataSize: #PCSpeakerInstance,
+	Initialize: &PCSpeakerInstance.Initialize,
+	
+	DeviceControl: &PCSpeakerInstance.DeviceControl
+}
+
+i32 PC_SPEAKER_FILE_PROTOTYPE_ID := RegisterHandlePrototype(&PCSpeakerPrototype)
+
 i32 PC_SPEAKER_MAJOR := 10
 i32 PC_SPEAKER_MINOR := 129
 
 MagicFilePrototype PCSpeakerMagicFilePrototype {
-	Prototype: null,
+	Prototype: &PCSpeakerPrototype,
 	Major: 10,
 	Minor: 129
 }

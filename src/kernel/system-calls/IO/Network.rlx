@@ -10,14 +10,14 @@ define i64 SystemCallSocket(i32 Domain, i32 Type, i32 Protocol) {
     if (Domain = LINUX_ADDRESS_FAMILY_INET) {
         if (Type = LINUX_SOCKET_TYPE_DATAGRAM) {
             if (Protocol = LINUX_SOCKET_PROTOCOL_UDP || Protocol = 0) {
-                IFileHandle* UDP := UDPSocketHandle:New()
+                FileHandle* UDP := UDPSocketHandle:New()
 
                 return CurrentProcess->AllocateFileDescriptor(UDP)
             }
         }
         else if (Type = LINUX_SOCKET_TYPE_STREAM) {
             if (Protocol = LINUX_SOCKET_PROTOCOL_TCP || Protocol = 0) {
-                IFileHandle* TCP := TCPSocketHandle:New()
+                FileHandle* TCP := TCPSocketHandle:New()
 
                 return CurrentProcess->AllocateFileDescriptor(TCP)
             }
@@ -53,7 +53,7 @@ define i64 SystemCallConnect(i32 FileDescriptor, LinuxNetworkAddress* RawAddress
         return Error
     }
     
-    IFileHandle* Handle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
+    FileHandle* Handle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
 
     if !(Handle) {
         return -LINUX_ERROR_INVAL
@@ -72,7 +72,7 @@ define i64 SystemCallConnect(i32 FileDescriptor, LinuxNetworkAddress* RawAddress
 }
 
 define i64 SystemCallListen(i32 FileDescriptor, i32 Backlog) {
-    IFileHandle* Handle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
+    FileHandle* Handle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
 
     if !(Handle) {
         return -LINUX_ERROR_INVAL
@@ -98,7 +98,7 @@ define i64 SystemCallBind(i32 FileDescriptor, LinuxNetworkAddress* RawAddress, i
         return Error
     }
     
-    IFileHandle* Handle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
+    FileHandle* Handle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
 
     if !(Handle) {
         return -LINUX_ERROR_INVAL
@@ -123,7 +123,7 @@ define i64 SystemCallAccept(i32 FileDescriptor, LinuxNetworkAddress* RawAddress,
         ReturnAddress := true
     }
 
-    IFileHandle* Handle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
+    FileHandle* Handle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
 
     if !(Handle) {
         return -LINUX_ERROR_INVAL
@@ -133,7 +133,7 @@ define i64 SystemCallAccept(i32 FileDescriptor, LinuxNetworkAddress* RawAddress,
     i32 ResultHandle := 0
 
     try {
-        IFileHandle* Child := Handle->Accept(&RemoteAddress)
+        FileHandle* Child := Handle->Accept(&RemoteAddress)
 
         ResultHandle := CurrentProcess->AllocateFileDescriptor(Child)
     }
@@ -155,7 +155,7 @@ define i64 SystemCallAccept(i32 FileDescriptor, LinuxNetworkAddress* RawAddress,
 }
 
 define i64 SystemCallSendTo(i32 FileDescriptor, void* Buffer, i32 Size, i32 Flags, LinuxNetworkAddress* Address, i32 AddressLength) {
-    IFileHandle* Handle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
+    FileHandle* Handle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
 
     if !(Handle) {
         return -LINUX_ERROR_INVAL
@@ -183,7 +183,7 @@ define i64 SystemCallSendTo(i32 FileDescriptor, void* Buffer, i32 Size, i32 Flag
 }
 
 define i64 SystemCallRecieveFrom(i32 FileDescriptor, void* Buffer, i32 Size, i32 Flags, LinuxNetworkAddress* Address, i32 AddressLength) {
-    IFileHandle* Handle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
+    FileHandle* Handle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
 
     if !(Handle) {
         return -LINUX_ERROR_INVAL

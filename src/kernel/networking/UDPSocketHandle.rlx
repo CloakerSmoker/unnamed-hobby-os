@@ -1,12 +1,20 @@
 
-class UDPSocketHandle implements IFileHandle, derives INew {
+declare FileHandlePrototype* GetUDPSocketHandlePrototype()
+
+struct UDPSocketHandle {
     #Include "./src/kernel/file-system/HandleInstance.rlx"
 
     i8 HasLocalPort
     UDPSocket* Socket
 
-    define void New() {
+    static FileHandle* New() {
+        self* this := Alloc(#self)
+
+        this->Prototype := GetUDPSocketHandlePrototype()
+
         this->Socket := Network->CreateUDP()
+
+        return this->AsHandle()
     }
 
     define i32 Bind(NetworkAddress* Address) {
@@ -53,4 +61,20 @@ class UDPSocketHandle implements IFileHandle, derives INew {
 
         Free(this)
     }
+}
+
+FileHandlePrototype UDPSocketHandlePrototype {
+    Bind: &UDPSocketHandle.Bind,
+
+    Poll: &UDPSocketHandle.Poll,
+	SendTo: &UDPSocketHandle.SendTo,
+    RecieveFrom: &UDPSocketHandle.RecieveFrom,
+
+    Close: &UDPSocketHandle.Close
+}
+
+i32 UDP_SOCKET_HANDLE_PROTOTYPE_ID := RegisterHandlePrototype(&UDPSocketHandlePrototype)
+
+define FileHandlePrototype* GetUDPSocketHandlePrototype() {
+    return &UDPSocketHandlePrototype
 }

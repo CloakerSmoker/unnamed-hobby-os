@@ -62,9 +62,9 @@ interface IDirectory {
 
 interface IFile {
     virtual i8 IsEphemeral()
-    virtual IFileHandle* Open()
+    virtual FileHandle* Open()
 
-    virtual void Close(IFileHandle* Handle) {}
+    virtual void Close(FileHandle* Handle) {}
 }
 
 struct VFSDirectoryEntry {

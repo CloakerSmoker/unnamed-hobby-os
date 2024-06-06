@@ -15,7 +15,7 @@ MemoryFIFO* RunningProgramInput := null
 
 i32 LastStatus := 0
 
-IFileHandle* CWD := null
+FileHandle* CWD := null
 i8[40] PWD
 
 define void OnCommand(i8* CommandLine) {
@@ -73,7 +73,7 @@ define void OnCommand(i8* CommandLine) {
 	else if (StringEquals(Command, "ls")) {
 		i8* Path := CommandParameters[1]
 		
-		IFileHandle* Handle := CWD->Open(Path)
+		FileHandle* Handle := CWD->Open(Path)
 		
 		if (Handle) {
 			DirectoryEntry Entry
@@ -85,7 +85,7 @@ define void OnCommand(i8* CommandLine) {
 					break
 				}
 				
-				IFileHandle* EntryHandle := Handle->Open(Entry~>Name)
+				FileHandle* EntryHandle := Handle->Open(Entry~>Name)
 				
 				if (EntryHandle < 0) {
 					Print("%s doesn't exist???\n", Entry~>Name)
@@ -114,7 +114,7 @@ define void OnCommand(i8* CommandLine) {
 	else if (StringEquals(Command, "hex")) {
 		i8* Path := CommandParameters[1]
 		
-		IFileHandle* Handle := CWD->Open(Path)
+		FileHandle* Handle := CWD->Open(Path)
 		
 		if (Handle = null) {
 			Print(" Could not find file '^%s'\n", Path)
@@ -144,7 +144,7 @@ define void OnCommand(i8* CommandLine) {
 	else if (StringEquals(Command, "cat")) {
 		i8* Path := CommandParameters[1]
 		
-		IFileHandle* Handle := CWD->Open(Path)
+		FileHandle* Handle := CWD->Open(Path)
 		
 		if (Handle = null) {
 			Print(" Could not find file '^S1%s^R'\n", Path)
@@ -239,7 +239,7 @@ define void OnCommand(i8* CommandLine) {
 	else if (StringEquals(Command, "exec")) {
 		i8* Path := CommandParameters[1]
 		
-		IFileHandle* File := null
+		FileHandle* File := null
 
 		if (Path[0] = '/') {
 			File := RootDirectory->Open(Path + 1)
@@ -312,7 +312,7 @@ define void OnCommand(i8* CommandLine) {
 	else if (StringEquals(Command, "cd")) {
 		i8* Path := CommandParameters[1]
 		
-		IFileHandle* NewCWD := CWD->Open(Path)
+		FileHandle* NewCWD := CWD->Open(Path)
 		
 		if !(NewCWD) {
 			Print("Could not find '%s'\n", Path)
@@ -357,7 +357,7 @@ define void OnCommand(i8* CommandLine) {
 	else if (StringEquals(Command, "capture")) {
 		i8* Path := CommandParameters[1]
 		
-		IFileHandle* OutputFile := CWD->Open(Path, EXT2_OPEN_CREATE)
+		FileHandle* OutputFile := CWD->Open(Path, EXT2_OPEN_CREATE)
 		
 		if !(OutputFile) {
 			Print("Could not open '%s'\n", Path)

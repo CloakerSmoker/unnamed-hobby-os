@@ -1,5 +1,16 @@
+declare FileHandlePrototype* GetZeroDeviceFileHandlePrototype()
 
-class ZeroDeviceHandle implements IFileHandle, derives INew {
+struct ZeroDeviceFileInstance {
+    #Include "./src/kernel/file-system/HandleInstance.rlx"
+
+    static FileHandle* New() {
+        self* this := Alloc(#self)
+        
+        this->Prototype := GetZeroDeviceFileHandlePrototype()
+
+        return this As void*
+    }
+
     define void Status(FileStatus* Out) {
         
     }
@@ -20,21 +31,33 @@ class ZeroDeviceHandle implements IFileHandle, derives INew {
     }
 }
 
+FileHandlePrototype ZeroDeviceFileHandlePrototype {
+	Status: &ZeroDeviceFileInstance.Status,
+	Read: &ZeroDeviceFileInstance.Read,
+	Write: &ZeroDeviceFileInstance.Write,
+	Seek: &ZeroDeviceFileInstance.Seek,
+	Tell: &ZeroDeviceFileInstance.Tell
+}
+
+define FileHandlePrototype* GetZeroDeviceFileHandlePrototype() {
+    return &ZeroDeviceFileHandlePrototype
+}
+
 class ZeroDeviceFile implements IFile, derives INew {
-    IFileHandle* Handle
+    FileHandle* Handle
 
     define void New() {
-        this->Handle := new ZeroDeviceHandle()
+        this->Handle := ZeroDeviceFileInstance:New()
     }
 
     define i8 IsEphemeral() {
         return false
     }
 
-    define IFileHandle* Open() {
+    define FileHandle* Open() {
         return this->Handle
     }
-    define void Close() {
+    define void Close(FileHandle* Handle) {
         
     }
 }

@@ -6,7 +6,7 @@ declare BlockDevicePrototype* GetLoopBlockDevicePrototype()
 struct LoopBlockDevice {
 	#Include "./src/drivers/block-device/BlockDeviceInstance.rlx"
 	
-	IFileHandle* Backing
+	FileHandle* Backing
 
     define i32 Translate(i64 Block) {
         return (Block As i32) * LOOP_DEVICE_BLOCK_SIZE
@@ -27,7 +27,7 @@ struct LoopBlockDevice {
 		this->Backing := Options[0] As void*
 	}
 
-    static BlockDevice* New(IFileHandle* Backing) {
+    static BlockDevice* New(FileHandle* Backing) {
         self* this := Alloc(#self)
 
         this->Prototype := GetLoopBlockDevicePrototype()

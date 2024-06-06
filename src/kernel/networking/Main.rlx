@@ -142,7 +142,7 @@ define void SocketClient() {
     ;while (Socket->State != TCP_SOCKET_STATE_ESTABLISHED) { SchedulerYield() }
 }
 
-define void TinyNC(IFileHandle* stdio, TCPSocket* Socket) {
+define void TinyNC(FileHandle* stdio, TCPSocket* Socket) {
     Print("Say hello to %ipv4:%net-port!\n", Socket->RemoteAddress, Socket->RemotePort)
 
     loop {
@@ -232,7 +232,7 @@ define void TestNetworking(FileHandle* stdio) {
 
     Network->DumpRoutes()
 
-    IFileHandle* Socket := TCPSocketHandle:New()
+    FileHandle* Socket := TCPSocketHandle:New()
 
     NetworkAddress Target
     ParseIPv4NetworkAddress("10.2.30.100:7778", &Target)
