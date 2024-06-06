@@ -1,0 +1,124 @@
+
+i32 LINUX_FRAMEBUFFER_GET_VARIABLE_INFO := 0x4600
+i32 LINUX_FRAMEBUFFER_SET_VARIABLE_INFO := 0x4601
+i32 LINUX_FRAMEBUFFER_GET_CONSTANT_INFO := 0x4602
+i32 LINUX_FRAMEBUFFER_GET_COLOR_MAP := 0x4604
+i32 LINUX_FRAMEBUFFER_SET_COLOR_MAP := 0x4605
+
+enum LINUX_FRAMEBUFFER_TYPE {
+    PACKED_PIXELS := 0
+    PLANES := 1
+    INTERLEAVED_PLANES := 2
+    TEXT := 3
+    VGA_PLANES := 4
+    FOURCC := 5
+}
+
+enum LINUX_FRAMEBUFFER_EXTRA_TYPE {
+    MDA := 0
+    CGA := 1
+    S3_MMIO := 2
+}
+
+enum LINUX_FRAMEBUFFER_VISUAL_TYPE {
+    MONO_01 := 0
+    MONO_10 := 1
+    TRUE_COLOR := 2
+    PSEUDO_COLOR := 3
+    DIRECT_COLOR := 4
+}
+
+enum LINUX_FRAMEBUFFER_ACCELERATOR {
+    NONE := 0
+}
+
+enum LINUX_FRAMEBUFFER_CAPABILITIES {
+    NONE := 0
+}
+
+struct LinuxFrameBufferConstantInfo {
+    i8[16] Identification
+
+    i64 PhysicalBase
+    i32 PhysicalSize
+
+    LINUX_FRAMEBUFFER_TYPE Type
+    LINUX_FRAMEBUFFER_EXTRA_TYPE ExtraType
+
+    LINUX_FRAMEBUFFER_VISUAL_TYPE Visual
+
+    i16 XPanStep
+    i16 YPanStep
+    i16 YWrapStep
+
+    i32 LineLength
+
+    i64 MMIOBase
+    i32 MMIOLength
+
+    LINUX_FRAMEBUFFER_ACCELERATOR Accelerator
+
+    LINUX_FRAMEBUFFER_CAPABILITIES Capabilities
+
+    i16[2] Reserved
+}
+
+struct LinuxFrameBufferBitField {
+    i32 Offset
+    i32 Length
+    i32 MSBRight
+}
+
+struct LinuxFrameBufferVariableInfo {
+    i32 XResolution
+    i32 YResolution
+
+    i32 VirtualXResolution
+    i32 VirtualYResolution
+
+    i32 XOffset
+    i32 YOffset
+
+    i32 BitsPerPixel
+    i32 GrayScale
+
+    LinuxFrameBufferBitField Red
+    LinuxFrameBufferBitField Green
+    LinuxFrameBufferBitField Blue
+    LinuxFrameBufferBitField Transparency
+
+    i32 NonStandard
+
+    i32 Activate
+
+    i32 HeightMM
+    i32 WidthMM
+
+    i32 AcceleratorFlags
+
+    i32 PixelClock
+
+    i32 LeftMargin
+    i32 RightMargin
+    i32 UpperMargin
+    i32 LowerMargin
+
+    i32 HorizontalSyncLength
+    i32 VerticalSyncLength
+
+    i32 Sync
+    i32 VMode
+
+    i32 Rotate
+    i32 ColorSpace
+    i32[4] Reserved
+}
+
+struct LinuxFrameBufferColorMap {
+    i32 Start
+    i32 Length
+    i16* Red
+    i16* Green
+    i16* Blue
+    i16* Transparency
+}

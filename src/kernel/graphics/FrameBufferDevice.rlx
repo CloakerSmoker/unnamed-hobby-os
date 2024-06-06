@@ -1,0 +1,68 @@
+struct FrameBufferDevice {
+    #Include "./src/kernel/file-system/HandleInstance.rlx"
+
+    PixelBuffer* Base
+
+    define i32 DeviceControl(i32 Function, void* Parameter) {
+        if (Function = LINUX_FRAMEBUFFER_GET_CONSTANT_INFO) {
+            LinuxFrameBufferConstantInfo* Constant := Parameter
+
+            MoveMemory(Constant->Identification, "computer :)", 12)
+            Constant->PhysicalBase := VirtualToPhysical(this->Base->Buffer())
+            Constant->PhysicalSize := this->Base->Size()
+
+            Constant->Type := LINUX_FRAMEBUFFER_TYPE::PACKED_PIXELS
+            Constant->Visual := LINUX_FRAMEBUFFER_VISUAL_TYPE::TRUE_COLOR
+
+            Constant->XPanStep := 0
+            Constant->YPanStep := 0
+            Constant->YWrapStep := 0
+
+            Constant->LineLength := this->Base->Stride()
+
+            Constant->MMIOBase := 0
+            Constant->MMIOLength := 0
+
+            Constant->Accelerator := LINUX_FRAMEBUFFER_ACCELERATOR::NONE
+            Constant->Capabilities := LINUX_FRAMEBUFFER_CAPABILITIES::NONE
+        }
+        else if (Function = LINUX_FRAMEBUFFER_GET_VARIABLE_INFO) {
+            LinuxFrameBufferVariableInfo* Variable := Parameter
+
+            Variable->XResolution := this->Base->Width()
+            Variable->YResolution := this->Base->Height()
+
+            Variable->VirtualXResolution := Variable->XResolution
+            Variable->VirtualYResolution := Variable->YResolution
+
+            Variable->XOffset := 0
+            Variable->YOffset := 0
+
+            Variable->BitsPerPixel := this->Base->PixelSize() * 8
+            Variable->GrayScale := false
+        }
+        else {
+            return 0
+        }
+    }
+
+    define void* MapIntoMemory(void* Virtual, i32 Offset, i32 Size) {
+        if (Offset != 0 || Size != this->Base->Size()) {
+            Throw(HANDLE_ERROR_BAD_PARAMETER)
+        }
+
+        i32 Pages := SizeToPageCount(this->Base->Size())
+        PhysicalAllocation* BaseAllocation := PhysicalAllocation:New(VirtualToPhysical(this->Base->Buffer()), Pages)
+
+        if (Virtual = null) {
+            VirtualToPhysicalMapping* Mapping := CurrentThread->Mapper->MapPhysical(Pages, PAGE_PRESENT | PAGE_WRITE, BaseAllocation)
+
+            return Mapping->Virtual
+        }
+        else {
+            CurrentThread->Mapper->Map(Virtual, BaseAllocation, Pages, PAGE_PRESENT | PAGE_WRITE)
+
+            return Virtual
+        }
+    }
+}
