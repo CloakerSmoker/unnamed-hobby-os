@@ -1,0 +1,139 @@
+
+
+interface IFileException {
+    virtual i8 Is(i64 TypeID) {
+        return this->TypeID() = TypeID
+    }
+
+    virtual i8* Name() {
+        return "File Exception"
+    }
+
+    virtual i32 LinuxErrorCode() {
+        return LINUX_ERROR_INVAL
+    }
+}
+
+namespace FileException {
+    class NotSupported implements IFileException, derives INew {
+        define i8* Name() {
+            return "Not Supported"
+        }
+
+        define i32 LinuxErrorCode() {
+            return LINUX_ERROR_OPNOTSUPP
+        }
+    }
+}
+
+define void Raise(IFileException* Exception) {
+    Throw(Exception As i64)
+}
+
+declare i64 GetUptimeMS()
+
+interface IFileHandle {
+    virtual void Status(FileStatus* Out) {
+        Raise(new FileException::NotSupported())
+    }
+
+    virtual i32 Poll(i32 Mode) {
+        Raise(new FileException::NotSupported())
+        return 0
+    }
+    virtual i32 Wait(i32 Mode, i64 Timeout) {
+        i64 Deadline := GetUptimeMS() + Timeout
+
+        while (GetUptimeMS() < Deadline) {
+            i32 Result := this->Poll(Mode)
+
+            if (Result) {
+                return Result
+            }
+        }
+
+        return 0
+    }
+    virtual i32 Wait(i32 Mode) {
+        return this->Wait(Mode, -1)
+    }
+
+    virtual i32 Read(void* Buffer, i32 Size) {
+        Raise(new FileException::NotSupported())
+        return 0
+    }
+
+    virtual i32 Write(void* Buffer, i32 Size) {
+        Raise(new FileException::NotSupported())
+        return 0
+    }
+
+    virtual i32 Seek(i32 Destination, SeekMode Mode) {
+        Raise(new FileException::NotSupported())
+        return 0
+    }
+    virtual i32 Seek(SeekMode Mode, i32 Destination) {
+        return this->Seek(Destination, Mode)
+    }
+    virtual i32 Tell() {
+        return this->Seek(0, SeekMode::Relative)
+    }
+
+    virtual i32 DeviceControl(i32 Function, void* Parameter) {
+        Raise(new FileException::NotSupported())
+        return 0
+    }
+
+    virtual i32 ReadDirectoryEntries(void* Out, i32 Count) {
+        Raise(new FileException::NotSupported())
+        return 0
+    }
+    virtual IFileHandle* Open(i8* Path, i8 Flags) {
+        Raise(new FileException::NotSupported())
+        return null
+    }
+    virtual IFileHandle* Open(i8* Path) {
+        Raise(new FileException::NotSupported())
+        return null
+    }
+
+    virtual void Close() {
+        Raise(new FileException::NotSupported())
+    }
+
+    virtual void* MapIntoMemory(MemoryMapper* Mapper, void* Virtual, i32 Offset, i32 Size) {
+        Raise(new FileException::NotSupported())
+        return null
+    }
+
+    virtual void Connect(NetworkAddress* Address) {
+        Raise(new FileException::NotSupported())
+    }
+    virtual void Listen() {
+        Raise(new FileException::NotSupported())
+    }
+    virtual void Bind(NetworkAddress* Address) {
+        Raise(new FileException::NotSupported())
+    }
+    virtual IFileHandle* Accept(NetworkAddress* Address) {
+        Raise(new FileException::NotSupported())
+        return null
+    }
+
+    virtual i32 Send(void* Buffer, i32 Size) {
+        Raise(new FileException::NotSupported())
+        return 0
+    }
+    virtual i32 SentTo(void* Buffer, i32 Size, NetworkAddress* Address) {
+        Raise(new FileException::NotSupported())
+        return 0
+    }
+    virtual i32 Recieve(void* Buffer, i32 Size) {
+        Raise(new FileException::NotSupported())
+        return 0
+    }
+    virtual i32 RecieveFrom(void* Buffer, i32 Size, NetworkAddress* Address) {
+        Raise(new FileException::NotSupported())
+        return 0
+    }
+}
