@@ -24,10 +24,9 @@ i32 TERMINAL_RENDERER_START_CURSOR_TIMER := 'TRSC'
 
 #Require "./src/kernel/file-system/FileSystem.rlx"
 
-struct TerminalRendererInstance {
-	#Include "./src/kernel/file-system/HandleInstance.rlx"
+class TerminalRendererHandle implements IFileHandle, derives INew {
 	#Include "./src/kernel/terminal/InstanceComponent.rlx"
-	FileHandle* Input
+	IFileHandle* Input
 	
 	PixelBuffer* Output
 	
@@ -55,7 +54,7 @@ struct TerminalRendererInstance {
 	
 	SixelRenderer Sixel
 
-	FileHandle* Speaker
+	IFileHandle* Speaker
 	
 	define void Clear() {
 		this->Output->Clear(this->BackgroundColor)
@@ -73,7 +72,7 @@ struct TerminalRendererInstance {
 		this->Clear()
 	}
 	
-	define void Adopt(PixelBuffer* Output, Font* NewFont, i32 Foreground, i32 Background) {
+	define void New(PixelBuffer* Output, Font* NewFont, i32 Foreground, i32 Background) {
 		this->Output := Output
 		this->Font := NewFont
 		
@@ -88,12 +87,6 @@ struct TerminalRendererInstance {
 		this->CalculateBounds()
 		
 		this~>Sixel->Initialize(this->Output)
-	}
-	
-	define void Initialize(void** Options, i32 Count) {
-		this->Adopt(Options[0], Options[1], Options[2] As i32, Options[3] As i32)
-
-		this->Speaker := FindMagicFilePrototype(PC_SPEAKER_MAJOR, PC_SPEAKER_MINOR)->GetInstance()
 	}
 	
 	define void SetColors(i32 ForegroundColor, i32 BackgroundColor) {
@@ -211,7 +204,7 @@ struct TerminalRendererInstance {
 	}
 	
 	define void SetCursorTimer() {
-		Task* CursorTimerTask := Scheduler->AddLightTask(&TerminalRendererInstance.DoCursorTimerTick)
+		Task* CursorTimerTask := Scheduler->AddLightTask(&self.DoCursorTimerTick)
 		
 		CursorTimerTask~>Context->RDI := this As i64
 		
@@ -666,16 +659,3 @@ struct TerminalRendererInstance {
 		return Count
 	}
 }
-
-FileHandlePrototype TerminalRendererPrototype {
-	DataSize: #TerminalRendererInstance,
-	Initialize: &TerminalRendererInstance.Initialize,
-	
-	DeviceControl: &TerminalRendererInstance.DeviceControl,
-	
-	Poll: &TerminalRendererInstance.Poll,
-	Write: &TerminalRendererInstance.Write
-}
-
-i32 TERMINAL_RENDERER_PROTOTYPE_ID := RegisterHandlePrototype(&TerminalRendererPrototype)
-

@@ -11,7 +11,7 @@ define i64 SystemCallOpen(i8* Path, i32 Flags, i32 Mode) {
 		Ext2Flags := EXT2_OPEN_CREATE
 	}
 
-	FileHandle* WorkingDirectory := CurrentProcess->WorkingDirectory
+	IFileHandle* WorkingDirectory := CurrentProcess->WorkingDirectory
 
 	if(Path[0] = '/') {
 		WorkingDirectory := RootDirectory
@@ -19,7 +19,7 @@ define i64 SystemCallOpen(i8* Path, i32 Flags, i32 Mode) {
 	}
 	
 	i32 FileDescriptor := CurrentProcess->FileDescriptorCount++
-	FileHandle* Result := WorkingDirectory->Open(Path, Ext2Flags)
+	IFileHandle* Result := WorkingDirectory->Open(Path, Ext2Flags)
 	CurrentProcess->FileDescriptorsToHandles[FileDescriptor] := Result
 	
 	return FileDescriptor
@@ -45,7 +45,7 @@ define i64 SystemCallFileStatus(i64 FileDescriptor, LinuxFileStatus* Out) {
 define i64 SystemCallPathStatus(i8* Path, LinuxFileStatus* Out) {
 	;Info("Stat(%s, %x)\n", Path, Out)
 	
-	FileHandle* Target := CurrentProcess->WorkingDirectory->Open(Path)
+	IFileHandle* Target := CurrentProcess->WorkingDirectory->Open(Path)
 	
 	if !(Target) {
 		return -LINUX_ERROR_NOENT
@@ -78,7 +78,7 @@ define i32 SystemCallPoll(LinuxPollTarget* Targets, i32 TargetCount, i32 Timeout
 		for (i32 Index := 0, Index < TargetCount, Index++) {
 			LinuxPollTarget* TargetInfo := Targets[Index]
 			
-			FileHandle* Target := CurrentProcess->FileDescriptorsToHandles[TargetInfo->FileDescriptor]
+			IFileHandle* Target := CurrentProcess->FileDescriptorsToHandles[TargetInfo->FileDescriptor]
 
 			;Info("Poll(%i, %b) = ", TargetInfo->FileDescriptor, TargetInfo->RequestedEvents)
 			TargetInfo->ReturnedEvents := Target->Poll(TargetInfo->RequestedEvents) As i16
@@ -101,7 +101,7 @@ define i32 SystemCallPoll(LinuxPollTarget* Targets, i32 TargetCount, i32 Timeout
 }
 
 define i64 SystemCallRead(i64 FileDescriptor, i8* Buffer, i32 Size) {
-	FileHandle* Handle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
+	IFileHandle* Handle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
 	
 	i64 ActualSize := Handle->Read(Buffer, Size)
 
@@ -119,7 +119,7 @@ define i64 SystemCallWrite(i64 FileDescriptor, i8* Buffer, i32 Size) {
 		}
 	}
 	
-	FileHandle* Handle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
+	IFileHandle* Handle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
 	
 	return Handle->Write(Buffer, Size)
 }

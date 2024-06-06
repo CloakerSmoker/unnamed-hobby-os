@@ -157,7 +157,7 @@ HPETDriver::HPET* HPET := null
 #Require "./src/kernel/terminal/Input.rlx"
 #Require "./src/kernel/terminal/Renderer.rlx"
 
-FileHandle* KernelTerminal
+IFileHandle* KernelTerminal
 
 define void KernelPrintCharacter(PrintOutputAdapterPrototype* this, i8 Character) {
 	KernelTerminal->Write(&Character, 1)
@@ -306,10 +306,10 @@ Task* KernelSetupTask := &_KernelSetupTask
 #Require "./src/kernel/networking/Main.rlx"
 
 define void InitializeTerminal() {
-	DefaultTerminalInput := NewHandle(&TerminalInputStreamPrototype)
-	DefaultTerminalOutput := NewHandle(&TerminalRendererPrototype, PrimaryDisplay, BootFont, TERMINAL_FOREGROUND, TERMINAL_BACKGROUND)
+	DefaultTerminalInput := new TerminalInputStreamHandle()
+	DefaultTerminalOutput := new TerminalRendererHandle(PrimaryDisplay, BootFont, TERMINAL_FOREGROUND, TERMINAL_BACKGROUND)
 	
-	KernelTerminal := NewHandle(&TerminalFilePrototype, TERMINAL_MAJOR, TERMINAL_MINOR)
+	KernelTerminal := new TerminalHandle(DefaultTerminalInput, DefaultTerminalOutput)
 }
 
 define void PopulateDevicesDirectory(IDirectory* DevicesDirectory) {
@@ -320,7 +320,7 @@ define void PopulateDevicesDirectory(IDirectory* DevicesDirectory) {
 	; Serial ports: /dev/ttySX
 
 	for (i32 Index := 0, Index < 4, Index++) {
-		DevicesDirectory->Insert(FormatString("ttyS%i", Index), VFSDeviceSingletonFile:New(SerialPortFileHandle:New(Index)))
+		DevicesDirectory->Insert(FormatString("ttyS%i", Index), new VFSDeviceSingletonFile(new SerialPortHandle(Index)))
 	}
 
 	; Terminal: /dev/tty0
@@ -354,7 +354,7 @@ define void PopulateDevicesDirectory(IDirectory* DevicesDirectory) {
 			Print("SATA Device %i is a %s, SN: %s\n", Port->Index, Port->Model, Port->SerialNumber)
 
 			BlockDevice* Device := ICH9::AHCI::PortBlockDevice:New(Port)
-			FileHandle* Handle := BlockDeviceFileHandle:New(Device)
+			IFileHandle* Handle := BlockDeviceFileHandle:New(Device)
 			IFile* File := VFSBlockDeviceFile:New(Handle)
 
 			DevicesDirectory->Insert(FormatString("sata%i", Index), File)
@@ -385,7 +385,7 @@ define void PopulateDevicesDirectory(IDirectory* DevicesDirectory) {
 				i8* GUIDName := FormatString("%guid", NextPartition~>PartitionGUID)
 
 				BlockDevice* PartitionDevice := GPTBlockDevice:New(Device, NextPartition)
-				FileHandle* PartitionHandle := BlockDeviceFileHandle:New(PartitionDevice)
+				IFileHandle* PartitionHandle := BlockDeviceFileHandle:New(PartitionDevice)
 				IFile* PartitionFile := VFSBlockDeviceFile:New(PartitionHandle)
 
 				DevicesDirectory->Insert(FileName, PartitionFile)
@@ -416,7 +416,7 @@ define void ExecuteExecute(i32 ArgC, i8** ArgV) {
     }
 
     IFile* InputFile := Entry.File
-    FileHandle* Input := InputFile->Open()
+    IFileHandle* Input := InputFile->Open()
 
 	Input->Seek(SeekMode::End, 0)
 	i32 Size := Input->Tell()

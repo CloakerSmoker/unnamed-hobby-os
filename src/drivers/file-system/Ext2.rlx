@@ -444,6 +444,9 @@ enum Ext2AllocateType {
 	INode
 }
 
+declare IFileHandle* Ext2OpenINode(Ext2*, Ext2INode*)
+declare IFileHandle* Ext2OpenINodeNumber(Ext2*, i32)
+
 struct Ext2 {
 	Ext2SuperBlock* SuperBlock
 	Ext2BlockGroupDescriptor* BlockGroupTable
@@ -1787,29 +1790,24 @@ struct Ext2 {
 		
 		Out->INodeNumber := Node->INodeNumber
 	}
-}
 
-declare FileHandle* Ext2OpenINode(Ext2*, Ext2INode*)
-declare FileHandle* Ext2OpenINodeNumber(Ext2*, i32)
-
-struct Ext2GenericInstance {
-	#Include "./src/kernel/file-system/HandleInstance.rlx"
-	
-	Ext2* FS
-	Ext2INode Node
-	
-	define void Initialize(void** Options, i32 OptionCount) {
-		this->FS := Options[0]
-		
-		MoveMemory(this~>Node, Options[1], #Ext2INode)
+	define IFileHandle* OpenINode(Ext2INode* INode) {
+		return Ext2OpenINode(this, INode)
+	}
+	define IFileHandle* OpenINode(i32 INodeNumber) {
+		return Ext2OpenINodeNumber(this, INodeNumber)
 	}
 }
 
-struct Ext2FileInstance {
-	#Include "./src/kernel/file-system/HandleInstance.rlx"
-	
+class Ext2FileHandle implements IFileHandle, derives INew {
 	Ext2* FS
 	Ext2INode Node
+
+	define void New(Ext2* FS, Ext2INode* Node) {
+		this->FS := FS
+		MoveMemory(this~>Node, Node, #Ext2INode)
+	}
+
 	i32 NextByteOffset
 	
 	define void Status(FileStatus* Out) {
@@ -1844,24 +1842,16 @@ struct Ext2FileInstance {
 		return this->NextByteOffset
 	}
 }
-FileHandlePrototype Ext2FilePrototype {
-	DataSize: #Ext2FileInstance,
-	Initialize: &Ext2GenericInstance.Initialize,
-	
-	Status: &Ext2FileInstance.Status,
-	Read: &Ext2FileInstance.Read,
-	Write: &Ext2FileInstance.Write,
-	Seek: &Ext2FileInstance.Seek,
-	Tell: &Ext2FileInstance.Tell
-}
 
-i32 EXT2_FILE_PROTOTYPE_ID := RegisterHandlePrototype(&Ext2FilePrototype)
-
-struct Ext2DirectoryInstance {
-	#Include "./src/kernel/file-system/HandleInstance.rlx"
-	
+class Ext2DirectoryHandle implements IFileHandle, derives INew {
 	Ext2* FS
 	Ext2INode Node
+
+	define void New(Ext2* FS, Ext2INode* Node) {
+		this->FS := FS
+		MoveMemory(this~>Node, Node, #Ext2INode)
+	}
+
 	i32 NextEntryIndex
 	
 	define void Status(FileStatus* Out) {
@@ -1915,11 +1905,11 @@ struct Ext2DirectoryInstance {
 		return 0
 	}
 	
-	define FileHandle* OpenOrCreate(i8* Path, i8 Flags) {
+	define IFileHandle* OpenOrCreate(i8* Path, i8 Flags) {
 		Ext2DirectoryEntry* Entry := this->FS->FindDirectoryEntryByPath(this~>Node, Path)
 		
 		if (Entry) {
-			return Ext2OpenINodeNumber(this->FS, Entry->INode)
+			return this->FS->OpenINode(Entry->INode)
 		}
 		else {
 			i32 CreatedNodeNumber := -1
@@ -1934,54 +1924,25 @@ struct Ext2DirectoryInstance {
 				return null
 			}
 			
-			return Ext2OpenINodeNumber(this->FS, CreatedNodeNumber)
+			return this->FS->OpenINode(CreatedNodeNumber)
 		}
 	}
-	define FileHandle* Open(i8* Path) {
+	define IFileHandle* Open(i8* Path) {
 		return this->OpenOrCreate(Path, EXT2_OPEN_IF_EXISTS)
 	}
 }
 
-
-FileHandlePrototype Ext2DirectoryPrototype {
-	DataSize: #Ext2DirectoryInstance,
-	Initialize: &Ext2GenericInstance.Initialize,
-	
-	Status: &Ext2DirectoryInstance.Status,
-	Seek: &Ext2DirectoryInstance.Seek,
-	Tell: &Ext2DirectoryInstance.Tell,
-	
-	ReadDirectoryEntries: &Ext2DirectoryInstance.Read,
-	OpenOrCreate: &Ext2DirectoryInstance.OpenOrCreate,
-	Open: &Ext2DirectoryInstance.Open
-}
-
-i32 EXT2_DIRECTORY_PROTOTYPE_ID := RegisterHandlePrototype(&Ext2DirectoryPrototype)
-
-define FileHandle* Ext2OpenINode(Ext2* FS, Ext2INode* Node) {
+define IFileHandle* Ext2OpenINode(Ext2* FS, Ext2INode* Node) {
 	if (Node->IsFile()) {
-		return NewHandle(&Ext2FilePrototype, FS, Node)
+		return new Ext2FileHandle(FS, Node)
 	}
 	else if (Node->IsDirectory()) {
-		return NewHandle(&Ext2DirectoryPrototype, FS, Node)
-	}
-	else if (Node->IsCharacterDevice()) {
-		i32 Major := Node->GetMagicMajor()
-		i32 Minor := Node->GetMagicMinor()
-		
-		MagicFilePrototype* MagicPrototype := FindMagicFilePrototype(Major, Minor)
-		
-		if !(MagicPrototype) {
-			Info("Attempt to open unimplemented character device %i:%i\n", Major, Minor)
-			Throw('NO_MAGIC') ; yeah I'm funny
-		}
-		
-		return MagicPrototype->GetInstance()
+		return new Ext2DirectoryHandle(FS, Node)
 	}
 	else {
 		return null
 	}
 }
-define FileHandle* Ext2OpenINodeNumber(Ext2* FS, i32 NodeNumber) {
+define IFileHandle* Ext2OpenINodeNumber(Ext2* FS, i32 NodeNumber) {
 	return Ext2OpenINode(FS, FS->ReadINode(NodeNumber))
 }

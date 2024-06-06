@@ -13,7 +13,7 @@ struct ActiveLoopDevice {
 
     union {
         BlockDeviceFileHandle* Handle,
-        FileHandle* RawHandle
+        IFileHandle* RawHandle
     }
 
     union {
@@ -56,7 +56,7 @@ define void ExecuteLoop(i64 ArgC, i8** ArgV) {
         }
 
         IFile* File := Entry.File
-        FileHandle* Handle := File->Open()
+        IFileHandle* Handle := File->Open()
 
         ActiveLoopDevice* Device := ActiveLoopDevice:New()
 

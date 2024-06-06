@@ -254,10 +254,10 @@ i32 STANDARD_OUTPUT_FILE_DESCRIPTOR := 1
 i32 STANDARD_ERROR_FILE_DESCRIPTOR := 2
 
 struct Process {
-	FileHandle*[10] FileDescriptorsToHandles
+	IFileHandle*[10] FileDescriptorsToHandles
 	i32 FileDescriptorCount
 	
-	FileHandle* WorkingDirectory
+	IFileHandle* WorkingDirectory
 	
 	ELFHeader* ELF
 	
@@ -288,7 +288,7 @@ struct Process {
 		return EventState:CallNextListener
 	}
 	
-	define void Initialize(ELFHeader* Header, FileHandle* WorkingDirectory) {
+	define void Initialize(ELFHeader* Header, IFileHandle* WorkingDirectory) {
 		this->ELF := Header
 		this->WorkingDirectory := WorkingDirectory
 		
@@ -324,7 +324,7 @@ struct Process {
 		this->Threads->Push(this~>MainThread)
 	}
 
-	define i32 AllocateFileDescriptor(FileHandle* Handle) {
+	define i32 AllocateFileDescriptor(IFileHandle* Handle) {
 		i32 Result := this->FileDescriptorCount++
 
 		this->FileDescriptorsToHandles[Result] := Handle

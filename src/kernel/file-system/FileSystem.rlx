@@ -66,12 +66,13 @@ struct DirectoryEntry {
 }
 
 enum SeekMode {
-	Set,
-	Offset,
-	End
+	Set := 0,
+	Offset := 1,
+	Relative := 1,
+	End := 2
 }
 
 #Require "./src/kernel/file-system/Handle.rlx"
 #Require "./src/kernel/file-system/MagicFiles.rlx"
 
-FileHandle* RootDirectory := null
+IFileHandle* RootDirectory := null

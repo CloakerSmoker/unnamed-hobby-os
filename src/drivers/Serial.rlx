@@ -57,18 +57,10 @@ define void RegisterSerialInterrupts() {
 
 #Require "./src/kernel/file-system/FileSystem.rlx"
 
-declare FileHandlePrototype* GetSerialPortFileHandlePrototype()
-
-struct SerialPortFileHandle {
-	#Include "./src/kernel/file-system/HandleInstance.rlx"
-	
+class SerialPortHandle implements IFileHandle, derives INew {
 	SerialPort* Port
 
-	static FileHandle* New(i32 Number) {
-		self* this := Alloc(#self)
-
-		this->Prototype := GetSerialPortFileHandlePrototype()
-
+	define void New(i32 Number) {
 		this->Port := SerialPorts[Number]
 
 		if !(this->Port) {
@@ -79,8 +71,6 @@ struct SerialPortFileHandle {
 
 			this->Port := Port
 		}
-
-		return this As void*
 	}
 	
 	define i32 Poll(i32 Mode) {
@@ -106,18 +96,4 @@ struct SerialPortFileHandle {
 		
 		return Count
 	}
-}
-
-FileHandlePrototype SerialPortFileHandlePrototype {
-	DataSize: #SerialPortFileHandle,
-	
-	Poll: &SerialPortFileHandle.Poll,
-	Read: &SerialPortFileHandle.Read,
-	Write: &SerialPortFileHandle.Write
-}
-
-i32 SERIAL_PORT_FILE_HANDLE_PROTOTYPE_ID := RegisterHandlePrototype(&SerialPortFileHandlePrototype)
-
-define FileHandlePrototype* GetSerialPortFileHandlePrototype() {
-	return &SerialPortFileHandlePrototype
 }

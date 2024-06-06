@@ -1,25 +1,15 @@
 #Require "$/AVLTree.rlx"
 #Require "$/Directory.rlx"
 
-declare FileHandlePrototype* GetHostFileHandlePrototype()
-
-struct HostFileInstance {
-    #Include "./src/kernel/file-system/HandleInstance.rlx"
-
+class HostFileHandle implements IFileHandle, derives INew {
     IFile* VFS
     i64 Handle
     i8 ReadOnly
 
-    static FileHandle* New(IFile* VFS, i64 Handle, i8 ReadOnly) {
-        self* this := Alloc(#self)
-        
-        this->Prototype := GetHostFileHandlePrototype()
-
+    define void New(IFile* VFS, i64 Handle, i8 ReadOnly) {
         this->VFS := VFS
         this->Handle := Handle
         this->ReadOnly := ReadOnly
-
-        return this As void*
     }
 
     define void Status(FileStatus* Out) {
@@ -43,20 +33,8 @@ struct HostFileInstance {
         return FileTell(this->Handle)
     }
     define void Close() {
-        this->VFS->Close(this->AsFileHandle())
+        this->VFS->Close(this)
     }
-}
-
-FileHandlePrototype HostFileHandlePrototype {
-	Status: &HostFileInstance.Status,
-	Read: &HostFileInstance.Read,
-	Write: &HostFileInstance.Write,
-	Seek: &HostFileInstance.Seek,
-	Tell: &HostFileInstance.Tell
-}
-
-define FileHandlePrototype* GetHostFileHandlePrototype() {
-    return &HostFileHandlePrototype
 }
 
 class VFSHostFile implements IFile, derives INew {
@@ -72,10 +50,10 @@ class VFSHostFile implements IFile, derives INew {
         return false
     }
 
-    define FileHandle* Open() {
-        return HostFileInstance:New(this, this->Handle, this->ReadOnly)
+    define IFileHandle* Open() {
+        return HostFileHandle:New(this, this->Handle, this->ReadOnly)
     }
-    define void Close(FileHandle* Handle) {
+    define void Close(IFileHandle* Handle) {
         Free(Handle)
     }
 }

@@ -4,10 +4,9 @@
 #Require "./src/kernel/file-system/FileSystem.rlx"
 #Require "./src/kernel/input/InputToTerminalEscapes.rlx"
 
-struct TerminalInputStreamInstance {
-	#Include "./src/kernel/file-system/HandleInstance.rlx"
+class TerminalInputStreamHandle implements IFileHandle, derives INew {
 	#Include "./src/kernel/terminal/InstanceComponent.rlx"
-	FileHandle* Output
+	IFileHandle* Output
 	
 	i8[64] RawLineBuffer
 	MemoryFIFO LineBuffer
@@ -42,7 +41,7 @@ struct TerminalInputStreamInstance {
 	
 	define void Initialize(void** Options, i32 Count) {
 		this~>Escaper->State := this
-		this~>Escaper->WriteOutput := &TerminalInputStreamInstance.Input(void*, i32)
+		this~>Escaper->WriteOutput := &self.Input(void*, i32)
 		
 		this~>LineBuffer->Initialize(this~>RawLineBuffer, 64)
 		this~>InputBuffer->Initialize(this~>RawInputBuffer, 64)
@@ -121,7 +120,7 @@ struct TerminalInputStreamInstance {
 		if (Function = TERMINAL_INITIALIZE) {
 			; Master is letting us know we are the default terminal, take ownership of keyboard input
 			
-			SinkPS2Input(this, &TerminalInputStreamInstance.OnInput)
+			SinkPS2Input(this, &self.OnInput)
 		}
 		else {
 			return this->ComponentDeviceControl(Function, Parameter)
@@ -187,16 +186,3 @@ struct TerminalInputStreamInstance {
 		return Size
 	}
 }
-
-FileHandlePrototype TerminalInputStreamPrototype {
-	DataSize: #TerminalInputStreamInstance,
-	Initialize: &TerminalInputStreamInstance.Initialize,
-	
-	DeviceControl: &TerminalInputStreamInstance.DeviceControl,
-	
-	Poll: &TerminalInputStreamInstance.Poll,
-	Read: &TerminalInputStreamInstance.Read,
-	Write: &TerminalInputStreamInstance.WriteToInputStream
-}
-
-i32 TERMINAL_KEY_INPUT_PROTOTYPE_ID := RegisterHandlePrototype(&TerminalInputStreamPrototype)
