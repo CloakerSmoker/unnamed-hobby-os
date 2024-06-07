@@ -322,56 +322,74 @@ QEMU?=qemu-system-x86_64
 QEMU_FLAGS=-machine q35 -bios misc/files/OVMF.fd $(DISK_FLAGS) -$(STDIO) stdio --cpu max,la57=off -global hpet.msi=true
 DISK_FLAGS=-hda Disk.qcow2
 DEBUG_FLAGS=
+HELP_TEXT=Help:|
 
+HELP_TEXT+=gdb: Request QEMU GDB stub|
 ifneq (,$(findstring gdb,$(flags)))
 	DEBUG_FLAGS=-s
 endif
 
+HELP_TEXT+=monitor: Set STDIO to QEMU monitor instead of serial|
 ifneq (,$(findstring monitor,$(flags)))
 	STDIO=monitor
 endif
 
+HELP_TEXT+=wait: Have QEMU wait for a connection over the GDB stub before starting|
 ifneq (,$(findstring wait,$(flags)))
 	DEBUG_FLAGS=-s -S
 endif
 
+HELP_TEXT+=no-reset: Prevent QEMU from rebooting/shutting down on triple fault. Instead, trap into debugger|
 ifneq (,$(findstring no-reset,$(flags)))
 	QEMU_FLAGS+=-no-reboot -no-shutdown
 endif
 
+HELP_TEXT+=achi-debug: Have QEMU log debug messages related to AHCI|
 ifneq (,$(findstring achi-debug,$(flags)))
 	QEMU_FLAGS+=--trace "ahci_*" --trace "handle_*" --trace "ide_*"
 endif
 
+HELP_TEXT+=net-user: Add a network device backed by QEMU's user network stack|
 ifneq (,$(findstring net-user,$(flags)))
 	COMMA:=,
 	QEMU_FLAGS+=-device e1000e,netdev=hub0port0 -netdev user,id=hub0port0$(if $(HOSTFWD),$(COMMA)hostfwd=$(HOSTFWD),)
 endif
 
+HELP_TEXT+=net-tap: Add a network device backed by a TAP device (vm0)|
 ifneq (,$(findstring net-tap,$(flags)))
 	QEMU:=sudo $(QEMU)
 	QEMU_FLAGS+=-device e1000e,netdev=hub0port0 -netdev tap,ifname=vm0,id=hub0port0
 endif
 
+HELP_TEXT+=net-capture: Capture network traffic from the other net- options into the dump.pcap file|
 ifneq (,$(findstring net-capture,$(flags)))
 	QEMU_FLAGS+=-object filter-dump,id=f1,netdev=hub0port0,file=dump.pcap
 endif
 
+HELP_TEXT+=usb: Add an EHCI controller, and use a USB device as the boot device instead of an AHCI device|
 ifneq (,$(findstring usb,$(flags)))
 	DISK_FLAGS:=-drive if=none,id=stick,format=raw,file=build/USB.img -usb -device usb-ehci,id=ehci -device usb-storage,bus=ehci.0,drive=stick
 endif
 
+HELP_TEXT+=usb-debug: Have QEMU dump debug messages related to EHCI|
 ifneq (,$(findstring usb-debug,$(flags)))
 	QEMU_FLAGS+=--trace "usb_ehci*"
 endif
 
+HELP_TEXT+=dry: Dry-run, don't actually run QEMU, just print the flags that would be passed|
 ifneq (,$(findstring dry,$(flags)))
 	QEMU:=echo $(QEMU)
 endif
 
+HELP_TEXT+=host-gdb: Debug QEMU itself using GDB|
 ifneq (,$(findstring host-gdb,$(flags)))
 	QEMU:=gdb -q --args $(QEMU)
 endif
+
+export HELP_TEXT
+
+boot-help:
+	@echo "$$HELP_TEXT" | tr '|' '\n'
 
 boot: Disk.qcow2
 	$(QEMU) $(QEMU_FLAGS) $(DEBUG_FLAGS)
