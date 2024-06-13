@@ -206,7 +206,7 @@ define void ExecuteDD(i64 ArgC, i8** ArgV) {
     }
 
     IFile* InputFile := InputEntry.File
-    FileHandle* Input := InputFile->Open()
+    IFileHandle* Input := InputFile->Open()
     Input->Seek(InputBase * BlockSize, SeekMode::Set)
 
     VFSDirectoryEntry OutputEntry
@@ -223,7 +223,7 @@ define void ExecuteDD(i64 ArgC, i8** ArgV) {
     }
 
     IFile* OutputFile := OutputEntry.File
-    FileHandle* Output := OutputFile->Open()
+    IFileHandle* Output := OutputFile->Open()
     Output->Seek(OutputBase * BlockSize, SeekMode::Set)
 
     void* BlockBuffer := Alloc(BlockSize)
@@ -259,7 +259,7 @@ define void ExecuteInstall(i64 ArgC, i8** ArgV) {
     }
 
     IFile* SourceFile := SourceEntry.File
-    FileHandle* Source := SourceFile->Open()
+    IFileHandle* Source := SourceFile->Open()
 
     Source->Seek(SeekMode::End, 0)
     i32 SourceSize := Source->Tell()
@@ -309,7 +309,7 @@ define void ExecuteInstall(i64 ArgC, i8** ArgV) {
 
     Current->Insert(&Entry)
 
-    FileHandle* DestinationFile := Destination->Open()
+    IFileHandle* DestinationFile := Destination->Open()
 
     DestinationFile->Write(SourceData, SourceSize)
 

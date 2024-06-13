@@ -1,8 +1,8 @@
 
 class VFSDeviceSingletonFile implements IFile, derives INew {
-    FileHandle* Handle
+    IFileHandle* Handle
 
-    define void New(FileHandle* Handle) {
+    define void New(IFileHandle* Handle) {
         this->Handle := Handle
     }
 
@@ -10,9 +10,9 @@ class VFSDeviceSingletonFile implements IFile, derives INew {
         return true
     }
 
-    define FileHandle* Open() {
+    define IFileHandle* Open() {
         return this->Handle
     }
-    define void Close(FileHandle* Handle) {
+    define void Close(IFileHandle* Handle) {
     }
 }

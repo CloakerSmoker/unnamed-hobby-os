@@ -1,24 +1,14 @@
 
 #Require "./src/kernel/file-system/Handle.rlx"
 
-declare FileHandlePrototype* GetVFSFileHandlePrototype()
-
-struct VFSFileHandle {
-    #Include "./src/kernel/file-system/HandleInstance.rlx"
-
+class VFSFileHandle implements IFileHandle, derives INew {
     void* Buffer
     i32 Size
 
     i32 Offset
 
-	static FileHandle* New() {
-		self* this := Alloc(#self)
-
-		this->Prototype := GetVFSFileHandlePrototype()
-
+	define void New() {
 		this->Buffer := Alloc(1)
-
-		return this->AsHandle()
 	}
 
     define void Seek(i32 Destination, SeekMode Mode) {
@@ -66,24 +56,12 @@ struct VFSFileHandle {
 	}
 }
 
-FileHandlePrototype VFSFileHandlePrototype {
-	;Status: &VFSFile.Status,
-	Read: &VFSFileHandle.Read,
-	Write: &VFSFileHandle.Write,
-	Seek: &VFSFileHandle.Seek,
-	Tell: &VFSFileHandle.Tell
-}
-
-define FileHandlePrototype* GetVFSFileHandlePrototype() {
-    return &VFSFileHandlePrototype
-}
-
 #Require "./src/kernel/file-system/VFS/VFS.rlx"
 
 class VFSFile implements IFile, derives INew {
     VFSFileHandle* Handle
 
-    define void New(void* Handle) {
+    define void New(VFSFileHandle* Handle) {
         this->Handle := Handle
     }
 
@@ -91,7 +69,7 @@ class VFSFile implements IFile, derives INew {
         return true
     }
 
-    define FileHandle* Open() {
-        return this->Handle->AsHandle()
+    define IFileHandle* Open() {
+        return this->Handle
     }
 }

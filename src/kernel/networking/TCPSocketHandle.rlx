@@ -1,23 +1,17 @@
 
 declare FileHandlePrototype* GetTCPSocketHandlePrototype()
 
-struct TCPSocketHandle {
+class TCPSocketHandle implements IFileHandle, derives INew {
     #Include "./src/kernel/file-system/HandleInstance.rlx"
 
     TCPSocket* Socket
 
-    static FileHandle* New(TCPSocket* Socket) {
-        self* this := Alloc(#self)
-
-        this->Prototype := GetTCPSocketHandlePrototype()
-
+    define void New(TCPSocket* Socket) {
         this->Socket := Socket
-
-        return this->AsHandle()
     }
 
-    static FileHandle* New() {
-        return self:New(Network->CreateTCP())
+    define void New() {
+        this->Socket := Network->CreateTCP()
     }
 
     define void Connect(NetworkAddress* Address) {
@@ -71,7 +65,7 @@ struct TCPSocketHandle {
         }
     }
 
-    define FileHandle* Accept(NetworkAddress* OutAddress) {
+    define IFileHandle* Accept(NetworkAddress* OutAddress) {
         NetworkInterface* Interface := this->Socket->Interface
         TCPLayer* TCP := Interface->WellKnownProtocols->TCP
 
@@ -146,27 +140,4 @@ struct TCPSocketHandle {
 
         Free(this)
     }
-}
-
-FileHandlePrototype TCPSocketHandlePrototype {
-    Connect: &TCPSocketHandle.Connect,
-    Listen: &TCPSocketHandle.Listen,
-    Bind: &TCPSocketHandle.Bind,
-    Accept: &TCPSocketHandle.Accept,
-
-    Poll: &TCPSocketHandle.Poll,
-
-	Send: &TCPSocketHandle.Send,
-    Write: &TCPSocketHandle.Write,
-
-    Recieve: &TCPSocketHandle.Recieve,
-    Read: &TCPSocketHandle.Read,
-
-    Close: &TCPSocketHandle.Close
-}
-
-i32 TCP_SOCKET_HANDLE_PROTOTYPE_ID := RegisterHandlePrototype(&TCPSocketHandlePrototype)
-
-define FileHandlePrototype* GetTCPSocketHandlePrototype() {
-    return &TCPSocketHandlePrototype
 }

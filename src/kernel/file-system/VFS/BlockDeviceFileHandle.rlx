@@ -1,22 +1,13 @@
-declare FileHandlePrototype* GetBlockDeviceFileHandlePrototype()
 
-struct BlockDeviceFileHandle {
-    #Include "./src/kernel/file-system/HandleInstance.rlx"
-
+class BlockDeviceFileHandle implements IFileHandle, derives INew {
     BlockDevice* Device
     i32 BlockSize
 
     i32 Offset
 
-    static FileHandle* New(BlockDevice* Device) {
-        self* this := Alloc(#self)
-        
-        this->Prototype := GetBlockDeviceFileHandlePrototype()
-
+    define void New(BlockDevice* Device) {
         this->Device := Device
         this->BlockSize := Device->GetBytesPerBlock() As i32
-
-        return this As void*
     }
 
     define void Status(FileStatus* Out) {
@@ -69,22 +60,10 @@ struct BlockDeviceFileHandle {
     }
 }
 
-FileHandlePrototype BlockDeviceFileHandlePrototype {
-	Status: &BlockDeviceFileHandle.Status,
-	Read: &BlockDeviceFileHandle.Read,
-	Write: &BlockDeviceFileHandle.Write,
-	Seek: &BlockDeviceFileHandle.Seek,
-	Tell: &BlockDeviceFileHandle.Tell
-}
-
-define FileHandlePrototype* GetBlockDeviceFileHandlePrototype() {
-    return &BlockDeviceFileHandlePrototype
-}
-
 class VFSBlockDeviceFile implements IFile, derives INew {
-    FileHandle* Handle
+    IFileHandle* Handle
 
-    define void New(FileHandle* Handle) {
+    define void New(IFileHandle* Handle) {
         this->Handle := Handle
     }
 
@@ -92,7 +71,7 @@ class VFSBlockDeviceFile implements IFile, derives INew {
         return false
     }
 
-    define FileHandle* Open() {
+    define IFileHandle* Open() {
         return this->Handle
     }
     define void Close(FileHandle* Handle) {

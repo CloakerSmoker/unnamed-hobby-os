@@ -21,6 +21,7 @@ struct MemoryMapper {
 	i8 _
 }
 
+#Require "@/Time.rlx"
 #Require "./src/kernel/file-system/FileSystem.rlx"
 
 #Require "./src/drivers/file-system/FAT32.rlx"
@@ -99,8 +100,8 @@ define i32 SizeToPageCount(i64 Size) {
 	return Result
 }
 
-define i8 LoadFile(FileHandle* RootDirectory, i8* FileName, void** OutFileData, i32* OutFileSize) {
-	FileHandle* Handle := RootDirectory->Open(FileName)
+define i8 LoadFile(IFileHandle* RootDirectory, i8* FileName, void** OutFileData, i32* OutFileSize) {
+	IFileHandle* Handle := RootDirectory->Open(FileName)
 
 	if (Handle = null) {
 		Print("Could not find '%s'\n", FileName)
@@ -508,7 +509,7 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	
 	Ext2* FS := Ext2:New(BootDisk->AsBlockDevice())
 	FS->Open()
-	RootDirectory := Ext2OpenINodeNumber(FS, 2)
+	RootDirectory := FS->OpenINode(2)
 
 	; Load Trampoline.elf into memory
 

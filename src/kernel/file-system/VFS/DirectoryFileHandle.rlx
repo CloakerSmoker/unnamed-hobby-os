@@ -1,19 +1,12 @@
-declare FileHandlePrototype* GetGenericDirectoryFileHandlePrototype()
 
-struct GenericDirectoryFileHandle {
+class GenericDirectoryFileHandle implements IFileHandle, derives INew {
 	#Include "./src/kernel/file-system/HandleInstance.rlx"
 	
     IDirectory* Directory
 	void* EnumerationState
 
-	static FileHandle* New(IDirectory* Directory) {
-		self* this := Alloc(#self)
-
-		this->Prototype := GetGenericDirectoryFileHandlePrototype()
-
+	define void New(IDirectory* Directory) {
 		this->Directory := Directory
-
-		return this->AsHandle()
 	}
 
 	define void Seek(i32 Destination, SeekMode Mode) {
@@ -46,7 +39,7 @@ struct GenericDirectoryFileHandle {
 		return Index
 	}
 	
-	define FileHandle* OpenOrCreate(i8* Path, i8 Flags) {
+	define IFileHandle* OpenOrCreate(i8* Path, i8 Flags) {
 		VFSDirectoryEntry Entry
 
 		if !(this->Directory->Lookup(Path, &Entry)) {
@@ -64,18 +57,7 @@ struct GenericDirectoryFileHandle {
 
 		return null
 	}
-	define FileHandle* Open(i8* Path) {
+	define IFileHandle* Open(i8* Path) {
 		return this->OpenOrCreate(Path, EXT2_OPEN_IF_EXISTS)
 	}
-}
-
-FileHandlePrototype GenericDirectoryFileHandlePrototype {
-	Seek: &GenericDirectoryFileHandle.Seek,
-	ReadDirectoryEntries: &GenericDirectoryFileHandle.ReadDirectoryEntries,
-	OpenOrCreate: &GenericDirectoryFileHandle.OpenOrCreate,
-	Open: &GenericDirectoryFileHandle.Open
-}
-
-define FileHandlePrototype* GetGenericDirectoryFileHandlePrototype() {
-	return &GenericDirectoryFileHandlePrototype
 }

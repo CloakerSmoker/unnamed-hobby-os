@@ -77,11 +77,11 @@ i8** NULL_ARGUMENTS := null As i8**
 i8** NULL_ENVIRONMENT := null As i8**
 
 struct ExecuteParameters {
-	FileHandle* WorkingDirectory
+	IFileHandle* WorkingDirectory
 	
-	FileHandle* StandardInput
-	FileHandle* StandardOutput
-	FileHandle* StandardError
+	IFileHandle* StandardInput
+	IFileHandle* StandardOutput
+	IFileHandle* StandardError
 	
 	i32 ArgumentCount
 	i8** Arguments

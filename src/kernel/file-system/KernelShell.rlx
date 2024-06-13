@@ -27,7 +27,7 @@ define void VFSExecuteShellCommand(i8* Line) {
     }
 }
 
-define void VFSRunShell(FileHandle* stdio) {
+define void VFSRunShell(IFileHandle* stdio) {
     CurrentDirectory := VFSRootDirectory
     DevicesDirectory := VFSDevicesDirectory
 

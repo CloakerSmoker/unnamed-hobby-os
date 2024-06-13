@@ -20,9 +20,12 @@ i8 OPEN_FILE_CREATE_NEW := LINUX_FILE_CREATE_NEW
 
 #Require "./src/linux/ErrorNumbers.rlx"
 
+#Require "./src/kernel/file-system/IOpenFile.rlx"
+
 i32 DEVICE_CONTROL_INVALID_FUNCTION := LINUX_ERROR_INVAL
 
-struct FileHandlePrototype {
+/*
+struct aFileHandlePrototype {
 	i32 DataSize
 	
 	void(void*, void**, i32) Initialize
@@ -119,9 +122,10 @@ struct FileHandlePrototype {
 		return 0
 	}
 }
+*/
 
-define i32 RegisterHandlePrototype(FileHandlePrototype* Prototype) {
-	void* Unsupported := &FileHandlePrototype.DefaultNotSupported As void*
+;define i32 RegisterHandlePrototype(void* Prototype) {
+	/*void* Unsupported := &FileHandlePrototype.DefaultNotSupported As void*
 
 	if !(Prototype->Initialize) {
 		Prototype->Initialize := &FileHandlePrototype.DefaultInitialize
@@ -175,11 +179,14 @@ define i32 RegisterHandlePrototype(FileHandlePrototype* Prototype) {
 	if !(Prototype->SendTo) { Prototype->SendTo := Unsupported }
 	if !(Prototype->Recieve) { Prototype->Recieve := Unsupported }
 	if !(Prototype->RecieveFrom) { Prototype->RecieveFrom := Unsupported }
+	*/
 	
-	return 10 ; Fairly chosen by a dice roll
-}
+;	return 10 ; Fairly chosen by a dice roll
+;}
 
-struct FileHandle {
+struct aFileHandle {
+	i8 _
+	/*
 	#Include "./src/kernel/file-system/HandleInstance.rlx"
 	
 	define void Status(FileStatus* Out) {
@@ -279,8 +286,9 @@ struct FileHandle {
 	define i32 RecieveFrom(void* Buffer, i32 Size, NetworkAddress* Address) {
 		return this->Prototype->RecieveFrom(this, Buffer, Size, Address)
 	}
+	*/
 }
-
+/*
 define FileHandle* NewHandle(FileHandlePrototype* Prototype, ... RawOptions) {
 	FileHandle* Result := Alloc(Prototype->DataSize)
 	
@@ -302,3 +310,4 @@ define void InitializeHandle(FileHandlePrototype* Prototype, FileHandle* Instanc
 	
 	Prototype->Initialize(Instance, Options, OptionCount)
 }
+*/
