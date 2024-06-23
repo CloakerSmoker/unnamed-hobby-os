@@ -71,7 +71,7 @@ class VFSBlockDeviceFile implements IFile, derives INew {
         return false
     }
 
-    define IFileHandle* Open() {
+    define IFileHandle* Open(i32 Flags) {
         return this->Handle
     }
     define void Close(IFileHandle* Handle) {

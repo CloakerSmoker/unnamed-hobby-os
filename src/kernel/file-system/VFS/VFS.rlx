@@ -62,7 +62,11 @@ interface IDirectory {
 
 interface IFile {
     virtual i8 IsEphemeral()
-    virtual IFileHandle* Open()
+    virtual IFileHandle* Open(i32 Flags)
+
+    virtual IFileHandle* Open() {
+        return this->Open(0)
+    }
 
     virtual void Close(IFileHandle* Handle) {}
 }

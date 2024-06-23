@@ -69,7 +69,7 @@ class VFSFile implements IFile, derives INew {
         return true
     }
 
-    define IFileHandle* Open() {
+    define IFileHandle* Open(i32 Flags) {
         return this->Handle
     }
 }
