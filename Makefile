@@ -41,6 +41,29 @@ $(BUSYBOX_SRC)/busybox.links: $(BUSYBOX_SRC)/README src/host/busybox.config
 	cd $(BUSYBOX_SRC); make busybox.links
 	cd $(BUSYBOX_SRC); ./make_single_applets.sh
 
+# Doomgeneric
+
+DOOM_GENERIC=$(BUILD)/doomgeneric
+DOOM_GENERIC_SRC=$(DOOM_GENERIC)/doomgeneric
+
+$(DOOM_GENERIC):
+	-git clone https://github.com/ozkl/doomgeneric $@
+
+$(DOOM_GENERIC_SRC)/Makefile.uhos: ./src/host/doomgeneric/Makefile.uhos
+	cp ./src/host/doomgeneric/Makefile.uhos $@
+
+$(DOOM_GENERIC_SRC)/doomgeneric_uhos.c: ./src/host/doomgeneric/doomgeneric_uhos.c
+	cp ./src/host/doomgeneric/doomgeneric_uhos.c $@
+
+$(BUILD)/doom.elf: $(DOOM_GENERIC)
+$(BUILD)/doom.elf: $(DOOM_GENERIC_SRC)/Makefile.uhos
+$(BUILD)/doom.elf: $(DOOM_GENERIC_SRC)/doomgeneric_uhos.c
+#$(BUILD)/doomgeneric.elf: $(DOOM_GENERIC_SRC)/doomgeneric
+	-rm -rf $(DOOM_GENERIC_SRC)/build
+	-rm $(DOOM_GENERIC_SRC)/doomgeneric
+	cd $(DOOM_GENERIC_SRC); make --makefile=Makefile.uhos
+	cp $(DOOM_GENERIC_SRC)/doomgeneric $@
+
 # Preprocess
 
 %.rlx: %.prlx
@@ -94,6 +117,9 @@ mount ext2 /dev/loop0p1 /root
 install /host/build/Trampoline.elf /root/Trampoline.elf
 install /host/build/Kernel.elf /root/Kernel.elf
 
+install /host/build/doom.elf /root/doom/doom.elf
+install /host/misc/files/DOOM.WAD /root/doom/DOOM.WAD
+
 install /host/misc/files/sponge.six /root/usr/share/demo/sponge.six
 install /host/misc/files/dum.six /root/usr/share/demo/dum.six
 
@@ -138,6 +164,7 @@ $(BUILD)/Disk.img: $(BUILD)/GPTTool.elf
 $(BUILD)/Disk.img: $(BUILD)/FAT32Tool.elf $(BUILD)/Ext2Tool.elf
 $(BUILD)/Disk.img: $(BUILD)/Boot.efi $(BUILD)/Trampoline.elf $(BUILD)/Kernel.elf
 $(BUILD)/Disk.img: $(BUILD)/HostFileShell.elf
+$(BUILD)/Disk.img: $(BUILD)/doom.elf
 $(BUILD)/Disk.img: $(BUSYBOX_SRC)/busybox.links $(shell python3 src/host/busybox.py --src $(BUSYBOX_SRC))
 $(BUILD)/Disk.img:
 	rm -f $@
