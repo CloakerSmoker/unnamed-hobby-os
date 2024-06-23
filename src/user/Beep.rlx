@@ -4,7 +4,7 @@
 #Require "./src/linux/Termios.rlx"
 
 define void DeviceControl(i64 Device, i32 Function, void* Parameter) {
-    syscall:(LINUX_SYSCALL_IOCTL, Device, Function, Parameter)
+    syscall:(LinuxSyscall::ioctl, Device, Function, Parameter)
 }
 
 define i32 Main(i64 ArgC, i8** ArgV) {
