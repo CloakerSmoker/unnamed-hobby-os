@@ -318,6 +318,45 @@ define void ExecuteInstall(i64 ArgC, i8** ArgV) {
 
 i32 INSTALL_COMMAND_ID := RegisterCommand("install", &ExecuteInstall)
 
+define void ExecuteHexdump(i64 ArgC, i8** ArgV) {
+    if (ArgC != 2) {
+        return
+    }
+
+    i8* Path := ArgV[1]
+
+    VFSDirectoryEntry Entry
+    if !(Lookup(CurrentDirectory, Path, &Entry)) {
+        Print("'%s' does not exist\n", Path)
+        return
+    }
+
+    if (Entry.Type != VFSDirectoryEntryType::File) {
+        Print("'%s' is not a file\n", Path)
+        return
+    }
+
+    IFile* File := Entry.File
+    IFileHandle* Handle := File->Open()
+
+    FileStatus Status
+    Handle->Status(&Status)
+
+    i32 Size := Status.Size As i32
+
+    Print("'%s' is %i (%x) bytes\n", Path, Size, Size)
+
+    void* Buffer := Alloc(Size)
+
+    Handle->Read(Buffer, Size)
+
+    Print("%hexdump", Buffer, Size)
+
+    Free(Buffer)
+}
+
+i32 HEXDUMP_COMMAND_ID := RegisterCommand("hexdump", &ExecuteHexdump)
+
 define void ExecuteEcho(i64 ArgC, i8** ArgV) {
     Print("%s", ArgV[1])
 }
