@@ -1,9 +1,5 @@
 
-declare FileHandlePrototype* GetTCPSocketHandlePrototype()
-
 class TCPSocketHandle implements IFileHandle, derives INew {
-    #Include "./src/kernel/file-system/HandleInstance.rlx"
-
     TCPSocket* Socket
 
     define void New(TCPSocket* Socket) {

@@ -72,7 +72,8 @@ class TerminalRendererHandle implements IFileHandle, derives INew {
 		this->Clear()
 	}
 	
-	define void New(PixelBuffer* Output, Font* NewFont, i32 Foreground, i32 Background) {
+	define void New(IFileHandle* Speaker, PixelBuffer* Output, Font* NewFont, i32 Foreground, i32 Background) {
+		this->Speaker := Speaker
 		this->Output := Output
 		this->Font := NewFont
 		

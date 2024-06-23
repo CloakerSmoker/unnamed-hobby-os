@@ -15,8 +15,6 @@ IFileHandle* DefaultTerminalInput := null
 IFileHandle* DefaultTerminalOutput := null
 
 class TerminalHandle implements IFileHandle, derives INew {
-	#Include "./src/kernel/file-system/HandleInstance.rlx"
-	
 	TermiosConfig Config
 	IFileHandle* Input
 	IFileHandle* Output

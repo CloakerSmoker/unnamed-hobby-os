@@ -1,7 +1,5 @@
 
 class UDPSocketHandle implements IFileHandle, derives INew {
-    #Include "./src/kernel/file-system/HandleInstance.rlx"
-
     i8 HasLocalPort
     UDPSocket* Socket
 

@@ -124,7 +124,8 @@ define i8 LoadFile(IFileHandle* RootDirectory, i8* FileName, void** OutFileData,
 	
 	Print("Done, %s read to %x\n", FileName, File)
 	
-	Handle->Close()
+	; TODO: `->Close` crashes for some reason
+	;Handle->Close()
 
 	*OutFileData := File
 	*OutFileSize := Size

@@ -181,7 +181,7 @@ define void TinyNC(IFileHandle* stdio, TCPSocket* Socket) {
 
 
 
-define void TestNetworking(FileHandle* stdio) {
+define void TestNetworking(IFileHandle* stdio) {
     ;SetIP()
 
     ;Test() return

@@ -307,7 +307,9 @@ Task* KernelSetupTask := &_KernelSetupTask
 
 define void InitializeTerminal() {
 	DefaultTerminalInput := new TerminalInputStreamHandle()
-	DefaultTerminalOutput := new TerminalRendererHandle(PrimaryDisplay, BootFont, TERMINAL_FOREGROUND, TERMINAL_BACKGROUND)
+
+	IFileHandle* PCSpeaker := new PCSpeakerHandle()
+	DefaultTerminalOutput := new TerminalRendererHandle(PCSpeaker, PrimaryDisplay, BootFont, TERMINAL_FOREGROUND, TERMINAL_BACKGROUND)
 	
 	KernelTerminal := new TerminalHandle(DefaultTerminalInput, DefaultTerminalOutput)
 }
