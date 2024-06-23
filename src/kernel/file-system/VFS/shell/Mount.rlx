@@ -45,7 +45,7 @@ define void ExecuteMount(i64 ArgC, i8** ArgV) {
     }
 
     VFSBlockDeviceFile* BlockDeviceFile := File
-    BlockDeviceFileHandle* BlockDeviceHandle := BlockDeviceFile->Handle As void*
+    BlockDeviceFileHandle* BlockDeviceHandle := BlockDeviceFile->Handle
     BlockDevice* Device := BlockDeviceHandle->Device
 
     IDirectory* DeviceRoot := null

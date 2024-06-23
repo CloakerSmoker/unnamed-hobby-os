@@ -1,7 +1,5 @@
 
 class GenericDirectoryFileHandle implements IFileHandle, derives INew {
-	#Include "./src/kernel/file-system/HandleInstance.rlx"
-	
     IDirectory* Directory
 	void* EnumerationState
 
