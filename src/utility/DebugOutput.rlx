@@ -31,7 +31,10 @@ define void RawInfo(i8* Format, void* Args) {
 			InitializeOutputPort()
 		}
 		
-		RawPrint(Format, Args)
+		if (ECHO_INFO_TO_TERMINAL) {
+			RawPrint(Format, Args)
+		}
+		
 		SerialPrinter->RawPrint(Format, Args)
 	}	
 }

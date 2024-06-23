@@ -185,6 +185,7 @@ PrintOutputAdapterPrototype KernelPrinter {
 #Require "./src/kernel/file-system/VFS/Ext2.rlx"
 #Require "./src/kernel/file-system/VFS/FAT32.rlx"
 
+#Require "./src/kernel/file-system/VFS/DirectoryFileHandle.rlx"
 #Require "./src/kernel/file-system/VFS/BlockDeviceFileHandle.rlx"
 #Require "./src/kernel/file-system/VFS/ZeroDevice.rlx"
 
@@ -432,7 +433,7 @@ define void ExecuteExecute(i32 ArgC, i8** ArgV) {
 	i8*[1] Environment {"USER=root"}
 
 	ExecuteParameters Parameters {
-		WorkingDirectory: GenericDirectoryFileHandle:New(CurrentDirectory),
+		WorkingDirectory: new GenericDirectoryFileHandle(CurrentDirectory),
 
 		StandardInput: DefaultTerminalInput,
 		StandardOutput: DefaultTerminalOutput,

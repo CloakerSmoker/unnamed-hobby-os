@@ -100,13 +100,15 @@ i32 PAL_RANK_512K := 15
 
 i32 PAL_RANK_1M := 16
 i32 PAL_RANK_2M := 17
+i32 PAL_RANK_4M := 18
+i32 PAL_RANK_8M := 19
 
-i32 PAL_RANK_MAX := PAL_RANK_2M
+i32 PAL_RANK_MAX := PAL_RANK_8M
 
 struct PalHeap {
     void* Buffer
 
-    PalFreeListEntry*[17] Ranks
+    PalFreeListEntry*[19] Ranks
     PalFreeListEntry* LargestFree
 
     PalFreeListEntry** _Ranks
@@ -128,7 +130,7 @@ struct PalHeap {
 
         this->_Ranks := this->Ranks
 
-        this->Ranks[PAL_RANK_2M] := PalFreeListEntry:Claim(this->Buffer, PAL_RANK_2M)
+        this->Ranks[PAL_RANK_8M] := PalFreeListEntry:Claim(this->Buffer, PAL_RANK_8M)
     }
 
     define i8 IsPowerOfTwo(i64 Number) {
@@ -407,7 +409,7 @@ struct PalHeap {
     }
 
     define void GetUsage(AllocatorUsage* Usage) {
-        Usage->ReservedBytes := this->RankSize(PAL_RANK_2M)
+        Usage->ReservedBytes := this->RankSize(PAL_RANK_8M)
 
         i32 MaxChunkIndex := this->Size / PAL_RANK_MINIMUM
         Usage->MetaBytes := MaxChunkIndex
