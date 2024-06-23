@@ -242,7 +242,7 @@ define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Devic
 			if (Device->VendorID = PCI_VENDOR_INTEL && Device->DeviceID = PCI_DEVICE_INTEL_82574L) {
 				Print("Found E1000\n")
 
-				if (false) {
+				;if (false) {
 
 				Device->EnableMSI(19)
 
@@ -251,7 +251,7 @@ define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Devic
 				Adapter->Setup()
 
 				Network->AddInterface(MakeNetworkInterfaceFromE1000(Adapter))
-				}
+				;}
 			}
 		}
 		else if (Device->ClassCode = PCI_CLASS_CODE_MASS_STORAGE_CONTROLLER && Device->SubClass = PCI_SUBCLASS_SATA_CONTROLLER) {
@@ -260,12 +260,12 @@ define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Devic
 			Info("SATA Controller %x:%x\n", Device->VendorID, Device->DeviceID)
 			Info("Supports MSI? %i\n", Device->CanUseMSI())
 
-			if (false) {
+			;if (false) {
 			Info("SATA MAP: %b\n", *((Device + 0x90) As i16*))
 
 			SATAController := Alloc(#ICH9::AHCI::Controller)
 			SATAController->Initialize(Device)
-			}
+			;}
 		}
 	}
 
@@ -309,7 +309,9 @@ define void InitializeTerminal() {
 	DefaultTerminalInput := new TerminalInputStreamHandle()
 
 	IFileHandle* PCSpeaker := new PCSpeakerHandle()
-	DefaultTerminalOutput := new TerminalRendererHandle(PCSpeaker, PrimaryDisplay, BootFont, TERMINAL_FOREGROUND, TERMINAL_BACKGROUND)
+	TerminalRendererHandle* Renderer := new TerminalRendererHandle(PCSpeaker, PrimaryDisplay, BootFont, TERMINAL_FOREGROUND, TERMINAL_BACKGROUND)
+	Renderer->SetCursorTimer()
+	DefaultTerminalOutput := Renderer
 	
 	KernelTerminal := new TerminalHandle(DefaultTerminalInput, DefaultTerminalOutput)
 }
@@ -476,8 +478,8 @@ define IDirectory* OpenFSFromPath(OpenFSErrors* Errors, i8* Path, IDirectory*(Bl
         Panic(Errors->NotABlockDevice)
     }
 
-    VFSBlockDeviceFile* BlockDeviceFile := File As void*
-    BlockDeviceFileHandle* BlockDeviceHandle := BlockDeviceFile->Handle As void*
+    VFSBlockDeviceFile* BlockDeviceFile := File
+    BlockDeviceFileHandle* BlockDeviceHandle := BlockDeviceFile->Handle
     BlockDevice* RootDevice := BlockDeviceHandle->Device
 
 	return OpenDevice(RootDevice)
@@ -582,6 +584,7 @@ define void Main(TrampolineInfo* Info) {
 	Print("BOOT: Setup GDT and TSS\n")
 	
 	SetupInterrupts()
+	SetupKeyboard()
 	
 	if (BootInfo->HPETBase && HPET_CAN_PROVIDE_SYSTEM_CLOCK) {
 		Print("TIME: HPET is present and enabled, attempting to use as system clock\n")
@@ -634,7 +637,7 @@ define void Main(TrampolineInfo* Info) {
 	InitializePCIe(&VisitPCIeFunction)
 
 	Print("Done enumerating PCIe\n")
-	loop {}
+	;loop {}
 
 	;/*
 	if (SATAController = null) {

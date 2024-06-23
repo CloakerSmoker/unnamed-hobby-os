@@ -609,7 +609,7 @@ namespace ICH9::AHCI {
             i32 Length := RawFormatString(Buffer, 300, Format, Args)
             Buffer[Length] := 0
 
-            Info("%pcie: ICH9: %s\n", this->Device, Buffer)
+            ;Info("%pcie: ICH9: %s\n", this->Device, Buffer)
             Print("ICH9: SATA: %s\n", Buffer)
         }
 

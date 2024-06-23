@@ -39,7 +39,7 @@ class TerminalInputStreamHandle implements IFileHandle, derives INew {
 		this->Input(&Next, 1)
 	}
 	
-	define void Initialize(void** Options, i32 Count) {
+	define void New() {
 		this~>Escaper->State := this
 		this~>Escaper->WriteOutput := &self.Input(void*, i32)
 		

@@ -346,11 +346,20 @@ define void ExecuteHexdump(i64 ArgC, i8** ArgV) {
 
     Print("'%s' is %i (%x) bytes\n", Path, Size, Size)
 
-    void* Buffer := Alloc(Size)
+    void* Buffer := Alloc(0x2000)
 
-    Handle->Read(Buffer, Size)
+    while (Size > 0) {
+        i32 ChunkSize := 0x2000
 
-    Print("%hexdump", Buffer, Size)
+        if (Size < 0x2000) {
+            ChunkSize := Size    
+        }
+
+        Handle->Read(Buffer, ChunkSize)
+        Print("%hexdump", Buffer, ChunkSize)
+
+        Size -= ChunkSize
+    }
 
     Free(Buffer)
 }
