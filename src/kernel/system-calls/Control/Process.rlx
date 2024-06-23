@@ -18,8 +18,8 @@ define void SystemCallExitGroup(i64 Code) {
 }
 
 define void RegisterProcessSystemCalls() {
-	SystemCalls->Register(LINUX_SYSCALL_GETCWD, &SystemCallGetWorkingDirectory)
-	SystemCalls->Register(LINUX_SYSCALL_CHDIR, &SystemCallSetWorkingDirectory)
-	SystemCalls->Register(LINUX_SYSCALL_EXIT, &SystemCallExit)
-	SystemCalls->Register(LINUX_SYSCALL_EXIT_GROUP, &SystemCallExitGroup)
+	SystemCalls->Register(LinuxSyscall::getcwd, &SystemCallGetWorkingDirectory)
+	SystemCalls->Register(LinuxSyscall::chdir, &SystemCallSetWorkingDirectory)
+	SystemCalls->Register(LinuxSyscall::exit, &SystemCallExit)
+	SystemCalls->Register(LinuxSyscall::exit_group, &SystemCallExitGroup)
 }

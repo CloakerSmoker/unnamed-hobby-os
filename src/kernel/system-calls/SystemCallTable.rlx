@@ -4,8 +4,8 @@ struct SystemCallTable {
 	i32 Count
 	i64(i64, i64, i64, i64, i64, i64)[0] Entries
 	
-	define void Register(i32 Index, void* Function) {
-		this->Entries[Index] := Function
+	define void Register(LinuxSyscall Index, void* Function) {
+		this->Entries[Index As i32] := Function
 	}
 	define i64 Invoke(i32 Index, i64 One, i64 Two, i64 Three, i64 Four, i64 Five, i64 Six) {
 		if (Index >= this->Count) {

@@ -108,7 +108,14 @@ define void* SystemCallProgramBreak(void* NewBreak) {
 	else {
 		i64 SizeBytes := (NewBreak As i64) - (CurrentProcess->BreakStart As i64)
 		i64 SizePages := SizeBytes / PAGE_SIZE
+
+		if (SizeBytes % PAGE_SIZE) {
+			SizePages += 1
+		}
+
 		i64 NewPages := SizePages - CurrentProcess->BreakSize
+
+		Info("brk() from %x to %x, grew by %i pages to %i pages\n", CurrentProcess->BreakStart, NewBreak, SizePages, NewPages)
 
 		SystemCallMapMemory(BreakEnd, (NewPages * PAGE_SIZE) As i32, LINUX_PROTECTION_READ | LINUX_PROTECTION_WRITE, LINUX_MAP_ANONYMOUS, 0, 0)
 
@@ -123,7 +130,7 @@ i32 ARCH_PRCTL_SET_FS := 0x1002
 i32 ARCH_PRCTL_GET_FS := 0x1003
 i32 ARCH_PRCTL_GET_GS := 0x1004
 
-define void SystemCallArchPrctl(i64 SubFunction, void* Parameter) {
+define i64 SystemCallArchPrctl(i64 SubFunction, void* Parameter) {
 	if (SubFunction = ARCH_PRCTL_SET_GS) {
 		SetGS(Parameter)
 	}
@@ -136,6 +143,8 @@ define void SystemCallArchPrctl(i64 SubFunction, void* Parameter) {
 	else if (SubFunction = ARCH_PRCTL_GET_FS) {
 		*(Parameter As i64*) := GetFS() As i64
 	}
+
+	return 0
 }
 
 define i64 SystemCallSetThreadIDAdress(i64* pThreadID) {
@@ -143,11 +152,11 @@ define i64 SystemCallSetThreadIDAdress(i64* pThreadID) {
 }
 
 define void RegisterEnvironmentSystemCalls() {
-	SystemCalls->Register(LINUX_SYSCALL_RT_SIGACTION, &SystemCallSetSignalAction)
-	SystemCalls->Register(LINUX_SYSCALL_RT_SIGPROCMASK, &SystemCallSetSignalMask)
-	SystemCalls->Register(LINUX_SYSCALL_BRK, &SystemCallProgramBreak)
-	SystemCalls->Register(LINUX_SYSCALL_MMAP, &SystemCallMapMemory)
-	SystemCalls->Register(LINUX_SYSCALL_MUNMAP, &SystemCallUnMapMemory)
-	SystemCalls->Register(LINUX_SYSCALL_ARCH_PRCTL, &SystemCallArchPrctl)
-	SystemCalls->Register(LINUX_SYSCALL_SET_TID_ADDRESS, &SystemCallSetThreadIDAdress)
+	SystemCalls->Register(LinuxSyscall::rt_sigaction, &SystemCallSetSignalAction)
+	SystemCalls->Register(LinuxSyscall::rt_sigprocmask, &SystemCallSetSignalMask)
+	SystemCalls->Register(LinuxSyscall::brk, &SystemCallProgramBreak)
+	SystemCalls->Register(LinuxSyscall::mmap, &SystemCallMapMemory)
+	SystemCalls->Register(LinuxSyscall::munmap, &SystemCallUnMapMemory)
+	SystemCalls->Register(LinuxSyscall::arch_prctl, &SystemCallArchPrctl)
+	SystemCalls->Register(LinuxSyscall::set_tid_address, &SystemCallSetThreadIDAdress)
 }

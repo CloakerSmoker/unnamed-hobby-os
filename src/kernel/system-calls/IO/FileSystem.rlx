@@ -11,18 +11,28 @@ define i64 SystemCallOpen(i8* Path, i32 Flags, i32 Mode) {
 		Ext2Flags := EXT2_OPEN_CREATE
 	}
 
-	IFileHandle* WorkingDirectory := CurrentProcess->WorkingDirectory
+	if (CurrentProcess->WorkingDirectory->TypeID() != typeid:(GenericDirectoryFileHandle)) {
+		Panic("Process working directory is not a GenericDirectoryFileHandle")
+	}
 
-	if(Path[0] = '/') {
-		WorkingDirectory := RootDirectory
-		Path += 1
+	GenericDirectoryFileHandle* WorkingDirectoryHandle := CurrentProcess->WorkingDirectory
+	IDirectory* WorkingDirectory := WorkingDirectoryHandle->Directory
+	
+	VFSDirectoryEntry Entry
+	if !(Lookup(WorkingDirectory, Path, &Entry)) {
+		return -LINUX_ERROR_NOENT
+	}
+
+	IFileHandle* EntryHandle := null
+
+	if (Entry.Type = VFSDirectoryEntryType::File) {
+		EntryHandle := Entry.File->Open(Ext2Flags)
+	}
+	else if (Entry.Type = VFSDirectoryEntryType::Directory) {
+		EntryHandle := new GenericDirectoryFileHandle(Entry.Directory)
 	}
 	
-	i32 FileDescriptor := CurrentProcess->FileDescriptorCount++
-	IFileHandle* Result := WorkingDirectory->Open(Path, Ext2Flags)
-	CurrentProcess->FileDescriptorsToHandles[FileDescriptor] := Result
-	
-	return FileDescriptor
+	return CurrentProcess->AllocateFileDescriptor(EntryHandle)
 }
 
 define i64 SystemCallClose(i64 FileDescriptor) {
@@ -176,16 +186,16 @@ define i64 SystemCallWriteMultiple(i64 FileDescriptor, void* Data, i32 Count) {
 }
 
 define void RegisterFileSystemSystemCalls() {
-	SystemCalls->Register(LINUX_SYSCALL_OPEN, &SystemCallOpen)
-	SystemCalls->Register(LINUX_SYSCALL_CLOSE, &SystemCallClose)
-	SystemCalls->Register(LINUX_SYSCALL_IOCTL, &SystemCallDeviceControl)
-	SystemCalls->Register(LINUX_SYSCALL_FSTAT, &SystemCallFileStatus)
-	SystemCalls->Register(LINUX_SYSCALL_STAT, &SystemCallPathStatus)
-	SystemCalls->Register(LINUX_SYSCALL_FTRUNCATE, &SystemCallTruncate)
-	SystemCalls->Register(LINUX_SYSCALL_LSEEK, &SystemCallSeek)
-	SystemCalls->Register(LINUX_SYSCALL_POLL, &SystemCallPoll)
-	SystemCalls->Register(LINUX_SYSCALL_READ, &SystemCallRead)
-	SystemCalls->Register(LINUX_SYSCALL_WRITE, &SystemCallWrite)
-	SystemCalls->Register(LINUX_SYSCALL_SENDFILE, &SystemCallSendFile)
-	SystemCalls->Register(LINUX_SYSCALL_WRITEV, &SystemCallWriteMultiple)
+	SystemCalls->Register(LinuxSyscall::open, &SystemCallOpen)
+	SystemCalls->Register(LinuxSyscall::close, &SystemCallClose)
+	SystemCalls->Register(LinuxSyscall::ioctl, &SystemCallDeviceControl)
+	SystemCalls->Register(LinuxSyscall::fstat, &SystemCallFileStatus)
+	SystemCalls->Register(LinuxSyscall::stat, &SystemCallPathStatus)
+	SystemCalls->Register(LinuxSyscall::ftruncate, &SystemCallTruncate)
+	SystemCalls->Register(LinuxSyscall::lseek, &SystemCallSeek)
+	SystemCalls->Register(LinuxSyscall::poll, &SystemCallPoll)
+	SystemCalls->Register(LinuxSyscall::read, &SystemCallRead)
+	SystemCalls->Register(LinuxSyscall::write, &SystemCallWrite)
+	SystemCalls->Register(LinuxSyscall::sendfile, &SystemCallSendFile)
+	SystemCalls->Register(LinuxSyscall::writev, &SystemCallWriteMultiple)
 }

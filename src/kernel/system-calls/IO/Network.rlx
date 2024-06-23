@@ -211,11 +211,11 @@ define i64 SystemCallRecieveFrom(i32 FileDescriptor, void* Buffer, i32 Size, i32
 }
 
 define void RegisterNetworkSystemCalls() {
-	SystemCalls->Register(LINUX_SYSCALL_SOCKET, &SystemCallSocket)
-	SystemCalls->Register(LINUX_SYSCALL_CONNECT, &SystemCallConnect)
-	SystemCalls->Register(LINUX_SYSCALL_LISTEN, &SystemCallListen)
-	SystemCalls->Register(LINUX_SYSCALL_BIND, &SystemCallBind)
-	SystemCalls->Register(LINUX_SYSCALL_ACCEPT, &SystemCallAccept)
-	SystemCalls->Register(LINUX_SYSCALL_SENDTO, &SystemCallSendTo)
-	SystemCalls->Register(LINUX_SYSCALL_RECVFROM, &SystemCallRecieveFrom)
+	SystemCalls->Register(LinuxSyscall::socket, &SystemCallSocket)
+	SystemCalls->Register(LinuxSyscall::connect, &SystemCallConnect)
+	SystemCalls->Register(LinuxSyscall::listen, &SystemCallListen)
+	SystemCalls->Register(LinuxSyscall::bind, &SystemCallBind)
+	SystemCalls->Register(LinuxSyscall::accept, &SystemCallAccept)
+	SystemCalls->Register(LinuxSyscall::sendto, &SystemCallSendTo)
+	SystemCalls->Register(LinuxSyscall::recvfrom, &SystemCallRecieveFrom)
 }

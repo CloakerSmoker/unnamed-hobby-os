@@ -1,0 +1,13 @@
+
+define i64 SystemCallSetRobustList(void* Head, i64 Length) {
+	return 0
+}
+
+define i64 SystemCallSetupRestartableSequences() {
+    return 0
+}
+
+define void RegisterSynchronizationSystemCalls() {
+	SystemCalls->Register(LinuxSyscall::set_robust_list, &SystemCallSetRobustList)
+    SystemCalls->Register(LinuxSyscall::rseq, &SystemCallSetupRestartableSequences)
+}

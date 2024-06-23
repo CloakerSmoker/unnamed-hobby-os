@@ -1,6 +1,6 @@
 #Require "./src/linux/SystemCalls.rlx"
 
-i32 SYSTEM_CALL_COUNT := LINUX_SYSCALL_COUNT
+i32 SYSTEM_CALL_COUNT := LinuxSyscall::Count As i32
 
 #Require "./src/kernel/system-calls/SystemCallTable.rlx"
 
@@ -79,6 +79,7 @@ define void OnSystemCall() asm {
 #Require "./src/kernel/system-calls/IO/Network.rlx"
 #Require "./src/kernel/system-calls/Control/Environment.rlx"
 #Require "./src/kernel/system-calls/Control/Process.rlx"
+#Require "./src/kernel/system-calls/Control/Synchronization.rlx"
 
 define void SetupSystemCalls() {
 	i64 OldEFER := ReadMSR(AMD64_MSR_EFER)
@@ -91,6 +92,7 @@ define void SetupSystemCalls() {
 	RegisterFileSystemSystemCalls()
 	RegisterEnvironmentSystemCalls()
 	RegisterProcessSystemCalls()
+	RegisterSynchronizationSystemCalls()
 	RegisterNetworkSystemCalls()
 }
 
