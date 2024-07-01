@@ -1,7 +1,12 @@
-struct FrameBufferDevice {
-    #Include "./src/kernel/file-system/HandleInstance.rlx"
 
+#Require "./src/linux/FrameBuffer.rlx"
+
+class FrameBufferFileHandle implements IFileHandle, derives INew {
     PixelBuffer* Base
+
+    define void New(PixelBuffer* Base) {
+        this->Base := Base
+    }
 
     define i32 DeviceControl(i32 Function, void* Parameter) {
         if (Function = LINUX_FRAMEBUFFER_GET_CONSTANT_INFO) {
@@ -42,8 +47,10 @@ struct FrameBufferDevice {
             Variable->GrayScale := false
         }
         else {
-            return 0
+            Raise(new FileException::Invalid())
         }
+
+        return 0
     }
 
     define void* MapIntoMemory(void* Virtual, i32 Offset, i32 Size) {
@@ -53,16 +60,28 @@ struct FrameBufferDevice {
 
         i32 Pages := SizeToPageCount(this->Base->Size())
         PhysicalAllocation* BaseAllocation := PhysicalAllocation:New(VirtualToPhysical(this->Base->Buffer()), Pages)
+        MemoryMapper* Mapper := CurrentThread->Mapper
 
         if (Virtual = null) {
-            VirtualToPhysicalMapping* Mapping := CurrentThread->Mapper->MapPhysical(Pages, PAGE_PRESENT | PAGE_WRITE, BaseAllocation)
-
-            return Mapping->Virtual
+            Virtual := Mapper->VirtualAllocator->AllocateVirtual(Pages)
         }
-        else {
-            CurrentThread->Mapper->Map(Virtual, BaseAllocation, Pages, PAGE_PRESENT | PAGE_WRITE)
+        
+        Mapper->Map(Virtual, BaseAllocation, Pages, PAGE_PRESENT | PAGE_WRITE)
 
-            return Virtual
+        return Virtual
+    }
+
+    i32 Offset
+
+    define void Seek(i32 Offset, SeekMode Mode) {
+        if (Mode = SeekMode::Set) {
+            this->Offset := Offset
         }
+    }
+
+    define void Write(void* Buffer, i32 Size) {
+        PixelBufferInstance* BaseInstance := this->Base~>Instance
+
+        MoveMemory(BaseInstance->Buffer + this->Offset, Buffer, Size)
     }
 }

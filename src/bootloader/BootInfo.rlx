@@ -1,5 +1,10 @@
 #Require "./src/drivers/ACPI.rlx"
 
+struct AvailableMemoryRegion {
+	i64 Base
+	i64 Size
+}
+
 struct BootloaderInfo {
 	i64 PhysicalFrameBuffer
 
@@ -17,5 +22,10 @@ struct BootloaderInfo {
 
 	void* KernelData
 	i32 KernelSize
+
+	i64 MaxAddress
+
+	i32 AvailableCount
+	AvailableMemoryRegion[32] AvailableMemory
 }
 

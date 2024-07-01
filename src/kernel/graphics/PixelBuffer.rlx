@@ -145,6 +145,10 @@ struct PixelBuffer {
 	define i32 PixelSize() {
 		return this->Format->Size
 	}
+
+	define i32 Stride() {
+		return this->Width() * this->PixelSize()
+	}
 	
 	define void* Buffer() {
 		return this~>Instance->Buffer

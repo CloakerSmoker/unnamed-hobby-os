@@ -24,6 +24,16 @@ namespace FileException {
             return LINUX_ERROR_OPNOTSUPP
         }
     }
+
+    class Invalid implements IFileException, derives INew {
+        define i8* Name() {
+            return "Invalid operation"
+        }
+
+        define i32 LinuxErrorCode() {
+            return LINUX_ERROR_INVAL
+        }
+    }
 }
 
 define void Raise(IFileException* Exception) {

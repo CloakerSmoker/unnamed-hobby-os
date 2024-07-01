@@ -1,7 +1,6 @@
 
 struct PageHeap {
 	i64 PhysicalBase
-	i32 HighWaterMark
 	i32 PageCount
 	i32 AllocationMapSize
 	
@@ -66,18 +65,22 @@ struct PageHeap {
 		this->AllocationMap[Byte] := (Value & 0xFF) As i8
 	}
 	
+	define void AllocateAll() {
+		SetMemory(this->AllocationMap, this->AllocationMapSize, 0xFF)
+	}
 	define void FreeAll() {
 		SetMemory(this->AllocationMap, this->AllocationMapSize, 0)
-		this->HighWaterMark := 0
 	}
 	
 	define i32 FindFreePages(i32 Count) {
-		for (i32 Index := this->HighWaterMark, Index < this->PageCount, Index++) {
+		for (i32 Index := 0, Index < this->PageCount, Index++) {
 			if !(this->IsAllocated(Index)) {
 				i8 CountFits := true
 				
 				for (i32 CountIndex := 1, CountIndex < Count, CountIndex++) {
-					if (this->IsAllocated(Index + CountIndex)) {
+					i32 PageIndex := Index + CountIndex
+
+					if (this->IsAllocated(PageIndex) || PageIndex >= this->PageCount) {
 						CountFits := false
 						break
 					}
@@ -131,10 +134,6 @@ struct PageHeap {
 		FirstPage /= PAGE_SIZE
 		
 		this->WriteAllocationMap(FirstPage As i32, false)
-		
-		if (FirstPage < this->HighWaterMark) {
-			this->HighWaterMark := FirstPage As i32
-		}
 	}
 	define void Free(i64 FirstPage, i32 Count) {
 		FirstPage -= this->PhysicalBase
@@ -142,10 +141,6 @@ struct PageHeap {
 		
 		for (i32 Index := 0, Index < Count, Index++) {
 			this->WriteAllocationMap((FirstPage + Index) As i32, false)
-		}
-		
-		if (FirstPage < this->HighWaterMark) {
-			this->HighWaterMark := FirstPage As i32
 		}
 	}
 	define void FreeVirtual(void* Start, i32 Count) {

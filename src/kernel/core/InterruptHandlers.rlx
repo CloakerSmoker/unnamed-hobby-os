@@ -15,24 +15,26 @@ i8 PAGE_FAULT_CHANCE := 0
 define void PageFault(AMD64Context* Context, i64 ErrorCode) {
 	PAGE_FAULT_CHANCE++
 	
-	if (PAGE_FAULT_CHANCE > 2) {
+	if (PAGE_FAULT_CHANCE > 3) {
 		Info("PANIC!!!! NOW!!!!!!!")
 		loop {}
 	}
-	
+
 	i64 CR2 := GetCR2()
 	i64 CR2Page := (CR2 >> 12) << 12
 
-	Print("^H1^SF\e[0J                      PANIC!!!! NOW!!!!!!!                  \n")
-	Print("              Page fault") ; Split prints just for when Info formatting is page faulting
-	Print(" at %x while accessing %x                        \n", Context->RIP, CR2)
+	if (PAGE_FAULT_CHANCE = 0) {
+		Print("^H1^SF\e[0J                      PANIC!!!! NOW!!!!!!!                  \n")
+		Print("              Page fault") ; Split prints just for when Info formatting is page faulting
+		Print(" at %x while accessing %x                        \n", Context->RIP, CR2)
 
-	Print("%stackdump")
+		Print("%stackdump")
+	}
 
-	Halt()
+	;Halt()
 	
 	Info("Page fault") ; Split prints just for when Info formatting is page faulting
-	Info(" at %x while accessing %x {\n", Context->RIP, CR2) 
+	Info(" at %x while accessing %x {\n", Context->RIP, CR2)
 	
 	Info("\tPage %x is present? ", CR2Page)
 	

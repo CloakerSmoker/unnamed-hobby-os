@@ -32,13 +32,10 @@ i8 DEBUG_ATA_PIO_READWRITE := false ; Logs when ATAPIO might have freaked out
 i8 DEBUG_HEAP_ALLOC_FREE   := false
 
 ; New
-i32 TOTAL_MEMORY := BYTES_IN_1MB * 512
-
 i32 PAGES_FOR_KERNEL_STACK := 40
 i32 PAGES_FOR_KERNEL_HEAP := PAGE_COUNT_FOR_8MB
 
-void* FIRST_USABLE_PHYSICAL_ADDRESS := BYTES_IN_1MB As void*
-i32 LOW_IDENTITY_MAP_SIZE := PAGE_COUNT_FOR_1MB * 128
+i64 FIRST_USABLE_PHYSICAL_ADDRESS := BYTES_IN_1MB
 
 ; End New
 
@@ -57,8 +54,8 @@ void* ADDRESS_OF_USER_STACK   := 0x9000_0000 As void*
 
 ; These are only for *virtual* allocations, the first page holds meta-data, the rest are backed if the user decides to
 ;  mmap them as such
-void* ADDRESS_OF_USER_PAGES   := 0x8000_0000 As void* ; Decides where user pages are allocated from
-i32   NUMBER_OF_USER_PAGES    := 0x200 ; Decides the total number of user pages that can be allocated
+void* ADDRESS_OF_USER_PAGES   := 0x8_0000_0000 As void* ; Decides where user pages are allocated from
+i32   NUMBER_OF_USER_PAGES    := 0x1_0000 ; Decides the total number of user pages that can be allocated
 
 void* ADDRESS_OF_PCIE_CONFIG := 0xE_0000_0000 As void*
 

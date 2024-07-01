@@ -582,6 +582,66 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 		KernelSize: KernelSize
 	}
 
+	i64 MemoryMapCount := MemoryMapSize / MemoryDescriptorSize
+
+	AvailableMemoryRegion* AvailableRegions := BootInfo~>AvailableMemory
+	i32 AvailableIndex := 0
+
+	i64 TotalFree := 0
+	i64 MaxAddress := 0
+
+	if (MemoryMapCount > 20) {
+		MemoryMapCount := 20
+	}
+	
+	for (i32 Index := 0, Index < MemoryMapCount, Index++) {
+		EFI_MEMORY_DESCRIPTOR* NextRegion := MemoryMap + (Index * MemoryDescriptorSize)
+		i8 Available := false
+
+		if (NextRegion->Type = EFI_MEMORY_TYPE_LOADER_CODE || NextRegion->Type = EFI_MEMORY_TYPE_LOADER_DATA) {
+			Available := true
+		}
+		else if (NextRegion->Type = EFI_MEMORY_TYPE_BOOT_SERVICE_CODE || NextRegion->Type = EFI_MEMORY_TYPE_BOOT_SERVICE_DATA) {
+			Available := true
+		}
+		else if (NextRegion->Type = EFI_MEMORY_TYPE_CONVENTIONAL) {
+			Available := true
+		}
+
+		if (Available) {
+			AvailableMemoryRegion* Region := AvailableRegions[AvailableIndex++]
+
+			Region->Base := NextRegion->PhysicalStart
+			Region->Size := NextRegion->NumberOfPages
+
+			TotalFree += Region->Size
+			MaxAddress := Region->Base + (Region->Size * 0x1000)
+
+			Print("Available Memory @ %x (%x pages)\n", Region->Base, Region->Size)
+		}
+	}
+
+	i64 KB := 1024
+	i64 MB := KB * 1024
+	i64 GB := MB * 1024
+
+	i64 Bytes := TotalFree * 0x1000
+	i64 Remainder := Bytes
+
+	i64 FreeGB := Remainder / GB
+	Remainder %= GB
+
+	i64 FreeMB := Remainder / MB
+	Remainder %= FreeMB
+
+	i64 FreeKB := Remainder / KB
+
+	Print("%x total pages free, %igb %imb %ikb\n", TotalFree, FreeGB, FreeMB, FreeKB)
+	Print("Maximum physical address: %x\n", MaxAddress)
+
+	BootInfo->AvailableCount := AvailableIndex
+	BootInfo->MaxAddress := MaxAddress
+
 	MoveMemory(BootInfo~>KernelCommandLine, CommandLineBuffer, CommandLineLength)
 	BootInfo~>KernelCommandLine[CommandLineLength] := 0
 
@@ -591,7 +651,7 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	
 	Print("Goodbye EFI!\n")
 
-	;WaitKey()
+	WaitKey()
 	
 	SystemTable->BootServices->ExitBootServices(ImageHandle, MemoryMapKey)
 	

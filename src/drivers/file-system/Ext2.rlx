@@ -1821,7 +1821,7 @@ class Ext2FileHandle implements IFileHandle, derives INew {
 		
 		return Size
 	}
-	define void Seek(i32 Destination, SeekMode Mode) {
+	define i32 Seek(i32 Destination, SeekMode Mode) {
 		if (Mode = SeekMode:Set) {
 			this->NextByteOffset := Destination
 		}
@@ -1837,6 +1837,8 @@ class Ext2FileHandle implements IFileHandle, derives INew {
 			
 			Throw(HANDLE_ERROR_BAD_PARAMETER)
 		}
+
+		return this->NextByteOffset
 	}
 	define i32 Tell() {
 		return this->NextByteOffset

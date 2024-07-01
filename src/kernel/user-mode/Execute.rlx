@@ -95,12 +95,14 @@ define Process* Execute(void* Buffer, ExecuteParameters* Parameters) {
 	
 	MemoryMapper* Mapper := MemoryMapper:New(KernelAddressSpace, PhysicalMemory, null)
 	
+	i32 UserPageMetaCount := NUMBER_OF_USER_PAGES / 0x1000
+
 	; Juggling to map the user virtual allocator
-	PhysicalAllocation* VirtualAllocatorPhysical := Mapper->AllocatePhysical(1)
-	Mapper->Map(ADDRESS_OF_USER_PAGES, VirtualAllocatorPhysical, 1, PAGE_WRITE | PAGE_PRESENT)
+	PhysicalAllocation* VirtualAllocatorPhysical := Mapper->AllocatePhysical(UserPageMetaCount)
+	Mapper->Map(ADDRESS_OF_USER_PAGES, VirtualAllocatorPhysical, UserPageMetaCount, PAGE_WRITE | PAGE_PRESENT)
 	Mapper->EnableVirtualMappings()
 	
-	FastZeroMemory(ADDRESS_OF_USER_PAGES, PAGE_SIZE)
+	FastZeroMemory(ADDRESS_OF_USER_PAGES, NUMBER_OF_USER_PAGES)
 	Mapper->VirtualAllocator := PageHeap:Adopt(ADDRESS_OF_USER_PAGES, NUMBER_OF_USER_PAGES)
 	
 	MapELF(Mapper, ELFData)

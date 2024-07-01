@@ -61,18 +61,44 @@ define void Main(BootloaderInfo* RawInfo) {
     Terminal.SetFrameBuffer(RawInfo->PhysicalFrameBuffer As void*, RGB32, 1024, 768)
     Terminal.Clear()
 
+    i64 MaxAddress := RawInfo->MaxAddress
+    i64 MaxPage := (MaxAddress / PAGE_SIZE) As i32
+
+    Print("Maximum Physical Address: %x\n", MaxAddress)
+    Print("Maximum Physical    Page: %x\n", MaxPage)
+
     ; Usable memory = (TOTAL_MEMORY - FIRST_USABLE_PHYSICAL_ADDRESS)
-    i32 UsablePages := SizeToPageCount(TOTAL_MEMORY) - SizeToPageCount(FIRST_USABLE_PHYSICAL_ADDRESS As i32)
+    i32 UsablePages := (MaxPage As i32) - SizeToPageCount(FIRST_USABLE_PHYSICAL_ADDRESS As i32)
 
     Print("Usable Memory: %x pages\n", UsablePages)
 
-    PageHeap* PhysicalMemory := PageHeap:Adopt(FIRST_USABLE_PHYSICAL_ADDRESS, UsablePages)
+    PageHeap* PhysicalMemory := PageHeap:Adopt(FIRST_USABLE_PHYSICAL_ADDRESS As void*, UsablePages)
+
+    PhysicalMemory->PhysicalBase := 0
     
     Print("Adopted %x as physical memory allocator\n")
 
-    PhysicalMemory->FreeAll()
+    PhysicalMemory->AllocateAll()
 
-    Print("Zeroed allocation map\n")
+    i32 Count := RawInfo->AvailableCount
+
+    for (i32 Index := 0, Index < Count, Index++) {
+        AvailableMemoryRegion* Region := RawInfo->AvailableMemory[Index]
+
+        if (Region->Base < FIRST_USABLE_PHYSICAL_ADDRESS) {
+            i64 End := Region->Base + (Region->Size * PAGE_SIZE)
+            i64 Overlap := End - FIRST_USABLE_PHYSICAL_ADDRESS
+
+            if (Overlap > 0) {
+                PhysicalMemory->Free(FIRST_USABLE_PHYSICAL_ADDRESS, SizeToPageCount(Overlap As i32))
+            }
+        }
+        else {
+            PhysicalMemory->Free(Region->Base, Region->Size As i32)
+        }
+    }
+
+    Print("Carved free regions out of allocation map\n")
 
     i64 TrampolineBytes := RawInfo->TrampolineMaxAddress - (TRAMPOLINE_ADDRESS As i64)
     i32 TrampolinePages := SizeToPageCount(TrampolineBytes As i32)
@@ -126,8 +152,8 @@ define void Main(BootloaderInfo* RawInfo) {
 
     VirtualMemory->MapRange(FrameBuffer, IdentityVirtualToPhysical(FrameBuffer) / PAGE_SIZE, SizeToPageCount(1024 * 786 * 4), PAGE_PRESENT | PAGE_WRITE)
 
-    ; Identity map low memory
-    VirtualMemory->MapRange(FIRST_USABLE_PHYSICAL_ADDRESS, IdentityVirtualToPhysical(FIRST_USABLE_PHYSICAL_ADDRESS) / PAGE_SIZE, LOW_IDENTITY_MAP_SIZE, PAGE_PRESENT | PAGE_WRITE)
+    ; Identity map all physical memory
+    VirtualMemory->MapRange(FIRST_USABLE_PHYSICAL_ADDRESS As void*, FIRST_USABLE_PHYSICAL_ADDRESS / PAGE_SIZE, UsablePages, PAGE_PRESENT | PAGE_WRITE)
 
     i64 KernelStackPhysical := PhysicalMemory->Allocate(PAGES_FOR_KERNEL_STACK)
     VirtualMemory->MapRange(ADDRESS_OF_KERNEL_STACK, KernelStackPhysical / PAGE_SIZE, PAGES_FOR_KERNEL_STACK, PAGE_PRESENT | PAGE_WRITE)

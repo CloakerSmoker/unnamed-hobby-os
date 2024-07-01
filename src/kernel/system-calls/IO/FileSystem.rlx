@@ -4,6 +4,10 @@ define i64 SystemCallOpen(i8* Path, i32 Flags, i32 Mode) {
 		
 		return -LINUX_ERROR_FAULT
 	}
+
+	if (DEBUG_SYSTEM_CALLS) {
+		Info("Open(%s, %x, %x): ", Path, Flags, Mode)
+	}
 	
 	i8 Ext2Flags := EXT2_OPEN_IF_EXISTS
 	
@@ -20,6 +24,7 @@ define i64 SystemCallOpen(i8* Path, i32 Flags, i32 Mode) {
 	
 	VFSDirectoryEntry Entry
 	if !(Lookup(WorkingDirectory, Path, &Entry)) {
+		Info("Not found\n")
 		return -LINUX_ERROR_NOENT
 	}
 
@@ -31,6 +36,8 @@ define i64 SystemCallOpen(i8* Path, i32 Flags, i32 Mode) {
 	else if (Entry.Type = VFSDirectoryEntryType::Directory) {
 		EntryHandle := new GenericDirectoryFileHandle(Entry.Directory)
 	}
+
+	Info("Found\n")
 	
 	return CurrentProcess->AllocateFileDescriptor(EntryHandle)
 }
@@ -185,9 +192,23 @@ define i64 SystemCallWriteMultiple(i64 FileDescriptor, void* Data, i32 Count) {
 	return TotalWritten
 }
 
+define i64 SystemCallReadMultiple(i64 FileDescriptor, void* Data, i32 Count) {
+	i64 TotalWritten := 0
+	
+	LinuxIOVector* Vectors := Data
+	
+	for (i32 Index := 0, Index < Count, Index++) {
+		LinuxIOVector* Next := Vectors[Index]
+		
+		TotalWritten += SystemCallRead(FileDescriptor, Next->Base, Next->Size As i32)
+	}
+	
+	return TotalWritten
+}
+
 define void RegisterFileSystemSystemCalls() {
 	SystemCalls->Register(LinuxSyscall::open, &SystemCallOpen)
-	SystemCalls->Register(LinuxSyscall::close, &SystemCallClose)
+	;SystemCalls->Register(LinuxSyscall::close, &SystemCallClose)
 	SystemCalls->Register(LinuxSyscall::ioctl, &SystemCallDeviceControl)
 	SystemCalls->Register(LinuxSyscall::fstat, &SystemCallFileStatus)
 	SystemCalls->Register(LinuxSyscall::stat, &SystemCallPathStatus)
@@ -198,4 +219,5 @@ define void RegisterFileSystemSystemCalls() {
 	SystemCalls->Register(LinuxSyscall::write, &SystemCallWrite)
 	SystemCalls->Register(LinuxSyscall::sendfile, &SystemCallSendFile)
 	SystemCalls->Register(LinuxSyscall::writev, &SystemCallWriteMultiple)
+	SystemCalls->Register(LinuxSyscall::readv, &SystemCallReadMultiple)
 }

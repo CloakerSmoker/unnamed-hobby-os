@@ -189,6 +189,8 @@ PrintOutputAdapterPrototype KernelPrinter {
 #Require "./src/kernel/file-system/VFS/BlockDeviceFileHandle.rlx"
 #Require "./src/kernel/file-system/VFS/ZeroDevice.rlx"
 
+#Require "./src/kernel/graphics/FrameBufferFileHandle.rlx"
+
 IDirectory* VFSDevicesDirectory := null
 
 #Require "./src/kernel/file-system/KernelShell.rlx"
@@ -332,6 +334,10 @@ define void PopulateDevicesDirectory(IDirectory* DevicesDirectory) {
 
 	DevicesDirectory->Insert("tty0", VFSDeviceSingletonFile:New(KernelTerminal))
 
+	; Framebuffer: /dev/fb0
+
+	DevicesDirectory->Insert("fb0", new VFSDeviceSingletonFile(new FrameBufferFileHandle(PrimaryDisplay)))
+
 	; /dev/disk
 
 	IDirectory* DiskDirectory := DevicesDirectory->CreateDirectory()
@@ -401,7 +407,8 @@ define void PopulateDevicesDirectory(IDirectory* DevicesDirectory) {
 }
 
 define void VFSRunShellTask() {
-	VFSRunShell(KernelTerminal)
+    VFSExecuteShellCommand("execute /doom/doom.elf -iwad /doom/DOOM.WAD")
+	;VFSRunShell(KernelTerminal)
 }
 
 #Require "./src/kernel/file-system/VFS/DirectoryFileHandle.rlx"

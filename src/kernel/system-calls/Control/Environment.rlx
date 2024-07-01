@@ -65,7 +65,7 @@ define void* SystemCallMapMemory(void* Address, i32 Size, i32 Protection, i32 Fl
 		Address := Mapping->Address
 		
 		if (Flags & LINUX_MAP_ANONYMOUS) {
-			SetMemory(Address, Size, 0)
+			FastSetMemory8(Address, 0, Size)
 		}
 	}
 	else {
