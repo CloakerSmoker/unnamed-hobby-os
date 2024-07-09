@@ -54,7 +54,7 @@ struct VirtualToPhysicalMapping {
 
 struct MemoryMapper {
 	AddressSpaceManager* AddressSpace
-	PageHeap* PhysicalAllocator
+	PhysicalMemoryManager* PhysicalAllocator
 	PageHeap* VirtualAllocator
 
 	PointerArray* PhysicalAllocations ; <PhysicalAllocation*>
@@ -62,7 +62,7 @@ struct MemoryMapper {
 	
 	i8 Active
 	
-	static MemoryMapper* New(AddressSpaceManager* AddressSpace, PageHeap* PhysicalAllocator, PageHeap* VirtualAllocator) {
+	static MemoryMapper* New(AddressSpaceManager* AddressSpace, PhysicalMemoryManager* PhysicalAllocator, PageHeap* VirtualAllocator) {
 		MemoryMapper* this := Alloc('MMG', #MemoryMapper)
 		
 		this->AddressSpace := AddressSpace

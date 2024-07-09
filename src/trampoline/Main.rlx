@@ -33,6 +33,12 @@ void* TRAMPOLINE_ADDRESS := 0x80_0000 As void*
 
 #Require "./src/utility/ELF.rlx"
 
+#Require "./src/kernel/graphics/PixelBuffer.rlx"
+#Require "./src/kernel/core/PhysicalMemoryManager.rlx"
+
+#Require "./src/utility/x64.rlx"
+#Require "./src/kernel/lib/Exit.rlx"
+
 define i64 IdentityVirtualToPhysical(void* Pointer) {
     return Pointer As i64
 }
@@ -67,47 +73,86 @@ define void Main(BootloaderInfo* RawInfo) {
     Print("Maximum Physical Address: %x\n", MaxAddress)
     Print("Maximum Physical    Page: %x\n", MaxPage)
 
-    ; Usable memory = (TOTAL_MEMORY - FIRST_USABLE_PHYSICAL_ADDRESS)
-    i32 UsablePages := (MaxPage As i32) - SizeToPageCount(FIRST_USABLE_PHYSICAL_ADDRESS As i32)
+    i64 TotalPhysicalPages := (MaxAddress / PAGE_SIZE) + 1
 
-    Print("Usable Memory: %x pages\n", UsablePages)
+    i64 AllocationMapBytes := TotalPhysicalPages / 8
+    i64 ManagerPageCount := SizeToPageCount(AllocationMapBytes As i32) + 1
 
-    PageHeap* PhysicalMemory := PageHeap:Adopt(FIRST_USABLE_PHYSICAL_ADDRESS As void*, UsablePages)
+    Print("Searching for a %x page chunk to hold physical page map\n", ManagerPageCount)
 
-    PhysicalMemory->PhysicalBase := 0
-    
-    Print("Adopted %x as physical memory allocator\n")
+    i64 TrampolineBytes := RawInfo->TrampolineMaxAddress - (TRAMPOLINE_ADDRESS As i64)
+    i32 TrampolinePages := SizeToPageCount(TrampolineBytes As i32)
+
+    i64 TrampolineStart := TRAMPOLINE_ADDRESS As i64
+    i64 TrampolineEnd := TrampolineStart + (TrampolinePages * PAGE_SIZE)
+
+    i64 KernelStart := RawInfo->KernelData As i64
+    i64 KernelEnd := KernelStart + (SizeToPageCount(RawInfo->KernelSize) * PAGE_SIZE)
+
+    void* PhysicalManagerBuffer := null
+
+    i32 Count := RawInfo->AvailableCount
+
+    Print("%i regions\n", Count)
+
+    for (i32 Index := 0, Index < Count, Index++) {
+        AvailableMemoryRegion* Region := RawInfo->AvailableMemory[Index]
+
+        i64 Start := Region->Base
+        i64 End := Start + (Region->Size * PAGE_SIZE)
+
+        if (TrampolineStart >= Start && TrampolineEnd <= End) {
+            Print("%x - %x: Overlaps trampoline\n", Start, End)
+
+            ; Skip this region if it contains the trampoline since we can't properly "split"
+            ;  the region to share it between the trampoline and physical allocator
+
+            continue
+        }
+        else if (KernelStart >= Start && KernelEnd <= End) {
+            Print("%x - %x: Overlaps kernel\n", Start, End)
+            continue
+        }
+
+        if (Region->Size >= ManagerPageCount + 1) {
+            ; Skip the first page of the region for funsies
+
+            PhysicalManagerBuffer := (Region->Base + PAGE_SIZE) As void*
+            break
+        }
+        else {
+            Print("%x - %x: Not large enough for allocation map\n", Start, End)
+        }
+    }
+
+    if (PhysicalManagerBuffer = null) {
+        Panic("Not enough contiguous free memory for physical memory allocation map")
+    }
+
+    PhysicalMemoryManager* PhysicalMemory := PhysicalMemoryManager:Adopt(PhysicalManagerBuffer, MaxAddress)
 
     PhysicalMemory->AllocateAll()
+
+    ;PhysicalMemory->Display(Terminal~>FrameBuffer, 400, 0, 500)
 
     i32 Count := RawInfo->AvailableCount
 
     for (i32 Index := 0, Index < Count, Index++) {
         AvailableMemoryRegion* Region := RawInfo->AvailableMemory[Index]
 
-        if (Region->Base < FIRST_USABLE_PHYSICAL_ADDRESS) {
-            i64 End := Region->Base + (Region->Size * PAGE_SIZE)
-            i64 Overlap := End - FIRST_USABLE_PHYSICAL_ADDRESS
-
-            if (Overlap > 0) {
-                PhysicalMemory->Free(FIRST_USABLE_PHYSICAL_ADDRESS, SizeToPageCount(Overlap As i32))
-            }
-        }
-        else {
-            PhysicalMemory->Free(Region->Base, Region->Size As i32)
-        }
+        PhysicalMemory->Free(Region->Base, Region->Size)
     }
 
-    Print("Carved free regions out of allocation map\n")
+    Print("Allocating %x - %x for physical memory bitmap\n", PhysicalManagerBuffer, PhysicalManagerBuffer + (ManagerPageCount * PAGE_SIZE))
 
-    i64 TrampolineBytes := RawInfo->TrampolineMaxAddress - (TRAMPOLINE_ADDRESS As i64)
-    i32 TrampolinePages := SizeToPageCount(TrampolineBytes As i32)
+    PhysicalMemory->Allocate(PhysicalManagerBuffer As i64, ManagerPageCount)
 
-    Print("Reserving %x - %x for trampoline\n", TRAMPOLINE_ADDRESS, TRAMPOLINE_ADDRESS + (TrampolinePages * PAGE_SIZE))
+    Print("Allocating %x - %x for trampoline\n", TRAMPOLINE_ADDRESS, TRAMPOLINE_ADDRESS + (TrampolinePages * PAGE_SIZE))
 
-    PhysicalMemory->Reserve(TRAMPOLINE_ADDRESS As i64, TrampolinePages)
+    PhysicalMemory->Allocate(TRAMPOLINE_ADDRESS As i64, TrampolinePages)
 
-    ;PhysicalMemory->Reserve(0xA_0000, SizeToPageCount(0x2_0000))
+    ; Reserve super low memory
+    PhysicalMemory->Allocate(0, 0x10)
 
     ; Allocate the TrampolineInfo (and populate it from the BootInfo)
 
@@ -135,7 +180,7 @@ define void Main(BootloaderInfo* RawInfo) {
 
     PhysicalPageAllocator* Physical := Info~>PhysicalMemoryAllocator
     Physical->Initialize()
-    Physical->Heap := PhysicalMemory
+    Physical->Manager := PhysicalMemory
 
     ; Set up the AddressSpaceManager
 
@@ -153,7 +198,7 @@ define void Main(BootloaderInfo* RawInfo) {
     VirtualMemory->MapRange(FrameBuffer, IdentityVirtualToPhysical(FrameBuffer) / PAGE_SIZE, SizeToPageCount(1024 * 786 * 4), PAGE_PRESENT | PAGE_WRITE)
 
     ; Identity map all physical memory
-    VirtualMemory->MapRange(FIRST_USABLE_PHYSICAL_ADDRESS As void*, FIRST_USABLE_PHYSICAL_ADDRESS / PAGE_SIZE, UsablePages, PAGE_PRESENT | PAGE_WRITE)
+    VirtualMemory->MapRange(null, 0, (MaxPage - 1) As i32, PAGE_PRESENT | PAGE_WRITE)
 
     i64 KernelStackPhysical := PhysicalMemory->Allocate(PAGES_FOR_KERNEL_STACK)
     VirtualMemory->MapRange(ADDRESS_OF_KERNEL_STACK, KernelStackPhysical / PAGE_SIZE, PAGES_FOR_KERNEL_STACK, PAGE_PRESENT | PAGE_WRITE)
@@ -253,6 +298,9 @@ define void MainContinuation(TrampolineInfo* Info) {
     PreMain(Info)
 
     Print("Returned from PreMain\n")
+
+    ;Info->PhysicalMemory->Display(Terminal~>FrameBuffer, 400, 0, 500)
+    ;Halt()
 
     KernelEntryPoint(Info)
 

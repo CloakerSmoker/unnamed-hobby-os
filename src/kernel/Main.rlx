@@ -50,7 +50,7 @@ define void PrintCharacters(i8* Character, i32 Count) {
 ;#Require "./src/kernel/core/Heap.rlx"
 #Require "./src/kernel/core/PalHeap.rlx"
 
-PageHeap* PhysicalMemory
+PhysicalMemoryManager* PhysicalMemory
 AddressSpaceManager* KernelAddressSpace
 PalHeap* KernelHeap
 
@@ -215,6 +215,11 @@ IDirectory* VFSDevicesDirectory := null
 ICH9::AHCI::Controller* SATAController := null
 
 #Require "./src/drivers/USB/EHCI/EHCI.rlx"
+
+; Dummy to ensure a function isn't optimized away
+define void DO_NOT_OPTIMIZE_AWAY(void* Function) asm { ret }
+
+#Require "./src/kernel/core/Debug.rlx"
 
 define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Device) {
 	Print("%x/%x/%x:\n\t%pcie-product\n\t%pcie-purpose\n", Bus, Slot, Function, Device, Device)
@@ -514,9 +519,6 @@ define void NetworkSetupTask() {
 	Interface->SetKnobToggle("ARP.SpewCache", true)
     Interface->SetKnobToggle("ARP.SpewGateway", true)
 }
-
-; Dummy to ensure a function isn't optimized away
-define void DO_NOT_OPTIMIZE_AWAY(void* Function) asm { ret }
 
 define void Main(TrampolineInfo* Info) {
 	DO_NOT_OPTIMIZE_AWAY(&PreMain)

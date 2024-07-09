@@ -1,0 +1,16 @@
+define void displayclear() {
+    PrimaryDisplay->Clear(0x00_00_00)
+}
+
+define void displaypmm() {
+    PhysicalMemory->Display(PrimaryDisplay, 400, 0, 500)
+}
+
+define i32 RegisterDebugCommands() {
+    DO_NOT_OPTIMIZE_AWAY(&displayclear)
+    DO_NOT_OPTIMIZE_AWAY(&displaypmm)
+
+    return 0
+}
+
+i32 DUMMY := RegisterDebugCommands()

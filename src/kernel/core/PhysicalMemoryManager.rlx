@@ -1,0 +1,146 @@
+
+struct PhysicalMemoryManager {
+    i64 MaxAddress
+    i64 MaxPage
+    i8[0] AllocationMap
+
+    static self* Adopt(void* Base, i64 MaxAddress) {
+        self* this := Base
+
+        this->MaxAddress := MaxAddress
+        this->MaxPage := (MaxAddress / PAGE_SIZE) As i32
+
+        return this
+    }
+
+    define i32 Get(i64 Index) {
+		i64 Byte := Index / 8
+		i8 Bit := (Index % 8) As i8
+		i32 Mask := 1 << Bit
+		
+		i32 Value := this->AllocationMap[Byte]
+		
+		return (Value & Mask) != 0
+	}
+	define void Set(i64 Index, i32 NewValue) {
+		i64 Byte := Index / 8
+		i8 Bit := (Index % 8) As i8
+		i32 Mask := 1 << Bit
+		
+		i32 Value := this->AllocationMap[Byte]
+		
+		if (Value & Mask) {
+			Value := Value & ~Mask
+		}
+		
+		Value |= Mask * NewValue
+		
+		this->AllocationMap[Byte] := (Value & 0xFF) As i8
+	}
+
+    define void AllocateAll() {
+		FastSetMemory8(this->AllocationMap, 0xFF, this->MaxPage As i32)
+	}
+	define void FreeAll() {
+		FastSetMemory8(this->AllocationMap, 0, this->MaxPage As i32)
+	}
+
+    define void Set(i64 Start, i64 Size, i8 Value) {
+        i64 End := Start + Size
+
+        for (i64 Index := Start, Index < End, Index++) {
+            this->Set(Index, Value)
+        }
+    }
+
+    define void Allocate(i64 Start, i64 Size) {
+        Start /= PAGE_SIZE
+
+        this->Set(Start, Size, true)
+    }
+    define void Free(i64 Start, i64 Size){
+        Start /= PAGE_SIZE
+
+        this->Set(Start, Size, false)
+    }
+
+    define i64 FindFreePages(i64 Size) {
+		for (i64 Index := 0, Index < this->MaxPage, Index++) {
+			if !(this->Get(Index)) {
+				i8 CountFits := true
+				
+				for (i64 CountIndex := 1, CountIndex < Size, CountIndex++) {
+					i64 PageIndex := Index + CountIndex
+
+					if (this->Get(PageIndex) || PageIndex >= this->MaxPage) {
+						CountFits := false
+						break
+					}
+				}
+				
+				if (CountFits) {
+					return Index
+				}
+			}
+		}
+		
+		Throw('PHEAP-OM')
+		
+		return -1
+	}
+
+    define i64 Allocate(i64 Size) {
+        i64 Where := this->FindFreePages(Size) * PAGE_SIZE
+
+        this->Allocate(Where, Size)
+
+        return Where
+    }
+	define void* AllocateVirtual(i32 Count) {
+		return this->Allocate(Count) As void*
+	}
+
+    define void Print() {
+		for (i32 Index := 0, Index < this->MaxPage, Index++) {
+			i32 Value := this->Get(Index)
+			i8* Label := "F"
+
+			if (Value = 1) {
+				Label := "A"
+			}
+
+			Print("%s %x\n", Label, Index * PAGE_SIZE)
+			
+			i32 RunStart := Index
+			i32 RunLength := 0
+
+			while (this->Get(++Index) = Value) {
+				RunLength++
+			}
+			
+			if (RunLength) {
+				Print("...\n")
+				Print("%x\n", Index * PAGE_SIZE)
+				
+				Index += RunLength
+			}
+		}
+	}
+
+	define void Display(PixelBuffer* FB, i32 X, i32 Y, i32 Width) {
+		for (i32 Index := 0, Index < this->MaxPage, Index++) {
+			i32 Value := this->Get(Index)
+
+			i32 Color := 0x00_FF_00
+
+			if (Value = 1) {
+				Color := 0xFF_00_00
+			}
+
+			i32 YOffset := Index / Width
+			i32 XOffset := Index % Width
+
+			FB->SetPixelColor(X + XOffset, Y + YOffset, Color)
+		}
+	}
+}

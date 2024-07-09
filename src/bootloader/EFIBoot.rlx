@@ -651,7 +651,7 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	
 	Print("Goodbye EFI!\n")
 
-	WaitKey()
+	;WaitKey()
 	
 	SystemTable->BootServices->ExitBootServices(ImageHandle, MemoryMapKey)
 	
