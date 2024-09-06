@@ -93,6 +93,17 @@ struct ExecuteParameters {
 define Process* Execute(void* Buffer, ExecuteParameters* Parameters) {
 	ELFHeader* ELFData := Buffer As ELFHeader*
 	
+	;AddressSpaceManager* ProcessAddressSpace := AddressSpaceManager:New(PhysicalMemory)
+
+	;ProcessAddressSpace->MapRange()
+
+	PageTrie* Trie := Trampoline~>PageTree
+
+	i32 Size := 0
+	i64 Whatever := Trie->Get(0x40_0000 As void*, PAGE_LEVEL_2M, &Size)
+
+	Print("0x40_0000 -> %x\n", Whatever)
+
 	MemoryMapper* Mapper := MemoryMapper:New(KernelAddressSpace, PhysicalMemory, null)
 	
 	i32 UserPageMetaCount := NUMBER_OF_USER_PAGES / 0x1000
@@ -127,6 +138,13 @@ define Process* Execute(void* Buffer, ExecuteParameters* Parameters) {
 	CurrentProcess->AllocateFileDescriptor(Parameters->StandardInput)
 	CurrentProcess->AllocateFileDescriptor(Parameters->StandardOutput)
 	CurrentProcess->AllocateFileDescriptor(Parameters->StandardError)
+	
+	PageTrie* Trie := Trampoline~>PageTree
+
+	i32 Size := 0
+	i64 Whatever := Trie->Get(0x40_0000 As void*, PAGE_LEVEL_2M, &Size)
+
+	Print("0x40_0000 -> %x\n", Whatever)
 	
 	UserThread* Thread := CurrentProcess~>MainThread
 	Thread->Start(2, Mapper, CurrentProcess~>Signals, RSP, ELFData->EntryPoint As void*)

@@ -5,6 +5,8 @@
 #Require "./src/kernel/core/PageHeap.rlx"
 #Require "./src/kernel/core/PalHeap.rlx"
 
+#Require "./src/kernel/core/PageTrie.rlx"
+
 #Require "./src/kernel/graphics/PixelBuffer.rlx"
 #Require "./src/kernel/core/PhysicalMemoryManager.rlx"
 
@@ -26,6 +28,7 @@ struct TrampolineInfo {
     PhysicalPageAllocator PhysicalMemoryAllocator
 
     AddressSpaceManager VirtualMemory
+    PageTrie PageTree
 
     PalHeap Heap
 }

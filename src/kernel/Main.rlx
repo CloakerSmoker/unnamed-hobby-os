@@ -412,8 +412,8 @@ define void PopulateDevicesDirectory(IDirectory* DevicesDirectory) {
 }
 
 define void VFSRunShellTask() {
-    VFSExecuteShellCommand("execute /doom/doom.elf -iwad /doom/DOOM.WAD")
-	;VFSRunShell(KernelTerminal)
+    ;VFSExecuteShellCommand("execute /doom/doom.elf -iwad /doom/DOOM.WAD")
+	VFSRunShell(KernelTerminal)
 }
 
 #Require "./src/kernel/file-system/VFS/DirectoryFileHandle.rlx"
@@ -520,6 +520,8 @@ define void NetworkSetupTask() {
     Interface->SetKnobToggle("ARP.SpewGateway", true)
 }
 
+#Require "./src/kernel/core/PageTrie.rlx"
+
 define void Main(TrampolineInfo* Info) {
 	DO_NOT_OPTIMIZE_AWAY(&PreMain)
 
@@ -550,6 +552,8 @@ define void Main(TrampolineInfo* Info) {
 
 	Info("Root Partition       GUID: %s\n", RootPartitionGUID)
 	Info("EFI System Partition GUID: %s\n", EFISystemPartitionGUID)
+
+	Info~>PageTree->Initialize(KernelAddressSpace->VirtualPML4, null)
 	
 	i64 KernelPages := PhysicalMemory->Allocate(NUMBER_OF_KERNEL_PAGES)
 	KernelAddressSpace->MapRange(ADDRESS_OF_KERNEL_PAGES, KernelPages / PAGE_SIZE, NUMBER_OF_KERNEL_PAGES, PAGE_PRESENT | PAGE_WRITE)
@@ -562,7 +566,6 @@ define void Main(TrampolineInfo* Info) {
 	
 	Info("Loaded font\n")
 	
-	; Remap the next available `FRAMEBUFFER_SIZE` bytes of virtual memory to 0xE000_0000 (or wherever int10 says)
 	i32 FrameBufferPageCount := SizeToPageCount(FRAMEBUFFER_SIZE)
 	KernelAddressSpace->MapRange(ADDRESS_OF_FRAME_BUFFER, BootInfo->PhysicalFrameBuffer / PAGE_SIZE, FrameBufferPageCount)
 	
@@ -579,7 +582,7 @@ define void Main(TrampolineInfo* Info) {
 	
 	Print("BOOT: Screen *probably* works\n")
 	
-	KernelAddressSpace->Map(0 As void*, 0, PAGE_NOT_PRESENT)
+	;KernelAddressSpace->Map(0 As void*, 0, PAGE_NOT_PRESENT)
 	
 	Print("BOOT: Unmapped page 0\n")
 	
@@ -661,6 +664,19 @@ define void Main(TrampolineInfo* Info) {
 
 	PopulateDevicesDirectory(VFSDevicesDirectory)
 	MountPartitions(RootPartitionGUID, EFISystemPartitionGUID)
+
+	PageTrie* Trie := Info~>PageTree
+
+	i64 State := Trie->StartWalkMappings()
+	VirtualMapping Mapping
+
+	while (Trie->WalkMappingsNext(&State, &Mapping)) {
+		Print("%x..%x -> %x..%x (%x pages)\n", Mapping.Virtual, Mapping.Virtual + Mapping.Size, Mapping.Physical, Mapping.Physical + Mapping.Size, Mapping.Size / PAGE_SIZE)
+	}
+
+	Print("done\n")
+
+	;Halt()
 
 	;NetworkSetupTask()
 

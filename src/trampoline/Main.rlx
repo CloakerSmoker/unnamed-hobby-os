@@ -26,6 +26,9 @@ void* TRAMPOLINE_ADDRESS := 0x80_0000 As void*
 #Require "@/PrintBase.rlx"
 #Require "@/ExceptionBase.rlx"
 
+#Require "./src/utility/x64.rlx"
+#Require "./src/kernel/lib/Exit.rlx"
+
 #Require "./src/bootloader/BootInfo.rlx"
 #Require "./src/trampoline/Info.rlx"
 
@@ -35,9 +38,6 @@ void* TRAMPOLINE_ADDRESS := 0x80_0000 As void*
 
 #Require "./src/kernel/graphics/PixelBuffer.rlx"
 #Require "./src/kernel/core/PhysicalMemoryManager.rlx"
-
-#Require "./src/utility/x64.rlx"
-#Require "./src/kernel/lib/Exit.rlx"
 
 define i64 IdentityVirtualToPhysical(void* Pointer) {
     return Pointer As i64
@@ -192,22 +192,31 @@ define void Main(BootloaderInfo* RawInfo) {
     AddressSpaceManager* VirtualMemory := Info~>VirtualMemory
     VirtualMemory->Initialize(PML4, IdentityVirtualToPhysical(PML4), Physical)
 
+    PageTrie* Tree := Info~>PageTree
+    Tree->Initialize(PML4, Physical)
+
     ; Identity map the framebuffer
     void* FrameBuffer := Info~>BootInfo->PhysicalFrameBuffer As void*
 
-    VirtualMemory->MapRange(FrameBuffer, IdentityVirtualToPhysical(FrameBuffer) / PAGE_SIZE, SizeToPageCount(1024 * 786 * 4), PAGE_PRESENT | PAGE_WRITE)
+    ;VirtualMemory->MapRange(FrameBuffer, IdentityVirtualToPhysical(FrameBuffer) / PAGE_SIZE, SizeToPageCount(1024 * 786 * 4), PAGE_PRESENT | PAGE_WRITE)
+    Tree->SetRange(FrameBuffer, IdentityVirtualToPhysical(FrameBuffer), SizeToPageCount(1024 * 786 * 4), PAGE_WRITE)
+    Print("%x -> %x\n", FrameBuffer, IdentityVirtualToPhysical(FrameBuffer))
 
     ; Identity map all physical memory
-    VirtualMemory->MapRange(null, 0, (MaxPage - 1) As i32, PAGE_PRESENT | PAGE_WRITE)
+    ;VirtualMemory->MapRange(null, 0, (MaxPage - 1) As i32, PAGE_PRESENT | PAGE_WRITE)
+    Tree->SetRange(null, 0, (MaxPage - 1) As i32, PAGE_PRESENT | PAGE_WRITE)
 
     i64 KernelStackPhysical := PhysicalMemory->Allocate(PAGES_FOR_KERNEL_STACK)
-    VirtualMemory->MapRange(ADDRESS_OF_KERNEL_STACK, KernelStackPhysical / PAGE_SIZE, PAGES_FOR_KERNEL_STACK, PAGE_PRESENT | PAGE_WRITE)
+    ;VirtualMemory->MapRange(ADDRESS_OF_KERNEL_STACK, KernelStackPhysical / PAGE_SIZE, PAGES_FOR_KERNEL_STACK, PAGE_PRESENT | PAGE_WRITE)
+    Tree->SetRange(ADDRESS_OF_KERNEL_STACK, KernelStackPhysical, PAGES_FOR_KERNEL_STACK, PAGE_PRESENT | PAGE_WRITE)
 
     void* KernelStack := ADDRESS_OF_KERNEL_STACK + (PAGE_SIZE * (PAGES_FOR_KERNEL_STACK - 1))
 
-    VirtualMemory->PrintMappings()
+   ;VirtualMemory->PrintMappings()
 
-    VirtualMemory->Takeover(&MainContinuation, Info, KernelStack)
+    SetCR4(GetCR4() | CR4_ENABLE_PAGE_SIZE)
+
+    VirtualMemory->Enable(&MainContinuation, Info, KernelStack)
 }
 
 define void SetupHeap(TrampolineInfo* Info, void* VirtualAddress, i32 PageCount) {

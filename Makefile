@@ -398,6 +398,11 @@ ifneq (,$(findstring usb,$(flags)))
 	DISK_FLAGS:=-drive if=none,id=stick,format=raw,file=build/USB.img -usb -device usb-ehci,id=ehci -device usb-storage,bus=ehci.0,drive=stick
 endif
 
+HELP_TEXT+=-dint: dint
+ifneq (,$(findstring dint,$(flags)))
+	QEMU_FLAGS+=-d int
+endif
+
 HELP_TEXT+=usb-debug: Have QEMU dump debug messages related to EHCI|
 ifneq (,$(findstring usb-debug,$(flags)))
 	QEMU_FLAGS+=--trace "usb_ehci*"

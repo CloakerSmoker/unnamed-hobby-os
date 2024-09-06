@@ -181,14 +181,10 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	for (i32 Index := 0, Index < SystemTable->NumberOfTableEntries, Index++) {
 		EFI_CONFIGURATION_TABLE* NextTable := SystemTable->ConfigurationTable[Index]
 		
-		;Print("%guid: %x ", NextTable~>VendorGUID, NextTable->VendorTable)
-		
 		if (NextTable~>VendorGUID->Equals(ACPI_RSDP_GUID)) {
-			;Print("RSDP")
 			RSDP := NextTable->VendorTable
+			break
 		}
-		
-		;Print("\n")
 	}
 	
 	if !(RSDP) {

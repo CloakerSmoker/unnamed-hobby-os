@@ -13,8 +13,11 @@ i32 BYTES_IN_4MB := 0x40_0000
 i32 BYTES_IN_6MB := 0x60_0000
 i32 BYTES_IN_8MB := 0x80_0000
 
+i32 PAGES_IN_4KB  := 0x0000_0001
 i32 PAGES_PER_PT  := 0x0000_0200
+i32 PAGES_IN_2MB  := 0x0000_0200
 i32 PAGES_PER_PD  := 0x0004_0000
+i32 PAGES_IN_1GB  := 0x0004_0000
 i32 PAGES_PER_PDP := 0x0800_0000
 
 i32 PAGE_SIZE := 0x1000
@@ -27,6 +30,7 @@ i64 PAGE_NOT_PRESENT := 0b000
 i64 PAGE_PRESENT     := 0b001
 i64 PAGE_WRITE       := 0b010
 i64 PAGE_USER        := 0b100
+i64 PAGE_FLAG_SIZE := 0x80
 
 define i32 SizeToPageCount(i32 Size) {
 	i32 PageCount := Size / PAGE_SIZE
@@ -125,13 +129,6 @@ define i32 ExternalMapPage(void* CR3, void* RawTempPages, void* From, i64 To) {
 	return TempPagesUsed
 }
 
-struct PagePath {
-	i32 PML4Index
-	i32 PDPIndex
-	i32 PDIndex
-	i32 PTIndex
-}
-
 interface IPhysicalAllocator {
 	virtual i64 Allocate()
 	virtual void Free(i64)
@@ -167,6 +164,16 @@ struct AddressSpaceManager {
 		
 		SetMemory(this->VirtualPML4, PAGE_SIZE, 0)
 	}
+
+	/*static self* New(IPhysicalAllocator* Allocator) {
+		self* this := Alloc(#self)
+
+		this->PhysicalAllocator := Allocator
+		this->PhysicalPML4 := this->AllocatePageFrame()
+		this->VirtualPML4 := this->PhysicalPML4 As void*
+
+		return this
+	}*/
 	
 	define i64* GetPML4Entry(void* Address) {
 		i32 Index      := ((Address & 0b_111111111_000000000_000000000_000000000_000000000000) >> 39) As i32
@@ -358,7 +365,7 @@ struct AddressSpaceManager {
 		}
 	}
 	
-	define void Takeover(void* Continuation, void* Parameter, void* Stack){
+	define void Enable(void* Continuation, void* Parameter, void* Stack){
 		SetCR3(this->PhysicalPML4, Continuation, Parameter, Stack)
 	}
 	
@@ -467,5 +474,9 @@ struct AddressSpaceManager {
 		}
 		
 		RunLength := this->EndRun(RunStartAddress, RunStart, RunLastAddress, RunLast, RunLength)
+	}
+
+	define void InheritMapping(AddressSpaceManager* Other, void* Virtual) {
+		
 	}
 }

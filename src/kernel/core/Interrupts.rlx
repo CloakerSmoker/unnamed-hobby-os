@@ -150,6 +150,8 @@ define void SetupInterrupts() {
 	DescriptorTableHeader IDTHeader
 
 	IDT := KernelPageAllocator->AllocateVirtual(1)
+
+	Print("IDT @ %x\n", IDT)
 	
 	IDTHeader.Base := IDT
 	IDTHeader.Limit := IDT_SIZE As i16
@@ -172,7 +174,7 @@ define void SetupInterrupts() {
 		LocalAPIC->Setup()
 
 		LocalAPIC->MaskAll(true)
-		LocalAPIC->DumpLVT()
+		;LocalAPIC->DumpLVT()
 		
 		FirstIOAPIC->Initialize(BootInfo->IOAPICBase, 0)
 		FirstIOAPIC->Setup()
@@ -180,7 +182,7 @@ define void SetupInterrupts() {
 		Print("Local APIC ID: %x\n", LocalAPIC->ID)
 
 		FirstIOAPIC->MaskAll(true)
-		FirstIOAPIC->DumpMappings()
+		;FirstIOAPIC->DumpMappings()
 	}
 }
 

@@ -1,0 +1,343 @@
+struct PagePath {
+    union {
+        struct {
+            i32 PML4
+            i32 PDP
+            i32 PD
+            i32 PT
+        }
+
+        i32[4] Levels
+    }
+
+    i32 Low
+}
+
+struct PageMapping {
+    void* Virtual
+    i64 Physical
+    i32 Size
+}
+
+struct VirtualMapping {
+    void* Virtual
+    i64 Physical
+    i32 Size
+}
+
+i32 PAGE_LEVEL_4K := 4
+i32 PAGE_LEVEL_2M := 3
+i32 PAGE_LEVEL_1G := 2
+
+i32 BYTES_IN_4K := 0x1000
+i32 BYTES_IN_2M := 0x20_0000
+i32 BYTES_IN_1G := 0x4000_0000
+
+struct PageTrie {
+    i64* Root
+    IPhysicalAllocator* Allocator
+
+    define void Initialize(void* PML4, IPhysicalAllocator* Allocator) {
+        this->Root := PML4
+        this->Allocator := Allocator
+    }
+
+    define i64 Allocate() {
+        i64 Page := this->Allocator->Allocate()
+
+        FastZeroMemory(Page As void*, PAGE_SIZE)
+
+        return Page
+    }
+
+    define void SplitAddress(void* Address, PagePath* Out) {
+        Out->PML4 := ((Address & 0b_111111111_000000000_000000000_000000000_000000000000) >> 39) As i32
+        Out->PDP  := ((Address &           0b_111111111_000000000_000000000_000000000000) >> 30) As i32
+        Out->PD   := ((Address &                     0b_111111111_000000000_000000000000) >> 21) As i32
+        Out->PT   := ((Address &                               0b_111111111_000000000000) >> 12) As i32
+        Out->Low  := ((Address &                                         0b_111111111111)) As i32
+    }
+
+    define i64 PackPageFlags(i64 Physical, i64 Flags) {
+        return Physical | Flags
+    }
+
+    define i64* RemovePageFlags(i64 Entry) {
+        return (Entry & 0b_111111111_111111111_111111111_111111111_000000000000) As i64*
+    }
+
+    define i64 Get(void* Address, i32 MaxLevel, i32* OutSize) {
+        PagePath Path
+        this->SplitAddress(Address, &Path)
+
+        i64* Current := this->Root
+
+        for (i32 Level := 0, Level < MaxLevel, Level++) {
+            i32 Index := Path->Levels[Level]
+            i64* pNext := &Current[Index]
+            i64 Next := *pNext
+
+            if !(Next & PAGE_PRESENT) {
+                ;*pNext := this->PackPageFlags(this->AllocatePage(), PAGE_PRESENT)
+
+                return 0
+            }
+            else if (Next & PAGE_FLAG_SIZE) {
+                if (OutSize != null) {
+                    *OutSize := Level
+                }
+
+                return *this->RemovePageFlags(Next)
+            }
+
+            Current := this->RemovePageFlags(*pNext)
+        }
+
+        if (OutSize != null) {
+            *OutSize := PAGE_LEVEL_4K
+        }
+
+        return *Current
+    }
+
+    define i64 Get(void* Address, i32* OutSize) {
+        return this->Get(Address, PAGE_LEVEL_4K, OutSize)
+    }
+
+    define i64 Get(void* Address) {
+        return this->Get(Address, PAGE_LEVEL_4K, null)
+    }
+
+    define void Set(void* Address, i64 Destination, i32 Size) {
+        PagePath Path
+        this->SplitAddress(Address, &Path)
+
+        ;Print("Set %x -> %x, %i\n", Address, Destination, Size)
+
+        i64 Flags := PAGE_PRESENT
+
+        if (Size != PAGE_LEVEL_4K) {
+            Flags |= PAGE_FLAG_SIZE
+        }
+
+        i64* Current := this->Root
+
+        for (i32 Level := 0, Level < Size - 1, Level++) {
+            i32 Index := Path->Levels[Level]
+            i64* pNext := &Current[Index]
+            i64 Next := *pNext
+
+            if !(Next & PAGE_PRESENT) {
+                i64 Physical := this->Allocate()
+
+                *pNext := this->PackPageFlags(Physical, PAGE_PRESENT | PAGE_WRITE)
+            }
+            else if (Next & PAGE_FLAG_SIZE) {
+                Panic("Can't break large/huge pages yet")
+
+                /**pNext ^= PAGE_FLAG_SIZE
+
+                i64 Flags := *pNext & PAGE_FLAGS_MASK
+                i64 Destination := *pNext & ~PAGE_FLAGS_MASK
+
+                i64 Physical := this->Allocate()
+                *pNext := this->PackPageFlags(Physical, PAGE_PRESENT | PAGE_WRITE)
+                */
+                
+            }
+
+            Current := this->RemovePageFlags(*pNext)
+        }
+
+        ;Print("%x @ %x\n", Address, &Current[Path.Levels[Size - 1]])
+
+        Current[Path.Levels[Size - 1]] := this->PackPageFlags(Destination, Flags)
+    }
+
+    define i32 LevelSize(i32 Level) {
+        return 0x1000 << ((4 - Level) * 9)
+    }
+
+    define i32 LevelPageCount(i32 Level) {
+        return this->LevelSize(Level) / 0x1000
+    }
+
+    define void SetRange(void* Address, i64 Destination, i32 Size, i64 Flags) {
+        while (Size != 0) {
+            PagePath Path
+            this->SplitAddress(Address, &Path)
+
+            i32 Level := PAGE_LEVEL_4K
+
+            if (Path.PT = 0 && Size >= PAGES_IN_2MB) {
+                ; Candidate for >4K page
+
+                if (Path.PD = 0 && Size >= PAGES_IN_1GB) {
+                    ; Candidate for 1GB page
+                    Level := PAGE_LEVEL_1G
+                }
+                else {
+                    ; Candidate for 2MB page
+                    Level := PAGE_LEVEL_2M
+                }
+            }
+
+            this->Set(Address, Destination | Flags, Level)
+
+            i32 LevelSize := this->LevelSize(Level)
+            i32 LevelPageCount := LevelSize / PAGE_SIZE
+
+            Address += LevelSize
+            Destination += LevelSize
+            Size -= LevelPageCount
+        }
+    }
+
+    define i64 StartWalkPages() {
+        return 0
+    }
+
+    define i64* Next(i64* Table, i32* pIndex) {
+        while (*pIndex < 511) {
+            *pIndex += 1
+            i64* pEntry := &Table[*pIndex]
+
+            if (*pEntry & PAGE_PRESENT) {
+                return pEntry
+            }
+        }
+
+        return null
+    }
+
+    define void* Unsplit(i64 PML4, i64 PDP, i64 PD, i64 PT) {
+        return ((PML4 << 39) | (PDP << 30) | (PD << 21) | (PT << 12)) As void*
+    }
+
+    define i8 WalkPagesNext(i64* RawAddress, PageMapping* Out) {
+        void** pAddress := RawAddress As void**
+        void* Address := *pAddress
+
+        PagePath Path
+        this->SplitAddress(Address As void*, &Path)
+        
+        loop {
+            i64* PML4E := &this->Root[Path.PML4]
+
+            if !(*PML4E & PAGE_PRESENT) {
+                PML4E := this->Next(this->Root, Path~>PML4)
+            }
+
+            if !(PML4E) {
+                return false
+            }
+
+            i64* PDP := this->RemovePageFlags(*PML4E)
+            i64* PDPE := &PDP[Path.PDP]
+
+            if !(*PDPE & PAGE_PRESENT) {
+                PDPE := this->Next(PDP, Path~>PDP)
+            }
+
+            if !(PDPE) {
+                Path.PML4 += 1
+                Path.PDP := 0
+                Path.PD := 0
+                Path.PT := 0
+                continue
+            }
+            else if (*PDPE & PAGE_FLAG_SIZE) {
+                Out->Virtual := this->Unsplit(Path.PML4, Path.PDP, 0, 0)
+                Out->Physical := this->RemovePageFlags(*PDPE) As i64
+                Out->Size := PAGE_LEVEL_1G
+
+                *pAddress := Out->Virtual + BYTES_IN_1G
+
+                return true
+            }
+
+            i64* PD := this->RemovePageFlags(*PDPE)
+            i64* PDE := &PD[Path.PD]
+
+            if !(*PDE & PAGE_PRESENT) {
+                PDE := this->Next(PD, Path~>PD)
+            }
+            
+            if !(PDE) {
+                Path.PDP += 1
+                Path.PD := 0
+                Path.PT := 0
+                continue
+            }
+            else if (*PDE & PAGE_FLAG_SIZE) {
+                Out->Virtual := this->Unsplit(Path.PML4, Path.PDP, Path.PD, 0)
+                Out->Physical := this->RemovePageFlags(*PDE) As i64
+                Out->Size := PAGE_LEVEL_2M
+
+                *pAddress := Out->Virtual + BYTES_IN_2M
+
+                return true
+            }
+
+            i64* PT := this->RemovePageFlags(*PDE)
+            i64* PTE := &PT[Path.PT]
+
+            if !(*PTE & PAGE_PRESENT) {
+                PTE := this->Next(PT, Path~>PT)
+            }
+
+            if !(PTE) {
+                Path.PD += 1
+                Path.PT := 0
+                continue
+            }
+
+            Out->Virtual := this->Unsplit(Path.PML4, Path.PDP, Path.PD, Path.PT)
+            Out->Physical := this->RemovePageFlags(*PTE) As i64
+            Out->Size := PAGE_LEVEL_4K
+
+            *pAddress := Out->Virtual + BYTES_IN_4K
+
+            return true
+        }
+
+        return false
+    }
+
+    define i64 StartWalkMappings() {
+        return 0
+    }
+    define i64 StartWalkMappings(i64 At) {
+        return At
+    }
+
+    define i8 WalkMappingsNext(i64* State, VirtualMapping* Out) {
+        PageMapping Current
+
+        if !(this->WalkPagesNext(State, &Current)) {
+            return false
+        }
+
+        Out->Virtual := Current.Virtual
+        Out->Physical := Current.Physical
+        Out->Size := this->LevelSize(Current.Size)
+
+        i64 PreviousState := *State
+
+        while (this->WalkPagesNext(State, &Current)) {
+            void* VirtualTail := Out->Virtual + Out->Size
+            i64 PhysicalTail := Out->Physical + Out->Size
+
+            if (Current.Virtual = VirtualTail && Current.Physical = PhysicalTail) {
+                Out->Size += this->LevelSize(Current.Size)
+                PreviousState := *State
+            }
+            else {
+                *State := PreviousState
+                break
+            }
+        }
+
+        return true
+    }
+}
