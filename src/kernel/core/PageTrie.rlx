@@ -37,6 +37,8 @@ struct PageTrie {
     i64* Root
     IPhysicalAllocator* Allocator
 
+    i8 ShouldInvalidate
+
     define void Initialize(void* PML4, IPhysicalAllocator* Allocator) {
         this->Root := PML4
         this->Allocator := Allocator
@@ -152,6 +154,10 @@ struct PageTrie {
         ;Print("%x @ %x\n", Address, &Current[Path.Levels[Size - 1]])
 
         Current[Path.Levels[Size - 1]] := this->PackPageFlags(Destination, Flags)
+
+        if (this->ShouldInvalidate) {
+            InvalidatePage(Address)
+        }
     }
 
     define i32 LevelSize(i32 Level) {
@@ -174,11 +180,11 @@ struct PageTrie {
 
                 if (Path.PD = 0 && Size >= PAGES_IN_1GB) {
                     ; Candidate for 1GB page
-                    Level := PAGE_LEVEL_1G
+                    ;Level := PAGE_LEVEL_1G
                 }
                 else {
                     ; Candidate for 2MB page
-                    Level := PAGE_LEVEL_2M
+                    ;Level := PAGE_LEVEL_2M
                 }
             }
 
@@ -339,5 +345,13 @@ struct PageTrie {
         }
 
         return true
+    }
+
+    define i8 FindMapping(void* Address, VirtualMapping* Out) {
+        i64 State := this->StartWalkMappings(Address As i64)
+
+        this->WalkMappingsNext(&State, Out)
+
+        return Out->Virtual = Address
     }
 }

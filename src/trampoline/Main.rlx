@@ -212,6 +212,13 @@ define void Main(BootloaderInfo* RawInfo) {
 
     void* KernelStack := ADDRESS_OF_KERNEL_STACK + (PAGE_SIZE * (PAGES_FOR_KERNEL_STACK - 1))
 
+    i64 State := Tree->StartWalkMappings()
+    VirtualMapping Mapping
+
+    while (Tree->WalkMappingsNext(&State, &Mapping)) {
+        Print("%x..%x -> %x..%x (%x pages)\n", Mapping.Virtual, Mapping.Virtual + Mapping.Size, Mapping.Physical, Mapping.Physical + Mapping.Size, Mapping.Size / PAGE_SIZE)
+    }
+
    ;VirtualMemory->PrintMappings()
 
     SetCR4(GetCR4() | CR4_ENABLE_PAGE_SIZE)
@@ -222,7 +229,7 @@ define void Main(BootloaderInfo* RawInfo) {
 define void SetupHeap(TrampolineInfo* Info, void* VirtualAddress, i32 PageCount) {
     i64 HeapPhysicalPages := Info->PhysicalMemory->Allocate(PageCount)
 
-    Info~>VirtualMemory->MapRange(VirtualAddress, HeapPhysicalPages / PAGE_SIZE, PageCount, PAGE_PRESENT | PAGE_WRITE)
+    Info~>PageTree->SetRange(VirtualAddress, HeapPhysicalPages, PageCount, PAGE_PRESENT | PAGE_WRITE)
     FastZeroMemory(VirtualAddress, PageCount * PAGE_SIZE)
 
     Info~>Heap->Initialize(VirtualAddress, PageCount * PAGE_SIZE)
@@ -245,7 +252,7 @@ define void* MapKernel(TrampolineInfo* Info, void* KernelFileData, i32 KernelFil
 			void* SectionMemory := Next->VirtualAddress As void*
 			void* SectionVirtualPage := SectionMemory & 0xFFFF_FFFF_FFFF_F000
 			
-			;Print("Section %i is %i (%x) bytes\n", Index, Next->MemorySize, Next->MemorySize)
+			;Print("Section %i is %i (%x) bytes @ %x\n", Index, Next->MemorySize, Next->MemorySize, SectionMemory)
 			
 			i32 SectionPageCount := (Next->MemorySize As i32) / PAGE_SIZE
 			
@@ -269,7 +276,10 @@ define void* MapKernel(TrampolineInfo* Info, void* KernelFileData, i32 KernelFil
 			}
 
             i64 Physical := Info->PhysicalMemory->Allocate(SectionPageCount)
-            Info~>VirtualMemory->MapRange(SectionVirtualPage, Physical / PAGE_SIZE, SectionPageCount, TempFlags)
+
+            ;Print("Allocated %i pages @ %x for section\n", SectionPageCount, Physical)
+
+            Info~>PageTree->SetRange(SectionVirtualPage, Physical, SectionPageCount, TempFlags)
 			
 			if (Next->MemorySize > Next->FileSize) {
 				void* ZeroArea := SectionMemory + Next->FileSize
@@ -278,9 +288,9 @@ define void* MapKernel(TrampolineInfo* Info, void* KernelFileData, i32 KernelFil
 				FastSetMemory8(ZeroArea, 0, ZeroSize)
 			}
 			
-			FastMoveMemory(SectionMemory, SectionData, Next->FileSize)
+			MoveMemory(SectionMemory, SectionData, Next->FileSize)
 
-            Info~>VirtualMemory->MapRange(SectionVirtualPage, Physical / PAGE_SIZE, SectionPageCount, FinalFlags)
+            Info~>PageTree->SetRange(SectionVirtualPage, Physical, SectionPageCount, FinalFlags)
 		}
 	}
 
@@ -289,6 +299,9 @@ define void* MapKernel(TrampolineInfo* Info, void* KernelFileData, i32 KernelFil
 
 define void MainContinuation(TrampolineInfo* Info) {
     Info("Continuation\n")
+
+    ; PageTree is active, must invlpg changes
+    Info~>PageTree->ShouldInvalidate := true
 
     SetupHeap(Info, ADDRESS_OF_KERNEL_HEAP, PAGES_FOR_KERNEL_HEAP)
     Info("heap!\n")
@@ -307,6 +320,17 @@ define void MainContinuation(TrampolineInfo* Info) {
     PreMain(Info)
 
     Print("Returned from PreMain\n")
+
+    PageTrie* Tree := Info~>PageTree
+
+    i64 State := Tree->StartWalkMappings()
+    VirtualMapping Mapping
+
+    while (Tree->WalkMappingsNext(&State, &Mapping)) {
+        i64 Pages := Mapping.Size / PAGE_SIZE
+
+        Print("%x..%x -> %x..%x (%x pages)\n", Mapping.Virtual, Mapping.Virtual + Mapping.Size, Mapping.Physical, Mapping.Physical + Mapping.Size, Pages)
+    }
 
     ;Info->PhysicalMemory->Display(Terminal~>FrameBuffer, 400, 0, 500)
     ;Halt()
