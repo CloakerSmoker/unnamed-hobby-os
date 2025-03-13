@@ -52,6 +52,7 @@ define void PrintCharacters(i8* Character, i32 Count) {
 
 PhysicalMemoryManager* PhysicalMemory
 AddressSpaceManager* KernelAddressSpace
+PageTrie* KernelVirtualMemory
 PalHeap* KernelHeap
 
 define void PreMain(TrampolineInfo* Info) {
@@ -215,6 +216,7 @@ IDirectory* VFSDevicesDirectory := null
 ICH9::AHCI::Controller* SATAController := null
 
 #Require "./src/drivers/USB/EHCI/EHCI.rlx"
+#Require "./src/drivers/USB/UHCI/UHCI.rlx"
 
 ; Dummy to ensure a function isn't optimized away
 define void DO_NOT_OPTIMIZE_AWAY(void* Function) asm { ret }
@@ -297,6 +299,15 @@ define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Devic
 				Print("\tPort %i connected\n", Index)
 			}
 		}
+
+		SleepMS(200000)
+	}
+	else if (Device->Is(PCI_CLASS_CODE_SERIAL_BUS_CONTROLLER, PCI_SUBCLASS_USB_CONTROLLER, PCI_INTERFACE_UHCI)) {
+		Print("UCHI Controller @ %i:%i.%i\n", Bus, Slot, Function)
+		
+		UHCI::Controller* UHCIC := new UHCI::Controller(Device)
+
+		UHCIC->Initialize()
 
 		SleepMS(200000)
 	}

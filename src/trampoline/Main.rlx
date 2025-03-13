@@ -223,7 +223,9 @@ define void Main(BootloaderInfo* RawInfo) {
 
     SetCR4(GetCR4() | CR4_ENABLE_PAGE_SIZE)
 
-    VirtualMemory->Enable(&MainContinuation, Info, KernelStack)
+    ;VirtualMemory->Enable(&MainContinuation, Info, KernelStack)
+
+    SetCR3(Tree->Root As i64, &MainContinuation, Info, KernelStack)
 }
 
 define void SetupHeap(TrampolineInfo* Info, void* VirtualAddress, i32 PageCount) {

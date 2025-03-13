@@ -1,0 +1,191 @@
+i8 PCI_INTERFACE_UHCI := 0
+
+namespace UHCI {
+
+    namespace RegisterFields {
+        bits Command As i16 {
+            [0] RunStop
+            [1] HostControllerReset
+            [2] GlobalReset
+            [3] EnterGlobalSuspend
+            [4] ForceGlobalResume
+            [5] EnableSoftwareDebug
+            [6] Configured
+            [7] Enable64BitPackets
+        }
+
+        bits Status As i16 {
+            [0] InterruptWasFromTransfer
+            [1] InterruptWasFromError
+            [2] ResumeDetected
+            [3] HostSystemError
+            [4] HostControllerError
+            [5] HostControllerHalted
+        }
+
+        bits Interrupt As i16 {
+            [0] InterruptOnTimerOrCRC
+            [1] InterruptOnResume
+            [2] InterruptOnComplete
+            [3] InterruptOnShortPacket
+        }
+
+        bits Port As i16 {
+            [0] DevicePresent
+            [1] ConnectStatusChange
+            [2] Enable
+            [3] EnableChange
+            [4:5] LineStatus
+            [6] ResumeDetected
+            [8] LowSpeedDevice
+            [9] Reset
+            [12] Suspend
+        }
+    }
+
+    enum Registers As i32 {
+        Command := 0
+        Status := 2
+        InterruptEnable := 4
+        FrameNumber := 6
+        FrameListBase := 8
+        StartOfFrameModify := 0xC
+        Port1 := 0x10
+        Port2 := 0x12
+    }
+
+    struct TransferDescriptor {
+        bits As i32 {
+            [0] Terminate
+            [1] QueueHead
+            [2] DepthFirst
+            [4:31] LinkPointer
+        }
+
+        bits As i32 {
+            [0:10] ActualLength
+            [17] BitstuffError
+            [18] TimeoutOrCRCError
+            [19] NAKReceived
+            [20] BabbleDetected
+            [21] DataBufferError
+            [22] Stalled
+            [23] Active
+            [24] ShouldInterruptOnComplete
+            [25] IsIsochronous
+            [26] IsLowSpeedDevice
+            [27:28] InterruptAfterErrorCount
+            [29] ShortPacketDetect
+        }
+
+        bits As i32 {
+            [21:31] MaximumLength
+            [19] DataToggle
+            [15:18] Endpoint
+            [8:14] DeviceAddress
+            [0:7] PacketIdentification
+        }
+
+        i32 BufferPointer
+
+        i32[3] Reserved
+    }
+
+    bits Link As i32 {
+        [0] Terminate
+        [1] QueueHead
+        [2] DepthFirst
+        [4:31] Pointer
+    }
+
+    struct _QueueHead {
+        Link Head
+        Link Element
+    }
+
+    struct PCIeOverlay {
+        i8[0x20] _
+        i32 IOBase
+        ; 0x24
+        i8[0x3C] _
+        i8 USBVersion
+    }
+
+    class Controller derives INew {
+        PCIeDevice* Device
+
+        i32 IOBase
+        i8 USBVersion
+
+        Link* FrameList
+        i64 PhysicalFrameList
+
+        QueueHead* QueueHeads
+        TransferDescriptor* TransferDescriptors
+
+        define void New(PCIeDevice* Device) {
+            this->Device := Device
+
+            PCIeOverlay* Overlay := Device As void*
+
+            this->IOBase := Overlay->IOBase
+            this->USBVersion := Overlay->USBVersion
+
+            Print("UCHI IOBase %x, Version %x\n", this->IOBase, this->USBVersion)
+        }
+
+        define void Write16(Registers Target, i16 Value) {
+            OutW((this->IOBase + (Target As i32)) As i16, Value)
+        }
+        define void Write32(Registers Target, i32 Value) {
+            OutL((this->IOBase + (Target As i32)) As i16, Value)
+        }
+
+        define i16 Read16(Registers Target) {
+            return InW((this->IOBase + (Target As i32)) As i16)
+        }
+
+        define i32 Read32(Registers Target) {
+            return InL((this->IOBase + (Target As i32)) As i16)
+        }
+
+        define void Initialize() {
+            this->FrameList := KernelPageAllocator->AllocateVirtual(1)
+            this->PhysicalFrameList := KernelAddressSpace->VirtualToPhysical(this->FrameList)
+
+            for (i32 Index := 0, Index < 1024, Index++) {
+                Link* Entry := &this->FrameList[Index]
+
+                Entry->Terminate := true
+            }
+
+            Print("%hexdump\n", this->FrameList, 16)
+
+            RegisterFields::Command CommandFields := 0 As RegisterFields::Command
+
+            CommandFields.RunStop := false
+            CommandFields.GlobalReset := true
+            this->Write16(Registers::Command, CommandFields As i16)
+
+            SleepMS(20)
+
+            CommandFields.GlobalReset := false
+            this->Write16(Registers::Command, CommandFields As i16)
+
+            this->Write32(Registers::FrameListBase, this->PhysicalFrameList As i32)
+            this->Write16(Registers::FrameNumber, 0)
+
+            this->Write16(Registers::InterruptEnable, 0)
+
+            CommandFields.RunStop := true
+            CommandFields.HostControllerReset := true
+            this->Write16(Registers::Command, CommandFields As i16)
+
+            
+        }
+
+        define void Poll() {
+            
+        }
+    }
+}

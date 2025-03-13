@@ -393,6 +393,12 @@ ifneq (,$(findstring net-capture,$(flags)))
 	QEMU_FLAGS+=-object filter-dump,id=f1,netdev=hub0port0,file=dump.pcap
 endif
 
+
+HELP_TEXT+=uhci: Add a UHCI controller
+ifneq (,$(findstring uhci,$(flags)))
+	QEMU_FLAGS+=-device ich9-usb-uhci1 -device usb-mouse
+endif
+
 HELP_TEXT+=usb: Add an EHCI controller, and use a USB device as the boot device instead of an AHCI device|
 ifneq (,$(findstring usb,$(flags)))
 	DISK_FLAGS:=-drive if=none,id=stick,format=raw,file=build/USB.img -usb -device usb-ehci,id=ehci -device usb-storage,bus=ehci.0,drive=stick
