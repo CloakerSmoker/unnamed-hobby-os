@@ -62,7 +62,7 @@ struct TaskScheduler {
 		while (this->NeedsToRun->Next(&Node)) {
 			Task* Candidate := this->NeedsToRun->Self(Node)
 
-			this->Debug("Candidate %x\n", Candidate)
+			this->Debug("Candidate %x (%s)\n", Candidate, Candidate->Name)
 
 			if (Candidate->CouldRun()) {
 				this->Debug("Picked    /\\\n")
@@ -105,6 +105,10 @@ struct TaskScheduler {
 	}
 	define void EndCurrent() {
 		CurrentTask->State := TASK_KILLED
+
+		this->NeedsToRun->Remove(CurrentTask~>Link)
+		this->HasRan->Remove(CurrentTask~>Link)
+
 		CurrentTask->Free()
 		this->RunNext()
 	}
@@ -140,15 +144,16 @@ struct TaskScheduler {
 		this->Enqueue(NewTask)
 	}
 	
-	define Task* MakeLightTask(void* Function) {
+	define Task* MakeLightTask(void* Function, i8* Name) {
 		Task* NewTask := Task:NewWithStack(0, 2)
 		
 		NewTask~>Context->RIP := Function
+		NewTask->Name := Name
 		
 		return NewTask
 	}
-	define Task* AddLightTask(void* Function) {
-		Task* NewTask := this->MakeLightTask(Function)
+	define Task* AddLightTask(void* Function, i8* Name) {
+		Task* NewTask := this->MakeLightTask(Function, Name)
 		
 		this->Add(NewTask)
 		
@@ -163,7 +168,11 @@ struct TaskScheduler {
 		while (this->HasRan->Next(&Node)) {
 			Task* Current := this->HasRan->Self(Node)
 
+			this->Debug("Checking %x (%s)\n", Current, Current->Name)
+
 			if (Current->State = TASK_PAUSED) {
+				this->Debug("Allowing resume for %x (%s)\n", Current, Current->Name)
+
 				Current->State := TASK_CAN_RUN
 			}
 		}
@@ -179,7 +188,7 @@ struct TaskScheduler {
 		this->NeedsToRun := List:New(&Task.Link)
 		this->HasRan := List:New(&Task.Link)
 
-		this->DelayTask := this->MakeLightTask(&DoSchedulerDelay)
+		this->DelayTask := this->MakeLightTask(&DoSchedulerDelay, "Idle")
 	}
 
 	define void Start() {

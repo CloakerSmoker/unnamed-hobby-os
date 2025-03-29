@@ -506,7 +506,7 @@ struct TCPSocket {
     }
 
     define void SetSendPumpTimer() {
-        Task* QuantumTask := Scheduler->AddLightTask(null)
+        Task* QuantumTask := Scheduler->AddLightTask(null, "TCP Send Pump Timer")
 
         QuantumTask~>Context->CallMethod(this, &self.Quantum)
 

@@ -205,7 +205,7 @@ class TerminalRendererHandle implements IFileHandle, derives INew {
 	}
 	
 	define void SetCursorTimer() {
-		Task* CursorTimerTask := Scheduler->AddLightTask(&self.DoCursorTimerTick)
+		Task* CursorTimerTask := Scheduler->AddLightTask(&self.DoCursorTimerTick, "Terminal Cursor Timer")
 		
 		CursorTimerTask~>Context->RDI := this As i64
 		

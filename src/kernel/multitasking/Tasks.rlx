@@ -22,6 +22,8 @@ struct Task {
 	AMD64Context Context ; MUST be the first field
 
 	ListNode Link
+
+	i8* Name
 	
 	Task* Next
 	Task* AwaitedBy

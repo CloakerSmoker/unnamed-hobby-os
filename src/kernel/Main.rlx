@@ -602,6 +602,8 @@ define void Main(TrampolineInfo* Info) {
 	void* InterruptStackTop    := ADDRESS_OF_KERNEL_STACK + (10 * PAGE_SIZE)
 	void* InterruptStackBottom := ADDRESS_OF_KERNEL_STACK
 	KernelAddressSpace->UnmapRange(InterruptStackBottom, 1)
+
+	Info("Interrupt Stack: %x..%x\n", InterruptStackBottom, InterruptStackTop)
 	
 	SetupGDT(InterruptStackTop)
 	
@@ -691,10 +693,10 @@ define void Main(TrampolineInfo* Info) {
 
 	;NetworkSetupTask()
 
-	Task* NetworkThread := Scheduler->AddLightTask(&NetworkSetupTask)
+	Task* NetworkThread := Scheduler->AddLightTask(&NetworkSetupTask, "Network Setup")
 	NetworkThread->State := TASK_CAN_RUN
 
-	Task* ShellThread := Scheduler->AddLightTask(&VFSRunShellTask)
+	Task* ShellThread := Scheduler->AddLightTask(&VFSRunShellTask, "VFS Shell")
 	ShellThread->State := TASK_CAN_RUN
 
 	;StartScheduler()

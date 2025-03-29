@@ -413,7 +413,7 @@ define void ShellThread() {
 define void SetupShell() {
 	CWD := RootDirectory
 	
-	Task* ShellThreadTask := Scheduler->AddLightTask(&ShellThread)
+	Task* ShellThreadTask := Scheduler->AddLightTask(&ShellThread, "Legacy Shell")
 	
 	ShellThreadTask->State := TASK_CAN_RUN
 }

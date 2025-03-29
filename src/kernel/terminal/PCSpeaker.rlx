@@ -38,7 +38,7 @@ class PCSpeakerHandle implements IFileHandle, derives INew {
     }
 
     define void New() {
-        Task* StopTimerTask := Scheduler->AddLightTask(&self.DoStopTimerTick)
+        Task* StopTimerTask := Scheduler->AddLightTask(&self.DoStopTimerTick, "PC Speaker Stop Timer")
 		
 		StopTimerTask~>Context->RDI := this As i64
 		
