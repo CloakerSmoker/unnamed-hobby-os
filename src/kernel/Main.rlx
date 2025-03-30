@@ -73,8 +73,10 @@ define i64 VirtualToPhysical(void* RawVirtual) {
 	return KernelAddressSpace->VirtualToPhysical(RawVirtual) | Lower
 }
 
+i8 MAIN_ENTERED := false
+
 define void* KernelHeapAllocate(i64 Tag, i32 Size) {
-	if (DEBUG_HEAP_ALLOC_FREE) {
+	if (DEBUG_HEAP_ALLOC_FREE && MAIN_ENTERED) {
 		Info("Allocate(%l, %x) = ", Tag, Size)
 		void* Result := KernelHeap->Allocate(Size)
 		Info("%x ", Result)
@@ -343,7 +345,7 @@ define void PopulateDevicesDirectory(IDirectory* DevicesDirectory) {
 	; Serial ports: /dev/ttySX
 
 	for (i32 Index := 0, Index < 4, Index++) {
-		DevicesDirectory->Insert(FormatString("ttyS%i", Index), new VFSDeviceSingletonFile(new SerialPortHandle(Index)))
+		;DevicesDirectory->Insert(FormatString("ttyS%i", Index), new VFSDeviceSingletonFile(new SerialPortHandle(Index)))
 	}
 
 	; Terminal: /dev/tty0
@@ -538,6 +540,8 @@ define void Main(TrampolineInfo* Info) {
 
 	DisableInterrupts()
 
+	MAIN_ENTERED := true
+
 	CurrentTask := KernelSetupTask
 
 	i64 ArgC := 0
@@ -599,17 +603,12 @@ define void Main(TrampolineInfo* Info) {
 	
 	SetCR4(GetCR4() | CR4_ENABLE_FS_GS_BASE)
 	
-	void* InterruptStackTop    := ADDRESS_OF_KERNEL_STACK + (10 * PAGE_SIZE)
-	void* InterruptStackBottom := ADDRESS_OF_KERNEL_STACK
-	KernelAddressSpace->UnmapRange(InterruptStackBottom, 1)
-
-	Info("Interrupt Stack: %x..%x\n", InterruptStackBottom, InterruptStackTop)
-	
-	SetupGDT(InterruptStackTop)
+	SetupGDT()
 	
 	Print("BOOT: Setup GDT and TSS\n")
 	
 	SetupInterrupts()
+	GenerateInterruptHandlers()
 	SetupKeyboard()
 	
 	if (BootInfo->HPETBase && HPET_CAN_PROVIDE_SYSTEM_CLOCK) {

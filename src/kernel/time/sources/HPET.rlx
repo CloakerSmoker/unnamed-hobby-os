@@ -1,7 +1,7 @@
 
 i64 HPET_SYSTEM_CLOCK_FS_PER_TICK := 0
 
-define void OnHPETInterrupt() {
+define void OnHPETInterrupt(AMD64Context* Context, i32 InterruptNumber) {
     ;Print("HPET!")
 
     GenericTimerInterrupt()
@@ -22,12 +22,6 @@ define void OnHPETInterrupt() {
     ;Print("T(%i)M(%i) ", TIME_TICK_COUNT, TIME_UPTIME_MS)
 
     LocalAPIC->EOI()
-}
-
-define void HPETInterrupt() asm {
-    call, @InterruptSetup
-    call, @OnHPETInterrupt
-    jmp, @InterruptReturn
 }
 
 declare void HangPITChannel(i8)
@@ -128,7 +122,7 @@ define i8 ConfigureHPETSystemClock(i32 HZ) {
     HPET->MakePeriodic(Timer, Period)
     HPET->EnableTimerInterrupts(Timer, false)
 
-    InsertIDTEntry(0x30, &HPETInterrupt, true)
+    RegisterInterruptHandler(0x30, &OnHPETInterrupt)
 
     if (MSI) {
         HPET->ConnectFSBInterrupt(Timer, LocalAPIC->ID, 0x30)
@@ -152,7 +146,11 @@ define i8 ConfigureHPETSystemClock(i32 HZ) {
 
     HPET->Enable(true)
 
-    ;loop {}
+    while (TIME_TICK_COUNT = 0) {
+        asm {emit, 0xF4}
+    }
+
+    Print("HPET Appears to work!\n")
 
     return true
 }

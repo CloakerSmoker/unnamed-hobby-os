@@ -1,0 +1,68 @@
+
+#Require "$/PointerArray.rlx"
+
+PointerArray* DualModeMappings := PointerArray:New()
+
+struct DualModeMapping {
+    i8* Name
+    void* Virtual
+    i64 Physical
+    i32 PageCount
+}
+
+define DualModeMapping* AllocateDualModePages(i8* Name, i32 PageCount) {
+    void* Virtual := ADDRESS_OF_DUAL_MODE
+
+    if (DualModeMappings->Count()) {
+        DualModeMapping* Tail := DualModeMappings->At(DualModeMappings->Count() - 1)
+
+        Virtual := Tail->Virtual + (Tail->PageCount * PAGE_SIZE)
+    }
+
+    DualModeMapping* Mapping := KernelHeapAllocate('DUAL_MDE', #DualModeMapping)
+
+    Mapping->Name := Name
+    Mapping->Virtual := Virtual
+    Mapping->Physical := PhysicalMemory->Allocate(PageCount)
+    Mapping->PageCount := PageCount
+
+    DualModeMappings->Push(Mapping)
+
+    Print("Dual-mode mapping for %s is %i pages at %x (shared) %x (physical)\n", Name, PageCount, Virtual, Mapping->Physical)
+
+    KernelAddressSpace->MapRange(Mapping->Virtual, Mapping->Physical / PAGE_SIZE, Mapping->PageCount, PAGE_PRESENT | PAGE_WRITE)
+
+    FastZeroMemory(Mapping->Virtual, Mapping->PageCount * PAGE_SIZE)
+
+    return Mapping
+}
+
+define void MapDualModePages(PageTrie* AddressSpace) {
+    i32 Count := DualModeMappings->Count()
+
+    for (i32 Index := 0, Index < Count, Index++) {
+        DualModeMapping* Mapping := DualModeMappings->At(Index)
+
+        AddressSpace->SetRange(Mapping->Virtual, Mapping->Physical, Mapping->PageCount, PAGE_PRESENT | PAGE_WRITE)
+    }
+}
+
+define i32 GetDualModeFunctionSize(void* RawFunction) {
+    ; Find ud2 terminator for dual-mode function
+
+    i8* Function := RawFunction
+    i32 Size := 0
+
+    ;for (i32 Size := 0, !(Function[Size] = 0x0F && Function[Size + 1] = 0x0B), Size++) {}
+
+    loop {
+        if (Function[Size] = 0x0F && Function[Size + 1] = 0x0B) {
+            break
+        }
+
+        Size += 1
+    }
+
+    return Size
+}
+

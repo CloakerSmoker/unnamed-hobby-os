@@ -4,7 +4,7 @@
 declare AMD64Context* GetCurrentTaskContext()
 declare void SchedulerRestart()
 
-define void InterruptCodeSetup() asm {
+define void OldInterruptCodeSetup() asm {
 	cli
 	
 	push, rax          ; Clobbered by GetCurrentTaskContext
@@ -47,11 +47,11 @@ define void InterruptCodeSetup() asm {
 	
 	jmp, rax
 }
-define void InterruptCodeReturn() asm {
+define void OldInterruptCodeReturn() asm {
 	call, @SchedulerRestart
 }
 
-define void InterruptSetup() asm {
+define void OldInterruptSetup() asm {
 	cli
 	
 	push, rax          ; Clobbered by GetCurrentTaskContext
@@ -94,7 +94,7 @@ define void InterruptSetup() asm {
 	
 	jmp, rax
 }
-define void InterruptReturn() asm {
+define void OldInterruptReturn() asm {
 	call, @SchedulerRestart
 }
 
@@ -119,7 +119,7 @@ i8 IST_5 := 1
 i8 IST_6 := 1
 i8 IST_7 := 1
 
-define void InsertIDTEntry(i32 Index, void* Function, i8 Present, i8 IST) {
+define void InsertRealIDTEntry(i32 Index, void* Function, i8 Present, i8 IST) {
 	IDTEntry* E := IDT[Index]
 	
 	SetMemory(E As i64*, 0, 2)
@@ -132,30 +132,29 @@ define void InsertIDTEntry(i32 Index, void* Function, i8 Present, i8 IST) {
 	E->Flags := 0x0E | (Present << 7) As i8
 }
 
-define void InsertIDTEntry(i32 Index, void* Function, i8 Present) {
-	InsertIDTEntry(Index, Function, Present, IST_NONE)
+define void InsertRealIDTEntry(i32 Index, void* Function, i8 Present) {
+	InsertRealIDTEntry(Index, Function, Present, IST_NONE)
 }
 
-i32 IDT_MAX := 256
-i32 IDT_SIZE := IDT_MAX * #IDTEntry
+;i32 IDT_MAX := 256
+;i32 IDT_SIZE := IDT_MAX * #IDTEntry
 
-declare void AddHandlerStubs()
 declare void AddKernelHandlers()
 declare void SetupDeviceInterrupts()
 
 #Require "./src/drivers/APIC.rlx"
 #Require "./src/drivers/PIC.rlx"
 
-i64 PHYSICAL_ADDRESS_OF_IDT := 0
-
-define void SetupInterrupts() {
+/* define void OldSetupInterrupts() {
 	DescriptorTableHeader IDTHeader
 
-	PHYSICAL_ADDRESS_OF_IDT := PhysicalMemory->Allocate(1)
+	/*PHYSICAL_ADDRESS_OF_IDT := PhysicalMemory->Allocate(1)
 	KernelAddressSpace->MapRange(ADDRESS_OF_IDT, PHYSICAL_ADDRESS_OF_IDT / PAGE_SIZE, 1, PAGE_PRESENT | PAGE_WRITE)
 	IDT := ADDRESS_OF_IDT
 
-	FastZeroMemory(ADDRESS_OF_IDT, PAGE_SIZE)
+	FastZeroMemory(ADDRESS_OF_IDT, PAGE_SIZE)*/
+
+	IDT := AllocateDualModePages("IDT", SizeToPageCount(IDT_SIZE))->Virtual
 
 	;IDT := KernelPageAllocator->AllocateVirtual(1)
 
@@ -167,7 +166,7 @@ define void SetupInterrupts() {
 	RemapPIC(0x20)
 	
 	if (USE_INTERRUPT_STUBS) {
-		AddHandlerStubs()
+		;AddHandlerStubs()
 	}
 	
 	AddKernelHandlers()
@@ -192,11 +191,7 @@ define void SetupInterrupts() {
 		FirstIOAPIC->MaskAll(true)
 		;FirstIOAPIC->DumpMappings()
 	}
-}
-
-define void MapIDT(PageTrie* AddressSpace) {
-	AddressSpace->SetRange(ADDRESS_OF_IDT, PHYSICAL_ADDRESS_OF_IDT, 1, PAGE_PRESENT)
-}
+} */
 
 enum AMD64InterruptNumber {
 	DivideByZero := 0
@@ -257,11 +252,11 @@ define void GenericInterrupt(AMD64Context* Context, i32 RawInterruptNumber) {
 	Print("%context", Context)
 	Print("Code Bytes (RIP %x):\n%hexdump\n", Context->RIP, Context->RIP, 15)
 
-	Print("GDT:\n%hexdump", GLOBAL_GDT, 64)
+	;Print("GDT:\n%hexdump", GLOBAL_GDT, 64)
 
 	;Print("%stackdump")
 
-	FirstIOAPIC->DumpMappings()
+	;FirstIOAPIC->DumpMappings()
 
 	Halt()
 	
@@ -274,6 +269,232 @@ define void GenericInterrupt(AMD64Context* Context, i32 RawInterruptNumber) {
 	loop {}
 }
 
+i64 INTERRUPT_HAS_ERROR_CODE := 0b01000000000000100111110100000000
+
+void** SOFTWARE_IDT := KernelHeapAllocate('SOFT_IDT', NUMBER_OF_INTERRUPT_HANDLERS * 8)
+
+define void DispatchInterrupt(AMD64Context* Context, i32 InterruptNumber, i64 ErrorCode) {
+	if (SOFTWARE_IDT[InterruptNumber]) {
+		void* Handler := SOFTWARE_IDT[InterruptNumber]
+
+		i64 Mask := 1 << InterruptNumber
+
+		if (INTERRUPT_HAS_ERROR_CODE & Mask) {
+			(Handler As void(AMD64Context*, i32, i64))(Context, InterruptNumber, ErrorCode)
+		}
+		else {
+			(Handler As void(AMD64Context*, i32))(Context, InterruptNumber)
+		}
+
+		SchedulerRestart()
+	}
+	else {
+		GenericInterrupt(Context, InterruptNumber)
+	}
+}
+
+define void RegisterInterruptHandler(i32 InterruptNumber, void(AMD64Context*, i32) Handler) {
+	SOFTWARE_IDT[InterruptNumber] := Handler As void*
+}
+define void RegisterInterruptHandler(i32 InterruptNumber, void(AMD64Context*, i32, i64) Handler) {
+	SOFTWARE_IDT[InterruptNumber] := Handler As void*	
+}
+
+define void OnAnyInterrupt() asm {
+	; interrupt number, rax and rbx are saved on stack by dual-mode handler
+	
+	push, rdi          ; Clobbered by SaveContext(GetCurrentTaskContext())
+	
+	call, @GetCurrentTaskContext
+	mov, rdi, rax      ; Parameter = CurrentTaskContext
+	call, @SaveContext ; Capure interrupted context, with anything extra cleaned up below
+
+	pop, rax ; pop saved RDI
+	mov, {rdi + AMD64Context.RDI} As i64*, rax
+
+	pop, rax ; pop saved RBX
+	mov, {rdi + AMD64Context.RBX} As i64*, rax
+
+	pop, rax ; pop saved RAX
+	mov, {rdi + AMD64Context.RAX} As i64*, rax
+
+	pop, rsi ; pop interrupt number
+	
+	; Right now [ SS, RSP, RFLAGS, CS, RIP, RAX, RDI ] where we need to save:
+	;                 ^^^  ^^^^^^      ^^^  ^^^  ^^^
+	;  into the current task's context before we can potentially jump to a different task
+	;   while handling this interrupt
+
+	xor, eax, eax
+	mov, {rdi + AMD64Context.LastInterruptCode} As i64*, rax
+	
+	pop, rax                       ; Pop RIP
+	mov, {rdi + AMD64Context.RIP} As i64*, rax        ; Context.RIP = rax
+	
+	pop, rax                       ; Pop CS
+	mov, {rdi + AMD64Context.CS} As i32*, ebx
+	
+	pop, rax                       ; Pop RFLAGS
+	mov, {rdi + AMD64Context.Flags} As i64*, rax ; Context.Flags = rax
+	
+	pop, rax                       ; Pop RSP
+	mov, {rdi + AMD64Context.RSP} As i64*, rax ; Context.RSP = rax
+
+	pop, rax                       ; Pop SS
+	mov, {rdi + AMD64Context.SS} As i32*, eax
+
+	jmp, @DispatchInterrupt
+}
+
+define void OnAnyInterruptWithCode() asm {
+	; interrupt number, rax and rbx are saved on stack by dual-mode handler
+	
+	push, rdi          ; Clobbered by SaveContext(GetCurrentTaskContext())
+	
+	call, @GetCurrentTaskContext
+	mov, rdi, rax      ; Parameter = CurrentTaskContext
+	call, @SaveContext ; Capure interrupted context, with anything extra cleaned up below
+
+	pop, rax ; pop saved RDI
+	mov, {rdi + AMD64Context.RDI} As i64*, rax
+
+	pop, rax ; pop saved RBX
+	mov, {rdi + AMD64Context.RBX} As i64*, rax
+
+	pop, rax ; pop saved RAX
+	mov, {rdi + AMD64Context.RAX} As i64*, rax
+
+	pop, p2 ; pop interrupt number
+	
+	; Right now [ SS, RSP, RFLAGS, CS, RIP, ErrorCode ] where we need to save:
+	;                 ^^^  ^^^^^^      ^^^
+	;  into the current task's context before we can potentially jump to a different task
+	;   while handling this interrupt
+
+	pop, p3 ; pop error code for DispatchInterrupt
+	
+	pop, rax                       ; Pop RIP
+	mov, {rdi + AMD64Context.RIP} As i64*, rax        ; Context.RIP = rax
+	
+	pop, rax                       ; Pop CS
+	mov, {rdi + AMD64Context.CS} As i32*, eax
+	
+	pop, rax                       ; Pop RFLAGS
+	mov, {rdi + AMD64Context.Flags} As i64*, rax ; Context.Flags = rax
+	
+	pop, rax                       ; Pop RSP
+	mov, {rdi + AMD64Context.RSP} As i64*, rax ; Context.RSP = rax
+
+	pop, rax                       ; Pop SS
+	mov, {rdi + AMD64Context.SS} As i32*, eax
+
+	jmp, @DispatchInterrupt
+}
+
+define void RawInterruptHandlerTemplate() asm {
+	cli
+
+	; 0x0BCD_DCBA = interrupt number
+	; 0x1234_5678_8765_4321 = kernel CR3
+	; 0x8765_4321_1234_5678 = kernel handler
+
+	{ 0x68, 0xBA, 0xDC, 0xCD, 0x0B } ; push 0x0BCD_DCBA
+
+	push, rax
+	push, rbx
+
+	mov, rax, 0x1234_5678_8765_4321
+	{ 0x0F, 0x20, 0xDB } ; mov rbx, rc3
+
+	cmp, rax, rbx
+	je, UsingKernelPages
+
+	{ 0x0F, 0x22, 0xD8 } ; mov cr3, rax
+
+UsingKernelPages:
+	mov, rax, 0x8765_4321_1234_5678
+	jmp, rax
+
+	{ 0x0F, 0x0B } ; ud2
+}
+
+define void GenerateInterruptHandlers() {
+	i32 SingleHandlerSize := GetDualModeFunctionSize(&RawInterruptHandlerTemplate)
+
+	i32 HandlersPageCount := SizeToPageCount(SingleHandlerSize * NUMBER_OF_INTERRUPT_HANDLERS)
+
+	DualModeMapping* Mapping := AllocateDualModePages("IDT Handlers", HandlersPageCount)
+
+	void* Handlers := Mapping->Virtual
+
+	for (i32 Index := 0, Index < NUMBER_OF_INTERRUPT_HANDLERS, Index++) {
+		void* Handler := Handlers + (Index * SingleHandlerSize)
+
+		MoveMemory(Handler, &RawInterruptHandlerTemplate, SingleHandlerSize)
+
+		void* KernelHandler := &OnAnyInterrupt
+
+		i64 Mask := 1 << Index
+
+		if (INTERRUPT_HAS_ERROR_CODE & Mask) {
+			KernelHandler := &OnAnyInterruptWithCode
+		}
+
+		for (i32 Offset := 0, Offset < SingleHandlerSize, Offset++) {
+			void* pOffset := Handler + Offset
+
+			if (*(pOffset As i64*) = 0x1234_5678_8765_4321) {
+				*(pOffset As i64*) := KernelAddressSpace->PhysicalPML4
+			}
+			else if (*(pOffset As i64*) = 0x8765_4321_1234_5678) {
+				*(pOffset As i64*) := KernelHandler As i64
+			}
+			else if (*(pOffset As i32*) = 0x0BCD_DCBA) {
+				*(pOffset As i32*) := Index
+			}
+		}
+
+		InsertRealIDTEntry(Index, Handler, true)
+	}
+}
+
+define void SetupInterrupts() {
+	i32 Size := NUMBER_OF_INTERRUPT_HANDLERS * #IDTEntry
+
+	IDT := AllocateDualModePages("IDT", SizeToPageCount(Size))->Virtual
+
+	Print("IDT @ %x\n", IDT)
+	
+	RemapPIC(0x20)
+
+	GenerateInterruptHandlers()
+
+	AddKernelHandlers()
+
+	DescriptorTableHeader IDTHeader
+	IDTHeader.Base := IDT
+	IDTHeader.Limit := Size As i16
+
+	asm (rax := &IDTHeader) {
+		lidt, {rax} As i64*
+	}
+
+	if (USE_APIC) {
+		LocalAPIC->Initialize()
+		LocalAPIC->Setup()
+
+		LocalAPIC->MaskAll(true)
+		;LocalAPIC->DumpLVT()
+		
+		FirstIOAPIC->Initialize(BootInfo->IOAPICBase, 0)
+		FirstIOAPIC->Setup()
+
+		Print("Local APIC ID: %x\n", LocalAPIC->ID)
+
+		FirstIOAPIC->MaskAll(true)
+		;FirstIOAPIC->DumpMappings()
+	}
+}
+
 #Require "./src/utility/Exception.rlx"
-#Require "./src/kernel/core/generated/InterruptStubs.rlx"
 #Require "./src/kernel/core/InterruptHandlers.rlx"

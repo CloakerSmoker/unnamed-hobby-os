@@ -119,11 +119,7 @@ define Process* Execute(void* Buffer, ExecuteParameters* Parameters) {
 	PageTrie* AddressSpace := KernelHeapAllocate('PATR_USR', #PageTrie)
 	AddressSpace->Initialize(UserPML4, Physical)
 
-	MapGDT(AddressSpace)
-	MapIDT(AddressSpace)
-	MapKernelGS(AddressSpace)
-	SetupSystemCallsInAddressSpace(AddressSpace)
-	SetupUserModeInAddressSpace(AddressSpace)
+	MapDualModePages(AddressSpace)
 
 	MemoryMapper* Mapper := MemoryMapper:New(AddressSpace, PhysicalMemory, null)
 	Mapper->Active := true
@@ -148,32 +144,11 @@ define Process* Execute(void* Buffer, ExecuteParameters* Parameters) {
 	VirtualToPhysicalMapping* StackMapping := Mapper->MapAddressAnonymous(UserStackBottom, 20, PAGE_USER | PAGE_WRITE)
 	i64 StackPhysical := StackMapping->Physical->Address
 
-	; Kernel-only addresses
-	void* StackViewBottom := USER_NO_MANS_LAND
-	void* StackViewTop := StackViewBottom + (20 * PAGE_SIZE)
+	KernelAddressSpace->MapRange(UserStackBottom, StackPhysical / PAGE_SIZE, 20, PAGE_PRESENT | PAGE_WRITE)
 	
-	; Kernel-only mapping
-	KernelAddressSpace->MapRange(StackViewBottom, StackPhysical / PAGE_SIZE, 20, PAGE_PRESENT | PAGE_WRITE)
-
-	PageTrie* Trie := Trampoline~>PageTree
-
-	i64 State := Trie->StartWalkMappings()
-	VirtualMapping Mapping
-
-	while (Trie->WalkMappingsNext(&State, &Mapping)) {
-		Print("%x..%x -> %x..%x (%x pages)\n", Mapping.Virtual, Mapping.Virtual + Mapping.Size, Mapping.Physical, Mapping.Physical + Mapping.Size, Mapping.Size / PAGE_SIZE)
-	}
+	SetMemory(UserStackBottom, 20 * PAGE_SIZE, 0)
 	
-	SetMemory(StackViewBottom, 20 * PAGE_SIZE, 0)
-	
-	Info("Kernel View Of Stack: %x..%x\n", StackViewBottom, StackViewTop)
-	
-	i64* RSP := SetupExecuteStack(StackViewTop, Parameters->ArgumentCount, Parameters->Arguments, Parameters->EnvironmentCount, Parameters->Environment)
-	i64 Offset := ((StackViewTop As i64) - (RSP As i64))
-
-	; Stack is set up though the kernel view into user memory
-
-	void* UserRSP := UserStackTop - Offset
+	i64* UserRSP := SetupExecuteStack(UserStackTop, Parameters->ArgumentCount, Parameters->Arguments, Parameters->EnvironmentCount, Parameters->Environment)
 	
 	Process* LastProcess := CurrentProcess
 	

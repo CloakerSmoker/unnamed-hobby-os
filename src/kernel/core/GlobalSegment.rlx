@@ -23,23 +23,15 @@ struct KernelGS {
 }
 
 KernelGS* KERNEL_GS := null
-i64 PHYSICAL_ADDRESS_OF_KERNEL_GS := 0
 
 define void SetupKernelGS() {
-    PHYSICAL_ADDRESS_OF_KERNEL_GS := PhysicalMemory->Allocate(1)
-	KernelAddressSpace->MapRange(ADDRESS_OF_KERNEL_GS, PHYSICAL_ADDRESS_OF_KERNEL_GS / PAGE_SIZE, 1, PAGE_PRESENT | PAGE_WRITE)
+	KERNEL_GS := AllocateDualModePages("GS", 1)->Virtual
 
-	KERNEL_GS := ADDRESS_OF_KERNEL_GS
-
-    KERNEL_GS->pThis := ADDRESS_OF_KERNEL_GS
+    KERNEL_GS->pThis := KERNEL_GS As void*
 
 	KERNEL_GS->KernelCR3 := KernelAddressSpace->PhysicalPML4
 	KERNEL_GS->KernelRSP := KernelPageAllocator->AllocateVirtual(10) + (10 * PAGE_SIZE)
 	;KERNEL_GS->KernelContinuation := &OnSystemCall
 
-	SetGS(ADDRESS_OF_KERNEL_GS)
-}
-
-define void MapKernelGS(PageTrie* AddressSpace) {
-    AddressSpace->SetRange(ADDRESS_OF_KERNEL_GS, PHYSICAL_ADDRESS_OF_KERNEL_GS, 1, PAGE_PRESENT)
+	SetGS(KERNEL_GS->pThis)
 }

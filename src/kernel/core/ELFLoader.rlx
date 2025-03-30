@@ -36,7 +36,7 @@ define MemoryMapper* MapELF(MemoryMapper* Mappings, ELFHeader* Image) {
 
 			PhysicalAllocation* SegmentPhysical := Mappings->AllocatePhysical(SectionPageCount)
 
-			Mappings->Map(SectionVirtualPage, SegmentPhysical, SectionPageCount, PAGE_PRESENT | PAGE_USER)
+			Mappings->Map(SectionVirtualPage, SegmentPhysical, SectionPageCount, Flags)
 
 			Info("Segment %i: %x, %i pages, %i bytes\n", Index, SectionVirtualPage, SectionPageCount, Next->MemorySize)
 			Info("\tPhysical: %x, %i pages\n", SegmentPhysical->Address, SegmentPhysical->PageCount)

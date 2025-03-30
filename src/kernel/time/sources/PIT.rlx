@@ -3,7 +3,7 @@ PITCounterMode* CurrentPITMode := null
 i64 PITWhole 	:= 0 ; Number of milliseconds since the PIT was initialized
 i64 PITFraction := 0 ; Counter mode specific fraction, used to track sub-millisecond time since PITWhole is an integer
 
-define void OnPITInterrupt() {
+define void OnPITInterrupt(AMD64Context* Context, i32 InterruptNumber) {
 	GenericTimerInterrupt()
 
 	PITWhole += CurrentPITMode->WholePerTick
@@ -16,18 +16,13 @@ define void OnPITInterrupt() {
 	
 	SendEOI(0)
 }
-define void PITInterrupt() asm {
-	call, @InterruptSetup
-	call, @OnPITInterrupt
-	jmp, @InterruptReturn
-}
 
 define void ConfigurePITSystemClock(i32 HZ) {
 	if (HZ != 100) {
 		Info("WARNING: PIT System Clock only supports 100hz period\n")
 	}
 
-	InsertIDTEntry(0x20, &PITInterrupt, true)
+	RegisterInterruptHandler(0x20, &OnPITInterrupt)
 
 	FirstIOAPIC->ForwardInterrupt(0x0, LocalAPIC->ID, 0x20)
 	FirstIOAPIC->Mask(0x0, false)

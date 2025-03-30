@@ -29,20 +29,13 @@ define void SinkPS2Input(void* State, void(void*, i8, i32) Function) {
 	PS2ScanCodeParser->PushOutput := Function
 }
 
-define void OnPS2Event() {
+define void OnPS2Interrupt(AMD64Context* Context, i32 InterruptNumber) {
 	; IRQ1 handler
 	
 	i8 ScanCode := InB(PS2_PORT_DATA)	
 	SendEOI(1)
 	
 	PS2ScanCodeParser->Write(&ScanCode, 1)
-}
-
-define void OnPS2Interrupt() asm {
-	xchg, bx, bx
-	call, @InterruptSetup   ; Saves all GPRs
-	call, @OnPS2Event       ; Call the actual handler
-	jmp, @InterruptReturn   ; Pop all GPRs, iretq
 }
 
 define void PS2Wait(i8 ForWrite, i8 TargetStatus) {
@@ -95,7 +88,7 @@ define void SetupKeyboard() {
 	PS2SendCommand(PS2_ENABLE)
 	PS2SendCommand(PS2_ENABLE_AUX)
 	
-	InsertIDTEntry(0x21, &OnPS2Interrupt, true, IST_1)
+	RegisterInterruptHandler(0x21, &OnPS2Interrupt)
 	EnablePICLine(1, true)
 }
 

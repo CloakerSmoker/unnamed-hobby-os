@@ -133,27 +133,30 @@ define void SetCSHelper() asm {
 
 void* GLOBAL_GDT := null
 
-i64 PHYSICAL_ADDRESS_OF_GDT := 0
-i64 PHYSICAL_ADDRESS_OF_TSS := 0
+#Require "./src/kernel/core/DualMode.rlx"
 
-define void SetupGDT(void* InterruptStack) {
+define void SetupGDT() {
 	; 2 null descriptors, 2 code/data pairs, one system descriptor (for the TSS)
 	i16 Limit := ((8 + 8) + (8 + 8) + (8 + 8) + 16) As i8
 
-	PHYSICAL_ADDRESS_OF_GDT := PhysicalMemory->Allocate(1)
-	KernelAddressSpace->MapRange(ADDRESS_OF_GDT, PHYSICAL_ADDRESS_OF_GDT / PAGE_SIZE, 1, PAGE_PRESENT | PAGE_WRITE)
-	void* GDT := ADDRESS_OF_GDT
+	void* GDT := AllocateDualModePages("GDT", 1)->Virtual
 
-	FastZeroMemory(ADDRESS_OF_GDT, PAGE_SIZE)
+	;PHYSICAL_ADDRESS_OF_GDT := PhysicalMemory->Allocate(1)
+	;KernelAddressSpace->MapRange(ADDRESS_OF_GDT, PHYSICAL_ADDRESS_OF_GDT / PAGE_SIZE, 1, PAGE_PRESENT | PAGE_WRITE)
+	;void* GDT := ADDRESS_OF_GDT
 
-	PHYSICAL_ADDRESS_OF_TSS := PhysicalMemory->Allocate(1)
-	KernelAddressSpace->MapRange(ADDRESS_OF_TSS, PHYSICAL_ADDRESS_OF_TSS / PAGE_SIZE, 1, PAGE_PRESENT | PAGE_WRITE)
-	TSS := ADDRESS_OF_TSS
+	;FastZeroMemory(ADDRESS_OF_GDT, PAGE_SIZE)
 
-	FastZeroMemory(ADDRESS_OF_TSS, PAGE_SIZE)
+	;PHYSICAL_ADDRESS_OF_TSS := PhysicalMemory->Allocate(1)
+	;KernelAddressSpace->MapRange(ADDRESS_OF_TSS, PHYSICAL_ADDRESS_OF_TSS / PAGE_SIZE, 1, PAGE_PRESENT | PAGE_WRITE)
+	;TSS := ADDRESS_OF_TSS
+
+	;FastZeroMemory(ADDRESS_OF_TSS, PAGE_SIZE)
+
+	TSS := AllocateDualModePages("TSS", 1)->Virtual
 	
 	;void* GDT := KernelHeapAllocate('GDT', Limit)
-	TSS := KernelHeapAllocate('TSS', #TaskStateSegment)
+	;TSS := KernelHeapAllocate('TSS', #TaskStateSegment)
 
 	GLOBAL_GDT := GDT
 	
@@ -200,12 +203,11 @@ define void SetupGDT(void* InterruptStack) {
 		emit, 0x8E ; mov ss, rx
 		emit, 0xD2
 	}
+
+	void* InterruptStack := AllocateDualModePages("Interrupt Stack", 10)->Virtual
 	
 	TSS->RSP0 := InterruptStack
 	TSS->IST1 := InterruptStack - (PAGE_SIZE * 5)
-}
 
-define void MapGDT(PageTrie* AddressSpace) {
-	AddressSpace->SetRange(ADDRESS_OF_GDT, PHYSICAL_ADDRESS_OF_GDT, 1, PAGE_PRESENT | PAGE_WRITE)
-	AddressSpace->SetRange(ADDRESS_OF_TSS, PHYSICAL_ADDRESS_OF_TSS, 1, PAGE_PRESENT | PAGE_WRITE)
+	Print("TSS:%hexdump\n", TSS, #TaskStateSegment)
 }

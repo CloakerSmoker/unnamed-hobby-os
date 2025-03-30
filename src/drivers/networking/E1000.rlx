@@ -551,7 +551,7 @@ struct E1000 {
 		}
 	}
 	
-	static void ServiceInterrupt() {
+	static void OnInterrupt(AMD64Context* Context, i32 InterruptNumber) {
 		E1000* Current := RootE1000
 		
 		while (Current->Next != null) {
@@ -572,12 +572,6 @@ struct E1000 {
 		LocalAPIC->EOI()
 	}
 	
-	static void OnIRQ() asm {
-		call, @InterruptSetup
-		call, @E1000:ServiceInterrupt
-		jmp, @InterruptReturn
-	}
-	
 	define void Initialize(PCIeDevice* PCIe) {
 		this->PCIe := PCIe
 
@@ -593,7 +587,7 @@ struct E1000 {
 		else {
 			RootE1000 := this
 			
-			InsertIDTEntry(IRQToIDT(19), &E1000:OnIRQ, true)
+			RegisterInterruptHandler(IRQToIDT(19), &E1000:OnInterrupt)
 			EnablePICLine(19, true)
 		}
 		

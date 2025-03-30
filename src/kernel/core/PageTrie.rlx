@@ -148,6 +148,10 @@ struct PageTrie {
                 
             }
 
+            if (Destination & PAGE_USER) {
+                *pNext := *pNext | PAGE_USER
+            }
+
             Current := this->RemovePageFlags(*pNext)
         }
 

@@ -10,14 +10,14 @@ SerialPort*[4] SerialPorts
 
 #Require "./src/kernel/core/Interrupts.rlx"
 
-define void SerialInterrupt(AMD64Context* Context) {
+define void OnSerialInterrupt(AMD64Context* Context, i32 InterruptNumber) {
 	for (i32 Index := 0, Index < 4, Index++) {
 		SerialPort* Next := SerialPorts[Index]
 		
 		if (Next) {
 			i8 ISR := Next->PortRead(COM_REGISTER_INTERRUPT_ID)
 			
-			while !(ISR & COM_INTERRUPT_ID_NOT_PENDING) {
+			while (ISR & COM_INTERRUPT_ID_PENDING) {
 				i8 Cause := ISR & COM_INTERRUPT_ID_CAUSE_MASK
 				
 				if (Cause = COM_INTERRUPT_ID_DATA || Cause = COM_INTERRUPT_ID_TIMEOUT) {
@@ -41,17 +41,11 @@ define void SerialInterrupt(AMD64Context* Context) {
 	SendEOI(0x3)
 }
 
-define void OnSerialInterrupt() asm {
-	call, @InterruptSetup
-	call, @SerialInterrupt
-	jmp, @InterruptReturn
-}
-
 define void RegisterSerialInterrupts() {
-	InsertIDTEntry(0x23, &OnSerialInterrupt, true)
+	RegisterInterruptHandler(0x23, &OnSerialInterrupt)
 	EnablePICLine(0x3, true)
 	
-	InsertIDTEntry(0x24, &OnSerialInterrupt, true)
+	RegisterInterruptHandler(0x24, &OnSerialInterrupt)
 	EnablePICLine(0x4, true)
 }
 

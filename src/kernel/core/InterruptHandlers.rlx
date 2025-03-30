@@ -1,7 +1,6 @@
 ; Int 0x27
-define void OnSpuriousInterrupt() asm {
-	call, @InterruptSetup
-	jmp, @InterruptReturn
+define void OnSpuriousInterrupt(AMD64Context* Context, i32 InterruptNumber) asm {
+	ret
 }
 
 i64 PAGE_FAULT_PAGE_PRESENT      := 0b00001
@@ -12,7 +11,7 @@ i64 PAGE_FAULT_INSTRUCTION_FETCH := 0b10000
 
 i8 PAGE_FAULT_CHANCE := 0
 
-define void PageFault(AMD64Context* Context, i64 ErrorCode) {
+define void OnPageFault(AMD64Context* Context, i32 InterruptNumber, i64 ErrorCode) {
 	PAGE_FAULT_CHANCE++
 	
 	if (PAGE_FAULT_CHANCE > 3) {
@@ -23,12 +22,12 @@ define void PageFault(AMD64Context* Context, i64 ErrorCode) {
 	i64 CR2 := GetCR2()
 	i64 CR2Page := (CR2 >> 12) << 12
 
-	if (PAGE_FAULT_CHANCE = 0) {
+	if (PAGE_FAULT_CHANCE = 1) {
 		Print("^H1^SF\e[0J                      PANIC!!!! NOW!!!!!!!                  \n")
 		Print("              Page fault") ; Split prints just for when Info formatting is page faulting
 		Print(" at %x while accessing %x                        \n", Context->RIP, CR2)
 
-		Print("%stackdump")
+		;Print("%stackdump")
 	}
 
 	;Halt()
@@ -94,8 +93,42 @@ define void PageFault(AMD64Context* Context, i64 ErrorCode) {
 	else {
 		Info("Kernel mode\n")
 	}
+
+	i8*[4] LevelNames {"PML4e", "PDPe ", "PDe  ", "PTe  "}
+
+	for (i32 Level := 0, Level < PAGE_LEVEL_4K, Level++) {
+		i64 Entry := Trampoline~>PageTree->Get(CR2 As void*, Level, null)
+
+		i64 Target := Entry & 0b_111111111_111111111_111111111_111111111_000000000000
+		i64 Flags  := Entry & 0b_000000000_000000000_000000000_000000000_111111111111
+
+		Info("%s: %x", LevelNames[Level], Target)
+		Info("\tFlags: %b ", Flags)
+		
+		if (Flags & PAGE_PRESENT) {
+			Info("[PRESENT] ")
+		}
+
+		if (Flags & PAGE_WRITE) {
+			Info("[WRITE] ")
+		}
+
+		if (Flags & PAGE_USER) {
+			Info("[USER] ")
+		}
+
+		if (Flags & PAGE_ACCESSED) {
+			Info("[ACCESSED] ")
+		}
+
+		if (Flags & PAGE_FLAG_SIZE) {
+			Info("[SIZE] ")
+		}
+
+		Info("\n")
+	}
 	
-	Info("%stackdump")
+	;Info("%stackdump")
 	Info("}\n")
 	
 	if !(ErrorCode & PAGE_FAULT_USER_SUPERVISOR) {
@@ -105,10 +138,10 @@ define void PageFault(AMD64Context* Context, i64 ErrorCode) {
 		Print("^F1")
 	}
 
-	Print("Page fault at %x while accessing %x {\n", Context->RIP, CR2) 
+	;Print("Page fault at %x while accessing %x {\n", Context->RIP, CR2) 
 	
 	
-	Print("\tPage %x is present? ", CR2Page)
+	Print("Page %x is present? ", CR2Page)
 	
 	if (ErrorCode & PAGE_FAULT_PAGE_PRESENT) {
 		Print("Yes ")
@@ -137,7 +170,7 @@ define void PageFault(AMD64Context* Context, i64 ErrorCode) {
 	}
 	
 	
-	Print("\tPage %x is reserved? ", CR2Page)
+	Print("Page %x is reserved? ", CR2Page)
 	
 	if (ErrorCode & PAGE_FAULT_PAGE_RESERVED) {
 		Print("Yes\n")
@@ -147,7 +180,7 @@ define void PageFault(AMD64Context* Context, i64 ErrorCode) {
 	}
 	
 	
-	Print("\tAddress %x was being? ", CR2)
+	Print("Address %x was being? ", CR2)
 	
 	if (ErrorCode & PAGE_FAULT_READ_WRITE) {
 		Print("Written to\n")
@@ -160,7 +193,7 @@ define void PageFault(AMD64Context* Context, i64 ErrorCode) {
 	}
 	
 	
-	Print("\tFrom code running in? ")
+	Print("From code running in? ")
 	
 	if (ErrorCode & PAGE_FAULT_USER_SUPERVISOR) {
 		Print("User mode\n")
@@ -169,11 +202,17 @@ define void PageFault(AMD64Context* Context, i64 ErrorCode) {
 		Print("Kernel mode\n")
 	}
 	
-	Print("}\n\n")
+	;Print("}\n\n")
 	
-	PrintStackDump(0)
+	;PrintStackDump(0)
+
+	Print("%context\n", Context)
+
+	;GenericInterrupt(Context, InterruptNumber)
 	
 	Print("\n^R")
+
+	Halt()
 	
 	PAGE_FAULT_CHANCE--
 	
@@ -181,19 +220,13 @@ define void PageFault(AMD64Context* Context, i64 ErrorCode) {
 		;RestoreContext(&KernelContext)
 	}
 	
-	GenericInterrupt(Context, 0xE)
-}
-
-define void OnPageFault() asm {
-	call, @InterruptCodeSetup
-	call, @PageFault
-	jmp, @InterruptCodeReturn
+	;GenericInterrupt(Context, 0xE)
 }
 
 define void AddKernelHandlers() {
 	if (USE_PAGE_FAULT_HANDLER) {
-		InsertIDTEntry(0xE, &OnPageFault, true)
+		RegisterInterruptHandler(0xE, &OnPageFault)
 	}
 	
-	InsertIDTEntry(0x27, &OnSpuriousInterrupt, true)
+	RegisterInterruptHandler(0x27, &OnSpuriousInterrupt)
 }

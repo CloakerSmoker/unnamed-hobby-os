@@ -89,31 +89,14 @@ define void ResumeUserMode(AMD64Context* Context, void* Continuation) asm {
 	ret
 }
 
-i64 PHYSICAL_ADDRESS_OF_USER_MODE_TRAMPOLINE := 0
+void* ADDRESS_OF_USER_MODE_TRAMPOLINE := null
 
 define void SetupUserMode() {
-	PHYSICAL_ADDRESS_OF_USER_MODE_TRAMPOLINE := PhysicalMemory->Allocate(1)
+	ADDRESS_OF_USER_MODE_TRAMPOLINE := AllocateDualModePages("User Mode Trampoline", 1)->Virtual
 
-	KernelAddressSpace->MapRange(ADDRESS_OF_USER_MODE_TRAMPOLINE, PHYSICAL_ADDRESS_OF_USER_MODE_TRAMPOLINE / PAGE_SIZE, 1, PAGE_PRESENT | PAGE_WRITE)
-
-	i8* TrampolineBytes := &_EnterUserModeTrampoline As void*
-	i32 TrampolineSize := 0
-
-	loop {
-		if (TrampolineBytes[TrampolineSize] = 0x0F && TrampolineBytes[TrampolineSize + 1] = 0x0B) {
-			break
-		}
-
-		TrampolineSize += 1
-	}
-
+	i32 TrampolineSize := GetDualModeFunctionSize(&_EnterUserModeTrampoline)
 	Info("User Mode Trampoline is %i bytes\n", TrampolineSize)
-
 	MoveMemory(ADDRESS_OF_USER_MODE_TRAMPOLINE, &_EnterUserModeTrampoline, TrampolineSize)
-}
-
-define void SetupUserModeInAddressSpace(PageTrie* AddressSpace) {
-	AddressSpace->SetRange(ADDRESS_OF_USER_MODE_TRAMPOLINE, PHYSICAL_ADDRESS_OF_USER_MODE_TRAMPOLINE, 1, PAGE_PRESENT)
 }
 
 define void ResumeUserMode(AMD64Context* Context) {

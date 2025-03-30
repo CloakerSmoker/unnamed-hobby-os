@@ -613,16 +613,10 @@ namespace ICH9::AHCI {
             Print("ICH9: SATA: %s\n", Buffer)
         }
 
-        static void ServiceInterrupt() {
+        static void OnInterrupt(AMD64Context* Context, i32 InterruptNumber) {
             ;Info("AHCI INTERRUPT!!!\n")
 
             LocalAPIC->EOI()
-        }
-
-        static void OnInterrupt() asm {
-            call, @InterruptSetup
-		    call, @self:ServiceInterrupt
-		    jmp, @InterruptReturn
         }
 
         define void InitializePorts() {
@@ -660,7 +654,7 @@ namespace ICH9::AHCI {
 
             DisableInterrupts()
             Device->EnableMSI(20)
-            InsertIDTEntry(IRQToIDT(20), &self:OnInterrupt, true)
+            RegisterInterruptHandler(IRQToIDT(20), &self:OnInterrupt)
             EnablePICLine(20, true)
             EnableInterrupts()
 

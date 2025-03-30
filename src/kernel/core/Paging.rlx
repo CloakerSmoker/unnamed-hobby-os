@@ -30,6 +30,7 @@ i64 PAGE_NOT_PRESENT := 0b000
 i64 PAGE_PRESENT     := 0b001
 i64 PAGE_WRITE       := 0b010
 i64 PAGE_USER        := 0b100
+i64 PAGE_ACCESSED := 0b100000
 i64 PAGE_FLAG_SIZE := 0x80
 
 define i32 SizeToPageCount(i32 Size) {

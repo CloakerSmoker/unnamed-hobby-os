@@ -346,7 +346,7 @@ all: Disk.qcow2
 
 STDIO=serial
 QEMU?=qemu-system-x86_64
-QEMU_FLAGS=-machine q35 -bios misc/files/OVMF.fd $(DISK_FLAGS) -$(STDIO) stdio --cpu max,la57=off -global hpet.msi=true -m 1G -accel tcg -d int,pcall,cpu_reset,guest_errors -D qemu.log
+QEMU_FLAGS=-machine q35 -bios misc/files/OVMF.fd $(DISK_FLAGS) -$(STDIO) stdio --cpu max,la57=off -global hpet.msi=true -m 1G -accel tcg
 DISK_FLAGS=-hda Disk.qcow2
 DEBUG_FLAGS=
 HELP_TEXT=Help:|
@@ -407,6 +407,11 @@ endif
 HELP_TEXT+=-dint: dint
 ifneq (,$(findstring dint,$(flags)))
 	QEMU_FLAGS+=-d int
+endif
+
+HELP_TEXT+=logall
+ifneq (,$(findstring logall,$(flags)))
+	QEMU_FLAGS+=-d int,pcall,cpu_reset,guest_errors -D qemu.log
 endif
 
 HELP_TEXT+=usb-debug: Have QEMU dump debug messages related to EHCI|

@@ -105,53 +105,22 @@ define void SystemCallTrampoline() asm {
 #Require "./src/kernel/system-calls/Control/Process.rlx"
 #Require "./src/kernel/system-calls/Control/Synchronization.rlx"
 
-i64 PHYSICAL_ADDRESS_OF_SYSTEM_CALL_TRAMPOLINE := 0
-i64 PHYSICAL_ADDRESS_OF_KERNEL_GS := 0
-
 define void SetupSystemCalls() {
+
+	void* pSystemCallTrampoline := AllocateDualModePages("System Call Trampoline", 1)->Virtual
+
 	i64 OldEFER := ReadMSR(AMD64_MSR_EFER)
 	WriteMSR(AMD64_MSR_EFER, OldEFER | 1)
 	WriteMSR(AMD64_MSR_STAR, (KERNEL_CS << 32) | (USER_NULL << 48))
-	WriteMSR(AMD64_MSR_LSTAR, ADDRESS_OF_SYSCALL_TRAMPOLINE As i64)
+	WriteMSR(AMD64_MSR_LSTAR, pSystemCallTrampoline As i64)
 	WriteMSR(AMD64_MSR_SFMASK, 0x600 | X64_RFLAGS_IF)
 
 	KERNEL_GS->KernelContinuation := &OnSystemCall
 
-	; Map the trampoline at LSTAR
-
-	PHYSICAL_ADDRESS_OF_SYSTEM_CALL_TRAMPOLINE := PhysicalMemory->Allocate(1)
-
-	KernelAddressSpace->MapRange(ADDRESS_OF_SYSCALL_TRAMPOLINE, PHYSICAL_ADDRESS_OF_SYSTEM_CALL_TRAMPOLINE / PAGE_SIZE, 1, PAGE_PRESENT | PAGE_WRITE)
-
-	PageTrie* Trie := Trampoline~>PageTree
-
-	i64 State := Trie->StartWalkMappings()
-	VirtualMapping Mapping
-
-	while (Trie->WalkMappingsNext(&State, &Mapping)) {
-		i32 Pages := Mapping.Size / PAGE_SIZE
-
-		Info("%x..%x -> %x..%x (%x pages)\n", Mapping.Virtual, Mapping.Virtual + Mapping.Size, Mapping.Physical, Mapping.Physical + Mapping.Size, Pages)
-	}
-
-	; Figure out size of trampoline
-
-	i8* TrampolineBytes := &SystemCallTrampoline As void*
-	i32 TrampolineSize := 0
-
-	loop {
-		if (TrampolineBytes[TrampolineSize] = 0x0F && TrampolineBytes[TrampolineSize + 1] = 0x0B) {
-			break
-		}
-
-		TrampolineSize += 1
-	}
-
+	; Copy trampoline to pSystemCallTrampoline
+	i32 TrampolineSize := GetDualModeFunctionSize(&SystemCallTrampoline)
 	Info("System Call Trampoline is %i bytes\n", TrampolineSize)
-
-	; Copy trampoline to LSTAR
-
-	MoveMemory(ADDRESS_OF_SYSCALL_TRAMPOLINE, &SystemCallTrampoline, TrampolineSize)
+	MoveMemory(pSystemCallTrampoline, &SystemCallTrampoline, TrampolineSize)
 
 	; Plumbing done, setup actual syscalls	
 	
@@ -161,9 +130,4 @@ define void SetupSystemCalls() {
 	RegisterProcessSystemCalls()
 	RegisterSynchronizationSystemCalls()
 	RegisterNetworkSystemCalls()
-}
-
-define void SetupSystemCallsInAddressSpace(PageTrie* AddressSpace) {
-	AddressSpace->SetRange(ADDRESS_OF_SYSCALL_TRAMPOLINE, PHYSICAL_ADDRESS_OF_SYSTEM_CALL_TRAMPOLINE, 1, PAGE_PRESENT)
-	AddressSpace->SetRange(ADDRESS_OF_KERNEL_GS, PHYSICAL_ADDRESS_OF_KERNEL_GS, 1, PAGE_PRESENT)
 }
