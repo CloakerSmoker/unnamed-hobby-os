@@ -226,6 +226,7 @@ struct UserThread {
 		
 		this->UserTask~>Context->RSP := Stack
 		this->UserTask~>Context->RIP := Code
+		this->UserTask~>Context->CR3 := Mapper->AddressSpace->Root As i64
 		this->UserTask->NeedsUserMode := true
 		
 		this->KernelTask~>Context->RIP := &UserThread.DoKernelThread
@@ -256,6 +257,8 @@ i32 STANDARD_ERROR_FILE_DESCRIPTOR := 2
 struct Process {
 	IFileHandle*[10] FileDescriptorsToHandles
 	i32 FileDescriptorCount
+
+	PageTrie* AddressSpace
 	
 	IFileHandle* WorkingDirectory
 	

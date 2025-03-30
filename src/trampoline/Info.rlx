@@ -10,17 +10,6 @@
 #Require "./src/kernel/graphics/PixelBuffer.rlx"
 #Require "./src/kernel/core/PhysicalMemoryManager.rlx"
 
-class PhysicalPageAllocator implements IPhysicalAllocator {
-	PhysicalMemoryManager* Manager
-
-	define i64 Allocate() {
-		return this->Manager->Allocate(1)
-	}
-	define void Free(i64 Page) {
-        this->Manager->Free(Page, 1)
-	}
-}
-
 struct TrampolineInfo {
     BootloaderInfo BootInfo
 

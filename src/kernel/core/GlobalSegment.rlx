@@ -1,0 +1,45 @@
+struct KernelGS {
+	void* pThis
+
+	; Set from handler in user memory
+	i64 UserRAX
+	i64 UserRSP
+
+	; Used to reach handler in kernel memory
+	i64 KernelCR3
+	void* KernelRSP
+	void* KernelContinuation
+
+	i64 IRet_RIP
+	i64 IRet_CS
+	i64 IRet_Flags
+	i64 IRet_RSP
+	i64 IRet_SS
+
+    union {
+        i64 IRet_Stack
+        i64 UserCR3
+    }
+}
+
+KernelGS* KERNEL_GS := null
+i64 PHYSICAL_ADDRESS_OF_KERNEL_GS := 0
+
+define void SetupKernelGS() {
+    PHYSICAL_ADDRESS_OF_KERNEL_GS := PhysicalMemory->Allocate(1)
+	KernelAddressSpace->MapRange(ADDRESS_OF_KERNEL_GS, PHYSICAL_ADDRESS_OF_KERNEL_GS / PAGE_SIZE, 1, PAGE_PRESENT | PAGE_WRITE)
+
+	KERNEL_GS := ADDRESS_OF_KERNEL_GS
+
+    KERNEL_GS->pThis := ADDRESS_OF_KERNEL_GS
+
+	KERNEL_GS->KernelCR3 := KernelAddressSpace->PhysicalPML4
+	KERNEL_GS->KernelRSP := KernelPageAllocator->AllocateVirtual(10) + (10 * PAGE_SIZE)
+	;KERNEL_GS->KernelContinuation := &OnSystemCall
+
+	SetGS(ADDRESS_OF_KERNEL_GS)
+}
+
+define void MapKernelGS(PageTrie* AddressSpace) {
+    AddressSpace->SetRange(ADDRESS_OF_KERNEL_GS, PHYSICAL_ADDRESS_OF_KERNEL_GS, 1, PAGE_PRESENT)
+}

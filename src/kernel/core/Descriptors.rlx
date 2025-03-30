@@ -82,7 +82,7 @@ struct GlobalDescriptor {
 		Base := Base >> 0x8
 		this->Base_24_31 := (Base & 0xFF) As i8
 		
-		if !(Flags & DESCRIPTOR_ACCESS_NOT_SYSTEM) {
+		if (Base != 0) {
 			Base := Base >> 0x8
 			this->Base_32_63 := (Base & 0xFFFF_FFFF) As i32
 		}
@@ -133,11 +133,26 @@ define void SetCSHelper() asm {
 
 void* GLOBAL_GDT := null
 
+i64 PHYSICAL_ADDRESS_OF_GDT := 0
+i64 PHYSICAL_ADDRESS_OF_TSS := 0
+
 define void SetupGDT(void* InterruptStack) {
 	; 2 null descriptors, 2 code/data pairs, one system descriptor (for the TSS)
 	i16 Limit := ((8 + 8) + (8 + 8) + (8 + 8) + 16) As i8
+
+	PHYSICAL_ADDRESS_OF_GDT := PhysicalMemory->Allocate(1)
+	KernelAddressSpace->MapRange(ADDRESS_OF_GDT, PHYSICAL_ADDRESS_OF_GDT / PAGE_SIZE, 1, PAGE_PRESENT | PAGE_WRITE)
+	void* GDT := ADDRESS_OF_GDT
+
+	FastZeroMemory(ADDRESS_OF_GDT, PAGE_SIZE)
+
+	PHYSICAL_ADDRESS_OF_TSS := PhysicalMemory->Allocate(1)
+	KernelAddressSpace->MapRange(ADDRESS_OF_TSS, PHYSICAL_ADDRESS_OF_TSS / PAGE_SIZE, 1, PAGE_PRESENT | PAGE_WRITE)
+	TSS := ADDRESS_OF_TSS
+
+	FastZeroMemory(ADDRESS_OF_TSS, PAGE_SIZE)
 	
-	void* GDT := KernelHeapAllocate('GDT', Limit)
+	;void* GDT := KernelHeapAllocate('GDT', Limit)
 	TSS := KernelHeapAllocate('TSS', #TaskStateSegment)
 
 	GLOBAL_GDT := GDT
@@ -155,6 +170,8 @@ define void SetupGDT(void* InterruptStack) {
 	UserNull->MakeNonSystem(0, 0)
 	UserCS->MakeNonSystem(DESCRIPTOR_ACCESS_RING_3_CODE, DESCRIPTOR_FLAGS_RING_3_CODE)
 	UserDS->MakeNonSystem(DESCRIPTOR_ACCESS_RING_3_DATA, DESCRIPTOR_FLAGS_RING_3_DATA)
+
+	Info("User CS: %hexdump\n", UserCS, 8)
 	
 	UserTSS->MakeTSS(TSS)
 	
@@ -186,4 +203,9 @@ define void SetupGDT(void* InterruptStack) {
 	
 	TSS->RSP0 := InterruptStack
 	TSS->IST1 := InterruptStack - (PAGE_SIZE * 5)
+}
+
+define void MapGDT(PageTrie* AddressSpace) {
+	AddressSpace->SetRange(ADDRESS_OF_GDT, PHYSICAL_ADDRESS_OF_GDT, 1, PAGE_PRESENT | PAGE_WRITE)
+	AddressSpace->SetRange(ADDRESS_OF_TSS, PHYSICAL_ADDRESS_OF_TSS, 1, PAGE_PRESENT | PAGE_WRITE)
 }

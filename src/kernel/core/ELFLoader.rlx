@@ -28,25 +28,29 @@ define MemoryMapper* MapELF(MemoryMapper* Mappings, ELFHeader* Image) {
 				continue
 			}
 			
-			i64 TempFlags := PAGE_PRESENT | PAGE_WRITE ; Map as PRESENT|WRITE so we can... actually load the section into memory
-			i64 FinalFlags := PAGE_PRESENT | PAGE_USER
+			i64 Flags := PAGE_PRESENT | PAGE_USER
 			
 			if (Next->Flags & ELF_SEGMENT_FLAGS_WRITE) {
-				FinalFlags |= PAGE_WRITE
+				Flags |= PAGE_WRITE
 			}
+
+			PhysicalAllocation* SegmentPhysical := Mappings->AllocatePhysical(SectionPageCount)
+
+			Mappings->Map(SectionVirtualPage, SegmentPhysical, SectionPageCount, PAGE_PRESENT | PAGE_USER)
+
+			Info("Segment %i: %x, %i pages, %i bytes\n", Index, SectionVirtualPage, SectionPageCount, Next->MemorySize)
+			Info("\tPhysical: %x, %i pages\n", SegmentPhysical->Address, SegmentPhysical->PageCount)
 			
-			VirtualToPhysicalMapping* Mapping := Mappings->MapPages(SectionVirtualPage, SectionPageCount, TempFlags)
+			KernelAddressSpace->MapRange(USER_NO_MANS_LAND, SegmentPhysical->Address / PAGE_SIZE, SectionPageCount, PAGE_PRESENT | PAGE_WRITE)
 			
 			if (Next->MemorySize > Next->FileSize) {
-				void* ZeroArea := SectionMemory + Next->FileSize
+				void* ZeroArea := USER_NO_MANS_LAND + Next->FileSize
 				i64 ZeroSize := Next->MemorySize - Next->FileSize
 				
 				FastSetMemory8(ZeroArea, 0, ZeroSize)
 			}
 			
-			FastMoveMemory(SectionMemory, SectionData, Next->FileSize)
-			
-			Mappings->UpdateFlags(Mapping, FinalFlags)
+			FastMoveMemory(USER_NO_MANS_LAND, SectionData, Next->FileSize)
 			
 			;i8* Dummy := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 			

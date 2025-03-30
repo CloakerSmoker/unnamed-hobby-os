@@ -146,10 +146,18 @@ declare void SetupDeviceInterrupts()
 #Require "./src/drivers/APIC.rlx"
 #Require "./src/drivers/PIC.rlx"
 
+i64 PHYSICAL_ADDRESS_OF_IDT := 0
+
 define void SetupInterrupts() {
 	DescriptorTableHeader IDTHeader
 
-	IDT := KernelPageAllocator->AllocateVirtual(1)
+	PHYSICAL_ADDRESS_OF_IDT := PhysicalMemory->Allocate(1)
+	KernelAddressSpace->MapRange(ADDRESS_OF_IDT, PHYSICAL_ADDRESS_OF_IDT / PAGE_SIZE, 1, PAGE_PRESENT | PAGE_WRITE)
+	IDT := ADDRESS_OF_IDT
+
+	FastZeroMemory(ADDRESS_OF_IDT, PAGE_SIZE)
+
+	;IDT := KernelPageAllocator->AllocateVirtual(1)
 
 	Print("IDT @ %x\n", IDT)
 	
@@ -184,6 +192,10 @@ define void SetupInterrupts() {
 		FirstIOAPIC->MaskAll(true)
 		;FirstIOAPIC->DumpMappings()
 	}
+}
+
+define void MapIDT(PageTrie* AddressSpace) {
+	AddressSpace->SetRange(ADDRESS_OF_IDT, PHYSICAL_ADDRESS_OF_IDT, 1, PAGE_PRESENT)
 }
 
 enum AMD64InterruptNumber {

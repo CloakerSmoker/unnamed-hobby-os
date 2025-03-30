@@ -97,38 +97,83 @@ define Process* Execute(void* Buffer, ExecuteParameters* Parameters) {
 
 	;ProcessAddressSpace->MapRange()
 
-	PageTrie* Trie := Trampoline~>PageTree
+	;PageTrie* Trie := Trampoline~>PageTree
 
-	i32 Size := 0
-	i64 Whatever := Trie->Get(0x40_0000 As void*, PAGE_LEVEL_2M, &Size)
+	;i32 Size := 0
+	;i64 Whatever := Trie->Get(0x40_0000 As void*, PAGE_LEVEL_2M, &Size)
 
-	Print("0x40_0000 -> %x\n", Whatever)
+	;Print("0x40_0000 -> %x\n", Whatever)
 
-	MemoryMapper* Mapper := MemoryMapper:New(KernelAddressSpace, PhysicalMemory, null)
+	;void* UserPML4 := KernelPageAllocator->AllocateVirtual(1)
+	;i64 UserPML4Physical := KernelPageAllocator->GetPhysicalAddress(UserPML4)
+
+	;AddressSpaceManager* AddressSpace := KernelHeapAllocate('ASM_USER', #AddressSpaceManager)
+
+	PhysicalPageAllocator* Physical := KernelHeapAllocate('PHEAPUSR', #PhysicalPageAllocator)
+	Physical->Initialize()
+	Physical->Manager := PhysicalMemory
+
+	void* UserPML4 := PhysicalMemory->Allocate(1) As void*
+	FastZeroMemory(UserPML4, PAGE_SIZE)
+
+	PageTrie* AddressSpace := KernelHeapAllocate('PATR_USR', #PageTrie)
+	AddressSpace->Initialize(UserPML4, Physical)
+
+	MapGDT(AddressSpace)
+	MapIDT(AddressSpace)
+	MapKernelGS(AddressSpace)
+	SetupSystemCallsInAddressSpace(AddressSpace)
+	SetupUserModeInAddressSpace(AddressSpace)
+
+	MemoryMapper* Mapper := MemoryMapper:New(AddressSpace, PhysicalMemory, null)
+	Mapper->Active := true
 	
-	i32 UserPageMetaCount := NUMBER_OF_USER_PAGES / 0x1000
+	;i32 UserPageMetaCount := NUMBER_OF_USER_PAGES / 0x1000
 
 	; Juggling to map the user virtual allocator
-	PhysicalAllocation* VirtualAllocatorPhysical := Mapper->AllocatePhysical(UserPageMetaCount)
-	Mapper->Map(ADDRESS_OF_USER_PAGES, VirtualAllocatorPhysical, UserPageMetaCount, PAGE_WRITE | PAGE_PRESENT)
-	Mapper->EnableVirtualMappings()
+	;PhysicalAllocation* VirtualAllocatorPhysical := Mapper->AllocatePhysical(UserPageMetaCount)
+	;Mapper->Map(ADDRESS_OF_USER_PAGES, VirtualAllocatorPhysical, UserPageMetaCount, PAGE_WRITE | PAGE_PRESENT)
+	;Mapper->EnableVirtualMappings()
 	
-	FastZeroMemory(ADDRESS_OF_USER_PAGES, NUMBER_OF_USER_PAGES)
-	Mapper->VirtualAllocator := PageHeap:Adopt(ADDRESS_OF_USER_PAGES, NUMBER_OF_USER_PAGES)
+	;FastZeroMemory(ADDRESS_OF_USER_PAGES, NUMBER_OF_USER_PAGES)
+	;Mapper->VirtualAllocator := PageHeap:Adopt(ADDRESS_OF_USER_PAGES, NUMBER_OF_USER_PAGES)
 	
 	MapELF(Mapper, ELFData)
 	
-	void* StackBottom := ADDRESS_OF_USER_STACK
+	; User-only addresses
+	void* UserStackBottom := ADDRESS_OF_USER_STACK
+	void* UserStackTop := UserStackBottom + (20 * PAGE_SIZE)
 	
-	Mapper->MapAddressAnonymous(StackBottom, 20, PAGE_USER | PAGE_WRITE)
+	; User-only mapping
+	VirtualToPhysicalMapping* StackMapping := Mapper->MapAddressAnonymous(UserStackBottom, 20, PAGE_USER | PAGE_WRITE)
+	i64 StackPhysical := StackMapping->Physical->Address
+
+	; Kernel-only addresses
+	void* StackViewBottom := USER_NO_MANS_LAND
+	void* StackViewTop := StackViewBottom + (20 * PAGE_SIZE)
 	
-	SetMemory(StackBottom, 20 * PAGE_SIZE, 0)
+	; Kernel-only mapping
+	KernelAddressSpace->MapRange(StackViewBottom, StackPhysical / PAGE_SIZE, 20, PAGE_PRESENT | PAGE_WRITE)
+
+	PageTrie* Trie := Trampoline~>PageTree
+
+	i64 State := Trie->StartWalkMappings()
+	VirtualMapping Mapping
+
+	while (Trie->WalkMappingsNext(&State, &Mapping)) {
+		Print("%x..%x -> %x..%x (%x pages)\n", Mapping.Virtual, Mapping.Virtual + Mapping.Size, Mapping.Physical, Mapping.Physical + Mapping.Size, Mapping.Size / PAGE_SIZE)
+	}
 	
-	void* StackTop := StackBottom + (20 * PAGE_SIZE)
+	SetMemory(StackViewBottom, 20 * PAGE_SIZE, 0)
 	
-	Info("Stack Top %x\nStack Bottom %x\n", StackTop, StackBottom)
+	Info("Kernel View Of Stack: %x..%x\n", StackViewBottom, StackViewTop)
 	
-	i64* RSP := SetupExecuteStack(StackTop, Parameters->ArgumentCount, Parameters->Arguments, Parameters->EnvironmentCount, Parameters->Environment)
+	i64* RSP := SetupExecuteStack(StackViewTop, Parameters->ArgumentCount, Parameters->Arguments, Parameters->EnvironmentCount, Parameters->Environment)
+	i64 Offset := ((StackViewTop As i64) - (RSP As i64))
+
+	; Stack is set up though the kernel view into user memory
+
+	void* UserRSP := UserStackTop - Offset
 	
 	Process* LastProcess := CurrentProcess
 	
@@ -138,16 +183,25 @@ define Process* Execute(void* Buffer, ExecuteParameters* Parameters) {
 	CurrentProcess->AllocateFileDescriptor(Parameters->StandardInput)
 	CurrentProcess->AllocateFileDescriptor(Parameters->StandardOutput)
 	CurrentProcess->AllocateFileDescriptor(Parameters->StandardError)
+
+	i64 State := AddressSpace->StartWalkMappings()
+	VirtualMapping Mapping
+
+	while (AddressSpace->WalkMappingsNext(&State, &Mapping)) {
+		i32 Pages := Mapping.Size / PAGE_SIZE
+
+		Info("%x..%x -> %x..%x (%x pages)\n", Mapping.Virtual, Mapping.Virtual + Mapping.Size, Mapping.Physical, Mapping.Physical + Mapping.Size, Pages)
+	}
 	
-	PageTrie* Trie := Trampoline~>PageTree
+	;Panic("nuts 900\n")
 
-	i32 Size := 0
-	i64 Whatever := Trie->Get(0x40_0000 As void*, PAGE_LEVEL_2M, &Size)
+	;i32 Size := 0
+	;i64 Whatever := Trie->Get(0x40_0000 As void*, PAGE_LEVEL_2M, &Size)
 
-	Print("0x40_0000 -> %x\n", Whatever)
+	;Print("0x40_0000 -> %x\n", Whatever)
 	
 	UserThread* Thread := CurrentProcess~>MainThread
-	Thread->Start(2, Mapper, CurrentProcess~>Signals, RSP, ELFData->EntryPoint As void*)
+	Thread->Start(2, Mapper, CurrentProcess~>Signals, UserRSP, ELFData->EntryPoint As void*)
 	
 	return CurrentProcess
 }

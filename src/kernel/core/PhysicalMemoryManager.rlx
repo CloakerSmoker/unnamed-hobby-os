@@ -144,3 +144,14 @@ struct PhysicalMemoryManager {
 		}
 	}
 }
+
+class PhysicalPageAllocator implements IPhysicalAllocator {
+	PhysicalMemoryManager* Manager
+
+	define i64 Allocate() {
+		return this->Manager->Allocate(1)
+	}
+	define void Free(i64 Page) {
+        this->Manager->Free(Page, 1)
+	}
+}

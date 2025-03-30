@@ -169,6 +169,8 @@ struct PageTrie {
     }
 
     define void SetRange(void* Address, i64 Destination, i32 Size, i64 Flags) {
+        Info("Trie.SetRange(%x, %x, %i, %x)\n", Address, Destination, Size, Flags)
+
         while (Size != 0) {
             PagePath Path
             this->SplitAddress(Address, &Path)

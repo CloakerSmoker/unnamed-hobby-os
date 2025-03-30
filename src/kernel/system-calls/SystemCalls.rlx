@@ -51,13 +51,14 @@ define void EnterSystemCall(AMD64Context* UserContext) {
 	CurrentThread->FireSystemCall()
 }
 
+#Require "./src/kernel/core/GlobalSegment.rlx"
+
 define void OnSystemCall() asm {
-	push, rax          ; Clobbered by GetCurrentTaskContext
-	push, rdi          ; Clobbered by SaveContext(GetCurrentTaskContext())
+	push, rdi ; clobbered when setting up call to SaveContext
 	
 	call, @GetCurrentTaskContext
 	mov, rdi, rax      ; Parameter = CurrentTaskContext
-	call, @SaveContext ; Capure user-mode RSP and everything else (only rcx/r11 are clobbered)
+	call, @SaveContext ; Capture as much original context as possible
 	; Of course, RIP and flags are lost (but the processor saved them for us)
 	
 	mov, {rdi} As i64*, rcx        ; Context.RIP = rcx
@@ -66,13 +67,36 @@ define void OnSystemCall() asm {
 	pop, rax
 	mov, {rdi + 0x38} As i64*, rax ; Context.RDI = UserRDI
 	
-	pop, rax
+	{ 0x65, 0x48, 0x8B, 0x04, 0x25, 0x00, 0x00, 0x00, 0x00 } ; mov rax, gs:[0x0]
 	mov, {rdi + 0x88} As i64*, rax ; Context.RAX = UserRAX
 	
-	mov, {rdi + 0x20} As i64*, rsp ; Context.RSP = UserRSP
+
+	mov, {rdi + 0x20} As i64*, rax ; Context.RSP = UserRSP
 	; (since we push rax/rdi, we need to update the saved RSP after our pops)
 	
 	jmp, @EnterSystemCall
+}
+
+define void SystemCallTrampoline() asm {
+	; syscall entrypoint, runs in kernel mode but with user mode context
+	; We can't trust the stack, and need to preserve all registers
+	; Save RAX/RSP into KernelGS, then load minimal kernel context out of KernelGS and
+	;  handle the rest of the syscall with proper kernel context
+
+	{ 0x0F, 0x01, 0xF8 } ; swapgs
+
+	{ 0x65, 0x48, 0x89, 0x04, 0x25, 0x00, 0x00, 0x00, 0x00 } ; mov gs:[0x0], rax
+	{ 0x65, 0x48, 0x89, 0x24, 0x25, 0x08, 0x00, 0x00, 0x00 } ; mov gs:[0x8], rsp
+	
+	{ 0x65, 0x48, 0x8B, 0x24, 0x25, 0x18, 0x00, 0x00, 0x00 } ; mov rsp, gs:[0x18]
+
+	{ 0x65, 0x48, 0x8B, 0x04, 0x25, 0x10, 0x00, 0x00, 0x00 } ; mov rax, gs:[0x10]
+	movcr3, rax
+
+	{ 0x65, 0x48, 0x8B, 0x04, 0x25, 0x20, 0x00, 0x00, 0x00 } ; mov rax, gs:[0x20]
+	jmp, rax
+
+	{ 0x0F, 0x0B } ; ud2
 }
 
 #Require "./src/kernel/system-calls/IO/FileSystem.rlx"
@@ -81,12 +105,55 @@ define void OnSystemCall() asm {
 #Require "./src/kernel/system-calls/Control/Process.rlx"
 #Require "./src/kernel/system-calls/Control/Synchronization.rlx"
 
+i64 PHYSICAL_ADDRESS_OF_SYSTEM_CALL_TRAMPOLINE := 0
+i64 PHYSICAL_ADDRESS_OF_KERNEL_GS := 0
+
 define void SetupSystemCalls() {
 	i64 OldEFER := ReadMSR(AMD64_MSR_EFER)
 	WriteMSR(AMD64_MSR_EFER, OldEFER | 1)
 	WriteMSR(AMD64_MSR_STAR, (KERNEL_CS << 32) | (USER_NULL << 48))
-	WriteMSR(AMD64_MSR_LSTAR, &OnSystemCall As i64)
+	WriteMSR(AMD64_MSR_LSTAR, ADDRESS_OF_SYSCALL_TRAMPOLINE As i64)
 	WriteMSR(AMD64_MSR_SFMASK, 0x600 | X64_RFLAGS_IF)
+
+	KERNEL_GS->KernelContinuation := &OnSystemCall
+
+	; Map the trampoline at LSTAR
+
+	PHYSICAL_ADDRESS_OF_SYSTEM_CALL_TRAMPOLINE := PhysicalMemory->Allocate(1)
+
+	KernelAddressSpace->MapRange(ADDRESS_OF_SYSCALL_TRAMPOLINE, PHYSICAL_ADDRESS_OF_SYSTEM_CALL_TRAMPOLINE / PAGE_SIZE, 1, PAGE_PRESENT | PAGE_WRITE)
+
+	PageTrie* Trie := Trampoline~>PageTree
+
+	i64 State := Trie->StartWalkMappings()
+	VirtualMapping Mapping
+
+	while (Trie->WalkMappingsNext(&State, &Mapping)) {
+		i32 Pages := Mapping.Size / PAGE_SIZE
+
+		Info("%x..%x -> %x..%x (%x pages)\n", Mapping.Virtual, Mapping.Virtual + Mapping.Size, Mapping.Physical, Mapping.Physical + Mapping.Size, Pages)
+	}
+
+	; Figure out size of trampoline
+
+	i8* TrampolineBytes := &SystemCallTrampoline As void*
+	i32 TrampolineSize := 0
+
+	loop {
+		if (TrampolineBytes[TrampolineSize] = 0x0F && TrampolineBytes[TrampolineSize + 1] = 0x0B) {
+			break
+		}
+
+		TrampolineSize += 1
+	}
+
+	Info("System Call Trampoline is %i bytes\n", TrampolineSize)
+
+	; Copy trampoline to LSTAR
+
+	MoveMemory(ADDRESS_OF_SYSCALL_TRAMPOLINE, &SystemCallTrampoline, TrampolineSize)
+
+	; Plumbing done, setup actual syscalls	
 	
 	SetupSystemCallTable()
 	RegisterFileSystemSystemCalls()
@@ -96,7 +163,7 @@ define void SetupSystemCalls() {
 	RegisterNetworkSystemCalls()
 }
 
-define void UserModeReturnStub() asm {
-	mov, rax, 60
-	syscall
+define void SetupSystemCallsInAddressSpace(PageTrie* AddressSpace) {
+	AddressSpace->SetRange(ADDRESS_OF_SYSCALL_TRAMPOLINE, PHYSICAL_ADDRESS_OF_SYSTEM_CALL_TRAMPOLINE, 1, PAGE_PRESENT)
+	AddressSpace->SetRange(ADDRESS_OF_KERNEL_GS, PHYSICAL_ADDRESS_OF_KERNEL_GS, 1, PAGE_PRESENT)
 }

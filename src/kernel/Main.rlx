@@ -423,7 +423,7 @@ define void PopulateDevicesDirectory(IDirectory* DevicesDirectory) {
 }
 
 define void VFSRunShellTask() {
-    ;VFSExecuteShellCommand("execute /doom/doom.elf -iwad /doom/DOOM.WAD")
+    VFSExecuteShellCommand("execute /doom/doom.elf -iwad /doom/DOOM.WAD")
 	VFSRunShell(KernelTerminal)
 }
 
@@ -637,6 +637,8 @@ define void Main(TrampolineInfo* Info) {
 	
 	Print("Set up PIT/timers/serial\n")
 	
+	SetupKernelGS()
+	SetupUserMode()
 	SetupSystemCalls()
 
 	MountRoot(VFSDirectory:New())

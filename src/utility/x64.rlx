@@ -156,6 +156,8 @@ struct AMD64Context {
 	i32 CS
 	i32 SS
 
+	i64 CR3
+
 	i64 LastInterruptCode
 	
 	define AMD64Context* Zero() {

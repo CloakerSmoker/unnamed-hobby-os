@@ -41,19 +41,19 @@ struct VirtualToPhysicalMapping {
 		return CloneMemory(this, #self)
 	}
 
-	define void Map(AddressSpaceManager* Manager) {
-		Manager->MapRange(this->Address, this->Physical->Address / PAGE_SIZE, this->PageCount, this->Flags)
+	define void Map(PageTrie* AddressSpace) {
+		AddressSpace->SetRange(this->Address, this->Physical->Address, this->PageCount, this->Flags)
 	}
 
-	define void UnMap(AddressSpaceManager* Manager) {
-		Manager->UnmapRange(this->Address, this->PageCount)
+	define void UnMap(PageTrie* AddressSpace) {
+		;AddressSpace->UnmapRange(this->Address, this->PageCount)
 	}
 }
 
 #Require "$/PointerArray.rlx"
 
 struct MemoryMapper {
-	AddressSpaceManager* AddressSpace
+	PageTrie* AddressSpace
 	PhysicalMemoryManager* PhysicalAllocator
 	PageHeap* VirtualAllocator
 
@@ -62,7 +62,7 @@ struct MemoryMapper {
 	
 	i8 Active
 	
-	static MemoryMapper* New(AddressSpaceManager* AddressSpace, PhysicalMemoryManager* PhysicalAllocator, PageHeap* VirtualAllocator) {
+	static MemoryMapper* New(PageTrie* AddressSpace, PhysicalMemoryManager* PhysicalAllocator, PageHeap* VirtualAllocator) {
 		MemoryMapper* this := Alloc('MMG', #MemoryMapper)
 		
 		this->AddressSpace := AddressSpace
@@ -147,7 +147,7 @@ struct MemoryMapper {
 		Mapping->Flags := Flags
 		
 		if (this->Active) {
-			this->AddressSpace->MapRange(Mapping->Address, Mapping->Physical->Address / PAGE_SIZE, Mapping->PageCount, Flags | PAGE_PRESENT)
+			this->AddressSpace->SetRange(Mapping->Address, Mapping->Physical->Address / PAGE_SIZE, Mapping->PageCount, Flags | PAGE_PRESENT)
 		}
 	}
 	
@@ -330,7 +330,7 @@ struct MemoryMapper {
 			New->Physical := Result->AllocatePhysical(Existing->Physical->PageCount)
 			
 			for (i32 PageIndex := 0, PageIndex < New->PageCount, PageIndex++) {
-				this->AddressSpace->MapRange(TransferPage, New->Physical->Address + (PageIndex * PAGE_SIZE), 1, PAGE_PRESENT | PAGE_WRITE)
+				this->AddressSpace->SetRange(TransferPage, New->Physical->Address + (PageIndex * PAGE_SIZE), 1, PAGE_PRESENT | PAGE_WRITE)
 
 				MoveMemory(TransferPage, Existing->Address, PAGE_SIZE)
 			}

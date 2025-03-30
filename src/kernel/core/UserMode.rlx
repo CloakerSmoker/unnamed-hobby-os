@@ -1,3 +1,6 @@
+
+#Require "./src/kernel/core/GlobalSegment.rlx"
+
 define void RestoreUserModeContext(AMD64Context* Context) {
 	;Print("Context @ %x\n", Context)
 	;Print("New RIP: %x\n", Context->RIP)
@@ -5,7 +8,7 @@ define void RestoreUserModeContext(AMD64Context* Context) {
 	RestoreFullContext(Context)
 }
 
-define void ResumeUserMode(AMD64Context* Context) {
+define void _ResumeUserMode(AMD64Context* Context) {
 	;Print("[ResumeUserMode %x]", Context->RIP)
 	
 	RestoreFullUserContext(Context)
@@ -18,4 +21,101 @@ define void ResumeUserMode(AMD64Context* Context) {
 	;	xchg, bx, bx
 	;	sysret
 	;}
+}
+
+define void _EnterUserModeTrampoline() asm {
+	; Called in kernel-mode to switch CR3 and then drop to user-mode
+
+	{ 0x65, 0x48, 0x8B, 0x24, 0x25, 0x00, 0x00, 0x00, 0x00 } ; mov rsp, gs:[pThis]
+	mov, rsp, {rsp + KernelGS.UserCR3} As i64*
+	{ 0x0F, 0x22, 0xDC } ; mov cr3, rsp
+
+	{ 0x65, 0x48, 0x8B, 0x24, 0x25, 0x00, 0x00, 0x00, 0x00 } ; mov rsp, gs:[pThis]
+
+	lea, rsp, {rsp + KernelGS.IRet_RIP} As i64*
+
+	{ 0x8E, 0x44, 0x24, 0x20 } ; mov es, [rsp + 0x20]
+	{ 0x8E, 0x5C, 0x24, 0x20 } ; mov ds, [rsp + 0x20]
+
+	iret
+
+	{ 0x0F, 0x0B } ; ud2
+}
+
+define void ResumeUserMode(AMD64Context* Context, void* Continuation) asm {
+	mov, {rsp} As i64*, p2
+
+	; Get KERNEL_GS
+	{ 0x65, 0x48, 0x8B, 0x04, 0x25, 0x00, 0x00, 0x00, 0x00 } ; mov rax, gs:[pThis]
+
+	; Fill in KERNEL_GS with info needed to finalize drop to user-mode
+	mov, rbx, {rdi + AMD64Context.CR3} As i64*
+	mov, {rax + KernelGS.UserCR3} As i64*, rbx
+
+	mov, rbx, {rdi + AMD64Context.RIP} As i64*
+	mov, {rax + KernelGS.IRet_RIP} As i64*, rbx
+
+	mov, rbx, {rdi + AMD64Context.RSP} As i64*
+	mov, {rax + KernelGS.IRet_RSP} As i64*, rbx
+
+	mov, rbx, {rdi + AMD64Context.Flags} As i64*
+	mov, {rax + KernelGS.IRet_Flags} As i64*, rbx
+
+	mov, rbx, 0x23
+	mov, {rax + KernelGS.IRet_SS} As i64*, rbx
+
+	mov, rbx, 0x2B
+	mov, {rax + KernelGS.IRet_CS} As i64*, rbx
+
+	; Restore processor state
+	mov, rbp, {rdi + 0x28} As i64*
+	
+	mov, rbx, {rdi + 0x8 } As i64*
+	mov, rcx, {rdi + 0x10} As i64*
+	mov, rdx, {rdi + 0x18} As i64*
+	mov, rsi, {rdi + 0x30} As i64*
+
+	mov, r8 , {rdi + 0x40} As i64*
+	mov, r9 , {rdi + 0x48} As i64*
+	mov, r10, {rdi + 0x50} As i64*
+	mov, r11, {rdi + 0x58} As i64*
+	mov, r12, {rdi + 0x60} As i64*
+	mov, r13, {rdi + 0x68} As i64*
+	mov, r14, {rdi + 0x70} As i64*
+	mov, r15, {rdi + 0x78} As i64*
+	
+	mov, rax, {rdi + 0x88} As i64*
+
+	ret
+}
+
+i64 PHYSICAL_ADDRESS_OF_USER_MODE_TRAMPOLINE := 0
+
+define void SetupUserMode() {
+	PHYSICAL_ADDRESS_OF_USER_MODE_TRAMPOLINE := PhysicalMemory->Allocate(1)
+
+	KernelAddressSpace->MapRange(ADDRESS_OF_USER_MODE_TRAMPOLINE, PHYSICAL_ADDRESS_OF_USER_MODE_TRAMPOLINE / PAGE_SIZE, 1, PAGE_PRESENT | PAGE_WRITE)
+
+	i8* TrampolineBytes := &_EnterUserModeTrampoline As void*
+	i32 TrampolineSize := 0
+
+	loop {
+		if (TrampolineBytes[TrampolineSize] = 0x0F && TrampolineBytes[TrampolineSize + 1] = 0x0B) {
+			break
+		}
+
+		TrampolineSize += 1
+	}
+
+	Info("User Mode Trampoline is %i bytes\n", TrampolineSize)
+
+	MoveMemory(ADDRESS_OF_USER_MODE_TRAMPOLINE, &_EnterUserModeTrampoline, TrampolineSize)
+}
+
+define void SetupUserModeInAddressSpace(PageTrie* AddressSpace) {
+	AddressSpace->SetRange(ADDRESS_OF_USER_MODE_TRAMPOLINE, PHYSICAL_ADDRESS_OF_USER_MODE_TRAMPOLINE, 1, PAGE_PRESENT)
+}
+
+define void ResumeUserMode(AMD64Context* Context) {
+	ResumeUserMode(Context, ADDRESS_OF_USER_MODE_TRAMPOLINE)
 }
