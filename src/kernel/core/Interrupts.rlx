@@ -4,100 +4,6 @@
 declare AMD64Context* GetCurrentTaskContext()
 declare void SchedulerRestart()
 
-define void OldInterruptCodeSetup() asm {
-	cli
-	
-	push, rax          ; Clobbered by GetCurrentTaskContext
-	push, rdi          ; Clobbered by SaveContext(GetCurrentTaskContext())
-	
-	call, @GetCurrentTaskContext
-	mov, rdi, rax      ; Parameter = CurrentTaskContext
-	call, @SaveContext ; Capure interrupted context, with anything extra cleaned up below
-	
-	; Right now [ SS, RSP, RFLAGS, CS, RIP, ErrorCode, RAX, RDI ] where we need to save:
-	;                 ^^^  ^^^^^^      ^^^             ^^^  ^^^
-	;  into the current task's context before we can potentially jump to a different task
-	;   while handling this interrupt
-	
-	pop, rax
-	mov, {rdi + 0x38} As i64*, rax ; Context.RDI = OldRDI
-	
-	pop, rax
-	mov, {rdi + 0x88} As i64*, rax ; Context.RAX = OldRAX
-
-	pop, rax                       ; Pop original return address
-
-	pop, rbx
-	mov, {rdi + AMD64Context.LastInterruptCode} As i64*, rbx
-	
-	pop, rbx                       ; Pop RIP
-	mov, {rdi} As i64*, rbx        ; Context.RIP = rbx
-	
-	pop, rbx                       ; Pop CS
-	mov, {rdi + AMD64Context.CS} As i32*, ebx
-
-	pop, rbx                       ; Pop RFLAGS
-	mov, {rdi + 0x80} As i64*, rbx ; Context.Flags = rbx
-	
-	pop, rbx                       ; Pop RSP
-	mov, {rdi + 0x20} As i64*, rbx ; Context.RSP = rbx
-	
-	pop, rbx                       ; Pop SS
-	mov, {rdi + AMD64Context.SS} As i32*, ebx
-	
-	jmp, rax
-}
-define void OldInterruptCodeReturn() asm {
-	call, @SchedulerRestart
-}
-
-define void OldInterruptSetup() asm {
-	cli
-	
-	push, rax          ; Clobbered by GetCurrentTaskContext
-	push, rdi          ; Clobbered by SaveContext(GetCurrentTaskContext())
-	
-	call, @GetCurrentTaskContext
-	mov, rdi, rax      ; Parameter = CurrentTaskContext
-	call, @SaveContext ; Capure interrupted context, with anything extra cleaned up below
-	
-	; Right now [ SS, RSP, RFLAGS, CS, RIP, RAX, RDI ] where we need to save:
-	;                 ^^^  ^^^^^^      ^^^  ^^^  ^^^
-	;  into the current task's context before we can potentially jump to a different task
-	;   while handling this interrupt
-	
-	pop, rax
-	mov, {rdi + 0x38} As i64*, rax ; Context.RDI = OldRDI
-	
-	pop, rax
-	mov, {rdi + 0x88} As i64*, rax ; Context.RAX = OldRAX
-
-	xor, eax, eax
-	mov, {rdi + AMD64Context.LastInterruptCode} As i64*, rax
-	
-	pop, rax                       ; Pop original return address
-	
-	pop, rbx                       ; Pop RIP
-	mov, {rdi} As i64*, rbx        ; Context.RIP = rax
-	
-	pop, rbx                       ; Pop CS
-	mov, {rdi + AMD64Context.CS} As i32*, ebx
-	
-	pop, rbx                       ; Pop RFLAGS
-	mov, {rdi + 0x80} As i64*, rbx ; Context.Flags = rax
-	
-	pop, rbx                       ; Pop RSP
-	mov, {rdi + 0x20} As i64*, rbx ; Context.RSP = rax
-
-	pop, rbx                       ; Pop SS
-	mov, {rdi + AMD64Context.SS} As i32*, ebx
-	
-	jmp, rax
-}
-define void OldInterruptReturn() asm {
-	call, @SchedulerRestart
-}
-
 struct IDTEntry unaligned {
 	i16 OffsetLow16,
 	i16 Selector,
@@ -136,62 +42,11 @@ define void InsertRealIDTEntry(i32 Index, void* Function, i8 Present) {
 	InsertRealIDTEntry(Index, Function, Present, IST_NONE)
 }
 
-;i32 IDT_MAX := 256
-;i32 IDT_SIZE := IDT_MAX * #IDTEntry
-
 declare void AddKernelHandlers()
 declare void SetupDeviceInterrupts()
 
 #Require "./src/drivers/APIC.rlx"
 #Require "./src/drivers/PIC.rlx"
-
-/* define void OldSetupInterrupts() {
-	DescriptorTableHeader IDTHeader
-
-	/*PHYSICAL_ADDRESS_OF_IDT := PhysicalMemory->Allocate(1)
-	KernelAddressSpace->MapRange(ADDRESS_OF_IDT, PHYSICAL_ADDRESS_OF_IDT / PAGE_SIZE, 1, PAGE_PRESENT | PAGE_WRITE)
-	IDT := ADDRESS_OF_IDT
-
-	FastZeroMemory(ADDRESS_OF_IDT, PAGE_SIZE)*/
-
-	IDT := AllocateDualModePages("IDT", SizeToPageCount(IDT_SIZE))->Virtual
-
-	;IDT := KernelPageAllocator->AllocateVirtual(1)
-
-	Print("IDT @ %x\n", IDT)
-	
-	IDTHeader.Base := IDT
-	IDTHeader.Limit := IDT_SIZE As i16
-	
-	RemapPIC(0x20)
-	
-	if (USE_INTERRUPT_STUBS) {
-		;AddHandlerStubs()
-	}
-	
-	AddKernelHandlers()
-	;SetupDeviceInterrupts()
-	
-	asm (rax := &IDTHeader) {
-		lidt, {rax} As i64*
-	}
-
-	if (USE_APIC) {
-		LocalAPIC->Initialize()
-		LocalAPIC->Setup()
-
-		LocalAPIC->MaskAll(true)
-		;LocalAPIC->DumpLVT()
-		
-		FirstIOAPIC->Initialize(BootInfo->IOAPICBase, 0)
-		FirstIOAPIC->Setup()
-
-		Print("Local APIC ID: %x\n", LocalAPIC->ID)
-
-		FirstIOAPIC->MaskAll(true)
-		;FirstIOAPIC->DumpMappings()
-	}
-} */
 
 enum AMD64InterruptNumber {
 	DivideByZero := 0

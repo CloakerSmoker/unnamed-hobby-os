@@ -12,7 +12,6 @@ i32 TERMINAL_FOREGROUND := 0xFF_FF_FF
 i32 TERMINAL_BACKGROUND := 0x00_00_00
 
 i8 USE_APIC := true
-i8 USE_INTERRUPT_STUBS := true
 i8 USE_PAGE_FAULT_HANDLER := true
 i8 RECOVER_FROM_USER_PAGE_FAULT := false
 
@@ -23,7 +22,7 @@ i32 NUMBER_OF_INTERRUPT_HANDLERS := 256
 i8 HPET_CAN_PROVIDE_SYSTEM_CLOCK := true
 i8 HPET_CAN_USE_MSI_DELIVERY := true
 
-i8 DEBUG_SCHEDULER         := true ; Logs task switches plus why
+i8 DEBUG_SCHEDULER         := false ; Logs task switches plus why
 i8 DEBUG_SLOW_CLOCK        := false ; Uses a very low clock speed to reduce output clutter
 i8 DEBUG_SYSTEM_CALLS      := true ; Logs system call names/parameters + result
 i8 DEBUG_SYS_READ          := false ; Logs a hexdump of data moved by `read()`
@@ -31,7 +30,7 @@ i8 DEBUG_SYS_WRITE         := false ; Logs a hexdump of data moved by `write()`
 i8 DEBUG_TERMINAL_ESCAPES  := false ; Logs ANSI escapes as the terminal processes them
 i8 DEBUG_EXT2_OPTIMIZATION := false ; Logs when the ext2 driver tries to get smart and might break things
 i8 DEBUG_ATA_PIO_READWRITE := false ; Logs when ATAPIO might have freaked out
-i8 DEBUG_HEAP_ALLOC_FREE   := true
+i8 DEBUG_HEAP_ALLOC_FREE   := false
 
 i32 PAGES_FOR_KERNEL_STACK := 40
 i32 PAGES_FOR_KERNEL_HEAP := PAGE_COUNT_FOR_8MB
