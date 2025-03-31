@@ -353,6 +353,196 @@ struct Process {
 		this~>MainThread->Free()
 		this~>OnKilled->Free()
 	}
+
+	define i8 CanAccessMemory(i64 Address, i32 PageCount, i8 ForWrite) {
+		; Do page protection checks for `Address+PageCount` inside of this process
+
+		i64 End := Address + (PageCount * PAGE_SIZE)
+		i64 Tail := Address
+
+		i64 Handle := this->AddressSpace->StartWalkPages(Address)
+
+		PageMapping Mapping
+
+		while (this->AddressSpace->WalkPagesNext(&Handle, &Mapping)) {
+			if (Mapping.Virtual != Tail) {
+				return false
+			}
+
+			if !(Mapping.Flags & PAGE_PRESENT) {
+				return false
+			}
+
+			if !(Mapping.Flags & PAGE_USER) {
+				return false
+			}
+
+			if (ForWrite) {
+				if !(Mapping.Flags & PAGE_WRITE) {
+					return false
+				}
+			}
+
+			Tail += PAGE_SIZE
+		}
+
+		if (Tail != End) {
+			return false
+		}
+
+		return true
+	}
+
+	i64 CurrentMappingVirtual
+	i64 CurrentMappingPageCount
+	i8 CurrentMappingWritable
+
+	define i8 Map(i64 Address, i32 PageCount, i8 ForWrite) {
+		if !(this->CanAccessMemory(Address, PageCount, ForWrite)) {
+			return false
+		}
+
+		this->CurrentMappingVirtual := Address
+		this->CurrentMappingPageCount := PageCount
+
+		i64 Flags := PAGE_PRESENT
+
+		if (ForWrite) {
+			Flags |= PAGE_WRITE
+		}
+
+		i64 Size := PageCount * PAGE_SIZE
+		i64 End := Address + Size
+
+		i64 Handle := this->AddressSpace->StartWalkMappings(Address)
+		VirtualMapping Mapping
+
+		i64 Offset := 0
+
+		while (this->AddressSpace->WalkMappingsNext(&Handle, &Mapping)) {
+			if (Mapping.Virtual >= End) {
+				i64 OvershootSize := (Mapping.Virtual As i64) - End
+
+				Mapping.Size -= OvershootSize As i32
+			}
+
+			KernelAddressSpace->MapRange(USER_NO_MANS_LAND + Offset, Mapping.Physical / PAGE_SIZE, Mapping.Size / PAGE_SIZE, Flags)
+
+			Offset += Mapping.Size
+
+			if (Offset = Size) {
+				break
+			}
+		}
+
+		return true
+	}
+
+	define i8 MapIfNeeded(i64 Address, i32 PageCount, i8 ForWrite) {
+		if (ForWrite && this->CurrentMappingWritable != true) {
+			; Remap if we need a writable mapping but only have readable
+
+			return this->Map(Address, PageCount, ForWrite)
+		}
+
+		if (Address < this->CurrentMappingVirtual) {
+			; Remap if we need a mapping *below* our current one
+
+			return this->Map(Address, PageCount, ForWrite)
+		}
+
+		i64 CurrentMappingEnd := this->CurrentMappingVirtual + (this->CurrentMappingPageCount * PAGE_SIZE)
+		i64 DesiredMappingEnd := Address + (PageCount * PAGE_SIZE)
+
+		if (CurrentMappingEnd >= DesiredMappingEnd) {
+			; Remap if we need a mapping *above* (or outside) of our current one
+
+			return this->Map(Address, PageCount, ForWrite)
+		}
+
+		return true
+	}
+
+	define void* ConvertMappedAddress(i64 Address) {
+		i64 Offset := Address - this->CurrentMappingVirtual
+
+		return USER_NO_MANS_LAND + Offset
+	}
+
+	define void* MapPagesForReadWrite(i64 Address, i32 PageCount, i8 ForWrite) {
+		if (this->MapIfNeeded(Address, PageCount, ForWrite)) {
+			return this->ConvertMappedAddress(Address)
+		}
+
+		return null
+	}
+
+	define void* MapAddressForReadWrite(i64 Address, i32 Size, i8 ForWrite) {
+		i64 FirstPage := Address & 0b_111111111_111111111_111111111_111111111_000000000000
+		i64 End := Address + Size
+		i64 Difference := End - FirstPage
+
+		return this->MapPagesForReadWrite(FirstPage, SizeToPageCount(Difference As i32), ForWrite)
+	}
+
+	define void* MapAddressForRead(i64 Address, i32 Size) {
+		return this->MapAddressForReadWrite(Address, Size, false)
+	}
+	define void* MapAddressForWrite(i64 Address, i32 Size) {
+		return this->MapAddressForReadWrite(Address, Size, true)
+	}
+
+	define void Write8(i64 Address, i8 Value) {
+		i8* pAddress := this->MapAddressForWrite(Address, 1)
+		
+		pAddress[0] := Value
+	}
+	define void Write16(i64 Address, i16 Value) {
+		i16* pAddress := this->MapAddressForWrite(Address, 2)
+		
+		pAddress[0] := Value
+	}
+	define void Write32(i64 Address, i32 Value) {
+		i32* pAddress := this->MapAddressForWrite(Address, 4)
+		
+		pAddress[0] := Value
+	}
+	define void Write64(i64 Address, i64 Value) {
+		i64* pAddress := this->MapAddressForWrite(Address, 8)
+		
+		pAddress[0] := Value
+	}
+	define void Write(i64 Address, void* From, i32 Size) {
+		void* pAddress := this->MapAddressForWrite(Address, Size)
+
+		MoveMemory(pAddress, From, Size)
+	}
+
+	define i8 Read8(i64 Address) {
+		i8* pAddress := this->MapAddressForRead(Address, 1)
+
+		return *pAddress
+	}
+	define i16 Read16(i64 Address) {
+		i16* pAddress := this->MapAddressForRead(Address, 2)
+
+		return *pAddress
+	}
+	define i32 Read32(i64 Address) {
+		i32* pAddress := this->MapAddressForRead(Address, 4)
+
+		return *pAddress
+	}
+	define i64 Read64(i64 Address) {
+		i64* pAddress := this->MapAddressForRead(Address, 8)
+
+		return *pAddress
+	}
+	define void Read(void* To, i64 Address, i32 Size) {
+		void* pAddress := this->MapAddressForRead(Address, Size)
+
+		MoveMemory(To, pAddress, Size)
+	}
 }
 
 Process* CurrentProcess := null

@@ -16,6 +16,7 @@ struct PagePath {
 struct PageMapping {
     void* Virtual
     i64 Physical
+    i64 Flags
     i32 Size
 }
 
@@ -208,6 +209,9 @@ struct PageTrie {
     define i64 StartWalkPages() {
         return 0
     }
+    define i64 StartWalkPages(i64 At) {
+        return At
+    }
 
     define i64* Next(i64* Table, i32* pIndex) {
         while (*pIndex < 511) {
@@ -261,6 +265,7 @@ struct PageTrie {
             else if (*PDPE & PAGE_FLAG_SIZE) {
                 Out->Virtual := this->Unsplit(Path.PML4, Path.PDP, 0, 0)
                 Out->Physical := this->RemovePageFlags(*PDPE) As i64
+                Out->Flags := *PDPE As i64
                 Out->Size := PAGE_LEVEL_1G
 
                 *pAddress := Out->Virtual + BYTES_IN_1G
@@ -284,6 +289,7 @@ struct PageTrie {
             else if (*PDE & PAGE_FLAG_SIZE) {
                 Out->Virtual := this->Unsplit(Path.PML4, Path.PDP, Path.PD, 0)
                 Out->Physical := this->RemovePageFlags(*PDE) As i64
+                Out->Flags := *PDE As i64
                 Out->Size := PAGE_LEVEL_2M
 
                 *pAddress := Out->Virtual + BYTES_IN_2M
@@ -306,6 +312,7 @@ struct PageTrie {
 
             Out->Virtual := this->Unsplit(Path.PML4, Path.PDP, Path.PD, Path.PT)
             Out->Physical := this->RemovePageFlags(*PTE) As i64
+            Out->Flags := *PTE As i64
             Out->Size := PAGE_LEVEL_4K
 
             *pAddress := Out->Virtual + BYTES_IN_4K

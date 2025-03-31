@@ -37,6 +37,8 @@ define void _EnterUserModeTrampoline() asm {
 	{ 0x8E, 0x44, 0x24, 0x20 } ; mov es, [rsp + 0x20]
 	{ 0x8E, 0x5C, 0x24, 0x20 } ; mov ds, [rsp + 0x20]
 
+	{ 0x0F, 0x01, 0xF8 } ; swapgs
+
 	iret
 
 	{ 0x0F, 0x0B } ; ud2
@@ -68,23 +70,27 @@ define void ResumeUserMode(AMD64Context* Context, void* Continuation) asm {
 	mov, {rax + KernelGS.IRet_CS} As i64*, rbx
 
 	; Restore processor state
-	mov, rbp, {rdi + 0x28} As i64*
+	mov, rbp, {rdi + AMD64Context.RBP} As i64*
 	
-	mov, rbx, {rdi + 0x8 } As i64*
-	mov, rcx, {rdi + 0x10} As i64*
-	mov, rdx, {rdi + 0x18} As i64*
-	mov, rsi, {rdi + 0x30} As i64*
+	mov, rbx, {rdi + AMD64Context.RBX} As i64*
+	mov, rcx, {rdi + AMD64Context.RCX} As i64*
+	mov, rdx, {rdi + AMD64Context.RDX} As i64*
+	mov, rsi, {rdi + AMD64Context.RSI} As i64*
 
-	mov, r8 , {rdi + 0x40} As i64*
-	mov, r9 , {rdi + 0x48} As i64*
-	mov, r10, {rdi + 0x50} As i64*
-	mov, r11, {rdi + 0x58} As i64*
-	mov, r12, {rdi + 0x60} As i64*
-	mov, r13, {rdi + 0x68} As i64*
-	mov, r14, {rdi + 0x70} As i64*
-	mov, r15, {rdi + 0x78} As i64*
+	mov, r8 , {rdi + AMD64Context.R8} As i64*
+	mov, r9 , {rdi + AMD64Context.R9} As i64*
+	mov, r10, {rdi + AMD64Context.R10} As i64*
+	mov, r11, {rdi + AMD64Context.R11} As i64*
+	mov, r12, {rdi + AMD64Context.R12} As i64*
+	mov, r13, {rdi + AMD64Context.R13} As i64*
+	mov, r14, {rdi + AMD64Context.R14} As i64*
+	mov, r15, {rdi + AMD64Context.R15} As i64*
+
+	mov, rax, {rdi + AMD64Context.FS} As i64*
+	{ 0xF3, 0x48, 0x0F, 0xAE, 0xD0 } ; wrfsbase rax
 	
-	mov, rax, {rdi + 0x88} As i64*
+	mov, rax, {rdi + AMD64Context.RAX} As i64*
+	mov, rdi, {rdi + AMD64Context.RDI} As i64*
 
 	ret
 }

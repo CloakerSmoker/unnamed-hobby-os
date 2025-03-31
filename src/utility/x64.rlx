@@ -159,6 +159,9 @@ struct AMD64Context {
 	i64 CR3
 
 	i64 LastInterruptCode
+
+	i64 FS
+	i64 GS
 	
 	define AMD64Context* Zero() {
 		FastSetMemory8(this, 0, #AMD64Context)

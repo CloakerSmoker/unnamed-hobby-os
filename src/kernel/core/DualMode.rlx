@@ -28,7 +28,7 @@ define DualModeMapping* AllocateDualModePages(i8* Name, i32 PageCount) {
 
     DualModeMappings->Push(Mapping)
 
-    Print("Dual-mode mapping for %s is %i pages at %x (shared) %x (physical)\n", Name, PageCount, Virtual, Mapping->Physical)
+    Info("Dual-mode mapping for %s is %i pages at %x (shared) %x (physical)\n", Name, PageCount, Virtual, Mapping->Physical)
 
     KernelAddressSpace->MapRange(Mapping->Virtual, Mapping->Physical / PAGE_SIZE, Mapping->PageCount, PAGE_PRESENT | PAGE_WRITE)
 

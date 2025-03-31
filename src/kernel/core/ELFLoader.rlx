@@ -11,6 +11,7 @@ define MemoryMapper* MapELF(MemoryMapper* Mappings, ELFHeader* Image) {
 			void* SectionData := Image + Next->FileOffset
 			void* SectionMemory := Next->VirtualAddress As void*
 			void* SectionVirtualPage := SectionMemory & 0xFFFF_FFFF_FFFF_F000
+			i64 SectionOffset := Next->VirtualAddress & 0xFFF
 			
 			;Print("Section %i is %i (%x) bytes\n", Index, Next->MemorySize, Next->MemorySize)
 			
@@ -42,15 +43,17 @@ define MemoryMapper* MapELF(MemoryMapper* Mappings, ELFHeader* Image) {
 			Info("\tPhysical: %x, %i pages\n", SegmentPhysical->Address, SegmentPhysical->PageCount)
 			
 			KernelAddressSpace->MapRange(USER_NO_MANS_LAND, SegmentPhysical->Address / PAGE_SIZE, SectionPageCount, PAGE_PRESENT | PAGE_WRITE)
+
+			FastZeroMemory(USER_NO_MANS_LAND, SectionPageCount * PAGE_SIZE)
 			
-			if (Next->MemorySize > Next->FileSize) {
+			/* if (Next->MemorySize > Next->FileSize) {
 				void* ZeroArea := USER_NO_MANS_LAND + Next->FileSize
 				i64 ZeroSize := Next->MemorySize - Next->FileSize
 				
 				FastSetMemory8(ZeroArea, 0, ZeroSize)
-			}
+			} */
 			
-			FastMoveMemory(USER_NO_MANS_LAND, SectionData, Next->FileSize)
+			FastMoveMemory(USER_NO_MANS_LAND + SectionOffset, SectionData, Next->FileSize)
 			
 			;i8* Dummy := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
 			

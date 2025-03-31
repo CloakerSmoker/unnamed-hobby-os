@@ -265,6 +265,7 @@ define void RawInterruptHandlerTemplate() asm {
 	je, UsingKernelPages
 
 	{ 0x0F, 0x22, 0xD8 } ; mov cr3, rax
+	{ 0x0F, 0x01, 0xF8 } ; swapgs
 
 UsingKernelPages:
 	mov, rax, 0x8765_4321_1234_5678

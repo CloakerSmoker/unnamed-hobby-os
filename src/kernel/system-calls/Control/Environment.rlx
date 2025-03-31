@@ -130,18 +130,21 @@ i32 ARCH_PRCTL_SET_FS := 0x1002
 i32 ARCH_PRCTL_GET_FS := 0x1003
 i32 ARCH_PRCTL_GET_GS := 0x1004
 
-define i64 SystemCallArchPrctl(i64 SubFunction, void* Parameter) {
+define i64 SystemCallArchPrctl(i64 SubFunction, i64 Parameter) {
+	UserThread* Thread := CurrentProcess->Threads->At(0)
+	AMD64Context* Context := Thread->UserTask~>Context
+
 	if (SubFunction = ARCH_PRCTL_SET_GS) {
-		SetGS(Parameter)
+		Context->GS := Parameter
 	}
 	else if (SubFunction = ARCH_PRCTL_GET_GS) {
-		*(Parameter As i64*) := GetGS() As i64
+		CurrentProcess->Write64(Parameter, Context->GS)
 	}
 	else if (SubFunction = ARCH_PRCTL_SET_FS) {
-		SetFS(Parameter)
+		Context->FS := Parameter
 	}
 	else if (SubFunction = ARCH_PRCTL_GET_FS) {
-		*(Parameter As i64*) := GetFS() As i64
+		CurrentProcess->Write64(Parameter, Context->FS)
 	}
 
 	return 0
