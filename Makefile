@@ -17,13 +17,39 @@ BUILD=build
 CLEAN_FILES=
 LIGHT_CLEAN_FILES=
 
+# MUSL
+
+MUSL=$(BUILD)/musl
+MUSL_VER=1.2.5
+MUSL_SRC=$(MUSL)/musl-$(MUSL_VER)
+
+MUSL_GCC=$(abspath $(MUSL)/prefix/bin/musl-gcc)
+MUSL_LIB=$(MUSL_SRC)/lib
+
+MUSL_CFLAGS=-static -L$(MUSL_LIB) -I$(MUSL_LIB)/include
+
+CLEAN_FILES= $(MUSL_SRC)
+
+$(MUSL)/musl-$(MUSL_VER).tar.gz:
+	wget https://musl.libc.org/releases/musl-$(MUSL_VER).tar.gz -P $(MUSL)
+
+$(MUSL_SRC)/README: $(MUSL)/musl-$(MUSL_VER).tar.gz
+	mkdir -p $(MUSL_SRC)
+	tar -mxf $(MUSL)/musl-$(MUSL_VER).tar.gz --directory=$(MUSL)
+
+$(MUSL_GCC): $(MUSL_SRC)/README
+	mkdir -p $(MUSL)/prefix
+	cd $(MUSL_SRC); ./configure --enable-debug --prefix=$(abspath $(MUSL))/prefix
+	cd $(MUSL_SRC); make -j$(shell nproc)
+	cd $(MUSL_SRC); make install
+
 # Busybox
 
 BUSYBOX=$(BUILD)/busybox
 BUSYBOX_VER=1.35.0
 BUSYBOX_SRC=$(BUSYBOX)/busybox-$(BUSYBOX_VER)
 
-CLEAN_FILES= $(BUSYBOX_SRC)
+CLEAN_FILES+= $(BUSYBOX_SRC)
 
 $(BUSYBOX)/busybox-$(BUSYBOX_VER).tar.bz2:
 	wget https://www.busybox.net/downloads/busybox-$(BUSYBOX_VER).tar.bz2 -P $(BUSYBOX)
@@ -61,7 +87,7 @@ $(BUILD)/doom.elf: $(DOOM_GENERIC_SRC)/doomgeneric_uhos.c
 #$(BUILD)/doomgeneric.elf: $(DOOM_GENERIC_SRC)/doomgeneric
 	-rm -rf $(DOOM_GENERIC_SRC)/build
 	-rm $(DOOM_GENERIC_SRC)/doomgeneric
-	cd $(DOOM_GENERIC_SRC); make --makefile=Makefile.uhos
+	cd $(DOOM_GENERIC_SRC); make CC=$(MUSL_GCC) --makefile=Makefile.uhos
 	cp $(DOOM_GENERIC_SRC)/doomgeneric $@
 
 # Preprocess

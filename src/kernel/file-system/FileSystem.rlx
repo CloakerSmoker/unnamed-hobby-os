@@ -65,7 +65,7 @@ struct DirectoryEntry {
 	i8[64] Name
 }
 
-enum SeekMode {
+enum SeekMode As i32 {
 	Set := 0,
 	Offset := 1,
 	Relative := 1,

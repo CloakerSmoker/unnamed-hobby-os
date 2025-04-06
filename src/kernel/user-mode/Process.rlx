@@ -365,8 +365,8 @@ struct Process {
 		PageMapping Mapping
 
 		while (this->AddressSpace->WalkPagesNext(&Handle, &Mapping)) {
-			if (Mapping.Virtual != Tail) {
-				return false
+			if (Mapping.Virtual != Tail || Tail >= End) {
+				break
 			}
 
 			if !(Mapping.Flags & PAGE_PRESENT) {
@@ -420,8 +420,10 @@ struct Process {
 		i64 Offset := 0
 
 		while (this->AddressSpace->WalkMappingsNext(&Handle, &Mapping)) {
-			if (Mapping.Virtual >= End) {
-				i64 OvershootSize := (Mapping.Virtual As i64) - End
+			i64 MappingEnd := (Mapping.Virtual + Mapping.Size) As i64
+
+			if (MappingEnd >= End) {
+				i64 OvershootSize := MappingEnd - End
 
 				Mapping.Size -= OvershootSize As i32
 			}
@@ -454,7 +456,7 @@ struct Process {
 		i64 CurrentMappingEnd := this->CurrentMappingVirtual + (this->CurrentMappingPageCount * PAGE_SIZE)
 		i64 DesiredMappingEnd := Address + (PageCount * PAGE_SIZE)
 
-		if (CurrentMappingEnd >= DesiredMappingEnd) {
+		if (DesiredMappingEnd >= CurrentMappingEnd) {
 			; Remap if we need a mapping *above* (or outside) of our current one
 
 			return this->Map(Address, PageCount, ForWrite)
@@ -486,10 +488,18 @@ struct Process {
 	}
 
 	define void* MapAddressForRead(i64 Address, i32 Size) {
-		return this->MapAddressForReadWrite(Address, Size, false)
+		if (this->MapAddressForReadWrite(Address, Size, false)) {
+			return this->ConvertMappedAddress(Address)
+		}
+
+		return null
 	}
 	define void* MapAddressForWrite(i64 Address, i32 Size) {
-		return this->MapAddressForReadWrite(Address, Size, true)
+		if (this->MapAddressForReadWrite(Address, Size, true)) {
+			return this->ConvertMappedAddress(Address)	
+		}
+
+		return null
 	}
 
 	define void Write8(i64 Address, i8 Value) {
@@ -542,6 +552,49 @@ struct Process {
 		void* pAddress := this->MapAddressForRead(Address, Size)
 
 		MoveMemory(To, pAddress, Size)
+	}
+
+	define i32 ReadStringLength(i64 Address, i32 MaxLength) {
+		i64 Page := Address & 0b_111111111_111111111_111111111_111111111_000000000000
+		i64 End := Address + MaxLength
+		i64 Difference := End - Page
+
+		i32 PageCount := SizeToPageCount(Difference As i32)
+
+		i32 Length := 0
+		i64 Offset := Address - Page
+
+		for (i32 Index := 0, Index < PageCount, Index++) {
+			i8* pAddress := this->MapAddressForRead(Page + (Index * PAGE_SIZE), PAGE_SIZE)
+
+			while (Length < MaxLength && Offset < PAGE_SIZE) {
+				i8 Value := pAddress[Offset++]
+
+				if (Value = 0) {
+					return Length
+				}
+
+				Length++
+			}
+
+			Offset := 0
+		}
+
+		return Length
+	}
+
+	define i32 ReadString(i64 Address, i8* Buffer, i32 MaxLength) {
+		FastZeroMemory(Buffer, MaxLength)
+
+		i32 Length := this->ReadStringLength(Address, MaxLength)
+
+		if (Length = 0) {
+			return 0
+		}
+		
+		this->Read(Buffer, Address, Length)
+		
+		return Length
 	}
 }
 

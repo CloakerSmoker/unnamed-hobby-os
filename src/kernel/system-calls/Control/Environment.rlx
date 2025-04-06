@@ -65,7 +65,7 @@ define void* SystemCallMapMemory(void* Address, i32 Size, i32 Protection, i32 Fl
 		Address := Mapping->Address
 		
 		if (Flags & LINUX_MAP_ANONYMOUS) {
-			FastSetMemory8(Address, 0, Size)
+			FastSetMemory8(Mapping->Physical->Address As void*, 0, Size)
 		}
 	}
 	else {
@@ -78,7 +78,7 @@ define void* SystemCallMapMemory(void* Address, i32 Size, i32 Protection, i32 Fl
 			Mapping := CurrentThread->Mapper->MapAddressAnonymous(Address, PageCount, MemoryFlags)
 			
 			if (Flags & LINUX_MAP_ANONYMOUS) {
-				SetMemory(Address, Size, 0)
+				FastSetMemory8(Mapping->Physical->Address As void*, 0, Size)
 			}
 		}
 	}
@@ -87,7 +87,7 @@ define void* SystemCallMapMemory(void* Address, i32 Size, i32 Protection, i32 Fl
 }
 
 define i64 SystemCallUnMapMemory(void* Address, i32 Size) {
-	VirtualToPhysicalMapping* Mapping := CurrentThread->Mapper->FindVirtual(Address, Size)
+	VirtualToPhysicalMapping* Mapping := CurrentThread->Mapper->FindVirtual(Address, SizeToPageCount(Size))
 	
 	if (Mapping) {
 		CurrentThread->Mapper->DeleteMapping(Mapping)

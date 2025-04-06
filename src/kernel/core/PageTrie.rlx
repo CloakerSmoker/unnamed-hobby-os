@@ -117,7 +117,7 @@ struct PageTrie {
 
         ;Print("Set %x -> %x, %i\n", Address, Destination, Size)
 
-        i64 Flags := PAGE_PRESENT
+        i64 Flags := 0
 
         if (Size != PAGE_LEVEL_4K) {
             Flags |= PAGE_FLAG_SIZE

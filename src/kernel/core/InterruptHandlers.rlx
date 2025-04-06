@@ -130,6 +130,10 @@ define void OnPageFault(AMD64Context* Context, i32 InterruptNumber, i64 ErrorCod
 	
 	;Info("%stackdump")
 	Info("}\n")
+
+	if !(ErrorCode & PAGE_FAULT_USER_SUPERVISOR) {
+		Info("%stackdump\n")
+	}
 	
 	if !(ErrorCode & PAGE_FAULT_USER_SUPERVISOR) {
 		; For a user-mode exception, don't switch print the spooky panic message

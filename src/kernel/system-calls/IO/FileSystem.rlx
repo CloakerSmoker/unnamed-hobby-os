@@ -1,12 +1,18 @@
-define i64 SystemCallOpen(i8* Path, i32 Flags, i32 Mode) {
-	if (Path = null) {
+define i64 SystemCallOpen(i64 USER_Path, i32 Flags, i32 Mode) {
+	if (USER_Path = 0) {
 		; wtf busybox vi?
-		
-		return -LINUX_ERROR_FAULT
+
+		return -LINUX_ERROR_INVAL
+	}
+
+	i8[256] Path
+
+	if !(CurrentProcess->ReadString(USER_Path, Path, MAX_PATH)) {
+		return -LINUX_ERROR_INVAL
 	}
 
 	if (DEBUG_SYSTEM_CALLS) {
-		Info("Open(%s, %x, %x): ", Path, Flags, Mode)
+		Info("Open(%s, %x, %x)\n", Path, Flags, Mode)
 	}
 	
 	i8 Ext2Flags := EXT2_OPEN_IF_EXISTS
@@ -53,15 +59,25 @@ define i64 SystemCallDeviceControl(i64 FileDescriptor, i32 Command, void* Argume
 	return CurrentProcess->FileDescriptorsToHandles[FileDescriptor]->DeviceControl(Command, Argument)
 }
 
-define i64 SystemCallFileStatus(i64 FileDescriptor, LinuxFileStatus* Out) {
+define i64 SystemCallFileStatus(i64 FileDescriptor, i64 USER_Out) {
+	LinuxFileStatus* Out := CurrentProcess->MapAddressForWrite(USER_Out, #LinuxFileStatus)
+
+	if !(Out) {
+		return -LINUX_ERROR_INVAL
+	}
+
 	CurrentProcess->FileDescriptorsToHandles[FileDescriptor]->Status(Out As FileStatus*)
 	
 	return 0
 }
 
-define i64 SystemCallPathStatus(i8* Path, LinuxFileStatus* Out) {
-	;Info("Stat(%s, %x)\n", Path, Out)
-	
+define i64 SystemCallPathStatus(i8* Path, i64 USER_Out) {
+	LinuxFileStatus* Out := CurrentProcess->MapAddressForWrite(USER_Out, #LinuxFileStatus)
+
+	if !(Out) {
+		return -LINUX_ERROR_INVAL
+	}
+
 	IFileHandle* Target := CurrentProcess->WorkingDirectory->Open(Path)
 	
 	if !(Target) {
@@ -78,11 +94,22 @@ define i64 SystemCallTruncate(i64 FileDescriptor, i32 Size) {
 	return 0
 }
 
-define i64 SystemCallSeek(i64 FileDescriptor, i32 Offset, i8 Mode) {
+define i64 SystemCallSeek(i64 FileDescriptor, i32 Offset, i32 Mode) {
+	if (FileDescriptor = 5 && Offset = 0x273B10) {
+		Info("Nuts 9000\n")
+		;CurrentProcess->AddressSpace->SetRange(0x14e807000 As void*, 0, 1, 0)
+	}
+
 	return CurrentProcess->FileDescriptorsToHandles[FileDescriptor]->Seek(Offset, Mode As SeekMode)
 }
 
-define i32 SystemCallPoll(LinuxPollTarget* Targets, i32 TargetCount, i32 Timeout) {
+define i32 SystemCallPoll(i64 USER_Targets, i32 TargetCount, i32 Timeout) {
+	LinuxPollTarget* Targets := CurrentProcess->MapAddressForWrite(USER_Targets, TargetCount * #LinuxPollTarget)
+
+	if !(Targets) {
+		return -LINUX_ERROR_INVAL
+	}
+
 	if (Timeout < 0) {
 		Timeout := 0x7FFF_FFFF
 	}
@@ -117,7 +144,13 @@ define i32 SystemCallPoll(LinuxPollTarget* Targets, i32 TargetCount, i32 Timeout
 	return 0
 }
 
-define i64 SystemCallRead(i64 FileDescriptor, i8* Buffer, i32 Size) {
+define i64 SystemCallRead(i64 FileDescriptor, i64 USER_Buffer, i32 Size) {
+	void* Buffer := CurrentProcess->MapAddressForWrite(USER_Buffer, Size)
+
+	if !(Buffer) {
+		return -LINUX_ERROR_INVAL
+	}
+
 	IFileHandle* Handle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
 	
 	i64 ActualSize := Handle->Read(Buffer, Size)
@@ -129,7 +162,13 @@ define i64 SystemCallRead(i64 FileDescriptor, i8* Buffer, i32 Size) {
 	return ActualSize
 }
 
-define i64 SystemCallWrite(i64 FileDescriptor, i8* Buffer, i32 Size) {
+define i64 SystemCallWrite(i64 FileDescriptor, i64 USER_Buffer, i32 Size) {
+	void* Buffer := CurrentProcess->MapAddressForRead(USER_Buffer, Size)
+
+	if !(Buffer) {
+		return -LINUX_ERROR_INVAL
+	}
+
 	if (FileDescriptor = 1 || FileDescriptor = 2) {
 		if (DEBUG_SYS_WRITE) {
 			Info("%hexdump", Buffer, Size)
@@ -141,8 +180,17 @@ define i64 SystemCallWrite(i64 FileDescriptor, i8* Buffer, i32 Size) {
 	return Handle->Write(Buffer, Size)
 }
 
-define i64 SystemCallSendFile(i64 Out, i64 In, i64* Offset, i64 Size) {
+define i64 SystemCallSendFile(i64 Out, i64 In, i64 USER_Offset, i64 Size) {
 	;Print("SendFile(%x, %x, %x, %x)\n", Out, In, Offset, Size)
+
+	;i64* Offset := CurrentProcess->MapAddressForWrite(USER_Offset, 8)
+
+	;if !(Offset) {
+	;	return -LINUX_ERROR_INVAL
+	;}
+
+	IFileHandle* InHandle := CurrentProcess->FileDescriptorsToHandles[In]
+	IFileHandle* OutHandle := CurrentProcess->FileDescriptorsToHandles[Out]
 	
 	i64 Count := Size
 	i64 Written := 0
@@ -157,11 +205,15 @@ define i64 SystemCallSendFile(i64 Out, i64 In, i64* Offset, i64 Size) {
 			ThisChunkSize := Count As i32
 		}
 
-		i64 ThisChunkRead := SystemCallRead(In, Temp, ThisChunkSize)
+		;i64 ThisChunkRead := SystemCallRead(In, Temp, ThisChunkSize)
+
+		i64 ThisChunkRead := InHandle->Read(Temp, ThisChunkSize)
 		
 		;Info("Read %x/%x bytes\n", ThisChunkRead, ThisChunkSize)
 		
-		i64 ThisChunkWritten := SystemCallWrite(Out, Temp, ThisChunkRead As i32)
+		;i64 ThisChunkWritten := SystemCallWrite(Out, Temp, ThisChunkRead As i32)
+
+		i64 ThisChunkWritten := OutHandle->Write(Temp, ThisChunkRead As i32)
 
 		;Info("Written %x/%x bytes\n", ThisChunkWritten, ThisChunkSize)
 
@@ -178,32 +230,62 @@ define i64 SystemCallSendFile(i64 Out, i64 In, i64* Offset, i64 Size) {
 	return Written
 }
 
-define i64 SystemCallWriteMultiple(i64 FileDescriptor, void* Data, i32 Count) {
+define i64 SystemCallWriteMultiple(i64 FileDescriptor, i64 USER_Vectors, i32 Count) {
+	IFileHandle* Handle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
+
 	i64 TotalWritten := 0
 	
-	LinuxIOVector* Vectors := Data
-	
 	for (i32 Index := 0, Index < Count, Index++) {
-		LinuxIOVector* Next := Vectors[Index]
+		i64 USER_Next := USER_Vectors + (Index * #LinuxIOVector)
+
+		LinuxIOVector Next
+
+		if !(CurrentProcess->Read(&Next, USER_Next, #LinuxIOVector)) {
+			return -LINUX_ERROR_INVAL
+		}
+
+		void* NextBuffer := CurrentProcess->MapAddressForRead(Next.Address, Next.Size As i32)
+
+		Info("sys_writev(%i, %x, %i): ", FileDescriptor, Next.Address, Next.Size As i32)
+
+		for (i32 I := 0, I < Next.Size As i32, I++) {
+			Info("%c", ((NextBuffer As i8*)[I]))
+		}
+
+		Info("\n")
 		
-		TotalWritten += SystemCallWrite(FileDescriptor, Next->Base, Next->Size As i32)
+		TotalWritten += Handle->Write(NextBuffer, Next.Size As i32)
 	}
 	
 	return TotalWritten
 }
 
-define i64 SystemCallReadMultiple(i64 FileDescriptor, void* Data, i32 Count) {
-	i64 TotalWritten := 0
-	
-	LinuxIOVector* Vectors := Data
+define i64 SystemCallReadMultiple(i64 FileDescriptor, i64 USER_Vectors, i32 Count) {
+	IFileHandle* Handle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
+
+	i64 TotalRead := 0
 	
 	for (i32 Index := 0, Index < Count, Index++) {
-		LinuxIOVector* Next := Vectors[Index]
+		i64 USER_Next := USER_Vectors + (Index * #LinuxIOVector)
+
+		LinuxIOVector Next
+
+		if !(CurrentProcess->Read(&Next, USER_Next, #LinuxIOVector)) {
+			return -LINUX_ERROR_INVAL
+		}
+
+		if (FileDescriptor = 5 && Next.Address = 0x14E805660) {
+			Info("Nuts 99002\n")
+		}
+
+		Info("sys_readv(%i, %x, %i)\n", FileDescriptor, Next.Address, Next.Size As i32)
+
+		void* NextBuffer := CurrentProcess->MapAddressForWrite(Next.Address, Next.Size As i32)
 		
-		TotalWritten += SystemCallRead(FileDescriptor, Next->Base, Next->Size As i32)
+		TotalRead += Handle->Read(NextBuffer, Next.Size As i32)
 	}
 	
-	return TotalWritten
+	return TotalRead
 }
 
 define void RegisterFileSystemSystemCalls() {

@@ -32,6 +32,8 @@ i8 DEBUG_EXT2_OPTIMIZATION := false ; Logs when the ext2 driver tries to get sma
 i8 DEBUG_ATA_PIO_READWRITE := false ; Logs when ATAPIO might have freaked out
 i8 DEBUG_HEAP_ALLOC_FREE   := false
 
+i32 MAX_PATH := 256
+
 i32 PAGES_FOR_KERNEL_STACK := 40
 i32 PAGES_FOR_KERNEL_HEAP := PAGE_COUNT_FOR_8MB
 

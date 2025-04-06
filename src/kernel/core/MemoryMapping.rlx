@@ -77,6 +77,34 @@ struct MemoryMapper {
 		return this
 	}
 
+	define void* LocateFreeVirtualRange(i32 PageCount) {
+		i64 State := this->AddressSpace->StartWalkMappings(0x1_0000_0000)
+		VirtualMapping Mapping
+
+		i64 LastAddress := 0x1_0000_0000
+
+		while (this->AddressSpace->WalkMappingsNext(&State, &Mapping)) {
+			i64 Start := Mapping.Virtual As i64
+
+			i64 GapPageCount := (Start - LastAddress) / PAGE_SIZE
+			i64 FifthGap := GapPageCount / 8
+
+			Info("Gap %x..%x (%i pages)\n", LastAddress, Start, GapPageCount)
+
+			if (GapPageCount >= PAGES_IN_1GB && GapPageCount >= PageCount) {
+				Info("Selected!\n")
+
+				return (LastAddress + (PAGE_SIZE * FifthGap)) As void*
+			}
+
+			LastAddress := Start + Mapping.Size
+		}
+
+		Panic("Out of virtual memory for a process?????\n")
+
+		return null
+	}
+
 	
 	define VirtualToPhysicalMapping* Map(void* Virtual, PhysicalAllocation* Physical, i32 PageCount, i64 Flags) {
 		Flags |= PAGE_PRESENT
@@ -108,7 +136,7 @@ struct MemoryMapper {
 	}
 	
 	define VirtualToPhysicalMapping* MapAnonymous(i32 Count, i64 Flags) {
-		void* Virtual := this->VirtualAllocator->AllocateVirtual(Count)
+		void* Virtual := this->LocateFreeVirtualRange(Count)
 		PhysicalAllocation* Physical := this->AllocatePhysical(Count)
 		
 		return this->Map(Virtual, Physical, Count, Flags)

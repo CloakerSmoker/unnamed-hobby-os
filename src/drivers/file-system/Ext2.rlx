@@ -1614,7 +1614,6 @@ struct Ext2 {
 			Size := Node->FileSizeLow - Offset
 		}
 		
-		i32 BlockCount := Size / 1024
 		i32 FirstBlock := Offset / 1024
 		
 		if (Offset % 1024) {
@@ -1638,6 +1637,8 @@ struct Ext2 {
 			
 			BytesRead += FirstBlockSize
 		}
+
+		i32 BlockCount := Size / 1024
 		
 		; Read any middle (full) blocks, and the last full block (if the last block is full)
 		
@@ -1822,13 +1823,13 @@ class Ext2FileHandle implements IFileHandle, derives INew {
 		return Size
 	}
 	define i32 Seek(i32 Destination, SeekMode Mode) {
-		if (Mode = SeekMode:Set) {
+		if (Mode = SeekMode::Set) {
 			this->NextByteOffset := Destination
 		}
-		else if (Mode = SeekMode:Offset) {
+		else if (Mode = SeekMode::Offset) {
 			this->NextByteOffset += Destination
 		}
-		else if (Mode = SeekMode:End) {
+		else if (Mode = SeekMode::End) {
 			this->NextByteOffset := this~>Node->FileSizeLow + Destination
 		}
 		

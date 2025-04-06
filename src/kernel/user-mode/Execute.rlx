@@ -154,6 +154,8 @@ define Process* Execute(void* Buffer, ExecuteParameters* Parameters) {
 	
 	CurrentProcess := KernelHeapAllocate('PROC', #Process)
 	CurrentProcess->Initialize(ELFData, Parameters->WorkingDirectory)
+
+	CurrentProcess->AddressSpace := AddressSpace
 	
 	CurrentProcess->AllocateFileDescriptor(Parameters->StandardInput)
 	CurrentProcess->AllocateFileDescriptor(Parameters->StandardOutput)

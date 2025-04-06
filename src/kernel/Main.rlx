@@ -425,7 +425,7 @@ define void PopulateDevicesDirectory(IDirectory* DevicesDirectory) {
 }
 
 define void VFSRunShellTask() {
-    VFSExecuteShellCommand("execute /doom/doom.elf -iwad /doom/DOOM.WAD")
+    VFSExecuteShellCommand("execute /doom/doom.elf -iwad /doom/DOOM.WAD -mb 64")
 	VFSRunShell(KernelTerminal)
 }
 
@@ -678,6 +678,11 @@ define void Main(TrampolineInfo* Info) {
 
 	PopulateDevicesDirectory(VFSDevicesDirectory)
 	MountPartitions(RootPartitionGUID, EFISystemPartitionGUID)
+
+	;i8*[2] Args {"/bin/ls", "/dev"}
+	;ExecuteLS(2, Args)
+
+	;loop {}
 
 	PageTrie* Trie := Info~>PageTree
 

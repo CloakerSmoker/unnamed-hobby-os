@@ -7,7 +7,14 @@ define i64 SystemCallSetupRestartableSequences() {
     return 0
 }
 
+define i64 SystemCallFutex(i64 USER_Address, i32 Operation, i32 Value, i64 Timeout, i64 USER_Address2, i32 Value3) {
+    Halt()
+
+    return 0
+}
+
 define void RegisterSynchronizationSystemCalls() {
 	SystemCalls->Register(LinuxSyscall::set_robust_list, &SystemCallSetRobustList)
     SystemCalls->Register(LinuxSyscall::rseq, &SystemCallSetupRestartableSequences)
+    SystemCalls->Register(LinuxSyscall::futex, &SystemCallFutex)
 }

@@ -199,7 +199,7 @@ define void Main(BootloaderInfo* RawInfo) {
     void* FrameBuffer := Info~>BootInfo->PhysicalFrameBuffer As void*
 
     ;VirtualMemory->MapRange(FrameBuffer, IdentityVirtualToPhysical(FrameBuffer) / PAGE_SIZE, SizeToPageCount(1024 * 786 * 4), PAGE_PRESENT | PAGE_WRITE)
-    Tree->SetRange(FrameBuffer, IdentityVirtualToPhysical(FrameBuffer), SizeToPageCount(1024 * 786 * 4), PAGE_WRITE)
+    Tree->SetRange(FrameBuffer, IdentityVirtualToPhysical(FrameBuffer), SizeToPageCount(1024 * 786 * 4), PAGE_PRESENT | PAGE_WRITE)
     Print("%x -> %x\n", FrameBuffer, IdentityVirtualToPhysical(FrameBuffer))
 
     ; Identity map all physical memory

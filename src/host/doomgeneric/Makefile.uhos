@@ -11,8 +11,6 @@ else
 	VB=@
 endif
 
-
-CC=x86_64-linux-musl-gcc  # gcc or g++
 CFLAGS+=-Os -Wall -D_DEFAULT_SOURCE -static -fno-pic -fno-pie -gdwarf-5
 LDFLAGS+=-Wl,--gc-sections -static
 LIBS+=-lm -lc
