@@ -110,6 +110,7 @@ define void SystemCallTrampoline() asm {
 #Require "./src/kernel/system-calls/Control/Environment.rlx"
 #Require "./src/kernel/system-calls/Control/Process.rlx"
 #Require "./src/kernel/system-calls/Control/Synchronization.rlx"
+#Require "./src/kernel/system-calls/Control/Time.rlx"
 
 define void SetupSystemCalls() {
 
@@ -136,4 +137,5 @@ define void SetupSystemCalls() {
 	RegisterProcessSystemCalls()
 	RegisterSynchronizationSystemCalls()
 	RegisterNetworkSystemCalls()
+	RegisterTimeSystemCalls()
 }

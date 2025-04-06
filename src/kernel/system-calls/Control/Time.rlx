@@ -1,0 +1,65 @@
+
+namespace LinuxTime {
+    struct timeval {
+        i64 Seconds
+        i64 Microseconds        
+    }
+
+    struct timespec {
+        i64 Seconds
+        i64 Nanoseconds
+    }
+
+    enum ClockID {
+        RealTime := 0,
+        Monotonic := 1
+    }
+}
+
+define i64 SystemCallNanoSleep(i64 USER_Duration, i64 USER_Remainder) {
+    LinuxTime::timespec Duration
+
+    if (CurrentProcess->Read(&Duration, USER_Duration, #LinuxTime::timespec)) {
+        return -LINUX_ERROR_INVAL
+    }
+
+    i64 MS := Duration.Seconds * 1000
+    MS += Duration.Nanoseconds / 1000000
+
+    SleepMS(MS As i32)
+
+    if (USER_Remainder) {
+        
+    }
+
+    return 0
+}
+
+define i64 SystemCallClockGetTime(i32 ClockID, i64 USER_Result) {
+    LinuxTime::timespec Result
+
+    if (ClockID = LinuxTime::ClockID::RealTime) {
+        ; TODO: Maybe figure out the actual time
+        
+        Result.Seconds := GetUptimeMS() / 1000
+        Result.Nanoseconds := (GetUptimeMS() % 1000) * 1000000
+    }
+    else if (ClockID = LinuxTime::ClockID::Monotonic) {
+        Result.Seconds := GetUptimeMS() / 1000
+        Result.Nanoseconds := (GetUptimeMS() % 1000) * 1000000
+    }
+    else {
+        return -LINUX_ERROR_INVAL
+    }
+
+    if (CurrentProcess->Write(USER_Result, &Result, #LinuxTime::timespec)) {
+        return -LINUX_ERROR_INVAL
+    }
+
+    return 0
+}
+
+define void RegisterTimeSystemCalls() {
+    SystemCalls->Register(LinuxSyscall::nanosleep, &SystemCallNanoSleep)
+    SystemCalls->Register(LinuxSyscall::clock_gettime, &SystemCallClockGetTime)
+}
