@@ -2,7 +2,7 @@
 namespace LinuxTime {
     struct timeval {
         i64 Seconds
-        i64 Microseconds        
+        i64 Microseconds
     }
 
     struct timespec {
@@ -10,7 +10,7 @@ namespace LinuxTime {
         i64 Nanoseconds
     }
 
-    enum ClockID {
+    enum ClockID As i32 {
         RealTime := 0,
         Monotonic := 1
     }
@@ -19,7 +19,7 @@ namespace LinuxTime {
 define i64 SystemCallNanoSleep(i64 USER_Duration, i64 USER_Remainder) {
     LinuxTime::timespec Duration
 
-    if (CurrentProcess->Read(&Duration, USER_Duration, #LinuxTime::timespec)) {
+    if !(CurrentProcess->Read(&Duration, USER_Duration, #LinuxTime::timespec)) {
         return -LINUX_ERROR_INVAL
     }
 
@@ -52,7 +52,7 @@ define i64 SystemCallClockGetTime(i32 ClockID, i64 USER_Result) {
         return -LINUX_ERROR_INVAL
     }
 
-    if (CurrentProcess->Write(USER_Result, &Result, #LinuxTime::timespec)) {
+    if !(CurrentProcess->Write(USER_Result, &Result, #LinuxTime::timespec)) {
         return -LINUX_ERROR_INVAL
     }
 

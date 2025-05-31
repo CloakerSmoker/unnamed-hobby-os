@@ -271,7 +271,7 @@ struct AddressSpaceManager {
 	}
 	
 	define void MapRange(void* Address, i64 StartPage, i32 Count, i64 Flags) {
-		Info("Map %x pages from %x to %x\n", Count, Address, StartPage)
+		;Info("Map %x pages from %x to %x\n", Count, Address, StartPage)
 		
 		while (Count != 0) {
 			i64* PDE := this->FindOrAddPDEntry(Address)

@@ -86,33 +86,49 @@ int FB_Height;
 int FB_Depth;
 int FB_Stride;
 
+#include <sys/mman.h>
+
+void* FB;
+
 void DG_Init() {
     FrameBuffer = open("/dev/fb0", "rw");
 
-    struct fb_var_screeninfo VariableInfo = {0};
-    ioctl(FrameBuffer, FBIOGET_VSCREENINFO, &VariableInfo);
+	FB = mmap(NULL, 3145728, PROT_READ | PROT_WRITE, MAP_SHARED, FrameBuffer, 0);
 
-    FB_Width = VariableInfo.xres;
-    FB_Height = VariableInfo.yres;
-    FB_Depth = VariableInfo.bits_per_pixel / 8;
+    struct fb_var_screeninfo VariableInfo = {0};
+    //ioctl(FrameBuffer, FBIOGET_VSCREENINFO, &VariableInfo);
+
+    //FB_Width = VariableInfo.xres;
+    //FB_Height = VariableInfo.yres;
+    //FB_Depth = VariableInfo.bits_per_pixel / 8;
+
+	FB_Width = 1024;
+	FB_Height = 768;
+	FB_Depth = 4;
 
     FB_Stride = FB_Width * FB_Depth;
 }
 
+#include "i_video.h"
+
 #define DG_Width DOOMGENERIC_RESX
-#define DG_Height DOOMGENERIC_RESY
+#define DG_Height SCREENHEIGHT
 #define DG_Depth sizeof(pixel_t)
 #define DG_Stride (DG_Width * DG_Depth)
 
+extern int fb_scaling;
+
 void DG_DrawFrame() {
-    lseek(FrameBuffer, 0, SEEK_SET);
+    //lseek(FrameBuffer, 0, SEEK_SET);
 
     for (int Row = 0; Row < DOOMGENERIC_RESY; Row++) {
         int FB_Offset = Row * FB_Stride;
-        int DG_Offset = Row * DG_Stride;
+        int DG_Offset = (Row * DG_Stride) / 4;
 
-        lseek(FrameBuffer, FB_Offset, SEEK_SET);
-        write(FrameBuffer, DG_ScreenBuffer + DG_Offset, DG_Stride);
+		memcpy(FB + FB_Offset, DG_ScreenBuffer + DG_Offset, DG_Stride);
+
+        //lseek(FrameBuffer, FB_Offset, SEEK_SET);
+        //write(FrameBuffer, DG_ScreenBuffer + DG_Offset, DG_Stride);
     }
 }
 
@@ -127,6 +143,121 @@ uint32_t DG_GetTicksMs() {
     gettimeofday(&tp, &tzp);
 
     return (tp.tv_sec * 1000) + (tp.tv_usec / 1000); /* return milliseconds */
+}
+
+enum {
+	Normal,
+	Escape,
+	EscapeBracket,
+	EscapeBracketEither,
+	EscapeModifierCharacter,
+	EscapeKeycode,
+	EscapeKeycodeModifier,
+	EscapeKeycodeModifierEnd
+} InputEscapeState = Normal;
+
+int ModifierOrKeycode = 0;
+int CharacterOrModifier = 0;
+
+#include "doomkeys.h"
+
+void Input_OnKey(int Key) {
+
+}
+
+int Input_TranslateKeycode(int Keycode) {
+	return 0;
+}
+	
+
+int Input_TranslateXTerm(int Character) {
+	switch (Character) {
+		case 'A':
+			return KEY_UPARROW;
+		case 'B':
+			return KEY_DOWNARROW;
+		case 'C':
+			return KEY_RIGHTARROW;
+		case 'D':
+			return KEY_LEFTARROW;
+	}
+}
+
+void Input_Write(int Character) {
+	if (InputEscapeState == Normal) {
+		if (Character == 0x1B) {
+			InputEscapeState = Escape;
+		}
+		else {
+			Input_OnKey(Character);
+		}
+	}
+	else if (InputEscapeState == Escape) {
+		if (Character == '[') {
+			InputEscapeState = EscapeBracket;
+		}
+		else if (Character == 0x1B) {
+			InputEscapeState = Normal;
+		}
+		else {
+			// Alt modifier
+
+			Input_OnKey(Character);
+
+			InputEscapeState = Normal;
+		}
+	}
+	else if (InputEscapeState == EscapeBracket) {
+		if ('A' <= Character && Character <= 'Z') {
+			Input_OnKey(Input_TranslateXTerm(Character));
+
+			InputEscapeState = Normal;
+		}
+		else if ('1' <= Character && Character <= '9') {
+			ModifierOrKeycode = Character;
+			InputEscapeState = EscapeBracketEither;
+		}
+		else {
+			// Alt modifier
+			Input_OnKey(Character);
+
+			InputEscapeState = Normal;
+		}
+	}
+	else if (InputEscapeState == EscapeBracketEither) {
+		if (Character == ';') {
+			InputEscapeState = EscapeKeycodeModifier;
+		}
+		else if (Character == '~') {
+			Input_OnKey(Input_TranslateKeycode(ModifierOrKeycode));
+
+			InputEscapeState = Normal;
+		}
+		else {
+			// ModifierOrKeycode is a modifier, ignore it
+
+			Input_OnKey(Character);
+
+			InputEscapeState = Normal;
+		}
+	}
+	else if (InputEscapeState == EscapeKeycodeModifier) {
+		CharacterOrModifier = Character;
+
+		InputEscapeState = EscapeKeycodeModifierEnd;
+	}
+	else if (InputEscapeState == EscapeKeycodeModifierEnd) {
+		if (Character == '~') {
+			Input_OnKey(Input_TranslateKeycode(ModifierOrKeycode));
+		}
+		else {
+			// ModifierOrKeycode is a modifier, ignore it
+
+			Input_OnKey(Input_TranslateXTerm(Character));	
+		}
+
+		InputEscapeState = Normal;
+	}
 }
 
 int DG_GetKey(int* pressed, unsigned char* doomKey) {

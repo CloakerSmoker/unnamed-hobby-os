@@ -54,7 +54,13 @@ define i64 ConvertLinuxMemoryProtection(i32 Protection) {
 	return Result
 }
 
-define void* SystemCallMapMemory(void* Address, i32 Size, i32 Protection, i32 Flags, i32 File, i32 Offset) {
+define void* SystemCallMapMemory(void* Address, i32 Size, i32 Protection, i32 Flags, i32 FileDescriptor, i32 Offset) {
+	if (FileDescriptor > 0) {
+		IFileHandle* Handle := CurrentProcess->FileDescriptorsToHandles[FileDescriptor]
+
+		return Handle->MapIntoMemory(CurrentThread->Mapper, Address As i64, Size, Offset)
+	}
+
 	i64 MemoryFlags := ConvertLinuxMemoryProtection(Protection)
 	
 	i32 PageCount := SizeToPageCount(Size)

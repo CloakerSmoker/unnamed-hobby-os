@@ -53,22 +53,23 @@ class FrameBufferFileHandle implements IFileHandle, derives INew {
         return 0
     }
 
-    define void* MapIntoMemory(void* Virtual, i32 Offset, i32 Size) {
+    define void* MapIntoMemory(MemoryMapper* Mapper, i64 Address, i32 Size, i32 Offset) {
         if (Offset != 0 || Size != this->Base->Size()) {
             Throw(HANDLE_ERROR_BAD_PARAMETER)
         }
 
         i32 Pages := SizeToPageCount(this->Base->Size())
         PhysicalAllocation* BaseAllocation := PhysicalAllocation:New(VirtualToPhysical(this->Base->Buffer()), Pages)
-        MemoryMapper* Mapper := CurrentThread->Mapper
 
-        if (Virtual = null) {
-            Virtual := Mapper->VirtualAllocator->AllocateVirtual(Pages)
+        void* VirtualAddress := Address As void*
+
+        if (Address = null) {
+            VirtualAddress := Mapper->LocateFreeVirtualRange(Pages)
         }
         
-        Mapper->Map(Virtual, BaseAllocation, Pages, PAGE_PRESENT | PAGE_WRITE)
+        Mapper->Map(VirtualAddress, BaseAllocation, Pages, PAGE_PRESENT | PAGE_WRITE | PAGE_USER)
 
-        return Virtual
+        return VirtualAddress
     }
 
     i32 Offset

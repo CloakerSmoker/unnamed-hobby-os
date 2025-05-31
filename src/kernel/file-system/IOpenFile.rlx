@@ -111,7 +111,7 @@ interface IFileHandle {
         Raise(new FileException::NotSupported())
     }
 
-    virtual void* MapIntoMemory(MemoryMapper* Mapper, void* Virtual, i32 Offset, i32 Size) {
+    virtual void* MapIntoMemory(MemoryMapper* Mapper, i64 Address, i32 Size, i32 Offset) {
         Raise(new FileException::NotSupported())
         return null
     }
