@@ -14,82 +14,157 @@ i8 PS2_DISABLE_AUX := 0xA7 As i8
 i8 PS2_ENABLE_AUX := 0xA8 As i8
 i8 PS2_DISABLE := 0xAD As i8
 i8 PS2_ENABLE := 0xAE As i8
+i8 PS2_SET_ALL_KEYS_MAKE_RELEASE := 0xF8 As i8
 
 i16 PS2_WAIT_INPUT := 0x100
 
-declare void PS2Wait(i8, i8)
-
 #Require "./src/kernel/input/ScanCodesToInput.rlx"
 
-ScanCodeParser _PS2ScanCodeParser
-ScanCodeParser* PS2ScanCodeParser := &_PS2ScanCodeParser
+define void SetupKeyboard() {
 
-define void SinkPS2Input(void* State, void(void*, i8, i32) Function) {
-	PS2ScanCodeParser->State := State
-	PS2ScanCodeParser->PushOutput := Function
 }
 
-define void OnPS2Interrupt(AMD64Context* Context, i32 InterruptNumber) {
-	; IRQ1 handler
-	
-	i8 ScanCode := InB(PS2_PORT_DATA)	
-	SendEOI(1)
-	
-	PS2ScanCodeParser->Write(&ScanCode, 1)
-}
+PS2KeyboardHandle* PS2KeyboardHandleSingleton := null
 
-define void PS2Wait(i8 ForWrite, i8 TargetStatus) {
-	/* Bit 0 = read status, bit 1 = write status */
-	
-	i8 Mask := (1 << ForWrite) As i8
-	TargetStatus := (TargetStatus << ForWrite) As i8
-	
-	loop {
-		i8 Status := InB(PS2_PORT_STATUS)
+class PS2KeyboardHandle implements IFileHandle, derives INew {
+	ScanCodeParser Parser
+
+	KeyInput[32] Queue
+	i32 QueueHead
+	i32 QueueTail
+
+	declare void OnKeyParsed(i8, i32)
+
+	define void OnInterrupt() {
+		SendEOI(1)
+
+		i8 ScanCode := InB(PS2_PORT_DATA)
+
+		;Print("[%x]", ScanCode)
+
+		this~>Parser->Write(&ScanCode, 1)
+	}
+
+	static void OnInterrupt(AMD64Context* Context, i32 InterruptNumber) {
+		PS2KeyboardHandleSingleton->OnInterrupt()
+	}
+
+	define void Wait(i8 ForWrite, i8 TargetStatus) {
+		/* Bit 0 = read status, bit 1 = write status */
 		
-		if ((Status & Mask) = TargetStatus) {
-			return
+		i8 Mask := (1 << ForWrite) As i8
+		TargetStatus := (TargetStatus << ForWrite) As i8
+		
+		loop {
+			i8 Status := InB(PS2_PORT_STATUS)
+			
+			if ((Status & Mask) = TargetStatus) {
+				return
+			}
 		}
 	}
-}
 
-define i8 PS2SendCommand(i16 Command, ... Bytes) {
-	PS2Wait(1, 0)
-	
-	OutB(PS2_PORT_COMMAND, (Command & 0xFF) As i8)
-	
-	for (i32 Index := 1, Index <= Bytes[0], Index += 1) {
-		PS2Wait(1, 0)
-		OutB(PS2_PORT_DATA, Bytes[Index] As i8)
-	}
-	
-	if (Command > 0xFF) {
-		PS2Wait(0, 1)
+	define i8 SendCommand(i16 Command, ... Bytes) {
+		this->Wait(1, 0)
 		
+		OutB(PS2_PORT_COMMAND, (Command & 0xFF) As i8)
+		
+		for (i32 Index := 1, Index <= Bytes[0], Index += 1) {
+			this->Wait(1, 0)
+			OutB(PS2_PORT_DATA, Bytes[Index] As i8)
+		}
+		
+		if (Command > 0xFF) {
+			this->Wait(0, 1)
+			
+			return InB(PS2_PORT_DATA)
+		}
+		
+		return 0
+	}
+
+	define void SendToDevice(i8 Data) {
+		this->Wait(1, 0)
+		OutB(PS2_PORT_DATA, Data)
+	}
+
+	define i8 ReadFromDevice() {
+		this->Wait(0, 1)
 		return InB(PS2_PORT_DATA)
 	}
-	
-	return 0
+
+	define void New() {
+		PS2KeyboardHandleSingleton := this
+
+		this~>Parser->State := this
+		this~>Parser->PushOutput := &PS2KeyboardHandle.OnKeyParsed
+
+		this->SendCommand(PS2_DISABLE)
+		this->SendCommand(PS2_DISABLE_AUX)
+
+		InB(PS2_PORT_DATA) ; Flush input buffer
+
+		; Enable interrupts for both PS/2 ports, enable first port translation(?)
+		i8 ConfigByte := this->SendCommand(PS2_READ_COMMAND | PS2_WAIT_INPUT)
+		ConfigByte := ConfigByte | 0x03
+		this->SendCommand(PS2_WRITE_COMMAND, ConfigByte)
+		
+		this->SendCommand(PS2_ENABLE)
+		this->SendCommand(PS2_ENABLE_AUX)
+
+		this->SendToDevice(0xF0 As i8)
+		this->SendToDevice(0x00 As i8)
+		
+		i8 DeviceReply := this->ReadFromDevice()
+		i8 SetNumber := this->ReadFromDevice()
+
+		Info("PS/2 Keyboard initialized with reply %x\n", DeviceReply)
+
+		RegisterInterruptHandler(0x21, &PS2KeyboardHandle:OnInterrupt)
+		EnablePICLine(1, true)
+	}
+
+	define void OnKeyParsed(i8 Modifiers, i32 KeyCode) {
+		i32 Index := this->QueueTail++ % 32
+		KeyInput* Input := this->Queue[Index]
+
+		Input->Assign(Modifiers, KeyCode)
+	}
+
+	define i32 Available() {
+		return (this->QueueTail - this->QueueHead) % 32
+	}
+
+	define i32 Poll(i32 Mode) {
+		if (Mode & POLL_FOR_READ) {
+			if (this->Available() > 0) {
+				return POLL_CAN_READ
+			}
+		}
+
+		return 0
+	}
+
+	define i32 Read(void* Buffer, i32 Size) {
+		i32 Desired := Size / #KeyInput
+		i32 Available := this->Available()
+
+		i32 Read := Desired
+
+		if (Desired > Available) {
+			Read := Available
+		}
+
+		KeyInput* Results := Buffer
+
+		for (i32 Index := 0, Index < Read, Index += 1) {
+			i32 SourceIndex := this->QueueHead++ % 32
+
+			MoveMemory(Results[Index], this->Queue[SourceIndex], #KeyInput)
+		}
+
+		return Read * #KeyInput
+	}
 }
 
-define void SetupKeyboard() {
-	; Called with interrupts disabled, and before the IDT is loaded
-	
-	PS2SendCommand(PS2_DISABLE)
-	PS2SendCommand(PS2_DISABLE_AUX)
-	
-	InB(PS2_PORT_DATA) ; Flush input buffer
-	
-	; Enable interrupts for both PS/2 ports, enable first port translation(?)
-	i8 ConfigByte := PS2SendCommand(PS2_READ_COMMAND | PS2_WAIT_INPUT)
-	ConfigByte := ConfigByte | 0x43
-	PS2SendCommand(PS2_WRITE_COMMAND, ConfigByte)
-	
-	PS2SendCommand(PS2_ENABLE)
-	PS2SendCommand(PS2_ENABLE_AUX)
-	
-	RegisterInterruptHandler(0x21, &OnPS2Interrupt)
-	EnablePICLine(1, true)
-}
-
-DeviceInfo* PS2Keyboard := CreateDevice("PS/2 Keyboard", &SetupKeyboard)
+;DeviceInfo* PS2Keyboard := CreateDevice("PS/2 Keyboard", &SetupKeyboard)

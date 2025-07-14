@@ -90,6 +90,8 @@ int FB_Stride;
 
 void* FB;
 
+FILE* InputStream;
+
 void DG_Init() {
     FrameBuffer = open("/dev/fb0", "rw");
 
@@ -107,6 +109,8 @@ void DG_Init() {
 	FB_Depth = 4;
 
     FB_Stride = FB_Width * FB_Depth;
+
+	InputStream = fopen("/dev/ps2/keyboard", "r");
 }
 
 #include "i_video.h"
@@ -117,6 +121,9 @@ void DG_Init() {
 #define DG_Stride (DG_Width * DG_Depth)
 
 extern int fb_scaling;
+
+#include <poll.h>
+#include <unistd.h>
 
 void DG_DrawFrame() {
     //lseek(FrameBuffer, 0, SEEK_SET);
@@ -145,122 +152,83 @@ uint32_t DG_GetTicksMs() {
     return (tp.tv_sec * 1000) + (tp.tv_usec / 1000); /* return milliseconds */
 }
 
-enum {
-	Normal,
-	Escape,
-	EscapeBracket,
-	EscapeBracketEither,
-	EscapeModifierCharacter,
-	EscapeKeycode,
-	EscapeKeycodeModifier,
-	EscapeKeycodeModifierEnd
-} InputEscapeState = Normal;
-
-int ModifierOrKeycode = 0;
-int CharacterOrModifier = 0;
-
 #include "doomkeys.h"
 
-void Input_OnKey(int Key) {
+typedef struct {
+	union {
+		struct {
+			int KeyCode;
+			char Modifiers;
+			char ASCII;
+		};
 
-}
+		int64_t Padding;
+	};
+} KernelKeyInput;
 
-int Input_TranslateKeycode(int Keycode) {
-	return 0;
-}
-	
+#define KERNEL_KEY_MODIFIER_RELEASED 16
 
-int Input_TranslateXTerm(int Character) {
-	switch (Character) {
-		case 'A':
-			return KEY_UPARROW;
-		case 'B':
-			return KEY_DOWNARROW;
-		case 'C':
-			return KEY_RIGHTARROW;
-		case 'D':
-			return KEY_LEFTARROW;
-	}
-}
+#define KERNEL_KEY_ASCII_BASE 0x20
+#define KERNEL_KEY_ASCII_LAST 0x7e
 
-void Input_Write(int Character) {
-	if (InputEscapeState == Normal) {
-		if (Character == 0x1B) {
-			InputEscapeState = Escape;
-		}
-		else {
-			Input_OnKey(Character);
-		}
-	}
-	else if (InputEscapeState == Escape) {
-		if (Character == '[') {
-			InputEscapeState = EscapeBracket;
-		}
-		else if (Character == 0x1B) {
-			InputEscapeState = Normal;
-		}
-		else {
-			// Alt modifier
+#define KERNEL_KEY_SPECIAL_BASE 1
 
-			Input_OnKey(Character);
+#define KERNEL_KEY_UP KERNEL_KEY_SPECIAL_BASE + 22
+#define KERNEL_KEY_DOWN KERNEL_KEY_SPECIAL_BASE + 23
+#define KERNEL_KEY_LEFT KERNEL_KEY_SPECIAL_BASE + 24
+#define KERNEL_KEY_RIGHT KERNEL_KEY_SPECIAL_BASE + 25
+#define KERNEL_KEY_ESCAPE KERNEL_KEY_SPECIAL_BASE + 26
+#define KERNEL_KEY_ENTER KERNEL_KEY_SPECIAL_BASE + 27
+#define KERNEL_KEY_SHIFT KERNEL_KEY_SPECIAL_BASE + 28
+#define KERNEL_KEY_CONTROL KERNEL_KEY_SPECIAL_BASE + 29
+#define KERNEL_KEY_ALT KERNEL_KEY_SPECIAL_BASE + 30
 
-			InputEscapeState = Normal;
-		}
-	}
-	else if (InputEscapeState == EscapeBracket) {
-		if ('A' <= Character && Character <= 'Z') {
-			Input_OnKey(Input_TranslateXTerm(Character));
+typedef struct {
+	int KernelKeyCode;
+	int DoomKeyCode;
+} KernelKeyMapping;
 
-			InputEscapeState = Normal;
-		}
-		else if ('1' <= Character && Character <= '9') {
-			ModifierOrKeycode = Character;
-			InputEscapeState = EscapeBracketEither;
-		}
-		else {
-			// Alt modifier
-			Input_OnKey(Character);
-
-			InputEscapeState = Normal;
-		}
-	}
-	else if (InputEscapeState == EscapeBracketEither) {
-		if (Character == ';') {
-			InputEscapeState = EscapeKeycodeModifier;
-		}
-		else if (Character == '~') {
-			Input_OnKey(Input_TranslateKeycode(ModifierOrKeycode));
-
-			InputEscapeState = Normal;
-		}
-		else {
-			// ModifierOrKeycode is a modifier, ignore it
-
-			Input_OnKey(Character);
-
-			InputEscapeState = Normal;
-		}
-	}
-	else if (InputEscapeState == EscapeKeycodeModifier) {
-		CharacterOrModifier = Character;
-
-		InputEscapeState = EscapeKeycodeModifierEnd;
-	}
-	else if (InputEscapeState == EscapeKeycodeModifierEnd) {
-		if (Character == '~') {
-			Input_OnKey(Input_TranslateKeycode(ModifierOrKeycode));
-		}
-		else {
-			// ModifierOrKeycode is a modifier, ignore it
-
-			Input_OnKey(Input_TranslateXTerm(Character));	
-		}
-
-		InputEscapeState = Normal;
-	}
-}
+KernelKeyMapping KernelKeyMappings[] = {
+	{ KERNEL_KEY_UP, KEY_UPARROW },
+	{ KERNEL_KEY_DOWN, KEY_DOWNARROW },
+	{ KERNEL_KEY_LEFT, KEY_RIGHTARROW },
+	{ KERNEL_KEY_RIGHT, KEY_LEFTARROW },
+	{ KERNEL_KEY_ESCAPE, KEY_ESCAPE },
+	{ KERNEL_KEY_ENTER, KEY_ENTER },
+	{ KERNEL_KEY_ALT, KEY_LALT },
+	{ 'e', KEY_USE },
+	{ ' ', KEY_FIRE },
+	{ '\t', KEY_TAB},
+	{ 0, 0 } // Sentinel
+};
 
 int DG_GetKey(int* pressed, unsigned char* doomKey) {
+	
+	struct pollfd PollFD = {0};
+	PollFD.fd = fileno(InputStream);
+	PollFD.events = POLLIN;
+
+	poll(&PollFD, 1, 0);
+
+	if (PollFD.revents & POLLIN) {
+		KernelKeyInput Input = {0};
+		int BytesRead = read(fileno(InputStream), &Input, sizeof(Input));
+
+		for (int i = 0; KernelKeyMappings[i].KernelKeyCode != 0; i++) {
+			if (KernelKeyMappings[i].KernelKeyCode == Input.KeyCode) {
+				*doomKey = KernelKeyMappings[i].DoomKeyCode;
+				*pressed = Input.Modifiers & KERNEL_KEY_MODIFIER_RELEASED ? 0 : 1;
+				return 1; // Special key
+			}
+		}
+
+		if ('a' <= Input.KeyCode && Input.KeyCode <= 'z') {
+			*doomKey = Input.KeyCode;
+			*pressed = Input.Modifiers & KERNEL_KEY_MODIFIER_RELEASED ? 0 : 1;
+			return 1; // ASCII key
+		}
+	}
+
 	return 0;
 }
 

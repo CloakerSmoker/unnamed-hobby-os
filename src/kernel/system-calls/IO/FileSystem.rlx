@@ -138,6 +138,10 @@ define i32 SystemCallPoll(i64 USER_Targets, i32 TargetCount, i32 Timeout) {
 			return CountWithReturnEvents
 		}
 
+		if (Timeout = 0) {
+			return 0
+		} 
+
 		SchedulerYield()
 	}
 

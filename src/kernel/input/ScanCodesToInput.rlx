@@ -32,14 +32,21 @@ struct ScanCodeParser {
 	void(void*, i8, i32) PushOutput
 	
 	i8 Modifiers
-	
-	define void OutputKey(i32 KeyCode) {
-		this->PushOutput(this->State, this->Modifiers, KeyCode)
+
+	define void Output(i32 ScanCode, i32 KeyCode) {
+		if (ScanCode & SCANCODE_MASK_UP) {
+			this->PushOutput(this->State, this->Modifiers | KEY_MODIFIER_RELEASED, KeyCode)
+		}
+		else {
+			this->PushOutput(this->State, this->Modifiers, KeyCode)
+		}
 	}
 	
 	ScanCodeParserMode Mode
 	
-	define i32 RemapNormal(i8 Code) {
+	define i32 RemapNormal(i32 Code) {
+		Code &= ~SCANCODE_MASK_UP
+
 		i8* Map := "  1234567890-=  qwertyuiop[]  asdfghjkl;'` \\zxcvbnm,./    "
 		
 		if (Code = SCANCODE_ENTER) {
@@ -51,6 +58,15 @@ struct ScanCodeParser {
 		else if (Code = SCANCODE_ESCAPE) {
 			return KEY_ESCAPE
 		}
+		else if (Code = SCANCODE_SHIFT) {
+			return KEY_SHIFT
+		}
+		else if (Code = SCANCODE_CONTROL) {
+			return KEY_CONTROL
+		}
+		else if (Code = SCANCODE_ALT) {
+			return KEY_ALT
+		}
 		else if (0 <= Code && Code <= 58) {
 			return Map[Code]
 		}
@@ -58,7 +74,9 @@ struct ScanCodeParser {
 		return 0
 	}
 	
-	define i32 RemapExtended(i8 Code) {
+	define i32 RemapExtended(i32 Code) {
+		Code &= ~SCANCODE_MASK_UP
+
 		if (Code = SCANCODE_EXTENDED_UP_ARROW) {
 			return KEY_UP
 		}
@@ -89,7 +107,7 @@ struct ScanCodeParser {
 	
 	define void Write(i8* ScanCodes, i32 Count) {
 		for (i32 Index := 0, Index < Count, Index++) {
-			i8 Next := ScanCodes[Index]
+			i32 Next := ScanCodes[Index] & 0xFF
 			
 			if (this->Mode = ScanCodeParserMode:Normal) {
 				if (Next = SCANCODE_PREFIX_EXTENDED) {
@@ -103,6 +121,8 @@ struct ScanCodeParser {
 				if (Next & SCANCODE_MASK_UP) {
 					Down := false
 				}
+
+				this->Output(Next, this->RemapNormal(Next))
 				
 				Next &= 0x7F
 				
@@ -115,9 +135,6 @@ struct ScanCodeParser {
 					}
 					else if (Next = SCANCODE_ALT) {
 						this->Modifiers |= KEY_MODIFIER_ALT
-					}
-					else {
-						this->OutputKey(this->RemapNormal(Next))
 					}
 				}
 				else {
@@ -133,18 +150,8 @@ struct ScanCodeParser {
 				}
 			}
 			else if (this->Mode = ScanCodeParserMode:Extended) {
-				i8 Down := true
-				
-				if (Next & SCANCODE_MASK_UP) {
-					Down := false
-				}
-				
-				Next &= 0x7F
-				
-				if (Down) {
-					this->OutputKey(this->RemapExtended(Next))
-				}
-				
+				this->Output(Next, this->RemapExtended(Next))
+
 				this->Mode := ScanCodeParserMode:Normal
 			}
 		}

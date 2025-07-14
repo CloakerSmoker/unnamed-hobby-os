@@ -6,6 +6,7 @@
 
 class TerminalInputStreamHandle implements IFileHandle, derives INew {
 	#Include "./src/kernel/terminal/InstanceComponent.rlx"
+	IFileHandle* InputSource
 	IFileHandle* Output
 	
 	i8[64] RawLineBuffer
@@ -39,7 +40,9 @@ class TerminalInputStreamHandle implements IFileHandle, derives INew {
 		this->Input(&Next, 1)
 	}
 	
-	define void New() {
+	define void New(IFileHandle* InputSource) {
+		this->InputSource := InputSource
+
 		this~>Escaper->State := this
 		this~>Escaper->WriteOutput := &self.Input(void*, i32)
 		
@@ -120,7 +123,7 @@ class TerminalInputStreamHandle implements IFileHandle, derives INew {
 		if (Function = TERMINAL_INITIALIZE) {
 			; Master is letting us know we are the default terminal, take ownership of keyboard input
 			
-			SinkPS2Input(this, &self.OnInput)
+			
 		}
 		else {
 			return this->ComponentDeviceControl(Function, Parameter)

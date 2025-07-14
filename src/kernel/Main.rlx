@@ -326,15 +326,29 @@ Task* KernelSetupTask := &_KernelSetupTask
 
 #Require "./src/kernel/networking/Main.rlx"
 
-define void InitializeTerminal() {
-	DefaultTerminalInput := new TerminalInputStreamHandle()
+define void InitializeTerminal(IDirectory* DevicesDirectory) {
+	; /dev/ps2/{keyboard}
 
+	IDirectory* PS2Directory := DevicesDirectory->CreateDirectory()
+	DevicesDirectory->Insert("ps2", PS2Directory)
+
+	IFileHandle* KeyboardHandle := new PS2KeyboardHandle()
+	PS2Directory->Insert("keyboard", new VFSDeviceSingletonFile(KeyboardHandle))
+
+	DefaultTerminalInput := new TerminalInputStreamHandle(KeyboardHandle)
+
+	; /dev/pcspeaker
 	IFileHandle* PCSpeaker := new PCSpeakerHandle()
+	DevicesDirectory->Insert("pcspeaker", new VFSDeviceSingletonFile(PCSpeaker))
+
 	TerminalRendererHandle* Renderer := new TerminalRendererHandle(PCSpeaker, PrimaryDisplay, BootFont, TERMINAL_FOREGROUND, TERMINAL_BACKGROUND)
 	Renderer->SetCursorTimer()
 	DefaultTerminalOutput := Renderer
 	
 	KernelTerminal := new TerminalHandle(DefaultTerminalInput, DefaultTerminalOutput)
+
+	; Terminal: /dev/tty0
+	DevicesDirectory->Insert("tty0", VFSDeviceSingletonFile:New(KernelTerminal))
 }
 
 define void PopulateDevicesDirectory(IDirectory* DevicesDirectory) {
@@ -347,10 +361,6 @@ define void PopulateDevicesDirectory(IDirectory* DevicesDirectory) {
 	for (i32 Index := 0, Index < 4, Index++) {
 		;DevicesDirectory->Insert(FormatString("ttyS%i", Index), new VFSDeviceSingletonFile(new SerialPortHandle(Index)))
 	}
-
-	; Terminal: /dev/tty0
-
-	DevicesDirectory->Insert("tty0", VFSDeviceSingletonFile:New(KernelTerminal))
 
 	; Framebuffer: /dev/fb0
 
@@ -425,8 +435,41 @@ define void PopulateDevicesDirectory(IDirectory* DevicesDirectory) {
 }
 
 define void VFSRunShellTask() {
+/* 	VFSDirectoryEntry Entry
+	if !(Lookup(VFSRootDirectory, "/dev/ps2/keyboard", &Entry)) {
+		Panic("Where's the keyboard?")
+	}
+
+	IFileHandle* KeyboardHandle := Entry.File->Open()
+
+	loop {
+		if (KeyboardHandle->Poll(POLL_FOR_READ) = POLL_CAN_READ) {
+			KeyInput Input
+			KeyboardHandle->Read(&Input, #KeyInput)
+
+			Print("{")
+
+			if (Input.Modifiers & KEY_MODIFIER_RELEASED) {
+				Print("Released ")
+			}
+			else {
+				Print("Pressed ")
+			}
+
+			PrintModifiers(Input.Modifiers)
+			PrintKeyName(Input.KeyCode)
+			if (Input.ASCII != 0) {
+				Print(" (ASCII: %c)", Input.ASCII)
+			}
+			Print("}\n")
+		}
+		else {
+			SchedulerYield()
+		}
+	} */
+
     VFSExecuteShellCommand("execute /doom/doom.elf -iwad /doom/DOOM.WAD -mb 64")
-	VFSRunShell(KernelTerminal)
+	;VFSRunShell(KernelTerminal)
 }
 
 #Require "./src/kernel/file-system/VFS/DirectoryFileHandle.rlx"
@@ -592,7 +635,16 @@ define void Main(TrampolineInfo* Info) {
 	FrameBuffer->Initialize(ADDRESS_OF_FRAME_BUFFER, RGB32, SCREEN_WIDTH, SCREEN_HEIGHT)
 
 	PrimaryDisplay := FrameBuffer
-	InitializeTerminal()
+
+	SetupInterrupts()
+	;GenerateInterruptHandlers()
+
+	MountRoot(VFSDirectory:New())
+
+	VFSDevicesDirectory := VFSDirectory:New()
+	Mount(null, "/dev", VFSDevicesDirectory)
+
+	InitializeTerminal(VFSDevicesDirectory)
 	Printer := &KernelPrinter
 	
 	Print("BOOT: Screen *probably* works\n")
@@ -607,8 +659,6 @@ define void Main(TrampolineInfo* Info) {
 	
 	Print("BOOT: Setup GDT and TSS\n")
 	
-	SetupInterrupts()
-	GenerateInterruptHandlers()
 	SetupKeyboard()
 	
 	if (BootInfo->HPETBase && HPET_CAN_PROVIDE_SYSTEM_CLOCK) {
@@ -640,13 +690,6 @@ define void Main(TrampolineInfo* Info) {
 	SetupUserMode()
 	SetupSystemCalls()
 
-	MountRoot(VFSDirectory:New())
-
-	VFSDevicesDirectory := VFSDirectory:New()
-	Mount(null, "/dev", VFSDevicesDirectory)
-
-	Print("Created /dev\n")
-
 	Network := NetworkStack:New()
 
 	Network->AddInterface(MakeLoopbackNetworkInterface(IPv4("127.0.0.1")))
@@ -670,11 +713,6 @@ define void Main(TrampolineInfo* Info) {
 	if (SATAController = null) {
 		Panic("No SATA disk controller detected, hanging...\n")
 	}
-
-	MountRoot(VFSDirectory:New())
-
-	VFSDevicesDirectory := VFSDirectory:New()
-	Mount(null, "/dev", VFSDevicesDirectory)
 
 	PopulateDevicesDirectory(VFSDevicesDirectory)
 	MountPartitions(RootPartitionGUID, EFISystemPartitionGUID)
