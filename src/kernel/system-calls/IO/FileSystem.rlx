@@ -282,7 +282,7 @@ define i64 SystemCallReadMultiple(i64 FileDescriptor, i64 USER_Vectors, i32 Coun
 			Info("Nuts 99002\n")
 		}
 
-		Info("sys_readv(%i, %x, %i)\n", FileDescriptor, Next.Address, Next.Size As i32)
+		;Info("sys_readv(%i, %x, %i)\n", FileDescriptor, Next.Address, Next.Size As i32)
 
 		void* NextBuffer := CurrentProcess->MapAddressForWrite(Next.Address, Next.Size As i32)
 		

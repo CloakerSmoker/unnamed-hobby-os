@@ -1,0 +1,145 @@
+
+struct BlockCacheEntry {
+    i64 BucketNumber
+    i64 Generation
+    void* Data
+}
+
+class BlockCacheDevice implements IBlockDevice, derives INew {
+    IPhysicalAllocator* Allocator
+    IBlockDevice* Device
+    i32 Capacity
+
+    i64 BlocksPerEntry
+    i64 PagesPerEntry ; NOTE: MUST BE 1 FOR NOW
+    i64 BlockSize
+
+    AVLTree* Entries
+    i64 Generation
+    i64 Misses
+
+    define void New(IPhysicalAllocator* Allocator, IBlockDevice* Device, i32 Capacity) {
+        this->Allocator := Allocator
+        this->Device := Device
+        this->Capacity := Capacity
+
+        this->PagesPerEntry := 1
+        this->BlockSize := Device->GetBlockSize()
+        this->BlocksPerEntry := PAGE_SIZE / this->BlockSize
+
+        this->Entries := AVLTree:New(#BlockCacheEntry)
+    }
+
+    define void Evict(BlockCacheEntry* Entry) {
+        if (Entry->Data) {
+            for (i32 Index := 0, Index < this->PagesPerEntry, Index++) {
+                this->Allocator->Free((Entry->Data + (Index * PAGE_SIZE)) As i64)
+            }
+        }
+
+        this->Entries->Remove(Entry->BucketNumber)
+    }
+
+    define void EvictIfNeeded() {
+        BlockCacheEntry* OldestEntry := this->Entries->At(0)
+
+        i32 Count := this->Entries->Count()
+
+        if (Count < this->Capacity) {
+            return ; no eviction needed
+        }
+
+        for (i32 Index := 1, Index < Count, Index++) {
+            BlockCacheEntry* Entry := this->Entries->At(Index)
+
+            if (Entry->Generation < OldestEntry->Generation) {
+                OldestEntry := Entry
+            }
+        }
+
+        if (OldestEntry->Generation >= this->Generation) {
+            ; no entry is older than the current generation, so we take the last one
+
+            ;OldestEntry := this->Entries->At(this->Entries->Count() - 1)
+        }
+
+        ;Info("[BlockCache] Evicting bucket %i. Gen=%i. Cur=%i. Diff=%i. Misses=%i\n", OldestEntry->BucketNumber, OldestEntry->Generation, this->Generation, this->Generation - OldestEntry->Generation, this->Misses)
+
+        this->Evict(OldestEntry)
+    }
+    
+    define BlockCacheEntry* FindOrReadBucket(i64 Bucket) {
+        BlockCacheEntry* ExistingEntry := this->Entries->Get(Bucket)
+
+        if (ExistingEntry) {
+            ;Info("[BlockCache] Hit for bucket %i. Gen=%i. Cur=%i. Misses=%i\n", Bucket, ExistingEntry->Generation, this->Generation, this->Misses)
+            ExistingEntry->Generation += 1
+
+            if (ExistingEntry->Generation > this->Generation) {
+                ;ExistingEntry->Generation := this->Generation
+                ;this->Generation := ExistingEntry->Generation
+            }
+
+            return ExistingEntry
+        }
+
+        this->EvictIfNeeded()
+
+        i32 Count := this->Entries->Count()
+
+        ;Info("[BlockCache] Miss for bucket %i, reading from device. %i / %i\n", Bucket, Count, this->Capacity)
+
+        this->Misses += 1
+
+        this->Generation += 1
+
+        BlockCacheEntry Entry {
+            BucketNumber: Bucket,
+            Generation: this->Generation,
+            Data: this->Allocator->Allocate() As void*
+        }
+
+        this->Device->Read(Bucket * this->BlocksPerEntry, this->BlocksPerEntry, Entry->Data)
+        this->Entries->Insert(Bucket, &Entry)
+
+        return this->Entries->Get(Bucket)
+    }
+
+    define void ReadSingle(i64 Block, void* Buffer) {
+        BlockCacheEntry* Entry := this->FindOrReadBucket(Block / this->BlocksPerEntry)
+
+        i64 OffsetInBucket := (Block % this->BlocksPerEntry) * this->BlockSize
+
+        MoveMemory(Buffer, Entry->Data + OffsetInBucket, this->BlockSize)
+    }
+
+    define void Read(i64 FirstBlock, i64 BlockCount, void* Buffer) {
+        for (i64 Index := 0, Index < BlockCount, Index++) {
+            this->ReadSingle(FirstBlock + Index, Buffer + (Index * this->BlockSize))
+        }
+    }
+
+    define void Write(i64 FirstBlock, i64 BlockCount, void* Buffer) {
+        i64 FirstBucket := FirstBlock / this->BlocksPerEntry
+        i64 BucketCount := BlockCount / this->BlocksPerEntry
+
+        if (BlockCount % this->BlocksPerEntry != 0) {
+            BucketCount += 1
+        }
+
+        for (i64 Index := 0, Index < BucketCount, Index++) {
+            i64 Bucket := FirstBucket + Index
+            BlockCacheEntry* Entry := this->FindOrReadBucket(Bucket)
+    
+            if (Entry) {
+                this->Evict(Entry)
+            }
+        }
+
+        this->Device->Write(FirstBlock, BlockCount, Buffer)
+    }
+
+    define i64 GetBlockSize() {
+        return this->BlockSize
+    }
+}

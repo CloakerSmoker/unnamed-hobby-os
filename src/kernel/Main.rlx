@@ -351,6 +351,8 @@ define void InitializeTerminal(IDirectory* DevicesDirectory) {
 	DevicesDirectory->Insert("tty0", VFSDeviceSingletonFile:New(KernelTerminal))
 }
 
+#Require "./src/kernel/core/BlockCache.rlx"
+
 define void PopulateDevicesDirectory(IDirectory* DevicesDirectory) {
 	; Virtual Devices: /dev/zero
 
@@ -378,6 +380,10 @@ define void PopulateDevicesDirectory(IDirectory* DevicesDirectory) {
 
 	; SATA Devices: /dev/sataX
 	; (and maybe: /dev/gpt/{partuuid})
+
+	PhysicalPageAllocator* Physical := KernelHeapAllocate('CACHEHP', #PhysicalPageAllocator)
+	Physical->Initialize()
+	Physical->Manager := PhysicalMemory
 
 	i32 PopulatedPortCount := SATAController->Ports->Count()
 
@@ -422,7 +428,9 @@ define void PopulateDevicesDirectory(IDirectory* DevicesDirectory) {
 				i8* GUIDName := FormatString("%guid", NextPartition~>PartitionGUID)
 
 				IBlockDevice* PartitionDevice := new GPTPartitionBlockDevice(PartitionTable, Partition)
-				IFileHandle* PartitionHandle := BlockDeviceFileHandle:New(PartitionDevice)
+				IBlockDevice* PartitionCacheDevice := new BlockCacheDevice(Physical, PartitionDevice, 128)
+
+				IFileHandle* PartitionHandle := BlockDeviceFileHandle:New(PartitionCacheDevice)
 				IFile* PartitionFile := VFSBlockDeviceFile:New(PartitionHandle)
 
 				DevicesDirectory->Insert(FileName, PartitionFile)
