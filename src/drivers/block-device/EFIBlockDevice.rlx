@@ -1,7 +1,23 @@
 #Require "./src/drivers/block-device/BlockDevice.rlx"
 #Require "@/System.rlx"
 
-; Can only be manually initialized
+class EFIBlockDevice implements IBlockDevice, derives INew {
+	EFI_BLOCK_IO_PROTOCOL* BlockIO
+
+	define void New(EFI_BLOCK_IO_PROTOCOL* BlockIO) {
+		this->BlockIO := BlockIO
+	}
+
+	define void Read(i64 FirstBlock, i64 BlockCount, void* Buffer) {
+		this->BlockIO->ReadBlocks(FirstBlock, BlockCount, Buffer)
+	}
+	define void Write(i64 FirstBlock, i64 BlockCount, void* Buffer) {
+		this->BlockIO->WriteBlocks(FirstBlock, BlockCount, Buffer)
+	}
+	define i64 GetBlockSize() {
+		return this->BlockIO->Media->BlockSize
+	}
+}
 
 struct EFIBlockDeviceInstance {
 	#Include "./src/drivers/block-device/BlockDeviceInstance.rlx"

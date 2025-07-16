@@ -1,12 +1,12 @@
 
-define FAT32Device* RawOpenFAT32(BlockDevice* Device) {
+define FAT32Device* RawOpenFAT32(IBlockDevice* Device) {
 	FAT32Device* FS := Alloc(#FAT32Device)
 	FS->Initialize(Device)
 
     return FS
 }
 
-define Ext2* RawOpenExt2(BlockDevice* Device) {
+define Ext2* RawOpenExt2(IBlockDevice* Device) {
     return Ext2:New(Device)
 }
 
@@ -39,7 +39,7 @@ define void ExecuteFormat(i64 ArgC, i8** ArgV) {
 
     VFSBlockDeviceFile* BlockDeviceFile := File
     BlockDeviceFileHandle* BlockDeviceHandle := BlockDeviceFile->Handle
-    BlockDevice* Device := BlockDeviceHandle->Device
+    IBlockDevice* Device := BlockDeviceHandle->Device
 
     if (StringEquals(Type, "ext2")) {
         Ext2* E2FS := RawOpenExt2(Device)

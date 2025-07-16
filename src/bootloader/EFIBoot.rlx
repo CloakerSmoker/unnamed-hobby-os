@@ -500,11 +500,11 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	void* FrameBuffer := Graphics->Mode->FrameBufferBase
 	
 	Print("FrameBuffer @ %x\n", FrameBuffer)
+
+	EFI_BLOCK_IO_PROTOCOL* BlockIO := null
+	SystemTable->BootServices->HandleProtocol(OSPartition, EFI_BLOCK_IO_PROTOCOL_GUID, &BlockIO As void**)
 	
-	EFIBlockDeviceInstance* BootDisk := NewBlockDevice(null, &EFIBlockDevicePrototype)
-	SystemTable->BootServices->HandleProtocol(OSPartition, EFI_BLOCK_IO_PROTOCOL_GUID, BootDisk~>BlockIO As void**)
-	
-	Ext2* FS := Ext2:New(BootDisk->AsBlockDevice())
+	Ext2* FS := Ext2:New(new EFIBlockDevice(BlockIO))
 	FS->Open()
 	RootDirectory := FS->OpenINode(2)
 
@@ -536,7 +536,6 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	;SystemTable->BootServices->FreePages(KernelFile, KernelPageCount)
 	Free(FS->SuperBlock)
 	Free(FS)
-	Free(BootDisk)
 	
 	
 	i64 MemoryMapSize := 0

@@ -392,7 +392,7 @@ define void PopulateDevicesDirectory(IDirectory* DevicesDirectory) {
 
 			Print("SATA Device %i is a %s, SN: %s\n", Port->Index, Port->Model, Port->SerialNumber)
 
-			BlockDevice* Device := ICH9::AHCI::PortBlockDevice:New(Port)
+			IBlockDevice* Device := new ICH9::AHCI::_PortBlockDevice(Port)
 			IFileHandle* Handle := BlockDeviceFileHandle:New(Device)
 			IFile* File := VFSBlockDeviceFile:New(Handle)
 
@@ -423,7 +423,7 @@ define void PopulateDevicesDirectory(IDirectory* DevicesDirectory) {
 
 				i8* GUIDName := FormatString("%guid", NextPartition~>PartitionGUID)
 
-				BlockDevice* PartitionDevice := GPTBlockDevice:New(Device, NextPartition)
+				IBlockDevice* PartitionDevice := new GPTPartitionBlockDevice(GPT, Partition)
 				IFileHandle* PartitionHandle := BlockDeviceFileHandle:New(PartitionDevice)
 				IFile* PartitionFile := VFSBlockDeviceFile:New(PartitionHandle)
 
@@ -534,7 +534,7 @@ OpenFSErrors OpenEFISystemErrors {
 	NotABlockDevice: "EFI system device is not a block device. What?"
 }
 
-define IDirectory* OpenFSFromPath(OpenFSErrors* Errors, i8* Path, IDirectory*(BlockDevice*) OpenDevice) {
+define IDirectory* OpenFSFromPath(OpenFSErrors* Errors, i8* Path, IDirectory*(IBlockDevice*) OpenDevice) {
 	VFSDirectoryEntry DeviceEntry
 
 	if !(Lookup(null, Path, &DeviceEntry)) {
@@ -549,7 +549,7 @@ define IDirectory* OpenFSFromPath(OpenFSErrors* Errors, i8* Path, IDirectory*(Bl
 
     VFSBlockDeviceFile* BlockDeviceFile := File
     BlockDeviceFileHandle* BlockDeviceHandle := BlockDeviceFile->Handle
-    BlockDevice* RootDevice := BlockDeviceHandle->Device
+    IBlockDevice* RootDevice := BlockDeviceHandle->Device
 
 	return OpenDevice(RootDevice)
 }

@@ -1,6 +1,28 @@
 
 i32 LOOP_DEVICE_BLOCK_SIZE := 512
 
+class LoopBlockDevice implements IBlockDevice, derives INew {
+	IFileHandle* Backing
+
+	define void New(IFileHandle* Backing) {
+		this->Backing := Backing
+	}
+
+	define void Read(i64 FirstBlock, i64 BlockCount, void* Buffer) {
+		this->Backing->Seek((FirstBlock * LOOP_DEVICE_BLOCK_SIZE) As i32, SeekMode::Set)
+		this->Backing->Read(Buffer, (BlockCount * LOOP_DEVICE_BLOCK_SIZE) As i32)
+	}
+
+	define void Write(i64 FirstBlock, i64 BlockCount, void* Buffer) {
+		this->Backing->Seek((FirstBlock * LOOP_DEVICE_BLOCK_SIZE) As i32, SeekMode::Set)
+		this->Backing->Write(Buffer, (BlockCount * LOOP_DEVICE_BLOCK_SIZE) As i32)
+	}
+
+	define i64 GetBlockSize() {
+		return LOOP_DEVICE_BLOCK_SIZE
+	}
+}
+/* 
 declare BlockDevicePrototype* GetLoopBlockDevicePrototype()
 
 struct LoopBlockDevice {
@@ -56,4 +78,4 @@ i32 LOOP_BLOCK_DEVICE_PROTOTYPE_ID := RegisterBlockDevicePrototype(&LoopBlockDev
 
 define BlockDevicePrototype* GetLoopBlockDevicePrototype() {
     return &LoopBlockDevicePrototype
-}
+} */

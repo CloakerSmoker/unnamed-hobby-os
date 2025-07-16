@@ -113,7 +113,7 @@ loop open /host/build/Disk.img
 
 gpt /dev/loop0 format 128M
 
-gpt /dev/loop0 set disk guid random
+gpt /dev/loop0 set disk guid {AAAAAAAA-8101-EDEF-B110-1E59234ABFDF}
 
 gpt /dev/loop0 create 0
 gpt /dev/loop0 set partition 0 start 10M
@@ -186,7 +186,6 @@ endef
 
 export GET_GUIDS_SCRIPT
 
-$(BUILD)/Disk.img: $(BUILD)/GPTTool.elf
 $(BUILD)/Disk.img: $(BUILD)/FAT32Tool.elf $(BUILD)/Ext2Tool.elf
 $(BUILD)/Disk.img: $(BUILD)/Boot.efi $(BUILD)/Trampoline.elf $(BUILD)/Kernel.elf
 $(BUILD)/Disk.img: $(BUILD)/HostFileShell.elf
@@ -220,49 +219,6 @@ $(BUILD)/Disk.img:
 	echo "$$MAKE_USB_SCRIPT" | tr '\1' '\n' | $(BUILD)/HostFileShell.elf --script
 
 LIGHT_CLEAN_FILES+= $(BUILD)/Disk.img
-
-# GPTTool
-
-$(BUILD)/GPTTool.elf: $(RLX)
-$(BUILD)/GPTTool.elf: $(BUILD)/GPTTool.d
-$(BUILD)/GPTTool.elf: $(shell cat $(BUILD)/GPTTool.d 2>/dev/null)
-	$(RLX) -i ./src/host/GPTTool.rlx -o $@ ${ELF_RLX_FLAGS}
-
-secret-internal-deps: $(BUILD)/GPTTool.d
-
-$(BUILD)/GPTTool.d: $(RLX)
-	$(RLX) -i ./src/host/GPTTool.rlx -o $@ --makedep $(ELF_RLX_FLAGS)
-
-CLEAN_FILES+= $(BUILD)/GPTTool.elf $(BUILD)/GPTTool.d
-
-# FAT32Tool
-
-$(BUILD)/FAT32Tool.elf: $(RLX)
-$(BUILD)/FAT32Tool.elf: $(BUILD)/FAT32Tool.d
-$(BUILD)/FAT32Tool.elf: $(shell cat $(BUILD)/FAT32Tool.d 2>/dev/null)
-	$(RLX) -i ./src/host/FAT32Tool.rlx -o $@ ${ELF_RLX_FLAGS}
-
-secret-internal-deps: $(BUILD)/FAT32Tool.d
-
-$(BUILD)/FAT32Tool.d: $(RLX)
-$(BUILD)/FAT32Tool.d:
-	$(RLX) -i ./src/host/FAT32Tool.rlx -o $@ --makedep $(ELF_RLX_FLAGS)
-
-CLEAN_FILES+= $(BUILD)/FAT32Tool.elf $(BUILD)/FAT32Tool.d
-
-# Ext2Tool
-
-$(BUILD)/Ext2Tool.elf: $(RLX)
-$(BUILD)/Ext2Tool.elf: $(BUILD)/Ext2Tool.d
-$(BUILD)/Ext2Tool.elf: $(shell cat $(BUILD)/Ext2Tool.d 2>/dev/null)
-	$(RLX) -i ./src/host/Ext2Tool.rlx -o $@ ${ELF_RLX_FLAGS}
-
-secret-internal-deps: $(BUILD)/Ext2Tool.d
-
-$(BUILD)/Ext2Tool.d: $(RLX)
-	$(RLX) -i ./src/host/Ext2Tool.rlx -o $@ --makedep $(ELF_RLX_FLAGS)
-
-CLEAN_FILES+= $(BUILD)/Ext2Tool.elf $(BUILD)/Ext2Tool.d
 
 # HostFileShell
 
@@ -320,6 +276,7 @@ LIGHT_CLEAN_FILES+= $(BUILD)/pciids.bin
 # Kernel
 
 $(BUILD)/Kernel.elf: $(RLX)
+$(BUILD)/Kernel.elf: $(BUILD)/pciids.bin
 $(BUILD)/Kernel.elf: $(BUILD)/Kernel.d
 $(BUILD)/Kernel.elf: $(shell cat $(BUILD)/Kernel.d 2>/dev/null)
 	$(DBG)$(RLX) -i ./src/kernel/Main.rlx -o $@ $(KERNEL_RLX_FLAGS)
@@ -353,8 +310,6 @@ LIGHT_CLEAN_FILES+= $(BUILD)/Beep.elf $(BUILD)/Beep.d
 gen: ./src/kernel/core/generated/*.rlx
 
 # Helper targets
-
-tools: $(BUILD)/GPTTool.elf $(BUILD)/FAT32Tool.elf $(BUILD)/Ext2Tool.elf
 
 fast: $(BUILD)/Disk.img
 

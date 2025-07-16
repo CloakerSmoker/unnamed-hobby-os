@@ -81,7 +81,7 @@ define void tree(IDirectory* Directory) {
 #Require "./src/drivers/block-device/GPTBlockDevice.rlx"
 
 define IDirectory* OpenFAT32(i8* Path) {
-    BlockDevice* Device := InstantiateBlockDeviceChainFromPath(Path)
+    IBlockDevice* Device := InstantiateBlockDeviceChainFromPath(Path)
 
 	FAT32Device* FATDevice := Alloc(#FAT32Device)
 	FATDevice->Initialize(Device)

@@ -1,5 +1,5 @@
 
-define IDirectory* OpenFAT32(BlockDevice* Device) {
+define IDirectory* OpenFAT32(IBlockDevice* Device) {
 	FAT32Device* FATDevice := Alloc(#FAT32Device)
 	FATDevice->Initialize(Device)
 
@@ -8,7 +8,7 @@ define IDirectory* OpenFAT32(BlockDevice* Device) {
     return FAT32Directory:New(FATDevice, FATDevice->Header->RootDirectoryCluster)
 }
 
-define IDirectory* OpenExt2(BlockDevice* Device) {
+define IDirectory* OpenExt2(IBlockDevice* Device) {
     Ext2* FS := Ext2:New(Device)
 
     FS->Open()
@@ -46,7 +46,7 @@ define void ExecuteMount(i64 ArgC, i8** ArgV) {
 
     VFSBlockDeviceFile* BlockDeviceFile := File
     BlockDeviceFileHandle* BlockDeviceHandle := BlockDeviceFile->Handle
-    BlockDevice* Device := BlockDeviceHandle->Device
+    IBlockDevice* Device := BlockDeviceHandle->Device
 
     IDirectory* DeviceRoot := null
 

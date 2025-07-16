@@ -6,6 +6,12 @@
 i64 BLOCK_DEVICE_READ_PAST_END := 'BDEV_RPE'
 i64 BLOCK_DEVICE_WRITE_PAST_END := 'BDEV_WPE'
 
+interface IBlockDevice {
+	virtual void Read(i64, i64, void*)
+	virtual void Write(i64, i64, void*)
+	virtual i64 GetBlockSize()
+}
+
 struct BlockDevicePrototype {
 	void(void*, i64, i64, void*) Read
 	void(void*, i64, i64, void*) Write

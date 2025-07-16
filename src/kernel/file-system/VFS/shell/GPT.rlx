@@ -106,19 +106,12 @@ define void ExecuteGPT(i64 ArgC, i8** ArgV) {
 
     VFSBlockDeviceFile* BlockDeviceFile := File
     BlockDeviceFileHandle* BlockDeviceHandle := BlockDeviceFile->Handle
-    BlockDevice* RawDevice := BlockDeviceHandle->Device
+    IBlockDevice* RawDevice := BlockDeviceHandle->Device
 
-    i32 BlockSize := RawDevice->GetBytesPerBlock() As i32
+    GPTDevice* Device := GPTDevice:New(RawDevice)
+    i64 BlockSize := RawDevice->GetBlockSize()
 
-    GPTDevice* Device := FindGPTDeviceBinding(RawDevice)
-
-    if (Device = null) {
-        Device := GPTDevice:New(RawDevice)
-
-        AddGPTDeviceBinding(RawDevice, Device)
-    }
-
-    Device->ReadHeader(1)
+    ;Print("Block Size: %i bytes\n", BlockSize)
 
     i8 Formatted := CompareMemory(Device->Header->Signature, "EFI PART", 8)
 
@@ -145,8 +138,8 @@ define void ExecuteGPT(i64 ArgC, i8** ArgV) {
             if (NextPartition->StartingLBA = 0 && NextPartition->EndingLBA = 0) {
                 continue
             }
-            
-            BlockDevice* PartitionDevice := GPTBlockDevice:New(RawDevice, NextPartition)
+
+            IBlockDevice* PartitionDevice := new GPTPartitionBlockDevice(Device, Index)
             IFileHandle* PartitionHandle := BlockDeviceFileHandle:New(PartitionDevice)
             IFile* PartitionFile := VFSBlockDeviceFile:New(PartitionHandle)
 

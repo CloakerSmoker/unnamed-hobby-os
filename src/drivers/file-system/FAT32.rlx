@@ -225,7 +225,7 @@ struct FAT32DirectoryCluster {
 }
 
 struct FAT32Device {
-	BlockDevice* Device
+	IBlockDevice* Device
 	
 	FAT32BootSector RawHeader
 	FAT32BootSector* Header
@@ -246,7 +246,7 @@ struct FAT32Device {
 	i32[0x80] CachedFATSector
 	i32 CachedFATSectorNumber
 	
-	define FAT32Device* Initialize(BlockDevice* Device) {
+	define FAT32Device* Initialize(IBlockDevice* Device) {
 		this->Device := Device
 		
 		this->Header := this~>RawHeader

@@ -8,7 +8,7 @@ struct ActiveLoopDevice {
 
     union {
         LoopBlockDevice* BlockDevice,
-        BlockDevice* RawBlockDevice
+        IBlockDevice* RawBlockDevice
     }
 
     union {

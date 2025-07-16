@@ -23,7 +23,7 @@ define ShellCommand* LookupCommand(i8* Name) {
     return Commands->Get(FNV1A(Name))
 }
 
-enum DataScale {
+enum DataScale As i64 {
     Count := 1,
     Block := 512,
     Kilobyte := 1000,

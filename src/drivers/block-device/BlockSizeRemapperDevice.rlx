@@ -1,5 +1,46 @@
 #Require "./src/drivers/block-device/BlockDevice.rlx"
 
+class BlockSizeRemapperBlockDevice {
+	IBlockDevice* Base
+
+	i32 BaseBlockSize
+	i32 VirtualBlockSize
+
+	define void New(IBlockDevice* Base, i32 VirtualBlockSize) {
+		this->Base := Base
+		this->BaseBlockSize := Base->GetBlockSize()
+		this->VirtualBlockSize := VirtualBlockSize
+	}
+
+	define i64 Convert(i64 Value, i64 Exception) {
+		i64 Bytes := Value * this->VirtualBlockSize
+		i64 RealBlock := Bytes / this->BaseBlockSize
+		
+		if (Bytes % this->BaseBlockSize) {
+			Throw(Exception)
+		}
+		
+		return RealBlock
+	}
+
+	define void Read(i64 FirstBlock, i64 BlockCount, void* Buffer) {
+		i64 RealFirstBlock := this->Convert(FirstBlock, BLOCK_DEVICE_EXCEPTION_UNALIGNED_READ_BASE)
+		i64 RealBlockCount := this->Convert(BlockCount, BLOCK_DEVICE_EXCEPTION_UNALIGNED_READ_SIZE)
+		
+		this->Parent->Read(RealFirstBlock, RealBlockCount, Buffer)
+	}
+	define void Write(i64 FirstBlock, i64 BlockCount, void* Buffer) {
+		i64 RealFirstBlock := this->Convert(FirstBlock, BLOCK_DEVICE_EXCEPTION_UNALIGNED_READ_BASE)
+		i64 RealBlockCount := this->Convert(BlockCount, BLOCK_DEVICE_EXCEPTION_UNALIGNED_READ_SIZE)
+		
+		this->Parent->Write(RealFirstBlock, RealBlockCount, Buffer)
+	}
+	
+	define i64 GetBlockSize() {
+		return this->VirtualBlockSize
+	}
+}
+
 struct BlockSizeRemapperDeviceInstance {
 	#Include "./src/kernel/core/block/BlockDeviceInstance.rlx"
 	

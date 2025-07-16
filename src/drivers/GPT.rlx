@@ -63,8 +63,179 @@ i8* GPT_PARTITION_TYPE_CUSTOM := i8[0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x
 i64 GPT_PARTITION_ATTRIBUTE_REQUIRED := 1
 i64 GPT_PARTITION_ATTRIBUTE_NOT_BLOCK := 2
 
+class GPTPartitionTable implements IFileHandle, derives INew {
+	IBlockDevice* Device
+	i32 Offset
+
+	union {
+		GPTPartitionTableHeader RawHeader
+		i8[0x200] HeaderBlock
+	}
+
+	GPTPartitionTableHeader* Header
+
+	i8[0x200] TempBlock
+
+	define void ReadHeader(i64 From) {
+		this->Device->Read(From, 1, this->Header)
+	}
+	define void WriteHeader(GPTPartitionTableHeader* Header) {
+		Header->UpdateCRC()
+
+		this->Device->Write(Header->ThisHeaderLBA, 1, Header)
+	}
+
+	define void Sync() {
+		i64 ThisHeaderLBA := this->Header->ThisHeaderLBA
+		i64 OtherHeaderLBA := this->Header->AlternateHeaderLBA
+
+		this->WriteHeader(this->Header)
+		
+		this->Header->ThisHeaderLBA := OtherHeaderLBA
+		this->Header->AlternateHeaderLBA := ThisHeaderLBA
+		
+		this->WriteHeader(this->Header)
+	}
+
+	define void New(IBlockDevice* Device) {
+		this->Device := Device
+		this->Header := this~>RawHeader
+
+		this->ReadHeader(1) ; read the primary header
+	}
+
+	define i8 IsValid() {
+		return CompareMemory(this->Header->Signature, "EFI PART", 8)
+	}
+
+	define i32 CalculatePartitionEntryArrayCRC() {
+		i32 PartitionEntryArraySize := this->Header->PartitionEntryCount * this->Header->PartitionEntrySize
+		
+		i32 PartitionEntryArrayBlocks := PartitionEntryArraySize / 0x200
+		
+		if (PartitionEntryArraySize % 0x200) {
+			PartitionEntryArrayBlocks += 1
+		}
+		
+		i64 CRC := EFIStartCRC()
+		
+		for (i32 Index := 0, Index < PartitionEntryArrayBlocks, Index++) {
+			this->Device->Read(this->Header->PartitionEntryArrayLBA + Index, 1, this->TempBlock)
+			
+			CRC := EFIUpdateCRC(CRC, this->TempBlock, 0x200)
+		}
+		
+		return EFIFinalizeCRC(CRC)
+	}
+
+	define GPTPartitionEntry* ReadPartitionEntry(i32 Index) {
+		i32 PartitionEntriesPerSector := 0x200 / this->Header->PartitionEntrySize
+		i32 SectorIndex := Index / PartitionEntriesPerSector
+		i32 OffsetInSector := (Index % PartitionEntriesPerSector) * this->Header->PartitionEntrySize
+		
+		this->Device->Read(this->Header->PartitionEntryArrayLBA + SectorIndex, 1, this->TempBlock)
+		
+		return (this->TempBlock + OffsetInSector) As GPTPartitionEntry*
+	}
+
+	define void WritePartitionEntry(i32 Index, GPTPartitionEntry* Entry) {
+		GPTPartitionTableHeader* Header := this->Header
+
+		i32 PartitionEntriesPerSector := 0x200 / Header->PartitionEntrySize
+		i32 SectorIndex := Index / PartitionEntriesPerSector
+		i32 OffsetInSector := (Index % PartitionEntriesPerSector) * Header->PartitionEntrySize
+		
+		this->Device->Read(Header->PartitionEntryArrayLBA + SectorIndex, 1, this->TempBlock)
+		MoveMemory(this->TempBlock + OffsetInSector, Entry, #GPTPartitionEntry)
+		this->Device->Write(Header->PartitionEntryArrayLBA + SectorIndex, 1, this->TempBlock)
+		
+		i32 PartitionEntryArrayChecksum := this->CalculatePartitionEntryArrayCRC()
+		
+		for (i32 Index := 0, Index < 2, Index++) {
+			Header->PartitionEntryArrayChecksum := PartitionEntryArrayChecksum
+			Header->UpdateCRC()
+			this->WriteHeader(Header)
+			
+			this->ReadHeader(Header->AlternateHeaderLBA)
+		}
+	}
+
+	define i32 Read(void* Buffer, i32 Size) {
+		i32 Count := Size / #GPTPartitionEntry
+
+		if (Size % #GPTPartitionEntry != 0) {
+			Throw(HANDLE_ERROR_BAD_PARAMETER)
+		}
+
+		if (Count + this->Offset > this->Header->PartitionEntryCount) {
+			Count := (this->Header->PartitionEntryCount - this->Offset) As i32
+		}
+
+		for (i32 Index := 0, Index < Count, Index++) {
+			GPTPartitionEntry* Entry := this->ReadPartitionEntry(this->Offset + Index)
+			MoveMemory(Buffer + (Index * #GPTPartitionEntry), Entry, #GPTPartitionEntry)
+		}
+
+		this->Offset += Count
+
+		return Count * #GPTPartitionEntry
+	}
+
+	define i32 Write(void* Buffer, i32 Size) {
+		i32 Count := Size / #GPTPartitionEntry
+
+		if (Size % #GPTPartitionEntry != 0) {
+			Throw(HANDLE_ERROR_BAD_PARAMETER)
+		}
+
+		for (i32 Index := 0, Index < Count, Index++) {
+			GPTPartitionEntry* Entry := (Buffer + (Index * #GPTPartitionEntry)) As GPTPartitionEntry*
+			this->WritePartitionEntry(this->Offset + Index, Entry)
+		}
+
+		return Count * #GPTPartitionEntry
+	}
+
+	define void WriteMBR() {
+		this->Device->Read(0, 1, this->TempBlock)
+		
+		(this~>TempBlock As MBR*)->WriteDefaults(MBR_PARTITION_TYPE_GPT)
+		
+		this->Device->Write(0, 1, this->TempBlock)
+	}
+
+	define void Format(i64 TotalBlocks) {
+		this->WriteMBR()
+		
+		i64 LastLBA := TotalBlocks - 1
+
+		GPTPartitionTableHeader* Header := this->Header
+		
+		MoveMemory(Header->Signature, "EFI PART", 8)
+		
+		Header->Version := GPT_VERSION_1_0
+		Header->HeaderSize := #GPTPartitionTableHeader
+		
+		FillRandom(Header~>DiskGUID, 16)
+		
+		Header->ThisHeaderLBA := 1
+		Header->AlternateHeaderLBA := LastLBA
+		
+		Header->FirstUsableBlock := 34 ; spec says so?
+		Header->LastUsableBlock := TotalBlocks - 2
+		
+		Header->PartitionEntryArrayLBA := 2
+		Header->PartitionEntryCount := 128
+		Header->PartitionEntrySize := #GPTPartitionEntry
+		Header->PartitionEntryArrayChecksum := 0
+		
+		this->Sync()
+	}
+}
+
+
 struct GPTDevice {
-	BlockDevice* Device
+	IBlockDevice* Device
 	
 	union {
 		GPTPartitionTableHeader RawHeader
@@ -134,6 +305,10 @@ struct GPTDevice {
 		this->Device->Read(this->Header->PartitionEntryArrayLBA + SectorIndex, 1, this->TempSector)
 		MoveMemory(this->TempSector + OffsetInSector, Entry, #GPTPartitionEntry)
 		this->Device->Write(this->Header->PartitionEntryArrayLBA + SectorIndex, 1, this->TempSector)
+
+		if (Index >= this->Header->PartitionEntryCount) {
+			this->Header->PartitionEntryCount = Index + 1
+		}
 		
 		i32 PartitionEntryArrayChecksum := this->CalculatePartitionEntryArrayCRC()
 		
@@ -231,38 +406,12 @@ struct GPTDevice {
 		}
 	}
 
-	static self* New(BlockDevice* Parent) {
+	static self* New(IBlockDevice* Parent) {
 		self* this := Alloc(#self)
 
 		this->Device := Parent
+		this->ReadHeader(1) ; read the primary header
 
 		return this
 	}
-}
-
-struct GPTDeviceBinding {
-	BlockDevice* Parent
-	GPTDevice* Device
-}
-
-i32 GPTDeviceBindingCount
-GPTDeviceBinding[10] GPTDeviceBindings
-
-define void AddGPTDeviceBinding(BlockDevice* Parent, GPTDevice* Device) {
-	GPTDeviceBinding* Slot := GPTDeviceBindings[GPTDeviceBindingCount++]
-	
-	Slot->Parent := Parent
-	Slot->Device := Device
-}
-
-define GPTDevice* FindGPTDeviceBinding(BlockDevice* Parent) {
-	for (i32 Index := 0, Index < GPTDeviceBindingCount, Index++) {
-		GPTDeviceBinding* Slot := GPTDeviceBindings[Index]
-		
-		if (Slot->Parent = Parent) {
-			return Slot->Device
-		}
-	}
-	
-	return null
 }

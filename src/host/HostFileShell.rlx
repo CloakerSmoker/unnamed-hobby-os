@@ -20,11 +20,12 @@ define void Info(i8* Format, ... Args) {
 
 #Require "./src/drivers/block-device/BlockDevice.rlx"
 #Require "./src/drivers/block-device/FileBlockDevice.rlx"
-#Require "./src/drivers/block-device/GPTBlockDevice.rlx"
 
 #Require "./src/kernel/file-system/VFS/VFS.rlx"
 #Require "./src/kernel/file-system/VFS/VFSDirectory.rlx"
 #Require "./src/kernel/file-system/VFS/VFSOverlayDirectory.rlx"
+
+#Require "./src/drivers/block-device/GPTBlockDevice.rlx"
 
 #Require "./src/kernel/file-system/VFS/Ext2.rlx"
 #Require "./src/kernel/file-system/VFS/FAT32.rlx"

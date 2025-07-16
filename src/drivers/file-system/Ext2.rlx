@@ -464,7 +464,7 @@ struct Ext2 {
 	
 	void* TempBitmap
 	
-	BlockDevice* Device
+	IBlockDevice* Device
 	
 	define void ReadSectors(i32 SectorNumber, i32 SectorCount, void* Buffer) {
 		this->Device->Read(SectorNumber, SectorCount, Buffer)
@@ -480,7 +480,7 @@ struct Ext2 {
 		return Buffer
 	}
 
-	define void Initialize(BlockDevice* Device, void* Scratch) {
+	define void Initialize(IBlockDevice* Device, void* Scratch) {
 		this->Device := Device
 
 		this->SuperBlock := Scratch
@@ -492,7 +492,7 @@ struct Ext2 {
 		this->TempBitmap := Scratch + 5120
 	}
 
-	static self* New(BlockDevice* Device) {
+	static self* New(IBlockDevice* Device) {
 		self* this := Alloc(#self)
 
 		void* Scratch := Alloc(EXT2_SCRATCH_SIZE_BYTES)

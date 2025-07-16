@@ -1,6 +1,45 @@
 #Require "./src/drivers/GPT.rlx"
 #Require "$/StringBase.rlx"
 
+class GPTPartitionBlockDevice implements IBlockDevice, derives INew {
+	GPTDevice* Parent
+	IBlockDevice* Base
+
+	GPTPartitionEntry Entry
+	i32 PartitionNumber
+
+	define void New(GPTDevice* Parent, i32 PartitionNumber) {
+		this->Parent := Parent
+		this->Base := Parent->Device
+
+		this->PartitionNumber := PartitionNumber
+		
+		MoveMemory(this~>Entry, Parent->ReadPartitionEntry(PartitionNumber), #GPTPartitionEntry)
+	}
+	
+	define void Read(i64 FirstBlock, i64 BlockCount, void* Buffer) {
+		if (FirstBlock + BlockCount >= this~>Entry->EndingLBA) {
+			Print("Read %i + %i, end = %i\n", FirstBlock, BlockCount, this~>Entry->EndingLBA)
+			Throw(BLOCK_DEVICE_READ_PAST_END)
+		}
+		
+		this->Base->Read(this~>Entry->StartingLBA + FirstBlock, BlockCount, Buffer)
+	}
+
+	define void Write(i64 FirstBlock, i64 BlockCount, void* Buffer) {
+		if (FirstBlock + BlockCount >= this~>Entry->EndingLBA) {
+			Print("Write %i + %i, end = %i\n", FirstBlock, BlockCount, this~>Entry->EndingLBA)
+			Throw(BLOCK_DEVICE_WRITE_PAST_END)
+		}
+		
+		this->Base->Write(this~>Entry->StartingLBA + FirstBlock, BlockCount, Buffer)
+	}
+	
+	define i64 GetBlockSize() {
+		return 0x200
+	}
+}
+/* 
 declare BlockDevicePrototype* GetGPTPartitionBlockDevicePrototype()
 
 struct GPTPartitionBlockDeviceInstance {
@@ -39,7 +78,7 @@ struct GPTPartitionBlockDeviceInstance {
 		
 		i32 Index := AToI(Options[0]) As i32
 		
-		GPTDevice* GPTParent := FindGPTDeviceBinding(this->Parent)
+		GPTDevice* GPTParent :=  ;FindGPTDeviceBinding(this->Parent)
 		
 		if !(GPTParent) {
 			GPTParent := Alloc(#GPTDevice)
@@ -68,12 +107,6 @@ struct GPTPartitionBlockDeviceInstance {
 	}
 }
 
-struct GPTBlockDevice {
-	static BlockDevice* New(BlockDevice* Parent, GPTPartitionEntry* Entry) {
-		return GPTPartitionBlockDeviceInstance:New(Parent, Entry)
-	}
-}
-
 BlockDevicePrototype GPTPartitionBlockDevicePrototype {
 	DataSize: #GPTPartitionBlockDeviceInstance,
 	
@@ -92,4 +125,4 @@ define BlockDevicePrototype* GetGPTPartitionBlockDevicePrototype() {
 	return &GPTPartitionBlockDevicePrototype
 }
 
-i32 GPT_PARTITION_BLOCK_DEVICE_PROTOTYPE_ID := RegisterBlockDevicePrototype(&GPTPartitionBlockDevicePrototype)
+i32 GPT_PARTITION_BLOCK_DEVICE_PROTOTYPE_ID := RegisterBlockDevicePrototype(&GPTPartitionBlockDevicePrototype) */

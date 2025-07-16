@@ -1,13 +1,13 @@
 
 class BlockDeviceFileHandle implements IFileHandle, derives INew {
-    BlockDevice* Device
+    IBlockDevice* Device
     i32 BlockSize
 
     i32 Offset
 
-    define void New(BlockDevice* Device) {
+    define void New(IBlockDevice* Device) {
         this->Device := Device
-        this->BlockSize := Device->GetBytesPerBlock() As i32
+        this->BlockSize := Device->GetBlockSize() As i32
     }
 
     define void Status(FileStatus* Out) {
