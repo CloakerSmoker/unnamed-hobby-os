@@ -1,6 +1,0 @@
-	BlockDevice* Parent
-	BlockDevicePrototype* Prototype
-	
-	define BlockDevice* AsBlockDevice() {
-		return this As BlockDevice*
-	}

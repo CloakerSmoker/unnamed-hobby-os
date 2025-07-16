@@ -108,38 +108,36 @@ define void ExecuteGPT(i64 ArgC, i8** ArgV) {
     BlockDeviceFileHandle* BlockDeviceHandle := BlockDeviceFile->Handle
     IBlockDevice* RawDevice := BlockDeviceHandle->Device
 
-    GPTDevice* Device := GPTDevice:New(RawDevice)
+    GPTPartitionTable* PartitionTable := new GPTPartitionTable(RawDevice)
     i64 BlockSize := RawDevice->GetBlockSize()
 
     ;Print("Block Size: %i bytes\n", BlockSize)
-
-    i8 Formatted := CompareMemory(Device->Header->Signature, "EFI PART", 8)
 
     if (StringEquals(Verb, "format")) {
         ; gpt /dev/loop0 format 128m
 
         i64 Size := ParseDataUnit(ArgV[3]) / BlockSize
 
-        Device->Format(Size)
-        Device->ReadHeader(1)
-        PrintGPTPartitionTableHeader(Device->Header)
+        PartitionTable->Format(Size)
+        PartitionTable->ReadHeader(1)
+        PrintGPTPartitionTableHeader(PartitionTable->Header)
 
         return
     }
-    else if !(Formatted) {
+    else if !(PartitionTable->IsValid()) {
         Print("'%s' is not formatted as a GPT device\n", DevicePath)
         return
     }
 
     if (StringEquals(Verb, "scan")) {
-        for (i32 Index := 0, Index < Device->Header->PartitionEntryCount, Index++) {
-            GPTPartitionEntry* NextPartition := Device->ReadPartitionEntry(Index)
+        for (i32 Index := 0, Index < PartitionTable->Header->PartitionEntryCount, Index++) {
+            GPTPartitionEntry* NextPartition := PartitionTable->ReadPartitionEntry(Index)
 
             if (NextPartition->StartingLBA = 0 && NextPartition->EndingLBA = 0) {
                 continue
             }
 
-            IBlockDevice* PartitionDevice := new GPTPartitionBlockDevice(Device, Index)
+            IBlockDevice* PartitionDevice := new GPTPartitionBlockDevice(PartitionTable, Index)
             IFileHandle* PartitionHandle := BlockDeviceFileHandle:New(PartitionDevice)
             IFile* PartitionFile := VFSBlockDeviceFile:New(PartitionHandle)
 
@@ -160,13 +158,13 @@ define void ExecuteGPT(i64 ArgC, i8** ArgV) {
         i8* Noun := ArgV[3]
 
         if (StringEquals(Noun, "headers")) {
-            Device->ReadHeader(1)
+            PartitionTable->ReadHeader(1)
             Print("Primary GPT Header:\n")
-            PrintGPTPartitionTableHeader(Device->Header)
+            PrintGPTPartitionTableHeader(PartitionTable->Header)
 
-            Device->ReadHeader(Device->Header->AlternateHeaderLBA)
+            PartitionTable->ReadHeader(PartitionTable->Header->AlternateHeaderLBA)
             Print("Alternative GPT Header:\n")
-            PrintGPTPartitionTableHeader(Device->Header)
+            PrintGPTPartitionTableHeader(PartitionTable->Header)
         }
         else if (StringEquals(Noun, "header")) {
             i64 HeaderLBA := 1
@@ -177,20 +175,20 @@ define void ExecuteGPT(i64 ArgC, i8** ArgV) {
                 i8* HeaderName := ArgV[4]
 
                 if (StringEquals(HeaderName, "alternative")) {
-                    HeaderLBA := Device->Header->AlternateHeaderLBA
+                    HeaderLBA := PartitionTable->Header->AlternateHeaderLBA
                 }
             }
 
-            Device->ReadHeader(HeaderLBA)
-            PrintGPTPartitionTableHeader(Device->Header)
+            PartitionTable->ReadHeader(HeaderLBA)
+            PrintGPTPartitionTableHeader(PartitionTable->Header)
         }
         else if (StringEquals(Noun, "guid")) {
-            Device->ReadHeader(1)
-            Print("%guid\n", Device->Header->DiskGUID)
+            PartitionTable->ReadHeader(1)
+            Print("%guid\n", PartitionTable->Header->DiskGUID)
         }
         else if (StringEquals(Noun, "partitions")) {
-            for (i32 Index := 0, Index < Device->Header->PartitionEntryCount, Index++) {
-                GPTPartitionEntry* NextPartition := Device->ReadPartitionEntry(Index)
+            for (i32 Index := 0, Index < PartitionTable->Header->PartitionEntryCount, Index++) {
+                GPTPartitionEntry* NextPartition := PartitionTable->ReadPartitionEntry(Index)
 
                 if (NextPartition->StartingLBA = 0 && NextPartition->EndingLBA = 0) {
                     continue
@@ -205,11 +203,11 @@ define void ExecuteGPT(i64 ArgC, i8** ArgV) {
 
             i32 PartitionNumber := AToI(ArgV[4]) As i32
 
-            if (PartitionNumber < 0 || PartitionNumber > Device->Header->PartitionEntryCount) {
+            if (PartitionNumber < 0 || PartitionNumber > PartitionTable->Header->PartitionEntryCount) {
                 Print("'%s' has no partition number '%i'\n", DevicePath, PartitionNumber)
             }
 
-            GPTPartitionEntry* Partition := Device->ReadPartitionEntry(PartitionNumber)
+            GPTPartitionEntry* Partition := PartitionTable->ReadPartitionEntry(PartitionNumber)
 
             if (ArgC >= 6) {
                 i8* Property := ArgV[5]
@@ -233,7 +231,7 @@ define void ExecuteGPT(i64 ArgC, i8** ArgV) {
 
         ;GenerateGUID(NewEntry->PartitionGUID)
 
-        Device->WritePartitionEntry(Index, NewEntry)
+        PartitionTable->WritePartitionEntry(Index, NewEntry)
 		
 		Free(NewEntry)
 		
@@ -256,25 +254,25 @@ define void ExecuteGPT(i64 ArgC, i8** ArgV) {
                 if (StringEquals(Value, "random")) {
                     ; gpt /dev/loop0 set disk guid random
 
-                    FillRandom(Device->Header~>DiskGUID, 16)
+                    FillRandom(PartitionTable->Header~>DiskGUID, 16)
                 }
 
                 ; gpt /dev/loop0 set disk guid {whatever}
-                else if !(ParseGUID(Value, Device->Header~>DiskGUID)) {
+                else if !(ParseGUID(Value, PartitionTable->Header~>DiskGUID)) {
                     Print("Could not parse '%s' as a disk GUID\n", Value)
                     return
                 }
 
-                Device->Sync()
+                PartitionTable->Sync()
 
-                Print("Set disk.guid = %guid\n", Device->Header~>DiskGUID)
+                Print("Set disk.guid = %guid\n", PartitionTable->Header~>DiskGUID)
             }
         }
         else if (StringEquals(Selector, "partition")) {
             ; gpt /dev/loop0 set partition 0
             
             i32 PartitionNumber := AToI(ArgV[4]) As i32
-            GPTPartitionEntry* BorrowedPartition := Device->ReadPartitionEntry(PartitionNumber)
+            GPTPartitionEntry* BorrowedPartition := PartitionTable->ReadPartitionEntry(PartitionNumber)
 
             GPTPartitionEntry TargetPartition
             MoveMemory(&TargetPartition, BorrowedPartition, #GPTPartitionEntry)
@@ -333,7 +331,7 @@ define void ExecuteGPT(i64 ArgC, i8** ArgV) {
 
             ;PrintGPTPartitionEntry(&TargetPartition)
 
-            Device->WritePartitionEntry(PartitionNumber, &TargetPartition)
+            PartitionTable->WritePartitionEntry(PartitionNumber, &TargetPartition)
 
             if (ShowDefaultResult) {
                 Print("Set %i.%s = %s\n", PartitionNumber, Property, Value)

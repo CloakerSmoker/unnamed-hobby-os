@@ -392,23 +392,21 @@ define void PopulateDevicesDirectory(IDirectory* DevicesDirectory) {
 
 			Print("SATA Device %i is a %s, SN: %s\n", Port->Index, Port->Model, Port->SerialNumber)
 
-			IBlockDevice* Device := new ICH9::AHCI::_PortBlockDevice(Port)
+			IBlockDevice* Device := new ICH9::AHCI::PortBlockDevice(Port)
 			IFileHandle* Handle := BlockDeviceFileHandle:New(Device)
 			IFile* File := VFSBlockDeviceFile:New(Handle)
 
 			DevicesDirectory->Insert(FormatString("sata%i", Index), File)
 
-			GPTDevice* GPT := GPTDevice:New(Device)
+			GPTPartitionTable* PartitionTable := new GPTPartitionTable(Device)
 
-			GPT->ReadHeader(1)
-
-			if !(CompareMemory(GPT->Header->Signature, "EFI PART", 8)) {
-				Free(GPT)
+			if !(PartitionTable->IsValid()) {
+				PartitionTable->Delete()
 				continue
 			}
 
-			for (i32 Partition := 0, Partition < GPT->Header->PartitionEntryCount, Partition++) {
-				GPTPartitionEntry* NextPartition := GPT->ReadPartitionEntry(Partition)
+			for (i32 Partition := 0, Partition < PartitionTable->Header->PartitionEntryCount, Partition++) {
+				GPTPartitionEntry* NextPartition := PartitionTable->ReadPartitionEntry(Partition)
 
 				if (NextPartition->StartingLBA = 0 && NextPartition->EndingLBA = 0) {
 					continue
@@ -423,7 +421,7 @@ define void PopulateDevicesDirectory(IDirectory* DevicesDirectory) {
 
 				i8* GUIDName := FormatString("%guid", NextPartition~>PartitionGUID)
 
-				IBlockDevice* PartitionDevice := new GPTPartitionBlockDevice(GPT, Partition)
+				IBlockDevice* PartitionDevice := new GPTPartitionBlockDevice(PartitionTable, Partition)
 				IFileHandle* PartitionHandle := BlockDeviceFileHandle:New(PartitionDevice)
 				IFile* PartitionFile := VFSBlockDeviceFile:New(PartitionHandle)
 
