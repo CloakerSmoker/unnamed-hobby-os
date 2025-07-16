@@ -6,8 +6,8 @@
 
 class TerminalInputStreamHandle implements IFileHandle, derives INew {
 	#Include "./src/kernel/terminal/InstanceComponent.rlx"
-	IFileHandle* InputSource
 	IFileHandle* Output
+	IFileHandle* InputSource
 	
 	i8[64] RawLineBuffer
 	MemoryFIFO LineBuffer
@@ -131,8 +131,22 @@ class TerminalInputStreamHandle implements IFileHandle, derives INew {
 		
 		return 0
 	}
+
+	define void PullInput() {
+		KeyInput Input
+
+		while (this->InputSource->Poll(POLL_FOR_READ) = POLL_CAN_READ) {
+			i32 ReadSize := this->InputSource->Read(&Input, #KeyInput)
+
+			if !(Input.Modifiers & KEY_MODIFIER_RELEASED) {
+				this->OnInput(Input.Modifiers, Input.KeyCode)
+			}
+		}
+	}
 	
 	define i32 Poll(i32 Mode) {
+		this->PullInput()
+
 		MemoryFIFO* Buffer := this~>InputBuffer
 		
 		if (this->LocalFlag(LINUX_TERMIOS_LOCAL_FLAG_ICANON)) {
@@ -153,6 +167,8 @@ class TerminalInputStreamHandle implements IFileHandle, derives INew {
 	}
 	
 	define i32 Read(void* Out, i32 Count) {
+		this->PullInput()
+
 		MemoryFIFO* Buffer := this~>InputBuffer
 		
 		if (this->LocalFlag(LINUX_TERMIOS_LOCAL_FLAG_ICANON)) {
@@ -165,11 +181,13 @@ class TerminalInputStreamHandle implements IFileHandle, derives INew {
 			if (IsSchedulerActive()) {
 				while !(Available) {
 					SchedulerYield()
+					this->PullInput()
 					Available := Buffer->Available()
 				}
 			}
 			else {
 				while !(Available) {
+					this->PullInput()
 					Available := Buffer->Available()
 				}
 			}
