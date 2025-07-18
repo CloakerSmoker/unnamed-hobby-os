@@ -1,0 +1,113 @@
+namespace USB::IDs {
+
+    struct VendorEntry {
+        i32 ID
+        i32 NameOffset
+        i32 DeviceCount
+        i32 FirstDeviceIndex
+    }
+
+    struct DeviceEntry {
+        i32 ID
+        i32 NameOffset
+    }
+
+    struct FileHeader {
+        i32 VendorCount
+        i32 VendorsOffset
+        i32 DevicesOffset
+        i32 StringsOffset
+    }
+    
+    class Database derives INew {
+        FileHeader* Header
+
+        VendorEntry* Vendors
+        DeviceEntry* Devices
+
+        i8* Strings
+
+        define void New(void* Buffer) {
+            this->Header := Buffer
+
+            this->Vendors := Buffer + this->Header->VendorsOffset
+            this->Devices := Buffer + this->Header->DevicesOffset
+            this->Strings := Buffer + this->Header->StringsOffset
+        }
+
+        define i8* GetString(i32 Offset) {
+            return &this->Strings[Offset]
+        }
+
+        define i32 Cast(i16 ID) {
+            return (ID As i32) & 0xFFFF
+        }
+
+        define VendorEntry* FindVendor(i16 RawID) {
+            i32 ID := this->Cast(RawID)
+
+            i32 Count := this->Header->VendorCount
+
+            for (i32 Index := 0, Index < Count, Index++) {
+                VendorEntry* Vendor := this->Vendors[Index]
+
+                ;Print("[%i]: %X (%s)\n", Index, Vendor->ID, this->GetString(Vendor->NameOffset))
+
+                if (Vendor->ID = ID) {
+                    return Vendor
+                }
+            }
+
+            return null
+        }
+
+        define i8* GetVendorName(i16 ID) {
+            VendorEntry* Vendor := this->FindVendor(ID)
+
+            if !(Vendor) {
+                return null
+            }
+
+            return this->GetString(Vendor->NameOffset)
+        }
+
+        define DeviceEntry* FindDevice(VendorEntry* Vendor, i16 RawID) {
+            i32 ID := this->Cast(RawID)
+
+            DeviceEntry* Devices := this->Devices[Vendor->FirstDeviceIndex]
+            i32 Count := Vendor->DeviceCount
+
+            for (i32 Index := 0, Index < Count, Index++) {
+                DeviceEntry* Device := Devices[Index]
+
+                if (Device->ID = ID) {
+                    return Device
+                }
+            }
+
+            return null
+        }
+
+        define i8* GetDeviceName(VendorEntry* Vendor, i16 ID) {
+            DeviceEntry* Device := this->FindDevice(Vendor, ID)
+
+            if !(Device) {
+                return null
+            }
+
+            return this->GetString(Device->NameOffset)
+        }
+
+        define i8* GetDeviceName(i16 VendorID, i16 DeviceID) {
+            VendorEntry* Vendor := this->FindVendor(VendorID)
+
+            if !(Vendor) {
+                return null
+            }
+
+            return this->GetDeviceName(Vendor, DeviceID)
+        }
+    }
+}
+
+USB::IDs::Database* USBIDs := USB::IDs::Database:New(i8[#file "./build/usbids.bin"])

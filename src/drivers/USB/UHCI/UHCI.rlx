@@ -1,7 +1,10 @@
+
+#Require "src/drivers/USB/Descriptors.rlx"
+#Require "src/drivers/USB/IDs.rlx"
+
 i8 PCI_INTERFACE_UHCI := 0
 
-namespace UHCI {
-
+namespace USB::UHCI {
     namespace RegisterFields {
         bits Command As i16 {
             [0] RunStop
@@ -37,6 +40,7 @@ namespace UHCI {
             [3] EnableChange
             [4:5] LineStatus
             [6] ResumeDetected
+            [7] Present
             [8] LowSpeedDevice
             [9] Reset
             [12] Suspend
@@ -54,13 +58,19 @@ namespace UHCI {
         Port2 := 0x12
     }
 
+    enum TransferToken As i8{
+        IN := 0x69,
+        OUT := 0xE1,
+        SETUP := 0x2D
+    }
+
+    enum DeviceSpeed As i8 {
+        Low := 7
+        Full := 63
+    }
+
     struct TransferDescriptor {
-        bits As i32 {
-            [0] Terminate
-            [1] QueueHead
-            [2] DepthFirst
-            [4:31] LinkPointer
-        }
+        i32 Link
 
         bits As i32 {
             [0:10] ActualLength
@@ -83,7 +93,7 @@ namespace UHCI {
             [19] DataToggle
             [15:18] Endpoint
             [8:14] DeviceAddress
-            [0:7] PacketIdentification
+            TransferToken [0:7] Token
         }
 
         i32 BufferPointer
@@ -91,16 +101,9 @@ namespace UHCI {
         i32[3] Reserved
     }
 
-    bits Link As i32 {
-        [0] Terminate
-        [1] QueueHead
-        [2] DepthFirst
-        [4:31] Pointer
-    }
-
     struct _QueueHead {
-        Link Head
-        Link Element
+        i32 HorizontalLink
+        i32 VerticalLink
     }
 
     struct PCIeOverlay {
@@ -111,13 +114,98 @@ namespace UHCI {
         i8 USBVersion
     }
 
+    enum RequestRecipient As i8 {
+        Device := 0,
+        Interface := 1,
+        Endpoint := 2,
+        Other := 3
+    }
+
+    enum RequestType As i8 {
+        Standard := 0,
+        Class := 1,
+        Vendor := 2,
+        Reserved := 3
+    }
+
+    enum RequestDataPhaseDirection As i8 {
+        HostToDevice := 0,
+        DeviceToHost := 1
+    }
+
+    enum StandardRequests As i8 {
+        GET_STATUS := 0,
+        CLEAR_FEATURE := 1,
+        SET_FEATURE := 3,
+        SET_ADDRESS := 5,
+        GET_DESCRIPTOR := 6,
+        SET_DESCRIPTOR := 7,
+        GET_CONFIGURATION := 8,
+        SET_CONFIGURATION := 9
+    }
+
+    bits GetDescriptorValue As i16 {
+        USB::DescriptorType [8:15] Type
+        [0:7] Index
+    }
+
+    struct SetupPacket {
+        bits As i8 {
+            RequestRecipient [0:4] Recipient
+            RequestType [5:6] Type
+            RequestDataPhaseDirection [7] DataDirection
+        }
+
+        union {
+            StandardRequests StandardRequest
+            i8 ClassRequest
+            i8 VendorRequest
+        }
+
+        union {
+            i16 Value
+            GetDescriptorValue GetDescriptor
+        }
+
+        i16 Index
+        i16 Length
+
+        define void MakeSetAddress(i8 Address) {
+            this->Recipient := RequestRecipient::Device
+            this->Type := RequestType::Standard
+
+            this->StandardRequest := StandardRequests::SET_ADDRESS
+            this->Value := Address
+            this->Index := 0
+            this->Length := 0
+        }
+
+        define void MakeGetDescriptor(USB::DescriptorType Type, i8 DescriptorIndex, i16 Length) {
+            this->Recipient := RequestRecipient::Device
+            this->Type := RequestType::Standard
+            this->DataDirection := RequestDataPhaseDirection::DeviceToHost
+
+            this->StandardRequest := StandardRequests::GET_DESCRIPTOR
+            this->GetDescriptor.Type := Type
+            this->GetDescriptor.Index := DescriptorIndex
+            this->Index := 0
+            this->Length := Length
+        }
+    }
+
+    enum LinkFlags As i32 {
+        Terminator := 1,
+        IsQueueHead := 2,
+        DepthFirst := 4
+    }
+
     class Controller derives INew {
         PCIeDevice* Device
 
         i32 IOBase
         i8 USBVersion
 
-        Link* FrameList
+        i32* FrameList
         i64 PhysicalFrameList
 
         QueueHead* QueueHeads
@@ -128,7 +216,7 @@ namespace UHCI {
 
             PCIeOverlay* Overlay := Device As void*
 
-            this->IOBase := Overlay->IOBase
+            this->IOBase := Device->ReadBAR(4)
             this->USBVersion := Overlay->USBVersion
 
             Print("UCHI IOBase %x, Version %x\n", this->IOBase, this->USBVersion)
@@ -149,25 +237,228 @@ namespace UHCI {
             return InL((this->IOBase + (Target As i32)) As i16)
         }
 
+        define i32 VirtualToPhysical(void* Virtual) {
+            return (KernelAddressSpace->VirtualToPhysical(Virtual) + (Virtual As i64 & 0xFFF)) As i32
+        }
+
+        define i32 PackLink(void* VirtualAddress, ... Flags) {
+            i32 Packed := 0
+
+            if (VirtualAddress != null) {
+                Packed := this->VirtualToPhysical(VirtualAddress)
+            }
+
+            i32 FlagCount := Flags[0] As i32
+
+            for (i32 Index := 0, Index < FlagCount, Index++) {
+                Packed |= Flags[Index + 1] As i32
+            }
+
+            return Packed
+        }
+
+        define i32 RemoveLinkFlag(i32 Link, LinkFlags Flag) {
+            return Link & ~(Flag As i32)
+        }
+
+        define i32 AddLinkFlag(i32 Link, LinkFlags Flag) {
+            return Link | (Flag As i32)
+        }
+
+        i8 Stop
+        void* DescriptorBuffer
+
+        define void CheckPort(Registers Port) {
+            if (this->Stop) {
+                return
+            }
+
+            RegisterFields::Port PortFields := this->Read16(Port) As RegisterFields::Port
+
+            Info("Port %x: %b (Present? %i)\n", Port, PortFields, PortFields.Present)
+
+            if (PortFields.DevicePresent) {
+                ;Print("Device present on port %d\n", Port)
+
+                if (PortFields.ConnectStatusChange) {
+                    Print("Connect status change on port %d\n", Port)
+
+                    PortFields.ConnectStatusChange := false
+                    this->Write16(Port, PortFields As i16)
+
+                    PortFields := this->Read16(Port) As RegisterFields::Port
+                    PortFields.Reset := true
+                    this->Write16(Port, PortFields As i16)
+
+                    SleepMS(100)
+                    PortFields := this->Read16(Port) As RegisterFields::Port
+                    PortFields.Reset := false
+                    this->Write16(Port, PortFields As i16)
+
+                    SleepMS(50)
+                    PortFields := this->Read16(Port) As RegisterFields::Port
+                    PortFields.Enable := true
+                    this->Write16(Port, PortFields As i16)
+
+                    loop {
+                        PortFields := this->Read16(Port) As RegisterFields::Port
+
+                        if (PortFields.Enable) {
+                            Print("Port %x enabled\n", Port)
+                            Info("Port %x enabled\n", Port)
+                            break
+                        }
+
+                        SleepMS(100)
+                    }
+
+                    this->FrameList[200] := this->RemoveLinkFlag(this->FrameList[200], LinkFlags::Terminator)
+
+                    SleepMS(200)
+
+                    this->Stop := true
+                    
+                    RegisterFields::Command CommandFields := 0 As RegisterFields::Command
+                    this->Write16(Registers::Command, CommandFields As i16)
+
+                    SleepMS(10)
+
+                    Info("%usb-descriptor\n", this->DescriptorBuffer)
+
+                    USB::DeviceDescriptor* Device := this->DescriptorBuffer As USB::DeviceDescriptor*
+
+                    Print("What a wonderful %s %s you have plugged in !!!!!!", 
+                        USBIDs->GetVendorName(Device->VendorID),
+                        USBIDs->GetDeviceName(Device->VendorID, Device->ProductID)
+                    )
+                }
+
+                if (PortFields.EnableChange) {
+                    Print("Enable change on port %d\n", Port)
+                }
+            } else {
+                ;Print("No device present on port %d\n", Port)
+            }
+        }
+
+        define void CheckPortsThread() {
+            loop {
+                this->CheckPort(Registers::Port1)
+                this->CheckPort(Registers::Port2)
+
+                SleepMS(1000)
+            }
+        }
+
+        define void InitializeTransferDescriptor(TransferDescriptor* Transfer, DeviceSpeed Speed, TransferToken Token, i32 Length) {
+            Transfer->InterruptAfterErrorCount := 3
+            Transfer->Active := true
+
+            if (Speed = DeviceSpeed::Low) {
+                Transfer->IsLowSpeedDevice := true
+                Transfer->MaximumLength := 7
+            }
+            else {
+                Transfer->IsLowSpeedDevice := false
+                Transfer->MaximumLength := 63
+            }
+            
+            Transfer->ShouldInterruptOnComplete := true
+            Transfer->Token := Token
+            Transfer->ActualLength := Length As i16
+        }
+
+
         define void Initialize() {
+
+            Print("CanUseMsi? %i", this->Device->CanUseMSI())
+            Halt()
+
+            this->IOBase := this->Device->ReadBAR(4) & 0b1111_1111_1110_0000
+
+            Info("UCHI IOBase %x, Version %x\n", this->IOBase, this->USBVersion)
+
             this->FrameList := KernelPageAllocator->AllocateVirtual(1)
             this->PhysicalFrameList := KernelAddressSpace->VirtualToPhysical(this->FrameList)
 
-            for (i32 Index := 0, Index < 1024, Index++) {
-                Link* Entry := &this->FrameList[Index]
+            i32 TerminatorLink := this->PackLink(null, LinkFlags::Terminator)
 
-                Entry->Terminate := true
+            for (i32 Index := 0, Index < 1024, Index++) {
+                this->FrameList[Index] := TerminatorLink
             }
+
+            void* Pool := KernelPageAllocator->AllocateVirtual(2)
+            i32 PoolPhysical := KernelAddressSpace->VirtualToPhysical(Pool) As i32
+
+            _QueueHead* GetDescriptorQH := Pool As _QueueHead*
+
+            TransferDescriptor* SetupTD := (Pool + 0x100) As TransferDescriptor*
+            this->InitializeTransferDescriptor(SetupTD, DeviceSpeed::Low, TransferToken::SETUP, 8)
+
+            SetupPacket* Setup := (Pool + 0x200) As SetupPacket*
+            Setup->MakeGetDescriptor(DescriptorType::Device, 0, 18)
+            SetupTD->BufferPointer := this->VirtualToPhysical(Setup)
+
+            TransferDescriptor* In0 := (Pool + 0x300) As TransferDescriptor*
+            this->InitializeTransferDescriptor(In0, DeviceSpeed::Low, TransferToken::IN, 8)
+            In0->BufferPointer := this->VirtualToPhysical(Pool + 0x400)
+
+            this->DescriptorBuffer := Pool + 0x400
+            
+            TransferDescriptor* In1 := (Pool + 0x500) As TransferDescriptor*
+            this->InitializeTransferDescriptor(In1, DeviceSpeed::Low, TransferToken::IN, 8)
+            In1->BufferPointer := this->VirtualToPhysical(Pool + 0x408)
+
+            TransferDescriptor* In2 := (Pool + 0x600) As TransferDescriptor*
+            this->InitializeTransferDescriptor(In2, DeviceSpeed::Low, TransferToken::IN, 2)
+            In2->BufferPointer := this->VirtualToPhysical(Pool + 0x410)
+
+            ;GetDescriptorQH->Vertical.Pointer := this->VirtualToPhysical(SetupTD)
+            ;GetDescriptorQH->Vertical.IsQueueHead := true
+
+            GetDescriptorQH->VerticalLink := this->PackLink(SetupTD, LinkFlags::DepthFirst)
+            GetDescriptorQH->HorizontalLink := this->PackLink(null, LinkFlags::Terminator)
+
+            ;SetupTD->Next.Pointer := this->VirtualToPhysical(In0)
+            SetupTD->Link := this->PackLink(In0, LinkFlags::DepthFirst)
+
+            ;In0->Next.Pointer := this->VirtualToPhysical(In1)
+            In0->Link := this->PackLink(In1, LinkFlags::DepthFirst)
+
+            ;In1->Next.Pointer := this->VirtualToPhysical(In2)
+            In1->Link := this->PackLink(In2, LinkFlags::DepthFirst)
+
+            ;In2->Next.Terminator := true
+            In2->Link := this->PackLink(null, LinkFlags::Terminator)
+
+            this->FrameList[200] := this->PackLink(GetDescriptorQH, LinkFlags::IsQueueHead, LinkFlags::Terminator)
+
+            Print("FrameList[200]: %x\n", this->FrameList[200])
+
+            Print("GetDescriptorQH: %x\n", KernelAddressSpace->VirtualToPhysical(GetDescriptorQH))
+
+            ;Print("Link0: %x\n", *(Link0 As i32*))
+
+
 
             Print("%hexdump\n", this->FrameList, 16)
 
-            RegisterFields::Command CommandFields := 0 As RegisterFields::Command
+            this->Device->Write16(0xC0, 0x2000)
+            this->Device->Command |= PCI_COMMAND_REGISTER_BUS_MASTER As i16
 
-            CommandFields.RunStop := false
+            RegisterFields::Command CommandFields := 0 As RegisterFields::Command
             CommandFields.GlobalReset := true
+            CommandFields.HostControllerReset := true
             this->Write16(Registers::Command, CommandFields As i16)
 
             SleepMS(20)
+
+            CommandFields := this->Read16(Registers::Command) As RegisterFields::Command
+
+            if (CommandFields.HostControllerReset) {
+                Print("Host controller reset failed\n")
+                return
+            }
 
             CommandFields.GlobalReset := false
             this->Write16(Registers::Command, CommandFields As i16)
@@ -178,10 +469,12 @@ namespace UHCI {
             this->Write16(Registers::InterruptEnable, 0)
 
             CommandFields.RunStop := true
-            CommandFields.HostControllerReset := true
+            CommandFields.Enable64BitPackets := true
             this->Write16(Registers::Command, CommandFields As i16)
 
-            
+            Task* CheckPorts := Scheduler->AddLightTask(null, "UHCI Port Checker")
+            CheckPorts~>Context->CallMethod(this, &self.CheckPortsThread)
+            CheckPorts->Unblock()
         }
 
         define void Poll() {

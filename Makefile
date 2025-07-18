@@ -273,10 +273,21 @@ $(BUILD)/pciids.bin: ./src/drivers/PCI/BinarizeDatabase.py
 
 LIGHT_CLEAN_FILES+= $(BUILD)/pciids.bin
 
+# USB ID database
+
+$(BUILD)/usb.ids:
+	cd $(BUILD); wget http://www.linux-usb.org/usb.ids
+
+$(BUILD)/usbids.bin: $(BUILD)/usb.ids
+$(BUILD)/usbids.bin: ./src/drivers/USB/BinarizeDatabase.py
+	python3 ./src/drivers/USB/BinarizeDatabase.py $(BUILD)/usb.ids $(BUILD)/usbids.bin
+
+LIGHT_CLEAN_FILES+= $(BUILD)/usbids.bin
+
 # Kernel
 
 $(BUILD)/Kernel.elf: $(RLX)
-$(BUILD)/Kernel.elf: $(BUILD)/pciids.bin
+$(BUILD)/Kernel.elf: $(BUILD)/pciids.bin $(BUILD)/usbids.bin
 $(BUILD)/Kernel.elf: $(BUILD)/Kernel.d
 $(BUILD)/Kernel.elf: $(shell cat $(BUILD)/Kernel.d 2>/dev/null)
 	$(DBG)$(RLX) -i ./src/kernel/Main.rlx -o $@ $(KERNEL_RLX_FLAGS)
@@ -377,11 +388,11 @@ endif
 
 HELP_TEXT+=uhci: Add a UHCI controller
 ifneq (,$(findstring uhci,$(flags)))
-	QEMU_FLAGS+=-device ich9-usb-uhci1 -device usb-mouse
+	QEMU_FLAGS+=-device ich9-usb-uhci1 -device usb-mouse,bus=usb-bus.0,port=1
 endif
 
-HELP_TEXT+=usb: Add an EHCI controller, and use a USB device as the boot device instead of an AHCI device|
-ifneq (,$(findstring usb,$(flags)))
+HELP_TEXT+=ehci: Add an EHCI controller, and use a USB device as the boot device instead of an AHCI device|
+ifneq (,$(findstring ehci,$(flags)))
 	DISK_FLAGS:=-drive if=none,id=stick,format=raw,file=build/USB.img -usb -device usb-ehci,id=ehci -device usb-storage,bus=ehci.0,drive=stick
 endif
 
@@ -397,7 +408,7 @@ endif
 
 HELP_TEXT+=usb-debug: Have QEMU dump debug messages related to EHCI|
 ifneq (,$(findstring usb-debug,$(flags)))
-	QEMU_FLAGS+=--trace "usb_ehci*"
+	QEMU_FLAGS+=--trace "usb_ehci*" --trace "usb_uhci*"
 endif
 
 HELP_TEXT+=dry: Dry-run, don't actually run QEMU, just print the flags that would be passed|

@@ -225,6 +225,8 @@ define void DO_NOT_OPTIMIZE_AWAY(void* Function) asm { ret }
 
 #Require "./src/kernel/core/Debug.rlx"
 
+USB::UHCI::Controller* UHCIController := null
+
 define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Device) {
 	Print("%x/%x/%x:\n\t%pcie-product\n\t%pcie-purpose\n", Bus, Slot, Function, Device, Device)
 
@@ -306,12 +308,8 @@ define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Devic
 	}
 	else if (Device->Is(PCI_CLASS_CODE_SERIAL_BUS_CONTROLLER, PCI_SUBCLASS_USB_CONTROLLER, PCI_INTERFACE_UHCI)) {
 		Print("UCHI Controller @ %i:%i.%i\n", Bus, Slot, Function)
-		
-		UHCI::Controller* UHCIC := new UHCI::Controller(Device)
 
-		UHCIC->Initialize()
-
-		SleepMS(200000)
+		UHCIController := new USB::UHCI::Controller(Device)
 	}
 }
 
@@ -742,6 +740,14 @@ define void Main(TrampolineInfo* Info) {
 	;Halt()
 
 	;NetworkSetupTask()
+
+	Print("Initializing UHCI controller...\n")
+
+	UHCIController->Initialize()
+
+	Info("UHCI Controller initialized\n")
+
+	StartScheduler()
 
 	Task* NetworkThread := Scheduler->AddLightTask(&NetworkSetupTask, "Network Setup")
 	NetworkThread->State := TASK_CAN_RUN

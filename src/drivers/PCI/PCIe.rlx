@@ -285,6 +285,10 @@ struct PCIeDevice {
 
     PCIeCapability FirstCapability
 
+    define void Write16(i32 Offset, i16 Value) {
+        *((this As i16*) + Offset) := Value
+    }
+
     define PCICapability* PCICapabilityAt(i8 RawOffset) {
         i32 Offset := (RawOffset As i32) & 0xFF
 

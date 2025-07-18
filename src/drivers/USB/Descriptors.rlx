@@ -1,0 +1,178 @@
+namespace USB {
+    enum DescriptorType As i8 {
+        Device := 1,
+        Configuration := 2,
+        String := 3,
+        Interface := 4,
+        Endpoint := 5
+    }
+
+    struct DescriptorHeader {
+        i8 Length
+        DescriptorType Type
+    }
+
+    struct DeviceDescriptor {
+        DescriptorHeader Header
+        i16 USBVersion
+
+        i8 Class
+        i8 SubClass
+
+        i8 Protocol
+
+        i8 MaxPacketSize0
+
+        i16 VendorID
+        i16 ProductID
+        i16 Version
+
+        i8 ManufacturerStringIndex
+        i8 ProductStringIndex
+        i8 SerialNumberStringIndex
+        i8 ConfigurationCount
+    }
+
+    enum ConfigurationAttributes As i8 {
+        RemoteWakeup := 0x20,
+        SelfPowered := 0x40,
+        BusPowered := 0x80
+    }
+
+    struct ConfigurationDescriptor {
+        DescriptorHeader Header
+        i16 TotalLength
+
+        i8 InterfaceCount
+        i8 Value
+        i8 DescriptionStringIndex
+
+        ConfigurationAttributes Attributes
+
+        i8 MaxPower
+    }
+
+    struct InterfaceDescriptor {
+        DescriptorHeader Header
+        i8 InterfaceNumber
+        i8 AlternateSetting
+
+        i8 EndpointCount
+        i8 Class
+        i8 SubClass
+        i8 Protocol
+
+        i8 InterfaceStringIndex
+    }
+
+    enum EndpointDirection As i8 {
+        Out := 0,
+        In := 1
+    }
+
+    enum EndpointAttributes As i8 {
+        Control := 0,
+        Isochronous := 1,
+        Bulk := 2,
+        Interrupt := 3
+    }
+
+    struct EndpointDescriptor {
+        DescriptorHeader Header
+        
+        bits As i8 {
+            EndpointDirection [7] Direction
+            [0:3] Number
+        }
+
+        EndpointAttributes Attributes
+
+        i16 MaxPacketSize
+        i8 Interval
+    }
+
+    struct StringDescriptor {
+        DescriptorHeader Header
+        i16[0] String
+    }
+}
+
+define void DoUSBDescriptorPrint(PrintOutputAdapterPrototype* this, i8* Format, i32* FormatIndex, void* Parameters, i32 ParameterCount, i32* ParameterIndex) {
+    USB::DescriptorHeader* Descriptor := Parameters[*ParameterIndex] As USB::DescriptorHeader*
+    
+    if (Descriptor->Type = USB::DescriptorType::Device) {
+        USB::DeviceDescriptor* Device := Descriptor As USB::DeviceDescriptor*
+
+        this->Print("[USB Device Descriptor]\n")
+        this->Print("  Length=%i\n", Device->Header.Length)
+        this->Print("  USBVersion=%x\n", Device->USBVersion)
+        this->Print("  Class=%x\n", Device->Class)
+        this->Print("  SubClass=%x\n", Device->SubClass)
+        this->Print("  Protocol=%x\n", Device->Protocol)
+        this->Print("  MaxPacketSize0=%i\n", Device->MaxPacketSize0)
+        this->Print("  VendorID=%x\n", Device->VendorID)
+        this->Print("  ProductID=%x\n", Device->ProductID)
+        this->Print("  Version=%x\n", Device->Version)
+        this->Print("  ManufacturerStringIndex=%i\n", Device->ManufacturerStringIndex)
+        this->Print("  ProductStringIndex=%i\n", Device->ProductStringIndex)
+        this->Print("  SerialNumberStringIndex=%i\n", Device->SerialNumberStringIndex)
+        this->Print("  ConfigurationCount=%i\n", Device->ConfigurationCount)
+    }
+    else if (Descriptor->Type = USB::DescriptorType::Configuration) {
+        USB::ConfigurationDescriptor* Configuration := Descriptor As USB::ConfigurationDescriptor*
+
+        this->Print("[USB Configuration Descriptor]\n")
+        this->Print("  Length=%i\n", Configuration->Header.Length)
+        this->Print("  TotalLength=%i\n", Configuration->TotalLength)
+        this->Print("  InterfaceCount=%i\n", Configuration->InterfaceCount)
+        this->Print("  Value=%i\n", Configuration->Value)
+        this->Print("  DescriptionStringIndex=%i\n", Configuration->DescriptionStringIndex)
+        this->Print("  Attributes=%x\n", Configuration->Attributes)
+        this->Print("  MaxPower=%i\n", Configuration->MaxPower)
+    }
+    else if (Descriptor->Type = USB::DescriptorType::String) {
+        USB::StringDescriptor* String := Descriptor As USB::StringDescriptor*
+
+        this->Print("[USB String Descriptor]\n")
+        this->Print("  Length=%i\n", String->Header.Length)
+        this->Print("  String=\n")
+        this->Print("%hexdump", String->String, String->Header.Length - 2)
+        this->Print("\n")
+    }
+    else if (Descriptor->Type = USB::DescriptorType::Interface) {
+        USB::InterfaceDescriptor* Interface := Descriptor As USB::InterfaceDescriptor*
+
+        this->Print("[USB Interface Descriptor]\n")
+        this->Print("  Length=%i\n", Interface->Header.Length)
+        this->Print("  InterfaceNumber=%i\n", Interface->InterfaceNumber)
+        this->Print("  AlternateSetting=%i\n", Interface->AlternateSetting)
+        this->Print("  EndpointCount=%i\n", Interface->EndpointCount)
+        this->Print("  Class=%x\n", Interface->Class)
+        this->Print("  SubClass=%x\n", Interface->SubClass)
+        this->Print("  Protocol=%x\n", Interface->Protocol)
+        this->Print("  InterfaceStringIndex=%i\n", Interface->InterfaceStringIndex)
+    }
+    else if (Descriptor->Type = USB::DescriptorType::Endpoint) {
+        USB::EndpointDescriptor* Endpoint := Descriptor As USB::EndpointDescriptor*
+
+        this->Print("[USB Endpoint Descriptor]\n")
+        this->Print("  Length=%i\n", Endpoint->Header.Length)
+        this->Print("  Direction=%i\n", Endpoint->Direction)
+        this->Print("  Number=%i\n", Endpoint->Number)
+        this->Print("  Attributes=%x\n", Endpoint->Attributes)
+        this->Print("  MaxPacketSize=%i\n", Endpoint->MaxPacketSize)
+        this->Print("  Interval=%i\n", Endpoint->Interval)
+    }
+    else {
+        this->Print("[Unknown USB Descriptor]")
+    }
+
+    *ParameterIndex += 1
+}
+
+PrintFormatPrototype USBDescriptorFormatPrototype {
+	Name: "usb-descriptor",
+	Format: &DoUSBDescriptorPrint
+}
+
+i32 USB_DESCRIPTOR_FORMAT_PROTOTYPE_ID := AddPrintFormat(&USBDescriptorFormatPrototype)
