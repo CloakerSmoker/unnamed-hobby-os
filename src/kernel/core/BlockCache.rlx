@@ -41,13 +41,13 @@ class BlockCacheDevice implements IBlockDevice, derives INew {
     }
 
     define void EvictIfNeeded() {
-        BlockCacheEntry* OldestEntry := this->Entries->At(0)
-
         i32 Count := this->Entries->Count()
 
         if (Count < this->Capacity) {
             return ; no eviction needed
         }
+
+        BlockCacheEntry* OldestEntry := this->Entries->At(0)
 
         for (i32 Index := 1, Index < Count, Index++) {
             BlockCacheEntry* Entry := this->Entries->At(Index)
