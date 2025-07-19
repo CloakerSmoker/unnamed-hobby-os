@@ -566,6 +566,8 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	BootloaderInfo BootInfo {
 		PhysicalFrameBuffer: FrameBuffer As i64,
 
+		RSDP: RSDP As i64,
+
 		IOAPICBase: IOAPICBase,
 		HPETBase: HPETBase,
 

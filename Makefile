@@ -90,6 +90,15 @@ $(BUILD)/doom.elf: $(DOOM_GENERIC_SRC)/doomgeneric_uhos.c
 	cd $(DOOM_GENERIC_SRC); make CC=$(MUSL_GCC) --makefile=Makefile.uhos
 	cp $(DOOM_GENERIC_SRC)/doomgeneric $@
 
+# ACPICA
+
+ACPICA_SRC=./src/drivers/ACPI/ACPICA
+
+$(BUILD)/ACPICA.elf: $(wildcard $(ACPICA_SRC)/*.c) $(wildcard $(ACPICA_SRC)/include/*.h) $(wildcard $(ACPICA_SRC)/include/platform/*.h)
+	cd $(ACPICA_SRC); $(MUSL_GCC) -Iinclude -ffreestanding -nostdlib -static -D __UHOS__=1 *.c -o $(abspath $@)
+
+LIGHT_CLEAN_FILES+= $(BUILD)/ACPICA.elf
+
 # Preprocess
 
 %.rlx: %.prlx
@@ -143,6 +152,8 @@ mount ext2 /dev/loop0p1 /root
 install /host/build/Trampoline.elf /root/Trampoline.elf
 install /host/build/Kernel.elf /root/Kernel.elf
 
+install /host/build/ACPICA.elf /root/ACPICA.elf
+
 install /host/build/doom.elf /root/doom/doom.elf
 install /host/misc/files/DOOM.WAD /root/doom/DOOM.WAD
 
@@ -187,7 +198,7 @@ endef
 export GET_GUIDS_SCRIPT
 
 $(BUILD)/Disk.img: $(BUILD)/FAT32Tool.elf $(BUILD)/Ext2Tool.elf
-$(BUILD)/Disk.img: $(BUILD)/Boot.efi $(BUILD)/Trampoline.elf $(BUILD)/Kernel.elf
+$(BUILD)/Disk.img: $(BUILD)/Boot.efi $(BUILD)/Trampoline.elf $(BUILD)/Kernel.elf $(BUILD)/ACPICA.elf
 $(BUILD)/Disk.img: $(BUILD)/HostFileShell.elf
 $(BUILD)/Disk.img: $(BUILD)/doom.elf
 $(BUILD)/Disk.img: $(BUSYBOX_SRC)/busybox.links $(shell python3 src/host/busybox.py --src $(BUSYBOX_SRC))

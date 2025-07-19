@@ -369,7 +369,7 @@ namespace USB::UHCI {
         }
 
 
-        define void Initialize() {
+        define void Setup() {
 
             Print("CanUseMsi? %i", this->Device->CanUseMSI())
             Halt()

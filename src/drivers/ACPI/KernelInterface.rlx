@@ -1,0 +1,294 @@
+
+
+struct ACPIKernelInterface {
+    i64() GetRSDP
+
+    void*(i64) Allocate
+    void(void*) Free
+
+    i64() GetThreadID
+    void(void*, void*) CreateTask
+    void(i64) Sleep
+    void(i64) Stall
+
+    void(i64, void*, void*) InstallIDT
+    void(i64, void*, void*) RemoveIDT
+
+    i64() GetTimeMS
+
+    void(i8*) Print
+
+    void(i32, i8) OutB
+    void(i32, i16) OutW
+    void(i32, i32) OutD
+
+    i8(i32) InB
+    i16(i32) InW
+    i32(i32) InD
+
+    void(i32, i32, i32, i32, i32, i8) PCIeOutB
+    void(i32, i32, i32, i32, i32, i16) PCIeOutW
+    void(i32, i32, i32, i32, i32, i32) PCIeOutD
+    void(i32, i32, i32, i32, i32, i64) PCIeOutQ
+
+    i8(i32, i32, i32, i32, i32) PCIeInB
+    i16(i32, i32, i32, i32, i32) PCIeInW
+    i32(i32, i32, i32, i32, i32) PCIeInD
+    i64(i32, i32, i32, i32, i32) PCIeInQ
+}
+
+define i64 ACPI_GetRSDP() {
+    return BootInfo->RSDP
+}
+
+define void* ACPI_Allocate(i64 Size) {
+    return KernelHeapAllocate('ACPICA', Size As i32)
+}
+define void ACPI_Free(void* Pointer) {
+    KernelHeap->Free(Pointer)
+}
+
+define i64 ACPI_GetThreadID() {
+    return CurrentTask As i64
+}
+
+PointerArray* ACPI_Tasks := new PointerArray()
+
+define void ACPI_CreateTask(void* Function, void* Context) {
+    Task* Result := Scheduler->AddLightTask(Function, "ACPI Task")
+    Result~>Context->RDI := Context As i64
+
+    ACPI_Tasks->Push(Result)
+
+    Result->Unblock()
+}
+
+define void ACPI_Sleep(i64 Time) {
+    SleepMS(Time As i32)
+}
+
+define void ACPI_Stall(i64 Time) {
+    ; todo
+}
+
+struct ACPI_IDT_Entry {
+    void(void*) Handler
+    void* Context
+}
+
+ACPI_IDT_Entry* ACPI_IDT := KernelHeapAllocate('ACPI IDT', NUMBER_OF_INTERRUPT_HANDLERS * #ACPI_IDT_Entry)
+
+define void ACPI_OnInterrupt(AMD64Context* Context, i32 InterruptNumber, i64 ErrorCode) {
+    ACPI_IDT_Entry* Entry := ACPI_IDT[InterruptNumber]
+
+    if (Entry) {
+        Entry->Handler(Context)
+    }
+}
+
+define void ACPI_InstallIDT(i64 Vector, void* Handler, void* Context) {
+    ACPI_IDT_Entry* Entry := ACPI_IDT[Vector]
+
+    Entry->Handler := Handler
+    Entry->Context := Context
+
+    RegisterInterruptHandler(Vector As i32, &ACPI_OnInterrupt)
+}
+define void ACPI_RemoveIDT(i64 Vector, void* Handler, void* Context) {
+    RegisterInterruptHandler(Vector As i32, null)
+    FastZeroMemory(ACPI_IDT[Vector], #ACPI_IDT_Entry)
+}
+
+
+define i64 ACPI_GetTimeMS() {
+    return GetUptimeMS()
+}
+
+define void ACPI_Print(i8* Output) {
+    Print("%s", Output)
+}
+
+define void ACPI_OutB(i32 Port, i8 Value) {
+    OutB(Port As i16, Value)
+}
+define void ACPI_OutW(i32 Port, i16 Value) {
+    OutW(Port As i16, Value)
+}
+define void ACPI_OutD(i32 Port, i32 Value) {
+    OutL(Port As i16, Value)
+}
+
+define i8 ACPI_InB(i32 Port) {
+    return InB(Port As i16)
+}
+define i16 ACPI_InW(i32 Port) { 
+    return InW(Port As i16)
+}
+define i32 ACPI_InD(i32 Port) {
+    return InL(Port As i16)
+}
+
+define void* ACPI_LookupPCIe(i32 Segment, i32 Bus, i32 Device, i32 Function) {
+    return PCIeManager->Get(Segment, Bus, Device, Function)
+}
+
+define void ACPI_PCIeOutB(i32 Segment, i32 Bus, i32 Device, i32 Function, i32 Register, i8 Value) {
+    void* Buffer := ACPI_LookupPCIe(Segment, Bus, Device, Function)
+
+    *((Buffer + Register) As i8*) := Value
+}
+define void ACPI_PCIeOutW(i32 Segment, i32 Bus, i32 Device, i32 Function, i32 Register, i16 Value) {
+    void* Buffer := ACPI_LookupPCIe(Segment, Bus, Device, Function)
+
+    *((Buffer + Register) As i16*) := Value
+}
+define void ACPI_PCIeOutD(i32 Segment, i32 Bus, i32 Device, i32 Function, i32 Register, i32 Value) {
+    void* Buffer := ACPI_LookupPCIe(Segment, Bus, Device, Function)
+
+    *((Buffer + Register) As i32*) := Value
+}
+define void ACPI_PCIeOutQ(i32 Segment, i32 Bus, i32 Device, i32 Function, i32 Register, i64 Value) {
+    void* Buffer := ACPI_LookupPCIe(Segment, Bus, Device, Function)
+
+    *((Buffer + Register) As i64*) := Value
+}
+
+define i8 ACPI_PCIeInB(i32 Segment, i32 Bus, i32 Device, i32 Function, i32 Register) {
+    void* Buffer := ACPI_LookupPCIe(Segment, Bus, Device, Function)
+
+    return *((Buffer + Register) As i8*)
+}
+define i16 ACPI_PCIeInW(i32 Segment, i32 Bus, i32 Device, i32 Function, i32 Register) {
+    void* Buffer := ACPI_LookupPCIe(Segment, Bus, Device, Function)
+
+    return *((Buffer + Register) As i16*)
+}
+define i32 ACPI_PCIeInD(i32 Segment, i32 Bus, i32 Device, i32 Function, i32 Register) {
+    void* Buffer := ACPI_LookupPCIe(Segment, Bus, Device, Function)
+
+    return *((Buffer + Register) As i32*)
+}
+define i64 ACPI_PCIeInQ(i32 Segment, i32 Bus, i32 Device, i32 Function, i32 Register) {
+    void* Buffer := ACPI_LookupPCIe(Segment, Bus, Device, Function)
+
+    return *((Buffer + Register) As i64*)
+}
+
+ACPIKernelInterface* ACPI_KernelInterface := KernelHeapAllocate('ACPI_KI', #ACPIKernelInterface)
+
+define void PopulateInterface() {
+    ACPI_KernelInterface->GetRSDP := &ACPI_GetRSDP
+
+    ACPI_KernelInterface->Allocate := &ACPI_Allocate
+    ACPI_KernelInterface->Free := &ACPI_Free
+
+    ACPI_KernelInterface->GetThreadID := &ACPI_GetThreadID
+    ACPI_KernelInterface->CreateTask := &ACPI_CreateTask
+    ACPI_KernelInterface->Sleep := &ACPI_Sleep
+    ACPI_KernelInterface->Stall := &ACPI_Stall
+
+    ACPI_KernelInterface->InstallIDT := &ACPI_InstallIDT
+    ACPI_KernelInterface->RemoveIDT := &ACPI_RemoveIDT
+
+    ACPI_KernelInterface->GetTimeMS := &ACPI_GetTimeMS
+
+    ACPI_KernelInterface->Print := &ACPI_Print
+
+    ACPI_KernelInterface->OutB := &ACPI_OutB
+    ACPI_KernelInterface->OutW := &ACPI_OutW
+    ACPI_KernelInterface->OutD := &ACPI_OutD
+
+    ACPI_KernelInterface->InB := &ACPI_InB
+    ACPI_KernelInterface->InW := &ACPI_InW
+    ACPI_KernelInterface->InD := &ACPI_InD
+
+    ACPI_KernelInterface->PCIeOutB := &ACPI_PCIeOutB
+    ACPI_KernelInterface->PCIeOutW := &ACPI_PCIeOutW
+    ACPI_KernelInterface->PCIeOutD := &ACPI_PCIeOutD
+    ACPI_KernelInterface->PCIeOutQ := &ACPI_PCIeOutQ
+}
+
+define void SetupACPI() {
+    PopulateInterface()
+
+    VFSDirectoryEntry Entry
+    if !(Lookup(VFSRootDirectory, "ACPICA.elf", &Entry)) {
+        Print("'/ACPICA.elf' does not exist\n")
+        return
+    }
+
+    if (Entry.Type != VFSDirectoryEntryType::File) {
+        Print("'/ACPICA.elf' not a file\n")
+        return
+    }
+
+    IFile* InputFile := Entry.File
+    IFileHandle* Input := InputFile->Open()
+
+	Input->Seek(SeekMode::End, 0)
+	i32 Size := Input->Tell()
+	Input->Seek(SeekMode::Set, 0)
+
+	void* Buffer := Alloc(Size)
+	Input->Read(Buffer, Size)
+
+    ELFHeader* Image := Buffer As ELFHeader*
+    
+      ELFProgramHeader* ProgramHeaders := Image->GetProgramHeaders()
+
+    for (i32 Index := 0, Index < Image->ProgramHeaderEntryCount, Index++) {
+		ELFProgramHeader* Next := ProgramHeaders[Index]
+		
+		if (Next->Type = ELF_SEGMENT_TYPE_LOAD) {
+			void* SectionData := Image + Next->FileOffset
+			void* SectionMemory := Next->VirtualAddress As void*
+			void* SectionVirtualPage := SectionMemory & 0xFFFF_FFFF_FFFF_F000
+			
+			;Print("Section %i is %i (%x) bytes @ %x\n", Index, Next->MemorySize, Next->MemorySize, SectionMemory)
+			
+			i32 SectionPageCount := (Next->MemorySize As i32) / PAGE_SIZE
+			
+			if (Next->MemorySize % PAGE_SIZE) {
+				SectionPageCount += 1
+			}
+			
+			if (Next->FileOffset % PAGE_SIZE) {
+				SectionPageCount += 1
+			}
+			
+			if (SectionPageCount = 0) {
+				continue
+			}
+			
+			i64 TempFlags := PAGE_PRESENT | PAGE_WRITE ; Map as PRESENT|WRITE so we can... actually load the section into memory
+			i64 FinalFlags := PAGE_PRESENT | PAGE_USER
+			
+			if (Next->Flags & ELF_SEGMENT_FLAGS_WRITE) {
+				FinalFlags |= PAGE_WRITE
+			}
+
+            i64 Physical := PhysicalMemory->Allocate(SectionPageCount)
+
+            ;Print("Allocated %i pages @ %x for section\n", SectionPageCount, Physical)
+
+            Trampoline~>PageTree->SetRange(SectionVirtualPage, Physical, SectionPageCount, TempFlags)
+			
+			if (Next->MemorySize > Next->FileSize) {
+				void* ZeroArea := SectionMemory + Next->FileSize
+				i64 ZeroSize := Next->MemorySize - Next->FileSize
+				
+				FastSetMemory8(ZeroArea, 0, ZeroSize)
+			}
+			
+			MoveMemory(SectionMemory, SectionData, Next->FileSize)
+
+            Trampoline~>PageTree->SetRange(SectionVirtualPage, Physical, SectionPageCount, FinalFlags)
+		}
+	}
+
+    void(ACPIKernelInterface*) EntryPoint := Image->EntryPoint As void*
+
+    EntryPoint(ACPI_KernelInterface)
+
+
+}

@@ -8,6 +8,8 @@ struct AvailableMemoryRegion {
 struct BootloaderInfo {
 	i64 PhysicalFrameBuffer
 
+	i64 RSDP
+
 	i64 IOAPICBase
 	i32[16] IRQMappings
 

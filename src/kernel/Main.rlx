@@ -582,6 +582,8 @@ define void NetworkSetupTask() {
 
 #Require "./src/kernel/core/PageTrie.rlx"
 
+#Require "./src/drivers/ACPI/KernelInterface.rlx"
+
 define void Main(TrampolineInfo* Info) {
 	DO_NOT_OPTIMIZE_AWAY(&PreMain)
 
@@ -737,13 +739,17 @@ define void Main(TrampolineInfo* Info) {
 
 	Print("done\n")
 
+	SetupACPI()
+
+	Halt()
+
 	;Halt()
 
 	;NetworkSetupTask()
 
 	Print("Initializing UHCI controller...\n")
 
-	UHCIController->Initialize()
+	UHCIController->Setup()
 
 	Info("UHCI Controller initialized\n")
 
