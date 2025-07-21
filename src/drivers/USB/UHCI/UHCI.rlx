@@ -106,6 +106,8 @@ namespace USB::UHCI {
     struct _QueueHead {
         i32 HorizontalLink
         i32 VerticalLink
+
+        i8* Name
     }
 
     struct PCIeOverlay {
@@ -201,9 +203,30 @@ namespace USB::UHCI {
         DepthFirst := 4
     }
 
+    enum QueueHeadPeriod {
+        _1_MS := 0,
+        _2_MS := 1,
+        _4_MS := 2,
+        _8_MS := 3,
+        _16_MS := 4,
+        _32_MS := 5,
+        _64_MS := 6,
+        _128_MS := 7,
+        _256_MS := 8,
+        _512_MS := 9,
+        _1024_MS := 10
+    }
+
     class Controller derives INew {
         PCIeAddress* Address
         PCIeDevice* Device
+
+        PalHeap* Heap
+
+        void* HeapPoolVirtual
+        i64 HeapPoolPhysical
+
+        _QueueHead*[11] PeriodicQueueHeads
 
         i32 IOBase
         i8 USBVersion
@@ -214,13 +237,13 @@ namespace USB::UHCI {
         QueueHead* QueueHeads
         TransferDescriptor* TransferDescriptors
 
-        Synchronization::Semaphore* Semaphore
+        Synchronization::Semaphore* Interrupt
 
         define void New(PCIeAddress* Address, PCIeDevice* Device) {
             this->Address := Address
             this->Device := Device
 
-            this->Semaphore := new Synchronization::Semaphore(0)
+            this->Interrupt := new Synchronization::Semaphore(0)
 
             FirstUHCIController := this
 
@@ -248,7 +271,10 @@ namespace USB::UHCI {
         }
 
         define i32 VirtualToPhysical(void* Virtual) {
-            return (KernelAddressSpace->VirtualToPhysical(Virtual) + (Virtual As i64 & 0xFFF)) As i32
+            return ((Virtual As i64) - (this->HeapPoolVirtual As i64) + this->HeapPoolPhysical) As i32
+        }
+        define void* PhysicalToVirtual(i32 Physical) {
+            return ((Physical As i64) - this->HeapPoolPhysical + (this->HeapPoolVirtual As i64)) As void*
         }
 
         define i32 PackLink(void* VirtualAddress, ... Flags) {
@@ -275,8 +301,49 @@ namespace USB::UHCI {
             return Link | (Flag As i32)
         }
 
+        define void Indent(i32 Count) {
+            for (i32 Index := 0, Index < Count, Index++) {
+                Info("  ")
+            }
+        }
+
+        define void DumpLink(i32 Indent, i32 Link) {
+            if (Link & 1) {
+                Info("%x Terminator\n", Link)
+            }
+            else if (Link & 2) {
+                _QueueHead* Queue := this->PhysicalToVirtual(Link & 0x7FFF_FFF0)
+
+                Info("%x %s QueueHead -> ", Link, Queue->Name)
+
+                this->DumpLink(Indent, Queue->VerticalLink)
+
+                this->Indent(Indent + 1)
+                Info(" %c-> ", '^')
+                this->DumpLink(Indent + 1, Queue->HorizontalLink)
+            }
+            else {
+                Info("%x TransferDescriptor -> ", Link)
+
+                TransferDescriptor* TD := this->PhysicalToVirtual(Link & 0x7FFF_FFF0)
+
+                this->DumpLink(Indent, TD->Link)
+            }
+        }
+        define void DumpLink(i32 Link) {
+            this->DumpLink(0, Link)
+        }
+
         i8 Stop
         void* DescriptorBuffer
+
+        define void InterruptThread() {
+            loop {
+                this->Interrupt->Wait()
+
+
+            }
+        }
 
         define void CheckPort(Registers Port) {
             if (this->Stop) {
@@ -322,9 +389,13 @@ namespace USB::UHCI {
                         SleepMS(100)
                     }
 
-                    this->FrameList[200] := this->RemoveLinkFlag(this->FrameList[200], LinkFlags::Terminator)
+                    ;this->FrameList[200] := this->RemoveLinkFlag(this->FrameList[200], LinkFlags::Terminator)
 
-                    this->Semaphore->Wait()
+                    _QueueHead* Queue := this->PeriodicQueueHeads[QueueHeadPeriod::_1_MS]
+
+                    Queue->VerticalLink := this->RemoveLinkFlag(Queue->VerticalLink, LinkFlags::Terminator)
+
+                    this->Interrupt->Wait()
 
                     this->Stop := true
                     
@@ -360,33 +431,54 @@ namespace USB::UHCI {
             }
         }
 
-        define void InitializeTransferDescriptor(TransferDescriptor* Transfer, DeviceSpeed Speed, TransferToken Token, i32 Length) {
-            Transfer->InterruptAfterErrorCount := 3
-            Transfer->Active := true
-
-            if (Speed = DeviceSpeed::Low) {
-                Transfer->IsLowSpeedDevice := true
-                Transfer->MaximumLength := 7
-            }
-            else {
-                Transfer->IsLowSpeedDevice := false
-                Transfer->MaximumLength := 63
-            }
-            
-            Transfer->ShouldInterruptOnComplete := true
-            Transfer->Token := Token
-            Transfer->ActualLength := Length As i16
-        }
-
         define void OnInterrupt() {
-            Print("UHCI Interrupt\n")
-            this->Semaphore->Signal()
+            this->Interrupt->Signal()
 
-            SendEOI(1)
+            LocalAPIC->EOI()
         }
 
         static void OnInterrupt(AMD64Context* Context, i32 InterruptNumber) {
             (FirstUHCIController As Controller*)->OnInterrupt()
+        }
+
+        define _QueueHead* AllocateQueueHead(i8* Name) {
+            _QueueHead* Out := this->Heap->Allocate(#_QueueHead)
+
+            Out->HorizontalLink := this->PackLink(null, LinkFlags::Terminator)
+            Out->VerticalLink := this->PackLink(null, LinkFlags::Terminator)
+            Out->Name := Name
+
+            return Out
+        }
+
+        define TransferDescriptor* AllocateTransferDescriptor(DeviceSpeed Speed, TransferToken Token, i32 Length, void* Buffer) {
+            TransferDescriptor* Out := this->Heap->Allocate(#TransferDescriptor)
+
+            Out->Link := this->PackLink(null, LinkFlags::Terminator)
+
+            Out->InterruptAfterErrorCount := 3
+            Out->Active := true
+
+            if (Speed = DeviceSpeed::Low) {
+                Out->IsLowSpeedDevice := true
+                Out->MaximumLength := 7
+            }
+            else {
+                Out->IsLowSpeedDevice := false
+                Out->MaximumLength := 63
+            }
+            
+            Out->ShouldInterruptOnComplete := true
+            Out->Token := Token
+            Out->ActualLength := Length As i16
+
+            Out->BufferPointer := this->VirtualToPhysical(Buffer)
+
+            return Out
+        }
+
+        define void* Allocate(i32 Size) {
+            return this->Heap->Allocate(Size)
         }
 
         define void Setup() {
@@ -411,37 +503,64 @@ namespace USB::UHCI {
             this->FrameList := KernelPageAllocator->AllocateVirtual(1)
             this->PhysicalFrameList := KernelAddressSpace->VirtualToPhysical(this->FrameList)
 
-            i32 TerminatorLink := this->PackLink(null, LinkFlags::Terminator)
+            i32 PoolPageCount := PAGES_IN_2MB / 8 ; 512k pool
 
-            for (i32 Index := 0, Index < 1024, Index++) {
-                this->FrameList[Index] := TerminatorLink
+            this->HeapPoolVirtual := Trampoline~>PageTree->FindGap(PoolPageCount, 0x4000_0000_0000, PoolPageCount)
+            this->HeapPoolPhysical := PhysicalMemory->Allocate(PoolPageCount)
+
+            Trampoline~>PageTree->SetRange(this->HeapPoolVirtual, this->HeapPoolPhysical, PoolPageCount, PAGE_PRESENT | PAGE_WRITE)
+
+            this->Heap := KernelHeapAllocate('UHCIHeap', #PalHeap)
+            this->Heap->Initialize(this->HeapPoolVirtual, PoolPageCount * PAGE_SIZE)
+            this->Heap->Bootstrap()
+
+            Print("UHCI Heap @ %x, Physical %x\n", this->HeapPoolVirtual, this->HeapPoolPhysical)
+
+            for (i32 Index := 0, Index <= 10, Index++) {
+                this->PeriodicQueueHeads[Index] := this->AllocateQueueHead(FormatString("Every %i MS", 1 << Index))
             }
 
-            void* Pool := KernelPageAllocator->AllocateVirtual(2)
-            i32 PoolPhysical := KernelAddressSpace->VirtualToPhysical(Pool) As i32
+            i32 TerminatorLink := this->PackLink(null, LinkFlags::Terminator)
 
-            _QueueHead* GetDescriptorQH := Pool As _QueueHead*
+            this->PeriodicQueueHeads[0]->HorizontalLink := this->PackLink(null, LinkFlags::Terminator)
 
-            TransferDescriptor* SetupTD := (Pool + 0x100) As TransferDescriptor*
-            this->InitializeTransferDescriptor(SetupTD, DeviceSpeed::Low, TransferToken::SETUP, 8)
+            for (i32 Index := 0, Index < 10, Index++) {
+                _QueueHead* LowerQH := this->PeriodicQueueHeads[Index + 1]
+                _QueueHead* HigherQH := this->PeriodicQueueHeads[Index]
 
-            SetupPacket* Setup := (Pool + 0x200) As SetupPacket*
+                LowerQH->HorizontalLink := this->PackLink(HigherQH, LinkFlags::IsQueueHead)
+
+                ;Print("Set '%s' horizontal link to '%s'\n", LowerQH->Name, HigherQH->Name)
+
+                ;this->DumpLink(this->PackLink(LowerQH, LinkFlags::IsQueueHead))
+                ;this->DumpLink(LowerQH->HorizontalLink)
+            }
+
+            ;this->DumpLink(this->PackLink(this->PeriodicQueueHeads[3], LinkFlags::IsQueueHead))
+
+            for (i32 Index := 0, Index < 1024, Index++) {
+                for (i32 Period := 10, Period >= 0, Period--) {
+                    i32 Value := 1 << Period
+
+                    if (Index % Value = 0) {
+                        this->FrameList[Index] := this->PackLink(this->PeriodicQueueHeads[Period], LinkFlags::IsQueueHead)
+                        break
+                    }
+                }
+            }
+
+            _QueueHead* GetDescriptorQH := this->AllocateQueueHead("Get Descriptor")
+
+            SetupPacket* Setup := this->Allocate(#SetupPacket)
             Setup->MakeGetDescriptor(DescriptorType::Device, 0, 18)
-            SetupTD->BufferPointer := this->VirtualToPhysical(Setup)
 
-            TransferDescriptor* In0 := (Pool + 0x300) As TransferDescriptor*
-            this->InitializeTransferDescriptor(In0, DeviceSpeed::Low, TransferToken::IN, 8)
-            In0->BufferPointer := this->VirtualToPhysical(Pool + 0x400)
+            TransferDescriptor* SetupTD := this->AllocateTransferDescriptor(DeviceSpeed::Low, TransferToken::SETUP, 8, Setup)
 
-            this->DescriptorBuffer := Pool + 0x400
-            
-            TransferDescriptor* In1 := (Pool + 0x500) As TransferDescriptor*
-            this->InitializeTransferDescriptor(In1, DeviceSpeed::Low, TransferToken::IN, 8)
-            In1->BufferPointer := this->VirtualToPhysical(Pool + 0x408)
+            this->DescriptorBuffer := this->Allocate(18)
 
-            TransferDescriptor* In2 := (Pool + 0x600) As TransferDescriptor*
-            this->InitializeTransferDescriptor(In2, DeviceSpeed::Low, TransferToken::IN, 2)
-            In2->BufferPointer := this->VirtualToPhysical(Pool + 0x410)
+            TransferDescriptor* In0 := this->AllocateTransferDescriptor(DeviceSpeed::Low, TransferToken::IN, 8, this->DescriptorBuffer)
+            TransferDescriptor* In1 := this->AllocateTransferDescriptor(DeviceSpeed::Low, TransferToken::IN, 8, this->DescriptorBuffer + 8)
+            TransferDescriptor* In2 := this->AllocateTransferDescriptor(DeviceSpeed::Low, TransferToken::IN, 2, this->DescriptorBuffer + 16)
 
             ;GetDescriptorQH->Vertical.Pointer := this->VirtualToPhysical(SetupTD)
             ;GetDescriptorQH->Vertical.IsQueueHead := true
@@ -461,9 +580,15 @@ namespace USB::UHCI {
             ;In2->Next.Terminator := true
             In2->Link := this->PackLink(null, LinkFlags::Terminator)
 
-            this->FrameList[200] := this->PackLink(GetDescriptorQH, LinkFlags::IsQueueHead, LinkFlags::Terminator)
+            ;this->FrameList[200] := this->PackLink(GetDescriptorQH, LinkFlags::IsQueueHead, LinkFlags::Terminator)
 
-            Print("FrameList[200]: %x\n", this->FrameList[200])
+            this->PeriodicQueueHeads[QueueHeadPeriod::_1_MS]->VerticalLink := this->PackLink(GetDescriptorQH, LinkFlags::IsQueueHead, LinkFlags::Terminator)
+
+            ;Print("FrameList[200]: %x\n", this->FrameList[200])
+
+            ;this->DumpLink(this->FrameList[0])
+
+            ;Halt()
 
             Print("GetDescriptorQH: %x\n", KernelAddressSpace->VirtualToPhysical(GetDescriptorQH))
 

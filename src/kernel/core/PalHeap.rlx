@@ -116,6 +116,7 @@ struct PalHeap {
     PalAllocationMapEntry* AllocationMap
 
     i32 Size
+    i32 MaxRank
     
     define PalAllocationMapEntry* GetAllocationMapEntry(void* Chunk) {
         i64 Offset := (Chunk As i64) - (this->Buffer As i64)
@@ -130,7 +131,21 @@ struct PalHeap {
 
         this->_Ranks := this->Ranks
 
-        this->Ranks[PAL_RANK_8M] := PalFreeListEntry:Claim(this->Buffer, PAL_RANK_8M)
+        for (i32 Rank := PAL_RANK_16, Rank <= PAL_RANK_MAX, Rank++) {
+            i32 RankSize := 16 << Rank
+
+            if (RankSize <= Size) {
+                this->MaxRank := Rank
+            }
+            else {
+                break
+            }
+        }
+
+        this->Ranks[this->MaxRank] := PalFreeListEntry:Claim(this->Buffer, this->MaxRank)
+
+        ;this->Ranks[PAL_RANK_8M] := PalFreeListEntry:Claim(this->Buffer, PAL_RANK_8M)
+
     }
 
     define i8 IsPowerOfTwo(i64 Number) {
@@ -221,7 +236,7 @@ struct PalHeap {
     }
 
     define i32 FindLowestFreeRank(i32 Start) {
-        for (i32 HigherRank := Start + 1, HigherRank <= PAL_RANK_MAX, HigherRank++) {
+        for (i32 HigherRank := Start + 1, HigherRank <= this->MaxRank, HigherRank++) {
             if (this->Ranks[HigherRank] != null) {
                 return HigherRank
             }
@@ -285,7 +300,7 @@ struct PalHeap {
     }
 
     define PalFreeListEntry* JoinFreeBuddies(PalFreeListEntry* Root) {
-        for (i32 Rank := Root->Rank, Rank <= PAL_RANK_MAX, Rank++) {
+        for (i32 Rank := Root->Rank, Rank <= this->MaxRank, Rank++) {
             i32 Size := this->RankSize(Rank)
 
             void* Buddy := this->GetBuddy(Root, Size)
@@ -379,7 +394,7 @@ struct PalHeap {
     }
 
     define void DumpRanks() {
-        for (i32 Rank := PAL_RANK_MAX, Rank >= 0, Rank--) {
+        for (i32 Rank := this->MaxRank, Rank >= 0, Rank--) {
             i32 Sum := 0
 
             PalFreeListEntry* Current := this->Ranks[Rank]
