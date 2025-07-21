@@ -4,6 +4,15 @@
 
 #include "printf.h"
 
+
+typedef struct {
+    int Segment;
+    int Bus;
+    int Device;
+    int Function;
+    int PinsToInterruptNumbers[4];
+} FlatInterruptRoutingEntry;
+
 typedef struct {
     UINT64(*GetRSDP)();
     
@@ -48,7 +57,7 @@ typedef struct {
     int(*PCIeInD)(int, int, int, int, int);
     long long(*PCIeInQ)(int, int, int, int, int);
 
-
+    void(*DefineInterruptRoute)(FlatInterruptRoutingEntry*);
 } UHOSKernel;
 
 UHOSKernel* Kernel = NULL;
@@ -496,7 +505,7 @@ int GetBridgeSegmentGroup(ACPI_HANDLE Handle) {
 }
 
 typedef struct {
-    ACPI_PCI_ID ID;
+    FlatInterruptRoutingEntry* ID;
     int Pin;
     int SourceIndex;
 } IndirectInterruptInfo;
@@ -504,8 +513,8 @@ typedef struct {
 unsigned int OnCRSEntry(ACPI_RESOURCE* Resource, void* Context) {
     IndirectInterruptInfo* Info = Context;
 
-    printf("ACPI: Found resource for device %i.%i.%i.%i with type %i\n",
-        Info->ID.Segment, Info->ID.Bus, Info->ID.Device, Info->ID.Function, Resource->Type);
+    /* printf("ACPI: Found resource for device %i.%i.%i.%i with type %i\n",
+        Info->ID.Segment, Info->ID.Bus, Info->ID.Device, Info->ID.Function, Resource->Type); */
 
     switch (Resource->Type)
     {
@@ -513,20 +522,24 @@ unsigned int OnCRSEntry(ACPI_RESOURCE* Resource, void* Context) {
         {
             ACPI_RESOURCE_IRQ* Irq = &Resource->Data.Irq;
 
-            printf("ACPI: Device %i.%i.%i.%i Pin%c is using interrupt %i\n",
+            /* printf("ACPI: Device %i.%i.%i.%i Pin%c is using interrupt %i\n",
                 Info->ID.Segment, Info->ID.Bus, Info->ID.Device, Info->ID.Function,
                 'A' + Info->Pin,
-                Irq->Interrupts[Info->SourceIndex]);
+                Irq->Interrupts[Info->SourceIndex]); */
+            
+            Info->ID->PinsToInterruptNumbers[Info->Pin] = Irq->Interrupts[Info->SourceIndex];
         }
         break;
     case ACPI_RESOURCE_TYPE_EXTENDED_IRQ:
         {
             ACPI_RESOURCE_EXTENDED_IRQ* ExtIrq = &Resource->Data.ExtendedIrq;
 
-            printf("ACPI: Device %i.%i.%i.%i Pin%c is using extended interrupt %i\n",
+            /* printf("ACPI: Device %i.%i.%i.%i Pin%c is using extended interrupt %i\n",
                 Info->ID.Segment, Info->ID.Bus, Info->ID.Device, Info->ID.Function,
                 'A' + Info->Pin,
-                ExtIrq->Interrupts[Info->SourceIndex]);
+                ExtIrq->Interrupts[Info->SourceIndex]); */
+
+            Info->ID->PinsToInterruptNumbers[Info->Pin] = ExtIrq->Interrupts[Info->SourceIndex];
         }
     default:
         break;
@@ -560,14 +573,33 @@ unsigned int OnPCIeBridge(ACPI_HANDLE Bridge, unsigned int NestingLevel, void* C
 
     ACPI_PCI_ROUTING_TABLE* RoutingTable = RoutingTableBuffer.Pointer;
 
+    FlatInterruptRoutingEntry Entry = {
+        .Segment = SegmentGroup,
+        .Bus = Bus,
+        .Device = 0,
+        .Function = 0,
+        .PinsToInterruptNumbers = {0, 0, 0, 0}
+    };
+
     while (RoutingTable->Length > 0) {
         int Device = (RoutingTable->Address >> 16) & 0xFFFF;
         int Function = RoutingTable->Address & 0xFFFF;
 
+        if (Entry.Device != Device || Entry.Function != Function) {
+            if (Entry.Device != 0 || Entry.Function != 0) {
+                Kernel->DefineInterruptRoute(&Entry);
+            }
+
+            Entry.Device = Device;
+            Entry.Function = Function;
+        }
+
         if (RoutingTable->Source[0] == '\0') {
-            printf("ACPI: Device %i.%i.%i.%i is using pin %i, aka global interrupt %i\n",
+            /* printf("ACPI: Device %i.%i.%i.%i is using pin %i, aka global interrupt %i\n",
                 SegmentGroup, Bus, Device, Function,
-                RoutingTable->Pin, RoutingTable->SourceIndex);
+                RoutingTable->Pin, RoutingTable->SourceIndex); */
+            
+            Entry.PinsToInterruptNumbers[RoutingTable->Pin] = RoutingTable->SourceIndex;
         }
         else {
             ACPI_HANDLE Link;
@@ -578,12 +610,7 @@ unsigned int OnPCIeBridge(ACPI_HANDLE Bridge, unsigned int NestingLevel, void* C
             }
 
             IndirectInterruptInfo Info = {
-                .ID = {
-                    .Segment = SegmentGroup,
-                    .Bus = Bus,
-                    .Device = Device,
-                    .Function = Function
-                },
+                .ID = &Entry,
                 .Pin = RoutingTable->Pin,
                 .SourceIndex = RoutingTable->SourceIndex
             };

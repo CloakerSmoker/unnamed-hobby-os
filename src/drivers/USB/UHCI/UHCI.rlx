@@ -4,6 +4,8 @@
 
 i8 PCI_INTERFACE_UHCI := 0
 
+void* FirstUHCIController := null
+
 namespace USB::UHCI {
     namespace RegisterFields {
         bits Command As i16 {
@@ -200,6 +202,7 @@ namespace USB::UHCI {
     }
 
     class Controller derives INew {
+        PCIeAddress* Address
         PCIeDevice* Device
 
         i32 IOBase
@@ -211,8 +214,15 @@ namespace USB::UHCI {
         QueueHead* QueueHeads
         TransferDescriptor* TransferDescriptors
 
-        define void New(PCIeDevice* Device) {
+        Synchronization::Semaphore* Semaphore
+
+        define void New(PCIeAddress* Address, PCIeDevice* Device) {
+            this->Address := Address
             this->Device := Device
+
+            this->Semaphore := new Synchronization::Semaphore(0)
+
+            FirstUHCIController := this
 
             PCIeOverlay* Overlay := Device As void*
 
@@ -314,7 +324,7 @@ namespace USB::UHCI {
 
                     this->FrameList[200] := this->RemoveLinkFlag(this->FrameList[200], LinkFlags::Terminator)
 
-                    SleepMS(200)
+                    this->Semaphore->Wait()
 
                     this->Stop := true
                     
@@ -368,11 +378,31 @@ namespace USB::UHCI {
             Transfer->ActualLength := Length As i16
         }
 
+        define void OnInterrupt() {
+            Print("UHCI Interrupt\n")
+            this->Semaphore->Signal()
+
+            SendEOI(1)
+        }
+
+        static void OnInterrupt(AMD64Context* Context, i32 InterruptNumber) {
+            (FirstUHCIController As Controller*)->OnInterrupt()
+        }
 
         define void Setup() {
 
-            Print("CanUseMsi? %i", this->Device->CanUseMSI())
-            Halt()
+            i32 Pin := this->Device->InterruptPin - 1
+            i32 PinToIOAPIC := ACPI_GetInterruptNumber(this->Address->Segment, this->Address->Bus, this->Address->Device, this->Address->Function, Pin)
+
+            RegisterInterruptHandler(0x35, &self:OnInterrupt)
+
+            FirstIOAPIC->ForwardInterrupt(PinToIOAPIC, LocalAPIC->ID, 0x35)
+            FirstIOAPIC->Mask(PinToIOAPIC, false)
+
+            Print("Pin %i, IOAPIC %i\n", Pin, PinToIOAPIC)
+
+            ;Print("CanUseMsi? %i", this->Device->CanUseMSI())
+            ;Halt()
 
             this->IOBase := this->Device->ReadBAR(4) & 0b1111_1111_1110_0000
 
@@ -466,7 +496,9 @@ namespace USB::UHCI {
             this->Write32(Registers::FrameListBase, this->PhysicalFrameList As i32)
             this->Write16(Registers::FrameNumber, 0)
 
-            this->Write16(Registers::InterruptEnable, 0)
+            RegisterFields::Interrupt InterruptFields := 0 As RegisterFields::Interrupt
+            InterruptFields.InterruptOnComplete := true
+            this->Write16(Registers::InterruptEnable, InterruptFields As i16)
 
             CommandFields.RunStop := true
             CommandFields.Enable64BitPackets := true

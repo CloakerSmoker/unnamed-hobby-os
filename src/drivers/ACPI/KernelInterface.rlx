@@ -1,6 +1,15 @@
 
 #Require "./src/kernel/multitasking/Synchronization.rlx"
 
+
+struct FlatInterruptRoutingEntry {
+    i32 Segment
+    i32 Bus
+    i32 Device
+    i32 Function
+    i32[4] PinsToInterruptNumbers
+}
+
 struct ACPIKernelInterface {
     i64() GetRSDP
 
@@ -44,6 +53,8 @@ struct ACPIKernelInterface {
     i16(i32, i32, i32, i32, i32) PCIeInW
     i32(i32, i32, i32, i32, i32) PCIeInD
     i64(i32, i32, i32, i32, i32) PCIeInQ
+
+    void(FlatInterruptRoutingEntry*) DefineInterruptRoute
 }
 
 define i64 ACPI_GetRSDP() {
@@ -224,6 +235,58 @@ define i64 ACPI_PCIeInQ(i32 Segment, i32 Bus, i32 Device, i32 Function, i32 Regi
     return *((Buffer + Register) As i64*)
 }
 
+PointerArray* ACPI_InterruptRoutes := new PointerArray()
+
+define void ACPI_DefineInterruptRoute(FlatInterruptRoutingEntry* Entry) {
+    Info("ACPI: PCI Interrupt lines for %i.%i.%i.", Entry->Segment, Entry->Bus, Entry->Device)
+
+    if (Entry->Function = 0xFFFF) {
+        Info("*")
+    }
+    else {
+        Info("%i", Entry->Function)
+    }
+
+    Info(" are routed as IntA=%i, IntB=%i, IntC=%i, IntD=%i\n",
+        Entry->PinsToInterruptNumbers[0],
+        Entry->PinsToInterruptNumbers[1],
+        Entry->PinsToInterruptNumbers[2],
+        Entry->PinsToInterruptNumbers[3])
+
+    if (Entry->Segment < 0 || Entry->Segment > 0xFFFF) {
+        Info("Invalid segment %i in interrupt route\n", Entry->Segment)
+        return
+    }
+
+    if (Entry->Bus < 0 || Entry->Bus > 0xFF) {
+        Info("Invalid bus %i in interrupt route\n", Entry->Bus)
+        return
+    }
+
+    ACPI_InterruptRoutes->Push(CloneMemory(Entry, #FlatInterruptRoutingEntry))
+}
+
+define i32 ACPI_GetInterruptNumber(i32 Segment, i32 Bus, i32 Device, i32 Function, i32 Pin) {
+    i32 Count := ACPI_InterruptRoutes->Count()
+
+    for (i32 Index := 0, Index < Count, Index++) {
+        FlatInterruptRoutingEntry* Entry := ACPI_InterruptRoutes->At(Index)
+
+        if (Entry->Segment = Segment && Entry->Bus = Bus && Entry->Device = Device) {
+            if (Entry->Function != 0xFFFF && Entry->Function != Function) {
+                continue
+            }
+
+            return Entry->PinsToInterruptNumbers[Pin]
+        }
+    }
+    
+    Info("ACPI: No interrupt route found for %i.%i.%i.%i pin %i", Segment, Bus, Device, Function, Pin)
+    Panic("ACPI: No interrupt route found for device")
+
+    return -1
+}
+
 ACPIKernelInterface* ACPI_KernelInterface := KernelHeapAllocate('ACPI_KI', #ACPIKernelInterface)
 
 define void PopulateInterface() {
@@ -269,6 +332,8 @@ define void PopulateInterface() {
     ACPI_KernelInterface->PCIeInW := &ACPI_PCIeInW
     ACPI_KernelInterface->PCIeInD := &ACPI_PCIeInD
     ACPI_KernelInterface->PCIeInQ := &ACPI_PCIeInQ
+
+    ACPI_KernelInterface->DefineInterruptRoute := &ACPI_DefineInterruptRoute
 }
 
 define void SetupACPI() {

@@ -9,6 +9,24 @@ i32 PCIE_BUS_CONFIGURATION_SPACE_SIZE := PCIE_FUNCTION_CONFIGURATION_SPACE_SIZE 
 
 i8 PCIE_HEADER_TYPE_MULTI_FUNCTION := 0x80 As i8
 
+struct PCIeAddress {
+    i32 Segment
+    i32 Bus
+    i32 Device
+    i32 Function
+
+    static self* New(i32 Segment, i32 Bus, i32 Device, i32 Function) {
+        self* this := Alloc(#self)
+
+        this->Segment := Segment
+        this->Bus := Bus
+        this->Device := Device
+        this->Function := Function
+
+        return this
+    }
+}
+
 void* NextPCIeSegmentGroupAddress := ADDRESS_OF_PCIE_CONFIG
 
 struct PCIeSegmentGroup {
@@ -280,8 +298,13 @@ struct PCIeDevice {
     }
 
     i8 CapabilitiesPointer
+    i8[3] _
+    i32 _
+    i8 InterruptLine
+    i8 InterruptPin
+    i8[2] _
 
-    i8[0xCE] Padding2
+    i8[0xC3] Padding2
 
     PCIeCapability FirstCapability
 

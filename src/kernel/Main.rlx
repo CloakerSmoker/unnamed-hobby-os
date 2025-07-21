@@ -205,6 +205,9 @@ IDirectory* VFSDevicesDirectory := null
 #Require "./src/drivers/PCI/PCI.rlx"
 #Require "./src/drivers/PCI/PCIe.rlx"
 
+#Require "./src/kernel/core/PageTrie.rlx"
+#Require "./src/drivers/ACPI/KernelInterface.rlx"
+
 ;#Require "./src/drivers/networking/E1000.rlx"
 
 #Require "./src/kernel/networking/Stack.rlx"
@@ -309,7 +312,9 @@ define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Devic
 	else if (Device->Is(PCI_CLASS_CODE_SERIAL_BUS_CONTROLLER, PCI_SUBCLASS_USB_CONTROLLER, PCI_INTERFACE_UHCI)) {
 		Print("UCHI Controller @ %i:%i.%i\n", Bus, Slot, Function)
 
-		UHCIController := new USB::UHCI::Controller(Device)
+		PCIeAddress* Address := new PCIeAddress(0, Bus, Slot, Function)
+
+		UHCIController := new USB::UHCI::Controller(Address, Device)
 	}
 }
 
@@ -580,10 +585,6 @@ define void NetworkSetupTask() {
     Interface->SetKnobToggle("ARP.SpewGateway", true)
 }
 
-#Require "./src/kernel/core/PageTrie.rlx"
-
-#Require "./src/drivers/ACPI/KernelInterface.rlx"
-
 
 define void Main(TrampolineInfo* Info) {
 	DO_NOT_OPTIMIZE_AWAY(&PreMain)
@@ -746,7 +747,7 @@ define void Main(TrampolineInfo* Info) {
 
 	SetupACPI()
 
-	Halt()
+	;Halt()
 
 	;Halt()
 
