@@ -128,6 +128,13 @@ struct MemoryMapper {
 		
 		return New
 	}
+	define PhysicalAllocation* AllocatePhysical(i64 Address, i32 Count) {
+		PhysicalAllocation* New := PhysicalAllocation:New(Address, Count)
+
+		this->PhysicalAllocations->Push(New)
+
+		return New
+	}
 	
 	define VirtualToPhysicalMapping* MapAddressAnonymous(void* Address, i32 Count, i64 Flags) {
 		PhysicalAllocation* Physical := this->AllocatePhysical(Count)

@@ -11,6 +11,9 @@ define void DoSchedulerDelay() {
 	}
 }
 
+i8 AWOKEN_BY_ALARM := 0 ; For SchedulerWait, indicates that the timeout was reached
+i8 AWOKEN_BY_OTHER := 1
+
 struct TaskScheduler {
 	Task* DelayTask
 
@@ -103,6 +106,12 @@ struct TaskScheduler {
 		CurrentTask->State := TASK_BLOCKED
 		this->RunNext()
 	}
+	define void WaitCurrent(i32 TimeoutMS) {
+		CurrentTask->State := TASK_WAITING
+		CurrentTask->Alarm := GetUptimeMS() + TimeoutMS
+		CurrentTask~>Context->RAX := AWOKEN_BY_OTHER
+		this->RunNext()
+	}
 	define void EndCurrent() {
 		CurrentTask->State := TASK_KILLED
 
@@ -165,6 +174,8 @@ struct TaskScheduler {
 		
 		ListNode* Node := null
 
+		i64 Now := GetUptimeMS()
+
 		while (this->HasRan->Next(&Node)) {
 			Task* Current := this->HasRan->Self(Node)
 
@@ -174,6 +185,12 @@ struct TaskScheduler {
 				this->Debug("Allowing resume for %x (%s)\n", Current, Current->Name)
 
 				Current->State := TASK_CAN_RUN
+			}
+			else if (Current->State = TASK_WAITING && Current->Alarm <= Now) {
+				this->Debug("Waking %x (%s) from waiting\n", Current, Current->Name)
+
+				Current->State := TASK_CAN_RUN
+				Current~>Context->RAX := AWOKEN_BY_ALARM ; SchedulerWait "returns" 0 for timeout
 			}
 		}
 
@@ -246,6 +263,37 @@ define void SchedulerBlock() asm {
 	
 	jmp, @_SchedulerBlock
 }
+
+define void _SchedulerWait(i32 TimeoutMS) {
+	Scheduler->WaitCurrent(TimeoutMS)
+}
+define i8 SchedulerWait(i32 TimeoutMS) asm {
+	emit, 0x48
+	emit, 0x9C ; PUSHFQ
+
+	cli
+
+	push, rdi ; Save timeout
+	
+	call, @GetCurrentTaskContext
+	mov, rdi, rax      ; Parameter = CurrentTaskContext
+	call, @SaveContext ; Capure interrupted context, with anything extra cleaned up below
+	
+	mov, rax, rdi
+
+	pop, rdi ; Restore timeout
+
+	pop, rbx ; save pre-`cli` eflags
+	mov, {rax + AMD64Context.Flags} As i64*, rbx
+
+	pop, rbx ; grab return address, store into context
+	mov, {rax + AMD64Context.RIP} As i64*, rbx        ; Context.RIP = rax
+	mov, {rax + AMD64Context.RSP} As i64*, rsp ; Fix RSP, original capture is off by 16 because of our
+	;  return address and timeout
+	
+	jmp, @_SchedulerWait
+}
+
 define void _SchedulerEnd() {
 	Scheduler->EndCurrent()
 }

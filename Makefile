@@ -94,8 +94,8 @@ $(BUILD)/doom.elf: $(DOOM_GENERIC_SRC)/doomgeneric_uhos.c
 
 ACPICA_SRC=./src/drivers/ACPI/ACPICA
 
-$(BUILD)/ACPICA.elf: $(wildcard $(ACPICA_SRC)/*.c) $(wildcard $(ACPICA_SRC)/include/*.h) $(wildcard $(ACPICA_SRC)/include/platform/*.h)
-	cd $(ACPICA_SRC); $(MUSL_GCC) -Iinclude -ffreestanding -nostdlib -static -D __UHOS__=1 *.c -o $(abspath $@)
+$(BUILD)/ACPICA.elf: ./src/drivers/ACPI/uhos.c $(wildcard $(ACPICA_SRC)/*.c) $(wildcard $(ACPICA_SRC)/include/*.h) $(wildcard $(ACPICA_SRC)/include/platform/*.h)
+	cd $(ACPICA_SRC); $(MUSL_GCC) -gdwarf -Iinclude -ffreestanding -nostdlib -march=x86-64 -mno-mmx -mno-sse -mno-sse2 -mno-red-zone -mcmodel=large -fno-pie -fno-pic -no-pie -D __UHOS__=1 ../uhos.c *.c -Wl,-T ../uhos.ld -o $(abspath $@)
 
 LIGHT_CLEAN_FILES+= $(BUILD)/ACPICA.elf
 

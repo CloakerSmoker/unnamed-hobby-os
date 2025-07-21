@@ -157,10 +157,10 @@
 #define ACPI_USE_DO_WHILE_0
 #define ACPI_IGNORE_PACKAGE_RESOLUTION_ERRORS
 
+//#define ACPI_DEBUG_OUTPUT
+
 /* Host-dependent types and defines for in-kernel ACPICA */
 
-
-#define ACPI_SPINLOCK               int
 #define ACPI_CPU_FLAGS              unsigned long
 
 #define ACPI_UINTPTR_T              unsigned long long
@@ -176,7 +176,6 @@
 #define ACPI_MSG_BIOS_ERROR     "ACPI BIOS Error (bug): "
 #define ACPI_MSG_BIOS_WARNING   "ACPI BIOS Warning (bug): "
 
-#define ACPI_CACHE_T                ACPI_MEMORY_LIST
 #define ACPI_USE_LOCAL_CACHE        1
 
 /* Host-dependent types and defines for user-space ACPICA */
@@ -186,7 +185,5 @@
 #define ACPI_MACHINE_WIDTH          64
 #define COMPILER_DEPENDENT_INT64    long
 #define COMPILER_DEPENDENT_UINT64   unsigned long
-
-#undef ACPI_DEBUGGER
 
 #endif /* __ACUHOS_H__ */

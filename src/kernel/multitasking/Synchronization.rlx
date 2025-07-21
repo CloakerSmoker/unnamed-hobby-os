@@ -1,0 +1,145 @@
+
+namespace Synchronization {
+    class TaskList derives INew {
+        PointerArray* Tasks
+
+        define void New() {
+            this->Tasks := PointerArray:New()
+        }
+
+        define i8 Wait(i32 TimeoutMS) {
+            this->Tasks->Add(CurrentTask)
+
+            if (TimeoutMS <= 0) {
+                SchedulerBlock()
+                
+                return AWOKEN_BY_OTHER
+            }
+            else {
+                i8 Result := SchedulerWait(TimeoutMS)
+
+                if (Result = AWOKEN_BY_ALARM) {
+                    this->Tasks->RemoveValue(CurrentTask)
+                }
+
+                return Result
+            }
+        }
+        define i8 Wait() {
+            return this->Wait(0)
+        }
+
+        define void WakeOne() {
+            if (this->Tasks->Count() = 0) {
+                return
+            }
+
+            Task* First := this->Tasks->Remove(0)
+            First->State := TASK_CAN_RUN
+        }
+
+        define void WakeAll() {
+            i32 Count := this->Tasks->Count()
+
+            for (i32 Index := 0, Index < Count, Index++) {
+                this->WakeOne()
+            }
+        }
+    }
+
+    class Semaphore derives INew {
+        TaskList* Waiters
+        i32 Value
+
+        define void New(i32 InitialValue) {
+            this->Waiters := new TaskList()
+            this->Value := InitialValue
+        }
+
+        define i8 Wait(i32 Value, i32 TimeoutMS) {
+            DisableInterrupts()
+
+            while (this->Value < Value) {
+                i8 Result := this->Waiters->Wait(TimeoutMS)
+
+                if (Result = AWOKEN_BY_ALARM) {
+                    EnableInterrupts()
+                    return false
+                }
+            }
+
+            this->Value -= Value
+
+            EnableInterrupts()
+
+            return true
+        }
+
+        define i8 Wait(i32 TimeoutMS) {
+            return this->Wait(1, TimeoutMS)
+        }
+
+        define void Wait() {
+            this->Wait(0)
+        }
+
+        define void Signal(i32 Value) {
+            DisableInterrupts()
+
+            this->Value += Value
+
+            this->Waiters->WakeOne()
+
+            EnableInterrupts()
+        }
+        define void Signal() {
+            this->Signal(1)
+        }
+    }
+
+    class Lock derives INew {
+        i8 Locked
+        TaskList* Waiters
+        Task* Owner
+
+        define void New() {
+            this->Locked := 0
+            this->Waiters := new TaskList()
+        }
+
+        define i8 Acquire(i32 TimeoutMS) {
+            DisableInterrupts()
+
+            while (this->Locked) {
+                i8 Result := this->Waiters->Wait(TimeoutMS)
+                
+                if (Result = AWOKEN_BY_ALARM) {
+                    EnableInterrupts()
+                    return false
+                }
+            }
+
+            this->Locked := true
+            this->Owner := CurrentTask
+
+            EnableInterrupts()
+
+            return true
+        }
+
+        define void Acquire() {
+            this->Acquire(0)
+        }
+
+        define void Release() {
+            DisableInterrupts()
+
+            this->Locked := false
+            this->Owner := null
+
+            this->Waiters->WakeOne()
+
+            EnableInterrupts()
+        }
+    }
+}

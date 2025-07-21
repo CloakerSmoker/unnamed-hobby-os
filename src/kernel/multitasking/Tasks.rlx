@@ -11,6 +11,7 @@ i8 TASK_RUNNING := 1
 i8 TASK_BLOCKED := 2
 i8 TASK_PAUSED  := 3
 i8 TASK_KILLED  := 4
+i8 TASK_WAITING := 5
 
 i32 TASK_ON_HEAP := -1
 
@@ -30,6 +31,8 @@ struct Task {
 	
 	void* InitialRIP
 	void* InitialRSP
+
+	i64 Alarm ; For TASK_WAITING, is the deadline to wake the task
 	
 	i32 Priority
 	i32 AllocationInfo 

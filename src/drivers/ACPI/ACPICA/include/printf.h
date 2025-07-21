@@ -32,6 +32,8 @@
 #ifndef _PRINTF_H_
 #define _PRINTF_H_
 
+#define PRINTF_DISABLE_SUPPORT_FLOAT
+
 #include <stdarg.h>
 #include <stddef.h>
 

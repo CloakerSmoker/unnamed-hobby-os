@@ -584,6 +584,7 @@ define void NetworkSetupTask() {
 
 #Require "./src/drivers/ACPI/KernelInterface.rlx"
 
+
 define void Main(TrampolineInfo* Info) {
 	DO_NOT_OPTIMIZE_AWAY(&PreMain)
 
@@ -617,7 +618,11 @@ define void Main(TrampolineInfo* Info) {
 	Info("Root Partition       GUID: %s\n", RootPartitionGUID)
 	Info("EFI System Partition GUID: %s\n", EFISystemPartitionGUID)
 
-	Info~>PageTree->Initialize(KernelAddressSpace->VirtualPML4, null)
+	PhysicalPageAllocator* Physical := KernelHeapAllocate('PGTREEPM', #PhysicalPageAllocator)
+	Physical->Initialize()
+	Physical->Manager := PhysicalMemory
+
+	Info~>PageTree->Initialize(KernelAddressSpace->VirtualPML4, Physical)
 	
 	i64 KernelPages := PhysicalMemory->Allocate(NUMBER_OF_KERNEL_PAGES)
 	KernelAddressSpace->MapRange(ADDRESS_OF_KERNEL_PAGES, KernelPages / PAGE_SIZE, NUMBER_OF_KERNEL_PAGES, PAGE_PRESENT | PAGE_WRITE)

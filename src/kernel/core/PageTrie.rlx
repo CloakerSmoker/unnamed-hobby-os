@@ -367,4 +367,31 @@ struct PageTrie {
 
         return Out->Virtual = Address
     }
+
+    define void* FindGap(i64 Start, i32 PageCount) {
+		i64 State := this->StartWalkMappings(Start)
+		VirtualMapping Mapping
+
+		i64 LastAddress := Start
+
+		while (this->WalkMappingsNext(&State, &Mapping)) {
+			i64 Start := Mapping.Virtual As i64
+
+			i64 GapPageCount := (Start - LastAddress) / PAGE_SIZE
+
+			;Info("Gap %x..%x (%i pages)\n", LastAddress, Start, GapPageCount)
+
+			if (GapPageCount > PageCount) {
+				;Info("Selected!\n")
+
+				return (LastAddress + PAGE_SIZE) As void*
+			}
+
+			LastAddress := Start + Mapping.Size
+		}
+
+		Panic("There's no free virtual memory???????\n")
+
+		return null
+    }
 }

@@ -1,4 +1,5 @@
 
+#Require "./src/kernel/multitasking/Synchronization.rlx"
 
 struct ACPIKernelInterface {
     i64() GetRSDP
@@ -6,10 +7,18 @@ struct ACPIKernelInterface {
     void*(i64) Allocate
     void(void*) Free
 
+    void*(i64, i32) MapMemory
+    void(void*, i32) UnmapMemory
+
     i64() GetThreadID
     void(void*, void*) CreateTask
     void(i64) Sleep
     void(i64) Stall
+
+    void*(i32) CreateSemaphore
+    void(void*) DeleteSemaphore
+    i8(void*, i32, i32) WaitSemaphore
+    void(void*, i32) SignalSemaphore
 
     void(i64, void*, void*) InstallIDT
     void(i64, void*, void*) RemoveIDT
@@ -48,6 +57,22 @@ define void ACPI_Free(void* Pointer) {
     KernelHeap->Free(Pointer)
 }
 
+define void* ACPI_MapMemory(i64 Physical, i32 Size) {
+    i32 Pages := SizeToPageCount(Size)
+
+    void* Virtual := Trampoline~>PageTree->FindGap(0x3000_0000_0000, Pages)
+
+    Trampoline~>PageTree->SetRange(Virtual, Physical, Pages, PAGE_PRESENT | PAGE_WRITE)
+
+    return Virtual
+}
+
+define void ACPI_UnmapMemory(void* Virtual, i32 Size) {
+    i32 Pages := SizeToPageCount(Size)
+
+    ;Trampoline~>PageTree->SetRange(Virtual, 0, Pages, 0)
+}
+
 define i64 ACPI_GetThreadID() {
     return CurrentTask As i64
 }
@@ -55,6 +80,8 @@ define i64 ACPI_GetThreadID() {
 PointerArray* ACPI_Tasks := new PointerArray()
 
 define void ACPI_CreateTask(void* Function, void* Context) {
+    Info("Creating ACPI task %x with context %x\n", Function, Context)
+
     Task* Result := Scheduler->AddLightTask(Function, "ACPI Task")
     Result~>Context->RDI := Context As i64
 
@@ -69,6 +96,28 @@ define void ACPI_Sleep(i64 Time) {
 
 define void ACPI_Stall(i64 Time) {
     ; todo
+}
+
+define void* ACPI_CreateSemaphore(i32 InitialValue) {
+    return new Synchronization::Semaphore(InitialValue)
+}
+
+define void ACPI_DeleteSemaphore(void* RawSemaphore) {
+    Synchronization::Semaphore* Semaphore := RawSemaphore As Synchronization::Semaphore*
+
+    Semaphore->Delete()
+}
+
+define i8 ACPI_WaitSemaphore(void* RawSemaphore, i32 Value, i32 TimeoutMS) {
+    Synchronization::Semaphore* Semaphore := RawSemaphore As Synchronization::Semaphore*
+
+    return Semaphore->Wait(Value, TimeoutMS)
+}
+
+define void ACPI_SignalSemaphore(void* RawSemaphore, i32 Value) {
+    Synchronization::Semaphore* Semaphore := RawSemaphore As Synchronization::Semaphore*
+
+    Semaphore->Signal(Value)
 }
 
 struct ACPI_IDT_Entry {
@@ -105,6 +154,7 @@ define i64 ACPI_GetTimeMS() {
 }
 
 define void ACPI_Print(i8* Output) {
+    Info("%s", Output)
     Print("%s", Output)
 }
 
@@ -182,10 +232,18 @@ define void PopulateInterface() {
     ACPI_KernelInterface->Allocate := &ACPI_Allocate
     ACPI_KernelInterface->Free := &ACPI_Free
 
+    ACPI_KernelInterface->MapMemory := &ACPI_MapMemory
+    ACPI_KernelInterface->UnmapMemory := &ACPI_UnmapMemory
+
     ACPI_KernelInterface->GetThreadID := &ACPI_GetThreadID
     ACPI_KernelInterface->CreateTask := &ACPI_CreateTask
     ACPI_KernelInterface->Sleep := &ACPI_Sleep
     ACPI_KernelInterface->Stall := &ACPI_Stall
+
+    ACPI_KernelInterface->CreateSemaphore := &ACPI_CreateSemaphore
+    ACPI_KernelInterface->DeleteSemaphore := &ACPI_DeleteSemaphore
+    ACPI_KernelInterface->WaitSemaphore := &ACPI_WaitSemaphore
+    ACPI_KernelInterface->SignalSemaphore := &ACPI_SignalSemaphore
 
     ACPI_KernelInterface->InstallIDT := &ACPI_InstallIDT
     ACPI_KernelInterface->RemoveIDT := &ACPI_RemoveIDT
@@ -206,6 +264,11 @@ define void PopulateInterface() {
     ACPI_KernelInterface->PCIeOutW := &ACPI_PCIeOutW
     ACPI_KernelInterface->PCIeOutD := &ACPI_PCIeOutD
     ACPI_KernelInterface->PCIeOutQ := &ACPI_PCIeOutQ
+
+    ACPI_KernelInterface->PCIeInB := &ACPI_PCIeInB
+    ACPI_KernelInterface->PCIeInW := &ACPI_PCIeInW
+    ACPI_KernelInterface->PCIeInD := &ACPI_PCIeInD
+    ACPI_KernelInterface->PCIeInQ := &ACPI_PCIeInQ
 }
 
 define void SetupACPI() {
