@@ -1,0 +1,96 @@
+
+#Require "src/drivers/USB/Packets.rlx"
+
+i8 PCI_SUBCLASS_USB_CONTROLLER := 0x3
+i8 PCI_INTERFACE_EHCI := 0x20
+
+namespace USB {
+    enum TransferSpeed {
+        Full := 0,
+        Low := 1,
+        High := 2,
+        Super := 3
+    }
+
+    struct ControllerDevice {
+        i8 dummy
+    }
+
+    interface ITransferHandle {
+        virtual ITransferHandle* Wait()
+        virtual void Free()
+    }
+
+    interface IController {
+        virtual ITransferHandle* Transfer(i32, i32, TransferSpeed, SetupPacket*, void*, i32)
+        virtual void Free(ITransferHandle*)
+    }
+
+    struct EndpointInfo {
+        EndpointDescriptor Descriptor
+        i8 Toggle
+    }
+
+    struct InterfaceInfo {
+        InterfaceDescriptor Descriptor
+        PointerArray* Endpoints ; <EndpointInfo*>
+        i32 EndpointBase
+    }
+
+    struct ConfigurationInfo {
+        ConfigurationDescriptor Descriptor
+        PointerArray* Interfaces ; <InterfaceInfo*>
+    }
+
+
+    class Device derives INew {
+        DeviceDescriptor Descriptor
+        IController* Controller
+
+        i32 Address
+        TransferSpeed Speed
+
+        PointerArray* Configurations ; <ConfigurationInfo*>
+
+        PointerArray* Interfaces ; <InterfaceInfo*>
+        i32 CurrentConfigurationIndex
+
+        define ITransferHandle* TransferToDevice(SetupPacket* Setup, void* Buffer, i32 Length) {
+            Setup->Recipient := RequestRecipient::Device
+
+            return this->Controller->Transfer(this->Address, 0, this->Speed, Setup, Buffer, Length)
+        }
+
+        define ITransferHandle* TransferToEndpoint(i32 Endpoint, SetupPacket* Setup, void* Buffer, i32 Length) {
+            Setup->Recipient := RequestRecipient::Endpoint
+
+            return this->Controller->Transfer(this->Address, Endpoint, this->Speed, Setup, Buffer, Length)
+        }
+
+        define ITransferHandle* TransferToInterface(i32 Interface, SetupPacket* Setup, void* Buffer, i32 Length) {
+            InterfaceInfo* Info := this->Interfaces->At(Interface)
+
+            Setup->Recipient := RequestRecipient::Interface
+
+            return this->Controller->Transfer(this->Address, Info->EndpointBase, this->Speed, Setup, Buffer, Length)
+        }
+
+
+        define void New(IController* Controller, DeviceDescriptor* Descriptor) {
+
+            for (i32 Index := 0, Index < Descriptor->ConfigurationCount, Index++) {
+                
+                SetupPacket SetupGetConfigurationHeader
+                SetupGetConfigurationHeader.MakeGetDescriptor(USB::DescriptorType::Configuration, Index As i8, 8)
+
+                i64 ConfigurationHeaderBuffer := 0
+                ConfigurationDescriptor* Header := &ConfigurationHeaderBuffer As ConfigurationDescriptor*
+
+                this->TransferToDevice(&SetupGetConfigurationHeader, Header, 8)->Wait()->Free()
+
+
+            }
+            
+        }
+    }
+}

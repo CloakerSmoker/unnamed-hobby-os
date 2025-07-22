@@ -287,7 +287,7 @@ define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Devic
 	}
 
 	if (Device->Is(PCI_CLASS_CODE_SERIAL_BUS_CONTROLLER, PCI_SUBCLASS_USB_CONTROLLER, PCI_INTERFACE_EHCI)) {
-		Print("\tFound EHCI controller!\n")
+		/* Print("\tFound EHCI controller!\n")
 
 		EHCIController* Controller := EHCIController:New(Device)
 
@@ -307,7 +307,7 @@ define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Devic
 			}
 		}
 
-		SleepMS(200000)
+		SleepMS(200000) */
 	}
 	else if (Device->Is(PCI_CLASS_CODE_SERIAL_BUS_CONTROLLER, PCI_SUBCLASS_USB_CONTROLLER, PCI_INTERFACE_UHCI)) {
 		Print("UCHI Controller @ %i:%i.%i\n", Bus, Slot, Function)

@@ -1,4 +1,5 @@
 
+/*
 enum PortRouting As i8 {
     Dumb := 0
     Mapped := 1
@@ -391,3 +392,5 @@ class EHCIController derives INew {
 
 i8 PCI_SUBCLASS_USB_CONTROLLER := 0x3
 i8 PCI_INTERFACE_EHCI := 0x20
+
+*/
