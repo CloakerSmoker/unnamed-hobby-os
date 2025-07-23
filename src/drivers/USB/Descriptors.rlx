@@ -10,6 +10,10 @@ namespace USB {
     struct DescriptorHeader {
         i8 Length
         DescriptorType Type
+
+        define void* End() {
+            return (this + ((this->Length As i32) & 0xFF)) As void*
+        }
     }
 
     struct DeviceDescriptor {
@@ -91,6 +95,16 @@ namespace USB {
         i8 Interval
     }
 
+    enum LanguageID As i16 {
+        None := 0
+        EnglishUS := 0x0409
+    }
+
+    struct StringDescriptorZero {
+        DescriptorHeader Header
+        LanguageID[0] LanguageIDs
+    }
+
     struct StringDescriptor {
         DescriptorHeader Header
         i16[0] String
@@ -157,9 +171,9 @@ define void DoUSBDescriptorPrint(PrintOutputAdapterPrototype* this, i8* Format, 
 
         this->Print("[USB Endpoint Descriptor]\n")
         this->Print("  Length=%i\n", Endpoint->Header.Length)
-        this->Print("  Direction=%i\n", Endpoint->Direction)
+        this->Print("  Direction=%s\n", nameof:(Endpoint->Direction))
         this->Print("  Number=%i\n", Endpoint->Number)
-        this->Print("  Attributes=%x\n", Endpoint->Attributes)
+        this->Print("  Attributes=%s\n", nameof:(Endpoint->Attributes))
         this->Print("  MaxPacketSize=%i\n", Endpoint->MaxPacketSize)
         this->Print("  Interval=%i\n", Endpoint->Interval)
     }
@@ -176,3 +190,29 @@ PrintFormatPrototype USBDescriptorFormatPrototype {
 }
 
 i32 USB_DESCRIPTOR_FORMAT_PROTOTYPE_ID := AddPrintFormat(&USBDescriptorFormatPrototype)
+
+define void DoUSBStringDescriptorPrint(PrintOutputAdapterPrototype* this, i8* Format, i32* FormatIndex, void* Parameters, i32 ParameterCount, i32* ParameterIndex) {
+    USB::DescriptorHeader* Descriptor := Parameters[*ParameterIndex] As USB::DescriptorHeader*
+    
+    if (Descriptor = null) {
+        this->Print("Unavailable USB String Descriptor")
+    }
+    else if (Descriptor->Type = USB::DescriptorType::String) {
+        USB::StringDescriptor* String := Descriptor As USB::StringDescriptor*
+
+        i8* Bytes := String->String As void*
+
+        for (i32 Index := 0, Index < String->Header.Length - 2, Index += 2) {
+            this->Print("%c", Bytes[Index])
+        }
+    }
+
+    *ParameterIndex += 1
+}
+
+PrintFormatPrototype USBStringDescriptorFormatPrototype {
+	Name: "usb-string-descriptor",
+	Format: &DoUSBStringDescriptorPrint
+}
+
+i32 USB_STRING_DESCRIPTOR_FORMAT_PROTOTYPE_ID := AddPrintFormat(&USBStringDescriptorFormatPrototype)

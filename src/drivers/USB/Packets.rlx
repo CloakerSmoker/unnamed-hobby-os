@@ -58,6 +58,7 @@ namespace USB {
         define void MakeSetAddress(i8 Address) {
             this->Recipient := RequestRecipient::Device
             this->Type := RequestType::Standard
+            this->DataDirection := RequestDataPhaseDirection::HostToDevice
 
             this->StandardRequest := StandardRequests::SET_ADDRESS
             this->Value := Address
@@ -65,7 +66,7 @@ namespace USB {
             this->Length := 0
         }
 
-        define void MakeGetDescriptor(USB::DescriptorType Type, i8 DescriptorIndex, i16 Length) {
+        define void MakeGetDescriptor(USB::DescriptorType Type, LanguageID Language, i8 DescriptorIndex, i16 Length) {
             this->Recipient := RequestRecipient::Device
             this->Type := RequestType::Standard
             this->DataDirection := RequestDataPhaseDirection::DeviceToHost
@@ -73,8 +74,23 @@ namespace USB {
             this->StandardRequest := StandardRequests::GET_DESCRIPTOR
             this->GetDescriptor.Type := Type
             this->GetDescriptor.Index := DescriptorIndex
-            this->Index := 0
+            this->Index := Language As i16
             this->Length := Length
+        }
+        define void MakeGetDescriptor(USB::DescriptorType Type, i8 DescriptorIndex, i16 Length) {
+            this->MakeGetDescriptor(Type, LanguageID::None, DescriptorIndex, Length)
+        }
+
+
+        define void MakeSetConfiguration(i8 ConfigurationIndex) {
+            this->Recipient := RequestRecipient::Device
+            this->Type := RequestType::Standard
+            this->DataDirection := RequestDataPhaseDirection::HostToDevice
+
+            this->StandardRequest := StandardRequests::SET_CONFIGURATION
+            this->Value := ConfigurationIndex
+            this->Index := 0
+            this->Length := 0
         }
     }
 }

@@ -16,81 +16,263 @@ namespace USB {
         i8 dummy
     }
 
+    struct EndpointInfo {
+        EndpointDescriptor Descriptor
+        i32 Number
+        i8 Toggle
+
+        static self* New(DescriptorHeader* Descriptor) {
+            self* this := Alloc(#self)
+
+            if (Descriptor != null) {
+                MoveMemory(this~>Descriptor, Descriptor, #EndpointDescriptor)
+                this->Number := this~>Descriptor->Number & 0x0F
+            }
+
+            return this
+        }
+    }
+
+    struct InterfaceInfo {
+        InterfaceDescriptor Descriptor
+        StringDescriptor* InterfaceString
+
+        PointerArray* Endpoints ; <EndpointInfo*>
+        i32 EndpointBase
+
+        static self* New(DescriptorHeader* Descriptor, StringDescriptor* InterfaceString) {
+            self* this := Alloc(#self)
+
+            MoveMemory(this~>Descriptor, Descriptor, #InterfaceDescriptor)
+            this->InterfaceString := InterfaceString
+
+            this->Endpoints := PointerArray:New()
+
+            return this
+        }
+    }
+
+    struct ConfigurationInfo {
+        ConfigurationDescriptor Descriptor
+        StringDescriptor* DescriptionString
+
+        PointerArray* Interfaces ; <InterfaceInfo*>
+        PointerArray* Endpoints ; <EndpointInfo*>
+
+        static self* New(DescriptorHeader* Descriptor, StringDescriptor* DescriptionString) {
+            self* this := Alloc(#self)
+            
+            MoveMemory(this~>Descriptor, Descriptor, #ConfigurationDescriptor)
+            this->DescriptionString := DescriptionString
+
+            this->Interfaces := PointerArray:New()
+            this->Endpoints := PointerArray:New()
+
+            return this
+        }
+    }
+
     interface ITransferHandle {
         virtual ITransferHandle* Wait()
         virtual void Free()
     }
 
     interface IController {
-        virtual ITransferHandle* Transfer(i32, i32, TransferSpeed, SetupPacket*, void*, i32)
+        virtual ITransferHandle* SendControlTransfer(i32, i32, TransferSpeed, SetupPacket*, void*, i32)
         virtual void Free(ITransferHandle*)
     }
 
-    struct EndpointInfo {
-        EndpointDescriptor Descriptor
-        i8 Toggle
-    }
-
-    struct InterfaceInfo {
-        InterfaceDescriptor Descriptor
-        PointerArray* Endpoints ; <EndpointInfo*>
-        i32 EndpointBase
-    }
-
-    struct ConfigurationInfo {
-        ConfigurationDescriptor Descriptor
-        PointerArray* Interfaces ; <InterfaceInfo*>
-    }
-
-
     class Device derives INew {
-        DeviceDescriptor Descriptor
         IController* Controller
+
+        SetupPacket Setup
+
+        DeviceDescriptor* Descriptor
+
+        StringDescriptor* ManufacturerString
+        StringDescriptor* ProductString
+        StringDescriptor* SerialNumberString
+
+        i32 NumberOfLanguageIDs
+        LanguageID* LanguageIDs
 
         i32 Address
         TransferSpeed Speed
 
+        EndpointInfo* ControlEndpoint
+
         PointerArray* Configurations ; <ConfigurationInfo*>
+        ConfigurationInfo* CurrentConfiguration
 
-        PointerArray* Interfaces ; <InterfaceInfo*>
-        i32 CurrentConfigurationIndex
-
-        define ITransferHandle* TransferToDevice(SetupPacket* Setup, void* Buffer, i32 Length) {
+        define ITransferHandle* SendControlTransferToDevice(SetupPacket* Setup, void* Buffer, i32 Length) {
             Setup->Recipient := RequestRecipient::Device
 
-            return this->Controller->Transfer(this->Address, 0, this->Speed, Setup, Buffer, Length)
+            return this->Controller->SendControlTransfer(this->Address, 0, this->Speed, Setup, Buffer, Length)
         }
 
-        define ITransferHandle* TransferToEndpoint(i32 Endpoint, SetupPacket* Setup, void* Buffer, i32 Length) {
+        define ITransferHandle* SendControlTransferToEndpoint(i32 Endpoint, SetupPacket* Setup, void* Buffer, i32 Length) {
             Setup->Recipient := RequestRecipient::Endpoint
+            Setup->Index := Endpoint As i16
 
-            return this->Controller->Transfer(this->Address, Endpoint, this->Speed, Setup, Buffer, Length)
+            return this->Controller->SendControlTransfer(this->Address, 0, this->Speed, Setup, Buffer, Length)
         }
 
-        define ITransferHandle* TransferToInterface(i32 Interface, SetupPacket* Setup, void* Buffer, i32 Length) {
-            InterfaceInfo* Info := this->Interfaces->At(Interface)
-
+        define ITransferHandle* SendControlTransferToInterface(i32 Interface, SetupPacket* Setup, void* Buffer, i32 Length) {
             Setup->Recipient := RequestRecipient::Interface
+            Setup->Index := Interface As i16
 
-            return this->Controller->Transfer(this->Address, Info->EndpointBase, this->Speed, Setup, Buffer, Length)
+            return this->Controller->SendControlTransfer(this->Address, 0, this->Speed, Setup, Buffer, Length)
+        }
+
+        define void* GetDescriptor(USB::DescriptorType Type, LanguageID Language, i8 Index, i32* OutLength) {
+            i64 HeaderBuffer := 0
+            DescriptorHeader* Header := &HeaderBuffer As DescriptorHeader*
+            
+            this~>Setup->MakeGetDescriptor(Type, Language, Index, 8)
+            this->SendControlTransferToDevice(this~>Setup, Header, 8)->Wait()->Free()
+
+            i32 Length := Header->Length
+
+            if (Type = USB::DescriptorType::Configuration) {
+                Length := (Header As ConfigurationDescriptor*)->TotalLength
+            }
+
+            void* Buffer := Alloc(Length)
+
+            this~>Setup->MakeGetDescriptor(Type, Index, Length As i16)
+            this->SendControlTransferToDevice(this~>Setup, Buffer, Length)->Wait()->Free()
+
+            if (OutLength != null) {
+                *OutLength := Length
+            }
+
+            return Buffer
+        }
+        define void* GetDescriptor(USB::DescriptorType Type, LanguageID Language, i8 Index) {
+            return this->GetDescriptor(Type, Language, Index, null)
+        }
+        define void* GetDescriptor(USB::DescriptorType Type, i8 Index, i32* OutLength) {
+            return this->GetDescriptor(Type, LanguageID::None, Index, OutLength)
+        }
+        define void* GetDescriptor(USB::DescriptorType Type, i8 Index) {
+            return this->GetDescriptor(Type, LanguageID::None, Index, null)
+        }
+
+        define StringDescriptor* GetStringDescriptor(LanguageID Language, i8 Index) {
+            if (Index != 0) {
+                return this->GetDescriptor(USB::DescriptorType::String, Language, Index)
+            }
+
+            return null
         }
 
 
-        define void New(IController* Controller, DeviceDescriptor* Descriptor) {
+        define void New(IController* Controller, i32 Address) {
+            this->Controller := Controller
+            this->Address := Address
 
-            for (i32 Index := 0, Index < Descriptor->ConfigurationCount, Index++) {
-                
-                SetupPacket SetupGetConfigurationHeader
-                SetupGetConfigurationHeader.MakeGetDescriptor(USB::DescriptorType::Configuration, Index As i8, 8)
+            this->ControlEndpoint := new EndpointInfo(null)
+            this->Configurations := PointerArray:New()
 
-                i64 ConfigurationHeaderBuffer := 0
-                ConfigurationDescriptor* Header := &ConfigurationHeaderBuffer As ConfigurationDescriptor*
+            this->Speed := TransferSpeed::Low
 
-                this->TransferToDevice(&SetupGetConfigurationHeader, Header, 8)->Wait()->Free()
-
-
-            }
+            this->Descriptor := this->GetDescriptor(USB::DescriptorType::Device, 0)
             
+            this->ManufacturerString := this->GetStringDescriptor(LanguageID::EnglishUS, this->Descriptor->ManufacturerStringIndex)
+            this->ProductString := this->GetStringDescriptor(LanguageID::EnglishUS, this->Descriptor->ProductStringIndex)
+            this->SerialNumberString := this->GetStringDescriptor(LanguageID::EnglishUS, this->Descriptor->SerialNumberStringIndex)
+
+            Print("USB Device Strings:\n")
+            Print("  Manufacturer: %usb-string-descriptor\n", this->ManufacturerString)
+            Print("  Product: %usb-string-descriptor\n", this->ProductString)
+            Print("  Serial Number: %usb-string-descriptor\n", this->SerialNumberString)
+
+            i32 StringDescriptorZeroLength := 0
+            this->LanguageIDs := this->GetDescriptor(USB::DescriptorType::String, 0, &StringDescriptorZeroLength) + 2
+            this->NumberOfLanguageIDs := (StringDescriptorZeroLength - 2) / 2
+
+            for (i8 Index := 0, Index < this->Descriptor->ConfigurationCount, Index++) {
+                i32 Length := 0
+                void* Buffer := this->GetDescriptor(USB::DescriptorType::Configuration, Index, &Length)
+
+                ConfigurationDescriptor* Descriptor := Buffer As ConfigurationDescriptor*
+                ConfigurationInfo* Configuration := new ConfigurationInfo(Buffer, this->GetStringDescriptor(LanguageID::EnglishUS, Descriptor->DescriptionStringIndex))
+
+                this->Configurations->Push(Configuration)
+
+                i32 Offset := Configuration~>Descriptor~>Header->Length
+                InterfaceInfo* CurrentInterface := null
+
+                while (Offset < Configuration~>Descriptor->TotalLength) {
+                    DescriptorHeader* Header := (Buffer + Offset) As DescriptorHeader*
+
+                    if (Header->Type = USB::DescriptorType::Interface) {
+                        InterfaceDescriptor* InterfaceHeader := Header As InterfaceDescriptor*
+
+                        Configuration->Interfaces->Push(new InterfaceInfo(Header, this->GetStringDescriptor(LanguageID::EnglishUS, InterfaceHeader->InterfaceStringIndex)))
+                    }
+                    else if (Header->Type = USB::DescriptorType::Endpoint) {
+                        Configuration->Endpoints->Push(new EndpointInfo(Header))
+                    }
+
+                    Print("%usb-descriptor", Header)
+
+                    Offset += ((Header->Length As i32) & 0xFF)
+                }
+
+                ; Group endpoints by interface
+
+                i32 InterfaceCount := Configuration->Interfaces->Count()
+                i32 EndpointIndex := 0
+
+                for (i32 InterfaceIndex := 0, InterfaceIndex < InterfaceCount, InterfaceIndex++) {
+                    InterfaceInfo* Interface := Configuration->Interfaces->At(InterfaceIndex)
+                    Interface->EndpointBase = EndpointIndex
+
+                    i32 EndpointCount := Interface~>Descriptor->EndpointCount
+
+                    for (i32 InnerEndpointIndex := 0, InnerEndpointIndex < EndpointCount, InnerEndpointIndex++) {
+                        EndpointInfo* Endpoint := Configuration->Endpoints->At(EndpointIndex + InnerEndpointIndex)
+
+                        Print("Interface %i owns endpoint %i\n", InterfaceIndex, Endpoint->Number)
+
+                        Interface->Endpoints->Push(Endpoint)
+                    }
+
+                    EndpointIndex += EndpointCount
+                }
+
+                break
+            }
+
+            i32 ConfigurationCount := this->Descriptor->ConfigurationCount
+
+            for (i32 ConfigurationIndex := 0, ConfigurationIndex < ConfigurationCount, ConfigurationIndex++) {
+                ConfigurationInfo* Configuration := this->Configurations->At(ConfigurationIndex)
+
+                Print("Configuration %i '%usb-string-descriptor':\n", ConfigurationIndex, Configuration->DescriptionString)
+
+                i32 InterfaceCount := Configuration->Interfaces->Count()
+
+                for (i32 InterfaceIndex := 0, InterfaceIndex < InterfaceCount, InterfaceIndex++) {
+                    InterfaceInfo* Interface := Configuration->Interfaces->At(InterfaceIndex)
+
+                    Print("\tInterface %i '%usb-string-descriptor':\n", InterfaceIndex, Interface->InterfaceString)
+
+                    i32 EndpointCount := Interface->Endpoints->Count()
+
+                    for (i32 EndpointIndex := 0, EndpointIndex < EndpointCount, EndpointIndex++) {
+                        EndpointInfo* Endpoint := Interface->Endpoints->At(EndpointIndex)
+
+                        Print("\t\t\tEndpoint %i: %s %s\n", EndpointIndex, nameof:(Endpoint~>Descriptor->Direction), nameof:(Endpoint~>Descriptor->Attributes))
+                    }
+                }
+            }
+
+            Print("Selecting configuration 0\n")
+
+            this~>Setup->MakeSetConfiguration(0)
+            this->SendControlTransferToDevice(this~>Setup, null, 0)->Wait()->Free()
         }
     }
 }

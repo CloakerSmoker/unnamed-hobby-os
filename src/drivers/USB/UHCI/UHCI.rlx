@@ -62,7 +62,7 @@ namespace USB::UHCI {
         Port2 := 0x12
     }
 
-    enum TransferToken As i8{
+    enum TransferToken {
         IN := 0x69,
         OUT := 0xE1,
         SETUP := 0x2D
@@ -105,8 +105,10 @@ namespace USB::UHCI {
         i32 VerticalLink
 
         i8* Name
-        Synchronization::Semaphore* Complete
+        i8 Complete
+        Synchronization::Semaphore* Completed
         QueueHead* Previous
+        TransferHandle* Handle
     }
 
     struct PCIeOverlay {
@@ -139,33 +141,35 @@ namespace USB::UHCI {
 
     class TransferHandle implements USB::ITransferHandle, derives INew {
         IController* Controller
-        RequestDataPhaseDirection DataDirection
 
+        SetupPacket* Setup
         QueueHead* QH
         PointerArray* TDs
 
         void* OriginalDataBuffer
         void* RelocatedDataBuffer
 
-        define void New(IController* Controller, RequestDataPhaseDirection DataDirection, QueueHead* QH, void* DataBuffer, void* RelocatedBuffer) {
+        define void New(IController* Controller, SetupPacket* Setup, QueueHead* QH, void* DataBuffer, void* RelocatedBuffer) {
             this->Controller := Controller
-            this->DataDirection := DataDirection
 
+            this->Setup := Setup
             this->QH := QH
             this->TDs := new PointerArray()
 
             this->OriginalDataBuffer := DataBuffer
             this->RelocatedDataBuffer := RelocatedBuffer
+
+            this->QH->Handle := this
         }
 
         define void AddTransferDescriptor(TransferDescriptor* TD) {
             this->TDs->Add(TD)
         }
 
-        define ITransferHandle* Wait() {
-            this->QH->Complete->Wait()
+        define void Complete() {
+            this->QH->Complete := true
 
-            if (this->DataDirection = RequestDataPhaseDirection::DeviceToHost) {
+            if (this->Setup->DataDirection = RequestDataPhaseDirection::DeviceToHost) {
                 void* Buffer := this->OriginalDataBuffer
                 i32 Count := this->TDs->Count()
 
@@ -183,6 +187,12 @@ namespace USB::UHCI {
                     Buffer += Size
                 }
             }
+
+            this->QH->Completed->Signal()
+        }
+
+        define ITransferHandle* Wait() {
+            this->QH->Completed->Wait()
 
             return this
         }
@@ -214,6 +224,8 @@ namespace USB::UHCI {
 
         Synchronization::Semaphore* Interrupt
 
+        i32 NextDeviceAddress
+
         define void New(PCIeAddress* Address, PCIeDevice* _Device) {
             this->Address := Address
             this->Device := _Device
@@ -230,6 +242,7 @@ namespace USB::UHCI {
             Print("UCHI IOBase %x, Version %x\n", this->IOBase, this->USBVersion)
 
             this->QueueHeadsInFlight := new PointerArray()
+            this->NextDeviceAddress := 1
         }
 
         define void Write16(Registers Target, i16 Value) {
@@ -300,9 +313,9 @@ namespace USB::UHCI {
                 this->DumpLink(Indent + 1, Queue->HorizontalLink)
             }
             else {
-                Info("%x TransferDescriptor -> ", Link)
-
                 TransferDescriptor* TD := this->PhysicalToVirtual(Link & 0x7FFF_FFF0)
+
+                Info("%x TransferDescriptor {%s, %i, %x} -> ", Link, nameof:(TD->Token), TD->MaximumLength, TD->BufferPointer)
 
                 this->DumpLink(Indent, TD->Link)
             }
@@ -311,7 +324,7 @@ namespace USB::UHCI {
             this->DumpLink(0, Link)
         }
 
-        i8 Stop
+        i8 Stopped
         void* DescriptorBuffer
 
         define void InterruptThread() {
@@ -320,20 +333,244 @@ namespace USB::UHCI {
 
                 i32 Count := this->QueueHeadsInFlight->Count()
 
-                for (i32 Index := 0, Index < Count, Index++) {
+                for (i32 Index := Count - 1, Index >= 0, Index--) {
                     QueueHead* QH := this->QueueHeadsInFlight->At(Index)
 
+                    Print("InterruptThread: IFQH #%i: VerticalLink %x, HorizontalLink %x\n", Index, QH->VerticalLink, QH->HorizontalLink)
+
                     if (QH->VerticalLink & 1) {
-                        QH->Complete->Signal()
+                        QH->Handle->Complete()
 
                         QH->Previous->VerticalLink := QH->HorizontalLink
+
+                        if (QH->HorizontalLink & LinkFlags::IsQueueHead) {
+                            QueueHead* NextQH := this->PhysicalToVirtual(QH->HorizontalLink & 0x7FFF_FFF0)
+                            NextQH->Previous := QH->Previous
+                        }
+
+                        ;this->Stop := true
+
+                        ;RegisterFields::Command CommandFields := 0 As RegisterFields::Command
+                        ;this->Write16(Registers::Command, CommandFields As i16)
+
+                        this->QueueHeadsInFlight->Remove(Index)
                     }
                 }
             }
         }
 
+        define void Stop() {
+            this->Stopped := true
+
+            RegisterFields::Command CommandFields := 0 As RegisterFields::Command
+            this->Write16(Registers::Command, CommandFields As i16)
+
+            Print("UHCI Controller stopped\n")
+        }
+
+        define void OnInterrupt() {
+            Print("UHCI Interrupt!\n")
+
+            ; Clear status bit to allow interrupt line to de-assert
+
+            RegisterFields::Status StatusFields := this->Read16(Registers::Status) As RegisterFields::Status
+
+            if (StatusFields.InterruptWasFromError) {
+                Print("UHCI Error!\n")
+                this->Stop()
+            }
+            else if (StatusFields.HostSystemError) {
+                Print("UHCI Host System Error!\n")
+                this->Stop()
+            }
+            else if (StatusFields.HostControllerError) {
+                Print("UHCI Host Controller Error!\n")
+                this->Stop()
+            }
+
+            if (StatusFields.InterruptWasFromTransfer) {
+                this->Interrupt->Signal()
+
+                ; Writing 1s clears, so rewriting the current value clears the register
+                this->Write16(Registers::Status, StatusFields As i16)
+            }
+
+            LocalAPIC->EOI()
+        }
+
+        static void OnInterrupt(AMD64Context* Context, i32 InterruptNumber) {
+            (FirstUHCIController As Controller*)->OnInterrupt()
+        }
+
+        define QueueHead* AllocateQueueHead(i8* Name) {
+            QueueHead* Out := this->Heap->Allocate(#QueueHead)
+
+            Out->HorizontalLink := this->PackLink(null, LinkFlags::Terminator)
+            Out->VerticalLink := this->PackLink(null, LinkFlags::Terminator)
+            Out->Name := Name
+
+            return Out
+        }
+
+        define TransferDescriptor* AllocateTransferDescriptor(i32 Address, i32 Endpoint, TransferSpeed Speed, TransferToken Token, i32 Length, void* Buffer) {
+            TransferDescriptor* Out := this->Heap->Allocate(#TransferDescriptor)
+
+            Out->Link := this->PackLink(null, LinkFlags::Terminator)
+
+            Out->InterruptAfterErrorCount := 3
+            Out->Active := true
+
+            Out->DeviceAddress := Address As i8
+            Out->Endpoint := Endpoint As i8
+
+            if (Speed = TransferSpeed::Low) {
+                Out->IsLowSpeedDevice := true
+                Out->MaximumLength := 7
+            }
+            else {
+                Out->IsLowSpeedDevice := false
+                Out->MaximumLength := 63
+            }
+            
+            Out->ShouldInterruptOnComplete := true
+            Out->Token := Token
+            ;Out->ActualLength := Length As i16
+
+            if (Buffer) {
+                Out->BufferPointer := this->VirtualToPhysical(Buffer)
+            }
+
+            return Out
+        }
+
+        define void* Allocate(i32 Size) {
+            return this->Heap->Allocate(Size)
+        }
+
+        define void ScheduleQueueHead(QueueHeadPeriod Period, QueueHead* QH) {
+            i32 Index := Period As i32
+
+            QueueHead* PeriodicQueue := this->PeriodicQueueHeads[Index]
+
+            QH->Previous := PeriodicQueue
+
+            i32 OldVerticalLink := PeriodicQueue->VerticalLink
+            QH->HorizontalLink := OldVerticalLink
+
+            if (OldVerticalLink & LinkFlags::IsQueueHead) {
+                QueueHead* OldVerticalQH := this->PhysicalToVirtual(OldVerticalLink & 0x7FFF_FFF0)
+                OldVerticalQH->Previous := QH
+            }
+
+            PeriodicQueue->VerticalLink := this->PackLink(QH, LinkFlags::IsQueueHead)
+        }
+
+        define void SetupTransferDataPhase(TransferHandle* Handle, void* Buffer, i32 Length) {
+            
+        }
+
+        define ITransferHandle* SendControlTransfer(i32 Address, i32 Endpoint, TransferSpeed Speed, SetupPacket* Setup, void* Buffer, i32 DataLength) {
+            QueueHead* QH := this->AllocateQueueHead("Transfer")
+            QH->Completed := new Synchronization::Semaphore(0)
+
+            SetupPacket* RelocatedSetupPacket := this->Heap->Allocate(#SetupPacket)
+            MoveMemory(RelocatedSetupPacket, Setup, #SetupPacket)
+
+            void* RelocatedBuffer := this->Heap->Allocate(DataLength)
+
+            if (Setup->DataDirection = USB::RequestDataPhaseDirection::HostToDevice) {
+                MoveMemory(RelocatedBuffer, Buffer, DataLength)
+            }
+            
+            TransferHandle* Handle := new TransferHandle(this, RelocatedSetupPacket, QH, Buffer, RelocatedBuffer)
+
+            TransferDescriptor* SetupTD := this->AllocateTransferDescriptor(Address, Endpoint, Speed, TransferToken::SETUP, 8, RelocatedSetupPacket)
+            Handle->AddTransferDescriptor(SetupTD)
+
+            TransferToken Token := TransferToken::OUT
+            TransferToken StatusToken := TransferToken::IN
+
+            if (Setup->DataDirection = USB::RequestDataPhaseDirection::DeviceToHost) {
+                Token := TransferToken::IN
+                StatusToken := TransferToken::OUT
+            }
+
+            i32 MaxSize := 8
+
+            if (Speed = TransferSpeed::Full) {
+                MaxSize := 64
+            }
+
+            TransferDescriptor* Previous := SetupTD
+            void* PacketData := RelocatedBuffer
+
+            while (DataLength > 0) {
+                i32 PacketSize := MaxSize
+
+                if (DataLength < MaxSize) {
+                    PacketSize := DataLength
+                }
+
+                TransferDescriptor* TD := this->AllocateTransferDescriptor(Address, Endpoint, Speed, TransferToken::IN, PacketSize, PacketData)
+                TD->DataBuffer := PacketData
+
+                Handle->AddTransferDescriptor(TD)
+
+                PacketData += PacketSize
+                DataLength -= PacketSize
+            }
+
+            TransferDescriptor* StatusTD := this->AllocateTransferDescriptor(Address, Endpoint, Speed, StatusToken, 0, null)
+
+            Handle->AddTransferDescriptor(StatusTD)
+
+            i32 Count := Handle->TDs->Count()
+
+            for (i32 Index := 0, Index < Count - 1, Index++) {
+                TransferDescriptor* Previous := Handle->TDs->At(Index)
+                TransferDescriptor* Next := Handle->TDs->At(Index + 1)
+
+                Previous->Link := this->PackLink(Next, LinkFlags::DepthFirst)
+            }
+
+            QH->VerticalLink := this->PackLink(SetupTD, LinkFlags::DepthFirst)
+
+            this->QueueHeadsInFlight->Push(QH)
+
+            this->DumpLink(this->PackLink(QH, LinkFlags::IsQueueHead))
+            this->DumpLink(this->PackLink(this->PeriodicQueueHeads[QueueHeadPeriod::_1_MS], LinkFlags::IsQueueHead))
+
+            this->ScheduleQueueHead(QueueHeadPeriod::_1_MS, QH)
+
+            return Handle
+        }
+
+        define void Free(ITransferHandle* Handle) {
+            TransferHandle* Transfer := Handle As TransferHandle*
+
+            this->Heap->Free(Transfer->Setup)
+
+            i32 Count := Transfer->TDs->Count()
+
+            for (i32 Index := 0, Index < Count, Index++) {
+                TransferDescriptor* TD := Transfer->TDs->At(Index)
+                this->Heap->Free(TD)
+            }
+
+            this->Heap->Free(Transfer->QH)
+            this->Heap->Free(Transfer->RelocatedDataBuffer)
+        }
+
+        define void WaitAndFree(ITransferHandle* Handle) {
+            TransferHandle* Transfer := Handle As TransferHandle*
+
+            Transfer->Wait()
+
+            this->Free(Transfer)
+        }
+
         define void CheckPort(Registers Port) {
-            if (this->Stop) {
+            if (this->Stopped) {
                 return
             }
 
@@ -378,27 +615,44 @@ namespace USB::UHCI {
 
                     ;this->FrameList[200] := this->RemoveLinkFlag(this->FrameList[200], LinkFlags::Terminator)
 
-                    QueueHead* Queue := this->PeriodicQueueHeads[QueueHeadPeriod::_1_MS]
+                    i32 Address := this->NextDeviceAddress++
 
-                    Queue->VerticalLink := this->RemoveLinkFlag(Queue->VerticalLink, LinkFlags::Terminator)
+                    Print("Setting address %i\n", Address)
 
-                    this->Interrupt->Wait()
+                    SetupPacket SetupSetAddress
+                    SetupSetAddress.MakeSetAddress(Address As i8)
+
+                    this->SendControlTransfer(0, 0, TransferSpeed::Low, &SetupSetAddress, null, 0)->Wait()->Free()
+
+                    SleepMS(50)
+
+                    ; Address now set, hand off to USB driver
+
+                    USB::Device* Dev := new USB::Device(this, Address)
+                    USB::DeviceDescriptor* _Device := Dev->Descriptor
+
+                    /* SleepMS(10)
 
                     this->Stop := true
-                    
                     RegisterFields::Command CommandFields := 0 As RegisterFields::Command
-                    this->Write16(Registers::Command, CommandFields As i16)
+                    this->Write16(Registers::Command, CommandFields As i16) */
 
-                    SleepMS(10)
-
-                    Info("%usb-descriptor\n", this->DescriptorBuffer)
-
-                    USB::DeviceDescriptor* _Device := this->DescriptorBuffer As USB::DeviceDescriptor*
-
-                    Print("What a wonderful %s %s you have plugged in !!!!!!", 
+                    Print("What a wonderful %s %s you have plugged in !!!!!!\n", 
                         USBIDs->GetVendorName(_Device->VendorID),
                         USBIDs->GetDeviceName(_Device->VendorID, _Device->ProductID)
                     )
+
+                    Print("USB Device Strings:\n")
+                    Print("  Manufacturer: %usb-string-descriptor\n", Dev->ManufacturerString)
+                    Print("  Product: %usb-string-descriptor\n", Dev->ProductString)
+                    Print("  Serial Number: %usb-string-descriptor\n", Dev->SerialNumberString)
+
+                    ;Device* Dev := new Device(this, _Device)
+
+                    SleepMS(10)
+
+                    this->Stop()
+                    
                 }
 
                 if (PortFields.EnableChange) {
@@ -416,148 +670,6 @@ namespace USB::UHCI {
 
                 SleepMS(1000)
             }
-        }
-
-        define void OnInterrupt() {
-            this->Interrupt->Signal()
-
-            LocalAPIC->EOI()
-        }
-
-        static void OnInterrupt(AMD64Context* Context, i32 InterruptNumber) {
-            (FirstUHCIController As Controller*)->OnInterrupt()
-        }
-
-        define QueueHead* AllocateQueueHead(i8* Name) {
-            QueueHead* Out := this->Heap->Allocate(#QueueHead)
-
-            Out->HorizontalLink := this->PackLink(null, LinkFlags::Terminator)
-            Out->VerticalLink := this->PackLink(null, LinkFlags::Terminator)
-            Out->Name := Name
-
-            return Out
-        }
-
-        define TransferDescriptor* AllocateTransferDescriptor(TransferSpeed Speed, TransferToken Token, i32 Length, void* Buffer) {
-            TransferDescriptor* Out := this->Heap->Allocate(#TransferDescriptor)
-
-            Out->Link := this->PackLink(null, LinkFlags::Terminator)
-
-            Out->InterruptAfterErrorCount := 3
-            Out->Active := true
-
-            if (Speed = TransferSpeed::Low) {
-                Out->IsLowSpeedDevice := true
-                Out->MaximumLength := 7
-            }
-            else {
-                Out->IsLowSpeedDevice := false
-                Out->MaximumLength := 63
-            }
-            
-            Out->ShouldInterruptOnComplete := true
-            Out->Token := Token
-            Out->ActualLength := Length As i16
-
-            Out->BufferPointer := this->VirtualToPhysical(Buffer)
-
-            return Out
-        }
-
-        define void* Allocate(i32 Size) {
-            return this->Heap->Allocate(Size)
-        }
-
-        define void ScheduleQueueHead(QueueHeadPeriod Period, QueueHead* QH) {
-            i32 Index := Period As i32
-
-            QueueHead* PeriodicQueue := this->PeriodicQueueHeads[Index]
-
-            i32 OldVerticalLink := PeriodicQueue->VerticalLink
-            QH->HorizontalLink := OldVerticalLink
-
-            PeriodicQueue->VerticalLink := this->PackLink(QH, LinkFlags::IsQueueHead)
-        }
-
-        define TransferHandle* Transfer(i32 Device, i32 Endpoint, TransferSpeed Speed, SetupPacket* Setup, void* Buffer, i32 DataLength) {
-            QueueHead* QH := this->AllocateQueueHead("Transfer")
-            QH->Complete := new Synchronization::Semaphore(0)
-
-            void* RelocatedBuffer := this->Heap->Allocate(DataLength)
-            
-            TransferHandle* Handle := new TransferHandle(this, Setup->DataDirection, QH, Buffer, RelocatedBuffer)
-
-            TransferDescriptor* SetupTD := this->AllocateTransferDescriptor(Speed, TransferToken::SETUP, 8, Setup)
-            Handle->AddTransferDescriptor(SetupTD)
-
-            TransferToken Token := TransferToken::OUT
-
-            if (Setup->DataDirection = USB::RequestDataPhaseDirection::DeviceToHost) {
-                Token := TransferToken::IN
-            }
-
-            i32 MaxSize := 8
-
-            if (Speed = TransferSpeed::Full) {
-                MaxSize := 64
-            }
-
-            TransferDescriptor* Previous := SetupTD
-            void* PacketData := RelocatedBuffer
-
-            while (DataLength > 0) {
-                i32 PacketSize := MaxSize
-
-                if (DataLength < MaxSize) {
-                    PacketSize := DataLength
-                }
-
-                TransferDescriptor* TD := this->AllocateTransferDescriptor(Speed, TransferToken::IN, PacketSize, PacketData)
-
-                Handle->AddTransferDescriptor(TD)
-
-                PacketData += PacketSize
-                DataLength -= PacketSize
-            }
-
-            i32 Count := Handle->TDs->Count()
-
-            for (i32 Index := 0, Index < Count - 1, Index++) {
-                TransferDescriptor* Previous := Handle->TDs->At(Index)
-                TransferDescriptor* Next := Handle->TDs->At(Index + 1)
-
-                Previous->Link := this->PackLink(Next, LinkFlags::DepthFirst)
-            }
-
-            QH->VerticalLink := this->PackLink(SetupTD, LinkFlags::DepthFirst)
-
-            this->QueueHeadsInFlight->Push(QH)
-
-            this->ScheduleQueueHead(QueueHeadPeriod::_1_MS, QH)
-
-            return Handle
-        }
-
-        define void Free(ITransferHandle* Handle) {
-            TransferHandle* Transfer := Handle As TransferHandle*
-
-            i32 Count := Transfer->TDs->Count()
-
-            for (i32 Index := 0, Index < Count, Index++) {
-                TransferDescriptor* TD := Transfer->TDs->At(Index)
-                this->Heap->Free(TD)
-            }
-
-            this->Heap->Free(Transfer->QH)
-            this->Heap->Free(Transfer->RelocatedDataBuffer)
-        }
-
-        define void WaitAndFree(ITransferHandle* Handle) {
-            TransferHandle* Transfer := Handle As TransferHandle*
-
-            Transfer->Wait()
-
-            this->Free(Transfer)
         }
 
         define void Setup() {
@@ -628,7 +740,7 @@ namespace USB::UHCI {
                 }
             }
 
-            QueueHead* GetDescriptorQH := this->AllocateQueueHead("Get Descriptor")
+            /* QueueHead* GetDescriptorQH := this->AllocateQueueHead("Get Descriptor")
 
             SetupPacket* Setup := this->Allocate(#SetupPacket)
             Setup->MakeGetDescriptor(DescriptorType::Device, 0, 18)
@@ -675,7 +787,7 @@ namespace USB::UHCI {
 
 
 
-            Print("%hexdump\n", this->FrameList, 16)
+            Print("%hexdump\n", this->FrameList, 16) */
 
             this->Device->Write16(0xC0, 0x2000)
             this->Device->Command |= PCI_COMMAND_REGISTER_BUS_MASTER As i16
@@ -711,6 +823,10 @@ namespace USB::UHCI {
             Task* CheckPorts := Scheduler->AddLightTask(null, "UHCI Port Checker")
             CheckPorts~>Context->CallMethod(this, &self.CheckPortsThread)
             CheckPorts->Unblock()
+
+            Task* InterruptThread := Scheduler->AddLightTask(null, "UHCI Interrupt Handler")
+            InterruptThread~>Context->CallMethod(this, &self.InterruptThread)
+            InterruptThread->Unblock()
         }
 
         define void Poll() {

@@ -419,7 +419,7 @@ endif
 
 HELP_TEXT+=usb-debug: Have QEMU dump debug messages related to EHCI|
 ifneq (,$(findstring usb-debug,$(flags)))
-	QEMU_FLAGS+=--trace "usb_ehci*" --trace "usb_uhci*"
+	QEMU_FLAGS+=--trace "usb_ehci*" --trace "usb_*"
 endif
 
 HELP_TEXT+=dry: Dry-run, don't actually run QEMU, just print the flags that would be passed|
