@@ -336,7 +336,7 @@ namespace USB::UHCI {
                 for (i32 Index := Count - 1, Index >= 0, Index--) {
                     QueueHead* QH := this->QueueHeadsInFlight->At(Index)
 
-                    Print("InterruptThread: IFQH #%i: VerticalLink %x, HorizontalLink %x\n", Index, QH->VerticalLink, QH->HorizontalLink)
+                    ;Print("InterruptThread: IFQH #%i: VerticalLink %x, HorizontalLink %x\n", Index, QH->VerticalLink, QH->HorizontalLink)
 
                     if (QH->VerticalLink & 1) {
                         QH->Handle->Complete()
@@ -369,7 +369,7 @@ namespace USB::UHCI {
         }
 
         define void OnInterrupt() {
-            Print("UHCI Interrupt!\n")
+            ;Print("UHCI Interrupt!\n")
 
             ; Clear status bit to allow interrupt line to de-assert
 

@@ -4,6 +4,8 @@
 i8 PCI_SUBCLASS_USB_CONTROLLER := 0x3
 i8 PCI_INTERFACE_EHCI := 0x20
 
+#Require "src/drivers/USB/HID.rlx"
+
 namespace USB {
     enum TransferSpeed {
         Full := 0,
@@ -80,6 +82,8 @@ namespace USB {
     interface IController {
         virtual ITransferHandle* SendControlTransfer(i32, i32, TransferSpeed, SetupPacket*, void*, i32)
         virtual void Free(ITransferHandle*)
+
+        virtual void Stop()
     }
 
     class Device derives INew {
@@ -124,12 +128,35 @@ namespace USB {
             return this->Controller->SendControlTransfer(this->Address, 0, this->Speed, Setup, Buffer, Length)
         }
 
-        define void* GetDescriptor(USB::DescriptorType Type, LanguageID Language, i8 Index, i32* OutLength) {
+        define void* GetDescriptorWithLength(i32 InterfaceNumber, USB::DescriptorType Type, LanguageID Language, i8 Index, i32 Length) {
+            void* Buffer := Alloc(Length)
+            this~>Setup->MakeGetDescriptor(Type, Language, Index, Length As i16)
+
+            if (InterfaceNumber != -1) {
+                this->SendControlTransferToInterface(InterfaceNumber, this~>Setup, Buffer, Length)->Wait()->Free()
+            }
+            else {
+                this->SendControlTransferToDevice(this~>Setup, Buffer, Length)->Wait()->Free()
+            }
+
+            return Buffer
+        }
+        define void* GetDescriptorWithLength(i32 InterfaceNumber, USB::DescriptorType Type, i8 Index, i32 Length) {
+            return this->GetDescriptorWithLength(InterfaceNumber, Type, LanguageID::None, Index, Length)
+        }
+
+        define void* GetDescriptor(i32 InterfaceNumber, USB::DescriptorType Type, LanguageID Language, i8 Index, i32* OutLength) {
             i64 HeaderBuffer := 0
             DescriptorHeader* Header := &HeaderBuffer As DescriptorHeader*
             
             this~>Setup->MakeGetDescriptor(Type, Language, Index, 8)
-            this->SendControlTransferToDevice(this~>Setup, Header, 8)->Wait()->Free()
+
+            if (InterfaceNumber != -1) {
+                this->SendControlTransferToInterface(InterfaceNumber, this~>Setup, Header, 8)->Wait()->Free()
+            }
+            else {
+                this->SendControlTransferToDevice(this~>Setup, Header, 8)->Wait()->Free()
+            }
 
             i32 Length := Header->Length
 
@@ -137,25 +164,23 @@ namespace USB {
                 Length := (Header As ConfigurationDescriptor*)->TotalLength
             }
 
-            void* Buffer := Alloc(Length)
-
-            this~>Setup->MakeGetDescriptor(Type, Index, Length As i16)
-            this->SendControlTransferToDevice(this~>Setup, Buffer, Length)->Wait()->Free()
-
             if (OutLength != null) {
                 *OutLength := Length
             }
 
-            return Buffer
+            return this->GetDescriptorWithLength(InterfaceNumber, Type, Language, Index, Length)
+        }
+        define void* GetDescriptor(i32 InterfaceNumber, USB::DescriptorType Type, i8 Index, i32* OutLength) {
+            return this->GetDescriptor(InterfaceNumber, Type, LanguageID::None, Index, OutLength)
         }
         define void* GetDescriptor(USB::DescriptorType Type, LanguageID Language, i8 Index) {
-            return this->GetDescriptor(Type, Language, Index, null)
+            return this->GetDescriptor(-1, Type, Language, Index, null)
         }
         define void* GetDescriptor(USB::DescriptorType Type, i8 Index, i32* OutLength) {
-            return this->GetDescriptor(Type, LanguageID::None, Index, OutLength)
+            return this->GetDescriptor(-1, Type, LanguageID::None, Index, OutLength)
         }
         define void* GetDescriptor(USB::DescriptorType Type, i8 Index) {
-            return this->GetDescriptor(Type, LanguageID::None, Index, null)
+            return this->GetDescriptor(-1, Type, LanguageID::None, Index, null)
         }
 
         define StringDescriptor* GetStringDescriptor(LanguageID Language, i8 Index) {
@@ -213,6 +238,35 @@ namespace USB {
                     }
                     else if (Header->Type = USB::DescriptorType::Endpoint) {
                         Configuration->Endpoints->Push(new EndpointInfo(Header))
+                    }
+                    else if (Header->Type = USB::DescriptorType::HID) {
+                        HID::Descriptor* HID := Header As void*
+
+                        Print("HID Descriptor: Version %x, Country Code %x, Sub Descriptor Count %i\n",
+                              HID->SpecificationVersion,
+                              HID->CountryCode, HID->SubDescriptorCount)
+
+                        for (i32 SubDescriptorIndex := 0, SubDescriptorIndex < HID->SubDescriptorCount, SubDescriptorIndex++) {
+                            HID::SubDescriptor* SubDescriptor := HID->Descriptors[SubDescriptorIndex]
+
+                            Print("  Sub Descriptor %i: Type %x, Size %i\n", SubDescriptorIndex, SubDescriptor->Type, SubDescriptor->Size)
+
+                            i32 ReportDescriptorLength := SubDescriptor->Size
+                            void* ReportDescriptor := this->GetDescriptorWithLength(0, USB::DescriptorType::HID_Report, 0, ReportDescriptorLength)
+                            Print("HID Report Descriptor: %hexdump\n", ReportDescriptor, ReportDescriptorLength)
+                            Info("HID Report Descriptor: %hexdump\n", ReportDescriptor, ReportDescriptorLength)
+
+                            HID::Parser* Parser := new HID::Parser(ReportDescriptor, ReportDescriptorLength)
+
+                            Parser->Parse()
+                            Parser->Dump()
+
+                            this->Controller->Stop()
+                            Halt()
+                        }
+                    }
+                    else {
+                        Print("Unknown USB descriptor type %x at offset %i\n", Header->Type, Offset)
                     }
 
                     Print("%usb-descriptor", Header)
@@ -273,6 +327,8 @@ namespace USB {
 
             this~>Setup->MakeSetConfiguration(0)
             this->SendControlTransferToDevice(this~>Setup, null, 0)->Wait()->Free()
+
+            
         }
     }
 }

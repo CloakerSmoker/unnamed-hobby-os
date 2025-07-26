@@ -4,7 +4,10 @@ namespace USB {
         Configuration := 2,
         String := 3,
         Interface := 4,
-        Endpoint := 5
+        Endpoint := 5,
+        HID := 0x21,
+        HID_Report := 0x22,
+        HID_Physical := 0x23
     }
 
     struct DescriptorHeader {

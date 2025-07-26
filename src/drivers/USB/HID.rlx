@@ -1,0 +1,320 @@
+
+namespace USB::HID {
+
+    enum SubDescriptorType As i8 {
+        Report := 0x22,
+        Physical := 0x23
+    }
+
+    struct SubDescriptor {
+        SubDescriptorType Type
+        i8 Size
+    }
+
+    struct Descriptor {
+        DescriptorHeader Header
+
+        i16 SpecificationVersion
+        i8 CountryCode
+
+        i8 SubDescriptorCount
+        SubDescriptor[0] Descriptors
+    }
+
+    enum ItemType As i8 {
+        Main := 0,
+        Global := 1,
+        Local := 2,
+        Reserved := 3
+    }
+
+    enum MainItemTag As i8 {
+        Input := 0b1000,
+        Output := 0b1001,
+        Collection := 0b1010,
+        Feature := 0b1011,
+        EndCollection := 0b1100
+    }
+
+    enum GlobalItemTag As i8 {
+        UsagePage := 0b0000,
+
+        LogicalMinimum := 0b0001,
+        LogicalMaximum := 0b0010,
+
+        PhysicalMinimum := 0b0011,
+        PhysicalMaximum := 0b0100,
+
+        UnitExponent := 0b0101,
+        Unit := 0b0110,
+
+        ReportSize := 0b0111,
+        ReportID := 0b1000,
+        ReportCount := 0b1001,
+
+        Push := 0b1010,
+        Pop := 0b1011
+    }
+
+    enum LocalItemTag As i8 {
+        Usage := 0b0000,
+        UsageMinimum := 0b0001,
+        UsageMaximum := 0b0010,
+
+        DesignatorIndex := 0b0011,
+        DesignatorMinimum := 0b0100,
+        DesignatorMaximum := 0b0101,
+
+        StringIndex := 0b0110,
+        StringMinimum := 0b0111,
+        StringMaximum := 0b1000,
+        
+        Delimiter := 0b1001
+    }
+
+    bits ItemHeader As i8 {
+        [0:1] Size
+        ItemType [2:3] Type
+        MainItemTag [4:7] MainTag
+        GlobalItemTag [4:7] GlobalTag
+        LocalItemTag [4:7] LocalTag
+    }
+
+    bits InputItemData As i32 {
+        [0] IsConstant
+        [1] IsArray
+        [2] IsRelative
+        [3] Wraps
+        [4] IsNonLinear
+        [5] HasNoPreferredState
+        [6] HasNullState
+        [8] IsBufferedBytes
+    }
+
+    bits OutputItemData As i32 {
+        [0] IsConstant
+        [1] IsArray
+        [2] IsRelative
+        [3] Wraps
+        [4] IsNonLinear
+        [5] HasNoPreferredState
+        [6] HasNullState
+        [7] IsVolatile
+        [8] IsBufferedBytes
+    }
+
+    bits FeatureItemData As i32 {
+        [0] IsConstant
+        [1] IsArray
+        [2] IsRelative
+        [3] Wraps
+        [4] IsNonLinear
+        [5] HasNoPreferredState
+        [6] HasNullState
+        [7] IsVolatile
+        [8] IsBufferedBytes
+    }
+
+    enum CollectionItemData {
+        Physical := 0,
+        Application := 1,
+        Logical := 2,
+        Report := 3,
+        NamedArray := 4,
+        UsageSwitch := 5,
+        UsageModifier := 6
+        Root := 80
+    }
+
+    class ItemInfo derives INew {
+        ItemHeader Header
+        
+        union {
+            i32 Value
+
+            InputItemData InputData
+            OutputItemData OutputData
+            FeatureItemData FeatureData
+            CollectionItemData CollectionData
+        }
+
+        define void New(ItemHeader Header, i32 Value) {
+            this->Header := Header
+            this->Value := Value
+        }
+    }
+
+    struct GlobalState {
+        i32 UsagePage
+
+        i32 LogicalMinimum
+        i32 LogicalMaximum
+
+        i32 PhysicalMinimum
+        i32 PhysicalMaximum
+
+        i32 UnitExponent
+        i32 Unit
+
+        i32 ReportSize
+        i32 ReportID
+        i32 ReportCount
+    }
+
+    struct LocalState {
+        i8 dummy
+    }
+
+    bits CollectionEntry As i64 {
+        [63] IsCollection
+        Collection* [0:62] CollectionValue
+        ItemInfo* [0:62] ItemValue
+    }
+
+    class Collection derives INew {
+        PointerArray* Items ; <CollectionEntry>
+
+        ItemInfo* Info
+
+        define void New(ItemInfo* Info) {
+            this->Items := new PointerArray()
+            this->Info := Info
+        }
+
+        define void Push(ItemInfo* Item) {
+            CollectionEntry Entry := 0 As CollectionEntry
+
+            Entry.IsCollection := 0
+            Entry.ItemValue := Item
+
+            this->Items->Push(Entry As void*)
+        }
+        define void Push(Collection* Child) {
+            CollectionEntry Entry := 0 As CollectionEntry
+
+            Entry.IsCollection := 1
+            Entry.CollectionValue := Child
+
+            this->Items->Push(Entry As void*)
+        }
+    }
+
+    class Parser derives INew {
+        i32[16] GlobalState
+        i32[16] LocalState
+
+        union {
+            i8* Bytes
+            void* Buffer
+        }
+
+        i32 Length
+        i32 Position
+
+        define void New(i8* Bytes, i32 Length) {
+            this->Bytes := Bytes
+            this->Length := Length
+            this->Position := 0
+        }
+
+        define i8 AtEnd() {
+            return this->Position >= this->Length
+        }
+
+        define i8 ReadByte() {
+            if (this->AtEnd()) {
+                return 0
+            }
+            
+            return this->Bytes[this->Position++]
+        }
+
+        define ItemInfo* ParseItem() {
+            ItemInfo* Result := Alloc(#ItemInfo)
+
+            ItemHeader Header := this->ReadByte() As ItemHeader
+
+            i32 Value := 0
+
+            for (i32 Index := 0, Index < Header.Size, Index++) {
+                Value := Value << 8
+                Value |= this->ReadByte()
+            }
+
+            return new ItemInfo(Header, Value)
+        }
+
+        define Collection* ParseCollection(ItemInfo* Info) {
+            Collection* Result := new Collection(Info)
+
+            while !(this->AtEnd()) {
+                ItemInfo* Item := this->ParseItem()
+
+                if (Item->Header.Type = ItemType::Main && Item->Header.MainTag = MainItemTag::EndCollection) {
+                    break
+                }
+
+                if (Item->Header.Type = ItemType::Main && Item->Header.MainTag = MainItemTag::Collection) {
+                    Result->Push(this->ParseCollection(Item))
+                } else {
+                    Result->Push(Item)
+                }
+            }
+
+            return Result
+        }
+
+        Collection* Root
+
+        define void Parse() {
+            ItemHeader FakeHeader := 0 As ItemHeader
+
+            FakeHeader.Type := ItemType::Main
+            FakeHeader.MainTag := MainItemTag::Collection
+
+            ItemInfo* FakeItem := new ItemInfo(FakeHeader, CollectionItemData::Root As i32)
+
+            this->Root := this->ParseCollection(FakeItem)
+        }
+
+        define void Indent(i32 Level) {
+            for (i32 Index := 0, Index < Level, Index++) {
+                Print("  ")
+            }
+        }
+
+        define void Dump(i32 Level, Collection* Root) {
+            this->Indent(Level)
+            Print("Collection (%s)\n", nameof:(Root->Info->CollectionData))
+
+            i32 Count := Root->Items->Count()
+
+            for (i32 Index := 0, Index < Count, Index++) {
+                CollectionEntry Entry := Root->Items->At(Index) As CollectionEntry
+
+                if (Entry.IsCollection) {
+                    this->Dump(Level + 1, Entry.CollectionValue)
+                } else {
+                    this->Indent(Level + 1)
+
+                    ItemInfo* Info := Entry.ItemValue
+                    ItemType Type := Info->Header.Type
+
+                    if (Type = ItemType::Main) {
+                        Print("Main Item: %s %i\n", nameof:(Info->Header.MainTag), Info->Value)
+                    }
+                    else if (Type = ItemType::Global) {
+                        Print("Global Item: %s %i\n", nameof:(Info->Header.GlobalTag), Info->Value)
+                    }
+                    else if (Type = ItemType::Local) {
+                        Print("Local Item: %s %i\n", nameof:(Info->Header.LocalTag), Info->Value)
+                    }
+                }
+            }
+        }
+
+        define void Dump() {
+            this->Dump(0, this->Root)
+        }
+    }
+}
