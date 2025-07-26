@@ -649,7 +649,7 @@ void _start(void* KernelPtr) {
             .String = {
                 .Type = ACPI_TYPE_STRING,
                 .Pointer = "Windows 2001",
-                .Length = strlen(Argument[0].String.Pointer),
+                .Length = 12,
             }
         }
     };

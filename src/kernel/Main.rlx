@@ -661,7 +661,7 @@ define void Main(TrampolineInfo* Info) {
 	
 	Print("BOOT: Screen *probably* works\n")
 	
-	;KernelAddressSpace->Map(0 As void*, 0, PAGE_NOT_PRESENT)
+	KernelAddressSpace->Map(0 As void*, 0, PAGE_NOT_PRESENT)
 	
 	Print("BOOT: Unmapped page 0\n")
 	
