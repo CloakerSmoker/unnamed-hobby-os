@@ -261,6 +261,24 @@ namespace USB {
                             Parser->Parse()
                             Parser->Dump()
 
+                            Parser->Execute()
+
+                            i32 InputCount := Parser->InputReportLayouts->Count()
+                            Info("HID Parser found %i input reports\n", InputCount)
+
+                            HID::ReportLayout* Layout := Parser->InputReportLayouts->PointerAt(0)
+
+                            Info("First input report layout: ID %i, Size %i bits, %i fields\n", Layout->ID, Layout->Size, Layout->Fields->Count())
+
+                            i32 Count := Layout->Fields->Count()
+
+                            for (i32 FieldIndex := 0, FieldIndex < Count, FieldIndex++) {
+                                HID::ReportField* Field := Layout->Fields->At(FieldIndex)
+                                HID::MainItem* Item := Field->Item
+
+                                Info("Field %i: UsagePage %s, Usage %s, Size %i bits, Offset %i bits\n", FieldIndex, USBIDs->GetUsagePageName(Item->UsagePage), USBIDs->GetUsageName(Item->UsagePage, Item->Usage), Item->ReportSize , Field->Offset)
+                            }
+
                             this->Controller->Stop()
                             Halt()
                         }

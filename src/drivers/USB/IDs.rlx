@@ -12,10 +12,55 @@ namespace USB::IDs {
         i32 NameOffset
     }
 
+    struct ClassEntry {
+        i32 ID
+        i32 NameOffset
+
+        i32 SubclassCount
+        i32 FirstSubclassIndex
+    }
+
+    struct SubclassEntry {
+        i32 ID
+        i32 NameOffset
+
+        i32 ProtocolCount
+        i32 FirstProtocolIndex
+    }
+
+    struct ProtocolEntry {
+        i32 ID
+        i32 NameOffset
+    }
+
+    struct UsagePageEntry {
+        i32 ID
+        i32 NameOffset
+
+        i32 UsageCount
+        i32 FirstUsageIndex
+    }
+
+    struct UsageEntry {
+        i32 ID
+        i32 NameOffset
+    }
+
     struct FileHeader {
         i32 VendorCount
+        i32 ClassCount
+        i32 UsagePageCount
+
         i32 VendorsOffset
         i32 DevicesOffset
+        
+        i32 ClassesOffset
+        i32 SubclassesOffset
+        i32 ProtocolsOffset
+
+        i32 UsagePagesOffset
+        i32 UsagesOffset
+        
         i32 StringsOffset
     }
     
@@ -25,6 +70,13 @@ namespace USB::IDs {
         VendorEntry* Vendors
         DeviceEntry* Devices
 
+        ClassEntry* Classes
+        SubclassEntry* Subclasses
+        ProtocolEntry* Protocols
+
+        UsagePageEntry* UsagePages
+        UsageEntry* Usages
+
         i8* Strings
 
         define void New(void* Buffer) {
@@ -32,6 +84,14 @@ namespace USB::IDs {
 
             this->Vendors := Buffer + this->Header->VendorsOffset
             this->Devices := Buffer + this->Header->DevicesOffset
+
+            this->Classes := Buffer + this->Header->ClassesOffset
+            this->Subclasses := Buffer + this->Header->SubclassesOffset
+            this->Protocols := Buffer + this->Header->ProtocolsOffset
+
+            this->UsagePages := Buffer + this->Header->UsagePagesOffset
+            this->Usages := Buffer + this->Header->UsagesOffset
+
             this->Strings := Buffer + this->Header->StringsOffset
         }
 
@@ -39,12 +99,15 @@ namespace USB::IDs {
             return &this->Strings[Offset]
         }
 
-        define i32 Cast(i16 ID) {
+        define i32 Cast16(i16 ID) {
             return (ID As i32) & 0xFFFF
+        }
+        define i32 Cast8(i8 ID) {
+            return (ID As i32) & 0xFF
         }
 
         define VendorEntry* FindVendor(i16 RawID) {
-            i32 ID := this->Cast(RawID)
+            i32 ID := this->Cast16(RawID)
 
             i32 Count := this->Header->VendorCount
 
@@ -72,7 +135,7 @@ namespace USB::IDs {
         }
 
         define DeviceEntry* FindDevice(VendorEntry* Vendor, i16 RawID) {
-            i32 ID := this->Cast(RawID)
+            i32 ID := this->Cast16(RawID)
 
             DeviceEntry* Devices := this->Devices[Vendor->FirstDeviceIndex]
             i32 Count := Vendor->DeviceCount
@@ -106,6 +169,169 @@ namespace USB::IDs {
             }
 
             return this->GetDeviceName(Vendor, DeviceID)
+        }
+
+        define ClassEntry* FindClass(i8 RawID) {
+            i32 ID := this->Cast8(RawID)
+
+            i32 Count := this->Header->ClassCount
+
+            for (i32 Index := 0, Index < Count, Index++) {
+                ClassEntry* Class := this->Classes[Index]
+
+                if (Class->ID = ID) {
+                    return Class
+                }
+            }
+
+            return null
+        }
+        define i8* GetClassName(i8 ID) {
+            ClassEntry* Class := this->FindClass(ID)
+
+            if !(Class) {
+                return null
+            }
+
+            return this->GetString(Class->NameOffset)
+        }
+
+        define SubclassEntry* FindSubclass(ClassEntry* Class, i8 RawID) {
+            i32 ID := this->Cast8(RawID)
+
+            SubclassEntry* Subclasses := this->Subclasses[Class->FirstSubclassIndex]
+            i32 Count := Class->SubclassCount
+
+            for (i32 Index := 0, Index < Count, Index++) {
+                SubclassEntry* Subclass := Subclasses[Index]
+
+                if (Subclass->ID = ID) {
+                    return Subclass
+                }
+            }
+
+            return null
+        }
+
+        define i8* GetSubclassName(ClassEntry* Class, i8 ID) {
+            SubclassEntry* Subclass := this->FindSubclass(Class, ID)
+
+            if !(Subclass) {
+                return null
+            }
+
+            return this->GetString(Subclass->NameOffset)
+        }
+        define i8* GetSubclassName(i8 ClassID, i8 SubclassID) {
+            ClassEntry* Class := this->FindClass(ClassID)
+
+            if !(Class) {
+                return null
+            }
+
+            return this->GetSubclassName(Class, SubclassID)
+        }
+
+        define ProtocolEntry* FindProtocol(SubclassEntry* Subclass, i8 RawID) {
+            i32 ID := this->Cast8(RawID)
+
+            ProtocolEntry* Protocols := this->Protocols[Subclass->FirstProtocolIndex]
+            i32 Count := Subclass->ProtocolCount
+
+            for (i32 Index := 0, Index < Count, Index++) {
+                ProtocolEntry* Protocol := Protocols[Index]
+
+                if (Protocol->ID = ID) {
+                    return Protocol
+                }
+            }
+
+            return null
+        }
+
+        define i8* GetProtocolName(SubclassEntry* Subclass, i8 ID) {
+            ProtocolEntry* Protocol := this->FindProtocol(Subclass, ID)
+
+            if !(Protocol) {
+                return null
+            }
+
+            return this->GetString(Protocol->NameOffset)
+        }
+        define i8* GetProtocolName(i8 ClassID, i8 SubclassID, i8 ProtocolID) {
+            ClassEntry* Class := this->FindClass(ClassID)
+
+            if !(Class) {
+                return null
+            }
+
+            SubclassEntry* Subclass := this->FindSubclass(Class, SubclassID)
+
+            if !(Subclass) {
+                return null
+            }
+
+            return this->GetProtocolName(Subclass, ProtocolID)
+        }
+
+        define UsagePageEntry* FindUsagePage(i32 RawID) {
+            i32 ID := this->Cast16(RawID As i16)
+
+            i32 Count := this->Header->UsagePageCount
+
+            for (i32 Index := 0, Index < Count, Index++) {
+                UsagePageEntry* Page := this->UsagePages[Index]
+
+                if (Page->ID = ID) {
+                    return Page
+                }
+            }
+
+            return null
+        }
+        define i8* GetUsagePageName(i32 ID) {
+            UsagePageEntry* Page := this->FindUsagePage(ID)
+
+            if !(Page) {
+                return null
+            }
+
+            return this->GetString(Page->NameOffset)
+        }
+
+        define UsageEntry* FindUsage(UsagePageEntry* Page, i16 RawID) {
+            i32 ID := this->Cast16(RawID)
+
+            UsageEntry* Usages := this->Usages[Page->FirstUsageIndex]
+            i32 Count := Page->UsageCount
+
+            for (i32 Index := 0, Index < Count, Index++) {
+                UsageEntry* Usage := Usages[Index]
+
+                if (Usage->ID = ID) {
+                    return Usage
+                }
+            }
+
+            return null
+        }
+        define i8* GetUsageName(UsagePageEntry* Page, i32 ID) {
+            UsageEntry* Usage := this->FindUsage(Page, ID As i16)
+
+            if !(Usage) {
+                return null
+            }
+
+            return this->GetString(Usage->NameOffset)
+        }
+        define i8* GetUsageName(i32 PageID, i32 UsageID) {
+            UsagePageEntry* Page := this->FindUsagePage(PageID)
+
+            if !(Page) {
+                return null
+            }
+
+            return this->GetUsageName(Page, UsageID As i16)
         }
     }
 }

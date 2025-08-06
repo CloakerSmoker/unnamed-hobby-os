@@ -80,6 +80,25 @@ namespace USB::HID {
         LocalItemTag [4:7] LocalTag
     }
 
+    enum MainItemFlag As i32 {
+        ; If even: expected bit value is 0, if odd: expected bit value is 1
+        ; Bit index = Value / 2
+
+        Data, Constant,
+        Array, Variable,
+        Absolute, Relative,
+        NoWrap, Wrap,
+        Linear, NonLinear,
+        PreferredState, NoPreferredState,
+        NoNullState, NullState,
+        NonVolatile, Volatile,
+
+        BitField := 16, ; 16 / 8 = bit 8, expected value is 0
+        BufferedBytes := 17 ; 17 / 8 = bit 8, expected value is 1
+
+        Last := 17
+    }
+
     bits InputItemData As i32 {
         [0] IsConstant
         [1] IsArray
@@ -89,6 +108,16 @@ namespace USB::HID {
         [5] HasNoPreferredState
         [6] HasNullState
         [8] IsBufferedBytes
+
+        define i8 HasFlag(MainItemFlag Flag) {
+            i32 BitIndex := (Flag As i32) / 2
+            i32 ExpectedValue := (Flag As i32) % 2
+
+            i32 Mask := 1 << BitIndex
+            i32 Value := (this As i32) & Mask
+
+            return Value = (ExpectedValue << BitIndex)
+        }
     }
 
     bits OutputItemData As i32 {
@@ -162,7 +191,45 @@ namespace USB::HID {
     }
 
     struct LocalState {
-        i8 dummy
+        i8 UseUsageStack
+
+        i32 UsageMinimum
+        i32 UsageMaximum
+
+        i32 DesignatorIndex
+        i32 DesignatorMinimum
+        i32 DesignatorMaximum
+
+        i32 StringIndex
+        i32 StringMinimum
+        i32 StringMaximum
+
+        i8 Delimiter
+
+        define void Zero() {
+            FastZeroMemory(this, #self)
+        }
+    }
+
+    struct MainItem {
+        ; From global state
+        i32 UsagePage
+
+        i32 LogicalMinimum
+        i32 LogicalMaximum
+
+        i32 PhysicalMinimum
+        i32 PhysicalMaximum
+
+        i32 UnitExponent
+        i32 Unit
+
+        i32 ReportSize
+        i32 ReportID
+
+        ; From local state
+
+        i32 Usage
     }
 
     bits CollectionEntry As i64 {
@@ -199,10 +266,69 @@ namespace USB::HID {
         }
     }
 
-    class Parser derives INew {
-        i32[16] GlobalState
-        i32[16] LocalState
+    class ReportField derives INew {
+        MainItem* Item
+        i32 Offset
 
+        define void New(MainItem* Item, i32 Offset) {
+            this->Item := Item
+            this->Offset := Offset
+        }
+    }
+
+    class ReportLayout derives INew {
+        PointerArray* Fields ; <ReportField*>
+        i32 ID
+
+        define void New(i32 ID) {
+            this->Fields := new PointerArray()
+            this->ID := ID
+        }
+
+        i32 Offset
+        i32 Size
+
+        define ReportField* AddField(MainItem* Item) {
+            ReportField* Field := new ReportField(Item, this->Offset)
+            this->Fields->Push(Field)
+
+            this->Offset += Item->ReportSize
+
+            return Field
+        }
+
+        define void Seal() {
+            this->Size := this->Offset
+        }
+
+        i8* Buffer
+
+        define i64 ReadBit(i32 Index) {
+            i32 ByteIndex := Index / 8
+            i32 BitIndex := Index % 8
+
+            if (ByteIndex >= this->Size) {
+                return 0
+            }
+
+            return (this->Buffer[ByteIndex] >> (7 - BitIndex)) & 1
+        }
+        define i64 ReadBits(i32 Index, i32 Count) {
+            i64 Result := 0
+
+            for (i32 BitIndex := 0, BitIndex < Count, BitIndex++) {
+                Result := (Result << 1) | this->ReadBit(Index + BitIndex)
+            }
+
+            return Result
+        }
+
+        define i64 Read(ReportField* Field) {
+            return this->ReadBits(Field->Offset, Field->Item->ReportSize)
+        }
+    }
+
+    class Parser derives INew {
         union {
             i8* Bytes
             void* Buffer
@@ -210,12 +336,6 @@ namespace USB::HID {
 
         i32 Length
         i32 Position
-
-        define void New(i8* Bytes, i32 Length) {
-            this->Bytes := Bytes
-            this->Length := Length
-            this->Position := 0
-        }
 
         define i8 AtEnd() {
             return this->Position >= this->Length
@@ -277,10 +397,234 @@ namespace USB::HID {
             this->Root := this->ParseCollection(FakeItem)
         }
 
+        i8 HasReportID
+        LocalState* Local
+        GlobalState* Global
+
+        i32* UsageStack
+        i32 UsageStackSize
+
+        define void PushUsage(i32 Usage) {
+            i32 Index := this->UsageStackSize++
+
+            this->UsageStack := ReAlloc(this->UsageStack, this->UsageStackSize * #i32)
+            
+            this->UsageStack[Index] := Usage
+        }
+        define i32 PopUsage() {
+            i32 Index := --this->UsageStackSize
+
+            return this->UsageStack[Index]
+        }
+
+        AVLTree* InputReportLayouts ; <ReportLayout*>
+        AVLTree* OutputReportLayouts ; <ReportLayout*>
+        AVLTree* FeatureReportLayouts ; <ReportLayout*>
+
+        define void ExecuteLocalItem(ItemInfo* Item) {
+            LocalState* Local := this->Local
+            LocalItemTag Tag := Item->Header.LocalTag
+
+            Info("\t%s := %i\n", nameof:(Tag), Item->Value)
+
+            if (Tag = LocalItemTag::Usage) {
+                Local->UseUsageStack := true
+
+                this->PushUsage(Item->Value)
+            }
+            else if (Tag = LocalItemTag::UsageMinimum) {
+                Local->UseUsageStack := false
+                Local->UsageMinimum := Item->Value
+            }
+            else if (Tag = LocalItemTag::UsageMaximum) {
+                Local->UseUsageStack := false
+                Local->UsageMaximum := Item->Value
+            }
+            else if (Tag = LocalItemTag::DesignatorIndex) {
+                Local->DesignatorIndex := Item->Value
+            }
+            else if (Tag = LocalItemTag::DesignatorMinimum) {
+                Local->DesignatorMinimum := Item->Value
+            }
+            else if (Tag = LocalItemTag::DesignatorMaximum) {
+                Local->DesignatorMaximum := Item->Value
+            }
+            else if (Tag = LocalItemTag::StringIndex) {
+                Local->StringIndex := Item->Value
+            }
+            else if (Tag = LocalItemTag::StringMinimum) {
+                Local->StringMinimum := Item->Value
+            }
+            else if (Tag = LocalItemTag::StringMaximum) {
+                Local->StringMaximum := Item->Value
+            }
+            else if (Tag = LocalItemTag::Delimiter) {
+                Local->Delimiter := Item->Value As i8
+            }
+        }
+
+        define void ExecuteGlobalItem(ItemInfo* Item) {
+            GlobalState* Global := this->Global
+            GlobalItemTag Tag := Item->Header.GlobalTag
+
+            Info("\t%s := %i\n", nameof:(Tag), Item->Value)
+
+            if (Tag = GlobalItemTag::UsagePage) {
+                Global->UsagePage := Item->Value
+            }
+            else if (Tag = GlobalItemTag::LogicalMinimum) {
+                Global->LogicalMinimum := Item->Value
+            }
+            else if (Tag = GlobalItemTag::LogicalMaximum) {
+                Global->LogicalMaximum := Item->Value
+            }
+            else if (Tag = GlobalItemTag::PhysicalMinimum) {
+                Global->PhysicalMinimum := Item->Value
+            }
+            else if (Tag = GlobalItemTag::PhysicalMaximum) {
+                Global->PhysicalMaximum := Item->Value
+            }
+            else if (Tag = GlobalItemTag::UnitExponent) {
+                Global->UnitExponent := Item->Value
+            }
+            else if (Tag = GlobalItemTag::Unit) {
+                Global->Unit := Item->Value
+            }
+            else if (Tag = GlobalItemTag::ReportSize) {
+                Global->ReportSize := Item->Value
+            }
+            else if (Tag = GlobalItemTag::ReportID) {
+                Global->ReportID := Item->Value
+            }
+            else if (Tag = GlobalItemTag::ReportCount) {
+                Global->ReportCount := Item->Value
+            }
+        }
+
+        define void ExecuteMainItem(ItemInfo* Item) {
+            MainItemTag Tag := Item->Header.MainTag
+            i32 Count := this->Global->ReportCount
+
+            if (Count = 0) {
+                Count := 1 ; Fingers crossed nobody ever actually specifies a report count of 0
+            }
+
+            Info("HID Parser executing main item: %s, Count %i\n", nameof:(Tag), Count)
+
+            for (i32 Index := 0, Index < Count, Index++) {
+                MainItem* Main := Alloc(#MainItem)
+
+                if (this->Local->UseUsageStack) {
+                    Main->Usage := this->PopUsage()
+                }
+                else {
+                    Main->Usage := this->Local->UsageMinimum + Index
+                }
+
+                Main->UsagePage := this->Global->UsagePage
+                Main->LogicalMinimum := this->Global->LogicalMinimum
+                Main->LogicalMaximum := this->Global->LogicalMaximum
+                Main->PhysicalMinimum := this->Global->PhysicalMinimum
+                Main->PhysicalMaximum := this->Global->PhysicalMaximum
+                Main->UnitExponent := this->Global->UnitExponent
+                Main->Unit := this->Global->Unit
+                Main->ReportSize := this->Global->ReportSize
+                Main->ReportID := this->Global->ReportID
+
+                AVLTree* Layouts := null
+
+                if (Tag = MainItemTag::Input) {
+                    Layouts := this->InputReportLayouts
+                }
+                else if (Tag = MainItemTag::Output) {
+                    Layouts := this->OutputReportLayouts
+                }
+                else if (Tag = MainItemTag::Feature) {
+                    Layouts := this->FeatureReportLayouts
+                }
+
+                ReportLayout* Layout := Layouts->GetPointer(Main->ReportID)
+
+                if (Layout = null) {
+                    Layout := new ReportLayout(Main->ReportID)
+                    Layouts->InsertPointer(Main->ReportID, Layout)
+                }
+
+                Layout->AddField(Main)
+            }
+
+            this->Local->Zero()
+            this->UsageStackSize := 0
+        }
+
+        define void ExecuteItem(ItemInfo* Info) {
+            ItemType Type := Info->Header.Type
+
+            Info("HID Parser executing item: Type %s\n", nameof:(Type))
+
+            if (Type = ItemType::Main) {
+                this->ExecuteMainItem(Info)
+            }
+            else if (Type = ItemType::Global) {
+                this->ExecuteGlobalItem(Info)
+            }
+            else if (Type = ItemType::Local) {
+                this->ExecuteLocalItem(Info)
+            }
+        }
+
+        define void ExecuteCollection(Collection* Root) {
+            i32 Count := Root->Items->Count()
+            
+            Info("HID Parser executing collection with %i items\n", Count)
+
+            for (i32 Index := 0, Index < Count, Index++) {
+                CollectionEntry Entry := Root->Items->At(Index) As CollectionEntry
+
+                if (Entry.IsCollection) {
+                    this->ExecuteCollection(Entry.CollectionValue)
+                } else {
+                    this->ExecuteItem(Entry.ItemValue)
+                }
+            }
+        }
+
+        define void SealReportLayouts(AVLTree* Layouts) {
+            i32 Count := Layouts->Count()
+
+            for (i32 Index := 0, Index < Count, Index++) {
+                ReportLayout* Layout := Layouts->PointerAt(Index)
+
+                Layout->Seal()
+            }
+        }
+
+        define void Execute() {
+            this->ExecuteCollection(this->Root)
+
+            this->SealReportLayouts(this->InputReportLayouts)
+            this->SealReportLayouts(this->OutputReportLayouts)
+            this->SealReportLayouts(this->FeatureReportLayouts)
+        }
+
         define void Indent(i32 Level) {
             for (i32 Index := 0, Index < Level, Index++) {
                 Print("  ")
             }
+        }
+
+        define void DumpInputItemData(InputItemData Data) {
+            i32 Count := MainItemFlag::Last As i32
+            
+            for (i32 Index := 0, Index < Count, Index++) {
+                MainItemFlag Flag := Index As MainItemFlag
+
+                if (Data.HasFlag(Flag)) {
+                    Print("%s ", nameof:(Flag))
+                }
+            }
+
+            Print("\n")
         }
 
         define void Dump(i32 Level, Collection* Root) {
@@ -301,10 +645,24 @@ namespace USB::HID {
                     ItemType Type := Info->Header.Type
 
                     if (Type = ItemType::Main) {
-                        Print("Main Item: %s %i\n", nameof:(Info->Header.MainTag), Info->Value)
+                        Print("Main Item: %s %b: ", nameof:(Info->Header.MainTag), Info->Value)
+
+                        if (Info->Header.MainTag = MainItemTag::Input) {
+                            this->DumpInputItemData(Info->InputData)
+                        }
+                        else if (Info->Header.MainTag = MainItemTag::Output) {
+                            ;this->DumpInputItemData(Level + 1, Info->OutputData)
+                        }
+                        else if (Info->Header.MainTag = MainItemTag::Feature) {
+                            ;this->DumpInputItemData(Level + 1, Info->FeatureData)
+                        }
                     }
                     else if (Type = ItemType::Global) {
-                        Print("Global Item: %s %i\n", nameof:(Info->Header.GlobalTag), Info->Value)
+                        if (Info->Header.GlobalTag = GlobalItemTag::UsagePage) {
+                            Print("Global Item: %s %i (%s)\n", nameof:(Info->Header.GlobalTag), Info->Value, USBIDs->GetUsagePageName(Info->Value))
+                        } else {
+                            Print("Global Item: %s %i\n", nameof:(Info->Header.GlobalTag), Info->Value)
+                        }
                     }
                     else if (Type = ItemType::Local) {
                         Print("Local Item: %s %i\n", nameof:(Info->Header.LocalTag), Info->Value)
@@ -315,6 +673,21 @@ namespace USB::HID {
 
         define void Dump() {
             this->Dump(0, this->Root)
+        }
+
+        define void New(i8* Bytes, i32 Length) {
+            this->Bytes := Bytes
+            this->Length := Length
+            this->Position := 0
+
+            this->Local := Alloc(#LocalState)
+            this->Global := Alloc(#GlobalState)
+
+            this->UsageStack := Alloc(#i32)
+
+            this->InputReportLayouts := new AVLTree(#void*)
+            this->OutputReportLayouts := new AVLTree(#void*)
+            this->FeatureReportLayouts := new AVLTree(#void*)
         }
     }
 }
