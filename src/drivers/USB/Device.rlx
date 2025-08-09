@@ -79,8 +79,15 @@ namespace USB {
         virtual void Free()
     }
 
+    interface IPeriodicTransferHandle {
+        virtual void* Wait()
+        virtual void Stop()
+        virtual void Free()
+    }
+
     interface IController {
         virtual ITransferHandle* SendControlTransfer(i32, i32, TransferSpeed, SetupPacket*, void*, i32)
+        virtual IPeriodicTransferHandle* ScheduleInterruptTransfer(i32, i32, TransferSpeed, RequestDataPhaseDirection, i32)
         virtual void Free(ITransferHandle*)
 
         virtual void Stop()
@@ -270,6 +277,8 @@ namespace USB {
 
                             Info("First input report layout: ID %i, Size %i bits, %i fields\n", Layout->ID, Layout->Size, Layout->Fields->Count())
 
+                            PrimaryDisplay->Clear(0x00_00_00)
+
                             i32 Count := Layout->Fields->Count()
 
                             for (i32 FieldIndex := 0, FieldIndex < Count, FieldIndex++) {
@@ -277,6 +286,59 @@ namespace USB {
                                 HID::MainItem* Item := Field->Item
 
                                 Info("Field %i: UsagePage %s, Usage %s, Size %i bits, Offset %i bits\n", FieldIndex, USBIDs->GetUsagePageName(Item->UsagePage), USBIDs->GetUsageName(Item->UsagePage, Item->Usage), Item->ReportSize , Field->Offset)
+                            }
+
+                            IPeriodicTransferHandle* PH := this->Controller->ScheduleInterruptTransfer(this->Address, 1, this->Speed, RequestDataPhaseDirection::DeviceToHost, 8);
+
+                            i32 MX := 500
+                            i32 MY := 500
+
+                            loop {
+                                Layout->Buffer := PH->Wait()
+
+                                Print("\e[H")
+
+                                i64 Report := *(Layout->Buffer As i64*)
+
+                                for (i32 Bit := 0, Bit < Layout->Size, Bit++) {
+                                    if (Bit % 8 = 0) {
+                                        Print(" ")
+                                    }
+
+                                    if (Report & (1 << Bit)) {
+                                        Print("1")
+                                    }
+                                    else {
+                                        Print("0")
+                                    }
+                                }
+
+                                Print("\n%hexdump\n", Layout->Buffer, Layout->Size / 8)
+
+                                i32 Count := Layout->Fields->Count()
+
+                                for (i32 FieldIndex := 0, FieldIndex < Count, FieldIndex++) {
+                                    HID::ReportField* Field := Layout->Fields->At(FieldIndex)
+                                    HID::MainItem* Item := Field->Item
+
+                                    i64 Value := Layout->Read(Field)
+
+                                    Print("Field %i: UsagePage %s, Usage %s = %i     \n", FieldIndex, USBIDs->GetUsagePageName(Item->UsagePage), USBIDs->GetUsageName(Item->UsagePage, Item->Usage), Value)
+                                }
+
+                                PrimaryDisplay->DrawRectangle(MX, MY, 10, 10, 0x00_00_00)
+                                MX += Layout->Read(Layout->Fields->At(6)) As i32
+                                MY += Layout->Read(Layout->Fields->At(7)) As i32
+
+                                if (MX < 0) { MX := 0 }
+                                if (MY < 0) { MY := 0 }
+                                if (MX + 10 > 1024) { MX := 1024 - 10 }
+                                if (MY + 10 > 768) { MY := 768 - 10 }
+
+                                PrimaryDisplay->DrawRectangle(MX, MY, 10, 10, 0xFF_FF_FF)
+
+
+                                ;Print("HID Report:\n%hexdump\n", Layout->Buffer, Layout->Size / 8)
                             }
 
                             this->Controller->Stop()

@@ -311,20 +311,31 @@ namespace USB::HID {
                 return 0
             }
 
-            return (this->Buffer[ByteIndex] >> (7 - BitIndex)) & 1
+            return (this->Buffer[ByteIndex] >> BitIndex) & 1
         }
         define i64 ReadBits(i32 Index, i32 Count) {
             i64 Result := 0
 
             for (i32 BitIndex := 0, BitIndex < Count, BitIndex++) {
-                Result := (Result << 1) | this->ReadBit(Index + BitIndex)
+                Result |= this->ReadBit(Index + BitIndex) << BitIndex
             }
 
             return Result
         }
 
         define i64 Read(ReportField* Field) {
-            return this->ReadBits(Field->Offset, Field->Item->ReportSize)
+            i64 Value := this->ReadBits(Field->Offset, Field->Item->ReportSize)
+
+            if (Field->Item->LogicalMinimum < 0) {
+                i64 SignBit := 1 << (Field->Item->ReportSize - 1)
+
+                if (Value & SignBit) {
+                    ; Sign extend
+                    Value |= ~((1 << Field->Item->ReportSize) - 1)
+                }
+            }
+
+            return Value
         }
     }
 
@@ -405,11 +416,11 @@ namespace USB::HID {
         i32 UsageStackSize
 
         define void PushUsage(i32 Usage) {
-            i32 Index := this->UsageStackSize++
-
             this->UsageStack := ReAlloc(this->UsageStack, this->UsageStackSize * #i32)
+
+            MoveMemory(&this->UsageStack[1], &this->UsageStack[0], this->UsageStackSize++ * #i32)
             
-            this->UsageStack[Index] := Usage
+            this->UsageStack[0] := Usage
         }
         define i32 PopUsage() {
             i32 Index := --this->UsageStackSize
