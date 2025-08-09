@@ -98,6 +98,7 @@ namespace USB::UHCI {
         i32 BufferPointer
 
         void* DataBuffer
+        i32 PeriodicFrameNumber
     }
 
     struct QueueHead {
@@ -204,6 +205,60 @@ namespace USB::UHCI {
         }
     }
 
+    enum PeriodicTransferType {
+        Interrupt,
+        Isochronous
+    }
+
+    class PeriodicTransferHandle implements USB::IPeriodicTransferHandle, derives INew {
+        IController* Controller
+        
+        PeriodicTransferType Type
+        i32 Period
+
+        PointerArray* ScheduledTDs
+        PointerArray* FreeTDs
+
+        void* Buffer
+
+        Synchronization::Semaphore* Completed
+
+        define void New(IController* Controller, PeriodicTransferType Type, i32 Period, void* Buffer) {
+            this->Controller := Controller
+            this->Type := Type
+            this->Period := Period
+            this->Buffer := Buffer
+
+            this->ScheduledTDs := new PointerArray()
+            this->FreeTDs := new PointerArray()
+
+            this->Completed := new Synchronization::Semaphore(0)
+        }
+
+        define void Complete() {
+            this->Completed->Signal()
+        }
+
+        define void* Wait() {
+            this->Completed->Wait()
+
+            return this->Buffer
+        }
+
+        define void Free() {
+
+        }
+
+        define void Stop() {
+            
+        }
+
+
+    }
+
+
+    
+
     class Controller implements USB::IController, derives INew {
         PCIeAddress* Address
         PCIeDevice* Device
@@ -215,6 +270,8 @@ namespace USB::UHCI {
 
         QueueHead*[11] PeriodicQueueHeads
         PointerArray* QueueHeadsInFlight
+
+        PointerArray* PeriodicTransfers
 
         i32 IOBase
         i8 USBVersion
@@ -243,6 +300,8 @@ namespace USB::UHCI {
 
             this->QueueHeadsInFlight := new PointerArray()
             this->NextDeviceAddress := 1
+
+            this->PeriodicTransfers := new PointerArray()
         }
 
         define void Write16(Registers Target, i16 Value) {
@@ -325,11 +384,172 @@ namespace USB::UHCI {
         }
 
         i8 Stopped
-        void* DescriptorBuffer
+        
+
+        
+
+        define void RemovePeriodicTransfers(i32 Index) {
+            for (i32 Period := 10, Period >= 0, Period--) {
+                i32 Value := 1 << Period
+
+                if (Index % Value = 0) {
+                    this->FrameList[Index] := this->PackLink(this->PeriodicQueueHeads[Period], LinkFlags::IsQueueHead)
+                    break
+                }
+            }
+        }
+
+        define i8 FrameWasInLast(i32 CurrentFrameNumber, i32 LastFrames, i32 FrameNumber) {
+            i32 Difference := CurrentFrameNumber - FrameNumber
+
+            if (Difference < 0) {
+                Difference += 1024
+            }
+
+            return Difference < LastFrames
+        }
+
+        define i32 TimeSinceFrame(i32 CurrentFrameNumber, i32 FrameNumber) {
+            i32 Difference := CurrentFrameNumber - FrameNumber
+
+            if (Difference < 0) {
+                Difference += 1024
+            }
+
+            return Difference
+        }
+
+        define i32 TimeUntilFrame(i32 CurrentFrameNumber, i32 FrameNumber) {
+            i32 Difference := FrameNumber - CurrentFrameNumber
+
+            if (Difference < 0) {
+                Difference += 1024
+            }
+
+            return Difference
+        }
+
+        define TransferDescriptor* GetMostRecentTD(i32 CurrentFrameNumber, PeriodicTransferHandle* Handle) {
+            i32 TimeSinceMostRecent := 0
+            TransferDescriptor* MostRecentTD := null
+
+            i32 Count := Handle->ScheduledTDs->Count()
+
+            for (i32 Index := Count - 1, Index >= 0, Index--) {
+                TransferDescriptor* TD := Handle->ScheduledTDs->At(Index)
+
+                i32 TimeSince := this->TimeSinceFrame(CurrentFrameNumber, TD->PeriodicFrameNumber)
+
+                ;Info("Scheduled TD %i, active=%i, since=%i\n", Index, TD->Active, TimeSince)
+
+                if (TimeSince < 256 && TimeSince > TimeSinceMostRecent) {
+                    TimeSinceMostRecent := TimeSince
+                    MostRecentTD := TD
+                }
+            }
+
+            return MostRecentTD
+        }
+
+        define void ScheduleNextQuarter(i32 CurrentFrameNumber, PeriodicTransferHandle* Handle) {
+            i32 TimeUntilFinalScheduledFrame := 0
+
+            i32 Count := Handle->ScheduledTDs->Count()
+
+            ;Info("Before: %i Scheduled TDs, %i Free TDs\n", Count, Handle->FreeTDs->Count())
+
+            for (i32 Index := Count - 1, Index >= 0, Index--) {
+                TransferDescriptor* TD := Handle->ScheduledTDs->At(Index)
+
+                if (TD->Active = 0 || this->FrameWasInLast(CurrentFrameNumber, 256, TD->PeriodicFrameNumber)) {
+                    ; This frame is scheduled in the past (aka it's done and we can reuse the TD)
+
+                    Handle->ScheduledTDs->Remove(Index)
+                    Handle->FreeTDs->Push(TD)
+
+                    this->RemovePeriodicTransfers(TD->PeriodicFrameNumber)
+                }
+                else {
+                    i32 TimeUntil := this->TimeUntilFrame(CurrentFrameNumber, TD->PeriodicFrameNumber)
+
+                    if (TimeUntil > TimeUntilFinalScheduledFrame) {
+                        TimeUntilFinalScheduledFrame := TimeUntil
+                    }
+                }
+            }
+
+            ;Info("After: %i Scheduled TDs, %i Free TDs\n", Handle->ScheduledTDs->Count(), Handle->FreeTDs->Count())
+
+            ;Info("%i frames until schedule runs out\n", TimeUntilFinalScheduledFrame)
+
+            if (TimeUntilFinalScheduledFrame > 256) {
+                ; The next quarter is already scheduled, no need to do anything
+
+                return
+            }
+
+            i32 FinalScheduledFrame := CurrentFrameNumber + TimeUntilFinalScheduledFrame
+            i32 MaxScheduledFrame := CurrentFrameNumber + 256
+
+            ;Info("Scheduling next quarter: %i to %i\n", FinalScheduledFrame, MaxScheduledFrame)
+
+            i32 Count := Handle->FreeTDs->Count()
+
+            for (i32 Index := Count - 1, Index >= 0, Index--) {
+                TransferDescriptor* TD := Handle->FreeTDs->At(Index)
+
+                TD->PeriodicFrameNumber := FinalScheduledFrame % 1024
+                FinalScheduledFrame += Handle->Period
+
+                TD->Link := this->FrameList[TD->PeriodicFrameNumber]
+                this->FrameList[TD->PeriodicFrameNumber] := this->PackLink(TD)
+
+                TD->Active := true
+
+                ;Info("Scheduling TD %x for frame %i\n", TD, TD->PeriodicFrameNumber)
+
+                Handle->FreeTDs->Remove(Index)
+                Handle->ScheduledTDs->Push(TD)
+
+                if (FinalScheduledFrame >= MaxScheduledFrame) {
+                    break
+                }
+            }
+        }
+
+        define i32 GetCurrentFrameNumber() {
+            return (this->Read16(Registers::FrameNumber) As i32) & 0x3FF
+        }
 
         define void InterruptThread() {
             loop {
-                this->Interrupt->Wait()
+                i8 IsRealInterrupt := this->Interrupt->Wait(128)
+
+                ;Info("UHCI Interrupt Thread woke up\n")
+
+                i32 CurrentFrameNumber := this->GetCurrentFrameNumber()
+
+                i32 Count := this->PeriodicTransfers->Count()
+
+                for (i32 Index := 0, Index < Count, Index++) {
+                    PeriodicTransferHandle* Handle := this->PeriodicTransfers->At(Index)
+
+                    Info("CurrentFrameNumber: %i\n", CurrentFrameNumber)
+
+                    i32 ScheduledTDsCount := Handle->ScheduledTDs->Count()
+
+                    for (i32 TDIndex := 0, TDIndex < ScheduledTDsCount, TDIndex++) {
+                        TransferDescriptor* TD := Handle->ScheduledTDs->At(TDIndex)
+
+                        if (this->FrameWasInLast(CurrentFrameNumber, 256, TD->PeriodicFrameNumber)) {
+                            if !(TD->Active) {
+                                Handle->Complete()
+                            }
+                        }
+                    }
+
+                    this->ScheduleNextQuarter(CurrentFrameNumber, Handle)
+                }
 
                 i32 Count := this->QueueHeadsInFlight->Count()
 
@@ -465,10 +685,6 @@ namespace USB::UHCI {
             PeriodicQueue->VerticalLink := this->PackLink(QH, LinkFlags::IsQueueHead)
         }
 
-        define void SetupTransferDataPhase(TransferHandle* Handle, void* Buffer, i32 Length) {
-            
-        }
-
         define ITransferHandle* SendControlTransfer(i32 Address, i32 Endpoint, TransferSpeed Speed, SetupPacket* Setup, void* Buffer, i32 DataLength) {
             QueueHead* QH := this->AllocateQueueHead("Transfer")
             QH->Completed := new Synchronization::Semaphore(0)
@@ -541,6 +757,39 @@ namespace USB::UHCI {
             this->DumpLink(this->PackLink(this->PeriodicQueueHeads[QueueHeadPeriod::_1_MS], LinkFlags::IsQueueHead))
 
             this->ScheduleQueueHead(QueueHeadPeriod::_1_MS, QH)
+
+            return Handle
+        }
+
+        define IPeriodicTransferHandle* ScheduleInterruptTransfer(i32 Address, i32 Endpoint, TransferSpeed Speed, RequestDataPhaseDirection Direction, i32 Period) {
+            TransferToken Token := TransferToken::OUT
+
+            if (Direction = USB::RequestDataPhaseDirection::DeviceToHost) {
+                Token := TransferToken::IN
+            }
+
+            i32 MaxSize := 8
+
+            if (Speed = TransferSpeed::Full) {
+                MaxSize := 64
+            }
+
+            void* Buffer := this->Heap->Allocate(MaxSize)
+            PeriodicTransferHandle* Handle := new PeriodicTransferHandle(this, PeriodicTransferType::Interrupt, Period, Buffer)
+
+            i32 TDsPerQuarter := (256 / Period) + 1
+
+            for (i32 Index := 0, Index < TDsPerQuarter, Index++) {
+                TransferDescriptor* TD := this->AllocateTransferDescriptor(Address, Endpoint, Speed, Token, MaxSize, Buffer)
+
+                Handle->FreeTDs->Push(TD)
+            }
+            
+            this->PeriodicTransfers->Push(Handle)
+
+            i32 CurrentFrameNumber := this->GetCurrentFrameNumber()
+
+            this->ScheduleNextQuarter(CurrentFrameNumber, Handle)
 
             return Handle
         }
