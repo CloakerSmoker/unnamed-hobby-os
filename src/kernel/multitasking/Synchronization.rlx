@@ -84,13 +84,17 @@ namespace Synchronization {
         }
 
         define void Signal(i32 Value) {
+            i8 ShouldEnableInterrupts := InterrupsAreEnabled()
+
             DisableInterrupts()
 
             this->Value += Value
 
             this->Waiters->WakeOne()
 
-            EnableInterrupts()
+            if (ShouldEnableInterrupts) {
+                EnableInterrupts()
+            }
         }
         define void Signal() {
             this->Signal(1)
