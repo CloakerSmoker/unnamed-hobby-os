@@ -228,6 +228,7 @@ define void DO_NOT_OPTIMIZE_AWAY(void* Function) asm { ret }
 
 #Require "./src/kernel/core/Debug.rlx"
 
+USB::Bus* USB0 := null
 USB::UHCI::Controller* UHCIController := null
 
 define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Device) {
@@ -315,6 +316,7 @@ define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Devic
 		PCIeAddress* Address := new PCIeAddress(0, Bus, Slot, Function)
 
 		UHCIController := new USB::UHCI::Controller(Address, Device)
+		USB0 := new USB::Bus(UHCIController, 0)
 	}
 }
 

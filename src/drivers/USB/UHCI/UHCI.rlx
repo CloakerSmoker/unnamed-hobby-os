@@ -215,15 +215,16 @@ namespace USB::UHCI {
         
         PeriodicTransferType Type
         i32 Period
+        i32 Phase
 
         PointerArray* ScheduledTDs
         PointerArray* FreeTDs
 
         void* Buffer
 
-        Synchronization::Semaphore* Completed
+        Synchronization::Semaphore* Fired
 
-        define void New(IController* Controller, PeriodicTransferType Type, i32 Period, void* Buffer) {
+        define void New(IController* Controller, PeriodicTransferType Type, i32 Period, i32 Phase, void* Buffer) {
             this->Controller := Controller
             this->Type := Type
             this->Period := Period
@@ -232,15 +233,15 @@ namespace USB::UHCI {
             this->ScheduledTDs := new PointerArray()
             this->FreeTDs := new PointerArray()
 
-            this->Completed := new Synchronization::Semaphore(0)
+            this->Fired := new Synchronization::Semaphore(0)
         }
 
         define void Complete() {
-            this->Completed->Signal()
+            this->Fired->Signal()
         }
 
         define void* Wait() {
-            this->Completed->Wait()
+            this->Fired->Wait()
 
             return this->Buffer
         }
@@ -384,9 +385,6 @@ namespace USB::UHCI {
         }
 
         i8 Stopped
-        
-
-        
 
         define void RemovePeriodicTransfers(i32 Index) {
             for (i32 Period := 10, Period >= 0, Period--) {
@@ -429,28 +427,6 @@ namespace USB::UHCI {
             return Difference
         }
 
-        define TransferDescriptor* GetMostRecentTD(i32 CurrentFrameNumber, PeriodicTransferHandle* Handle) {
-            i32 TimeSinceMostRecent := 0
-            TransferDescriptor* MostRecentTD := null
-
-            i32 Count := Handle->ScheduledTDs->Count()
-
-            for (i32 Index := Count - 1, Index >= 0, Index--) {
-                TransferDescriptor* TD := Handle->ScheduledTDs->At(Index)
-
-                i32 TimeSince := this->TimeSinceFrame(CurrentFrameNumber, TD->PeriodicFrameNumber)
-
-                ;Info("Scheduled TD %i, active=%i, since=%i\n", Index, TD->Active, TimeSince)
-
-                if (TimeSince < 256 && TimeSince > TimeSinceMostRecent) {
-                    TimeSinceMostRecent := TimeSince
-                    MostRecentTD := TD
-                }
-            }
-
-            return MostRecentTD
-        }
-
         define void ScheduleNextQuarter(i32 CurrentFrameNumber, PeriodicTransferHandle* Handle) {
             i32 TimeUntilFinalScheduledFrame := 0
 
@@ -490,6 +466,14 @@ namespace USB::UHCI {
 
             i32 FinalScheduledFrame := CurrentFrameNumber + TimeUntilFinalScheduledFrame
             i32 MaxScheduledFrame := CurrentFrameNumber + 256
+
+            if (FinalScheduledFrame % Handle->Period != Handle->Phase) {
+                Info("FinalScheduledFrame %i is not aligned with Period %i\n", FinalScheduledFrame, Handle->Period)
+
+                i32 Remainder := FinalScheduledFrame % Handle->Period
+
+                FinalScheduledFrame += Handle->Period - Remainder
+            }
 
             ;Info("Scheduling next quarter: %i to %i\n", FinalScheduledFrame, MaxScheduledFrame)
 
@@ -534,15 +518,19 @@ namespace USB::UHCI {
                 for (i32 Index := 0, Index < Count, Index++) {
                     PeriodicTransferHandle* Handle := this->PeriodicTransfers->At(Index)
 
-                    Info("CurrentFrameNumber: %i\n", CurrentFrameNumber)
+                    ; Check if any TDs scheduled for this handle have been recently completed
 
                     i32 ScheduledTDsCount := Handle->ScheduledTDs->Count()
 
                     for (i32 TDIndex := 0, TDIndex < ScheduledTDsCount, TDIndex++) {
                         TransferDescriptor* TD := Handle->ScheduledTDs->At(TDIndex)
 
+                        ; If the TD is recent
+
                         if (this->FrameWasInLast(CurrentFrameNumber, 256, TD->PeriodicFrameNumber)) {
                             if !(TD->Active) {
+                                ; If the TD was completed
+
                                 Handle->Complete()
                             }
                         }
@@ -775,7 +763,7 @@ namespace USB::UHCI {
             }
 
             void* Buffer := this->Heap->Allocate(MaxSize)
-            PeriodicTransferHandle* Handle := new PeriodicTransferHandle(this, PeriodicTransferType::Interrupt, Period, Buffer)
+            PeriodicTransferHandle* Handle := new PeriodicTransferHandle(this, PeriodicTransferType::Interrupt, Period, 0, Buffer)
 
             i32 TDsPerQuarter := (256 / Period) + 1
 
@@ -820,6 +808,10 @@ namespace USB::UHCI {
 
         define void CheckPort(Registers Port) {
             if (this->Stopped) {
+                return
+            }
+
+            if (Port = Registers::Port1) {
                 return
             }
 
