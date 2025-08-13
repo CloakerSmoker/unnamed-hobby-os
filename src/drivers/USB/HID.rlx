@@ -1,15 +1,15 @@
 
 i8 USB_CLASS_HID := 0x03
 
-i8 USB_SUBCLASS_NONE := 0x00
-i8 USB_PROTOCOL_HID_NONE := 0x00
-i8 USB_PROTOCOL_HID_KEYBOARD := 0x01
-i8 USB_PROTOCOL_HID_MOUSE := 0x02
+i8 USB_HID_SUBCLASS_NONE := 0x00
+i8 USB_HID_PROTOCOL_NONE := 0x00
+i8 USB_HID_PROTOCOL_KEYBOARD := 0x01
+i8 USB_HID_PROTOCOL_MOUSE := 0x02
 
-i8 USB_SUBCLASS_HID_BOOT := 0x01
-i8 USB_PROTOCOL_HID_BOOT_NONE := 0x00
-i8 USB_PROTOCOL_HID_BOOT_KEYBOARD := 0x01
-i8 USB_PROTOCOL_HID_BOOT_MOUSE := 0x02
+i8 USB_HID_SUBCLASS_BOOT := 0x01
+i8 USB_HID_BOOT_PROTOCOL_NONE := 0x00
+i8 USB_HID_BOOT_PROTOCOL_KEYBOARD := 0x01
+i8 USB_HID_BOOT_PROTOCOL_MOUSE := 0x02
 
 namespace USB::HID {
 
@@ -726,107 +726,17 @@ namespace USB::HID {
         }
     }
 
-    /* class ReportQueue derives INew {
-        USB::IPeriodicTransferHandle* Handle
-        Synchronization::Semaphore* ReportsAvailable
-
-        void** Reports
-        i32 ReportSize
-
-        i32 QueueHead
-        i32 QueueTail
-
-        define i32 Available() {
-            return (this->QueueTail - this->QueueHead + #self) % 32
-        }
-
-        define void Write(void* Report) {
-            i32 Index := this->QueueTail++ % 32
-            MoveMemory(this->Reports[Index], Report, this->ReportSize)
-
-            this->ReportsAvailable->Signal()
-        }
-
-        define void Read(void* Buffer) {
-            this->ReportsAvailable->Wait()
-
-            MoveMemory(Buffer, this->Reports[this->QueueHead++ % 32], this->ReportSize)
-        }
-
-        define void New(IPeriodicTransferHandle* Handle, i32 ReportSize) {
-            this->Handle := Handle
-            this->ReportsAvailable := new Synchronization::Semaphore(0)
-
-            this->Reports := Alloc(32 * #void*)
-            this->ReportSize := ReportSize
-        }
-    }
-
     class HumanInputDevice implements IFileHandle, derives INew {
         Device* Base
         InterfaceInfo* Interface
 
         ReportDescriptorParser* Parser
 
-        AVLTree* InputReports ; <ReportQueue*>
-
-        define void New(Device* Base, InterfaceInfo* Info, i8* DescriptorBuffer, i32 DescriptorLength) {
+        define void New(Device* Base, InterfaceInfo* Info) {
             this->Base := Base
             this->Interface := Info
 
-            this->Parser := new ReportDescriptorParser(DescriptorBuffer, DescriptorLength)
-
-            this->Parser->Parse()
-            this->Parser->Execute()
-        }
-
-        define void InputReportThread(i32 ReportID) {
-            ReportQueue* Queue := this->InputReports->GetPointer(ReportID)
-
-            loop {
-                void* Buffer := Queue->Handle->Wait()
-
-                Queue->Write(Buffer)
-            }
-        }
-
-        define ReportQueue* StartInputReport(i32 ReportID) {
-            ReportLayout* Layout := this->Parser->InputReportLayouts->GetPointer(ReportID)
-
-            EndpointInfo* Endpoint := this->Interface->Endpoints->At(0)
-            IPeriodicTransferHandle* Handle := this->Device->ScheduleInterruptTransfer(Endpoint->Number, RequestDataPhaseDirection::In, Endpoint~>Descriptor->PollingInterval)
-
-            ReportQueue* Queue := new ReportQueue(Handle, Layout->Size)
-
-            
-        }
-
-        define ReportLayout* WaitForInputReport(i32 ReportID) {
-            ReportLayout* Layout := this->Parser->InputReportLayouts->GetPointer(ReportID)
-
-
-
-            return Layout
-        }
-    }
-
-    class ProtocolDriver implements USB::IDriver, derives INew {
-        PointerArray* Devices ; <HumanInputDevice*>
-
-        define void New() {
-            this->Devices := PointerArray:New()
-        }
-
-        define i8 MatchInterface(USB::Device* Base, InterfaceInfo* Interface) {
-            if (Interface->HIDDescriptors->Count() = 0) {
-                return false
-            }
-
-            return Interface~>Descriptor->Class = USB_CLASS_HID
-        }
-
-        define void* AttachInterface(USB::Device* Base, InterfaceInfo* Interface) {
-            Descriptor* HID := Interface->HIDDescriptors->At(0) As void*
+            Descriptor* HID := Info->HIDDescriptors->At(0) As void*
 
             Print("HID Descriptor: Version %x, Country Code %x, Sub Descriptor Count %i\n",
                 HID->SpecificationVersion,
@@ -837,22 +747,64 @@ namespace USB::HID {
             void* ReportDescriptor := null
 
             for (i32 SubDescriptorIndex := 0, SubDescriptorIndex < HID->SubDescriptorCount, SubDescriptorIndex++) {
-                HID::SubDescriptor* SubDescriptor := HID->Descriptors[SubDescriptorIndex]
+                HID::SubDescriptor* Sub := HID->Descriptors[SubDescriptorIndex]
 
-                Print("  Sub Descriptor %i: Type %x, Size %i\n", SubDescriptorIndex, SubDescriptor->Type, SubDescriptor->Size)
+                Print("  Sub Descriptor %i: Type %x, Size %i\n", SubDescriptorIndex, Sub->Type, Sub->Size)
 
-                ReportDescriptorLength := SubDescriptor->Size
-                ReportDescriptor := this->GetDescriptorWithLength(0, USB::DescriptorType::HID_Report, 0, ReportDescriptorLength)    
+                ReportDescriptorLength := Sub->Size
+                ReportDescriptor := Base->GetDescriptorWithLength(0, USB::DescriptorType::HID_Report, 0, ReportDescriptorLength)    
 
-                Print("HID Report Descriptor: %hexdump\n", ReportDescriptor, ReportDescriptorLength)
-                Info("HID Report Descriptor: %hexdump\n", ReportDescriptor, ReportDescriptorLength)
+                Print("HID Report Descriptor:\n%hexdump\n", ReportDescriptor, ReportDescriptorLength)
+                Info("HID Report Descriptor:\n%hexdump\n", ReportDescriptor, ReportDescriptorLength)
             }
 
-            HumanInputDevice* Device := new HumanInputDevice(Base, Interface, ReportDescriptor, ReportDescriptorLength)
+            this->Parser := new ReportDescriptorParser(ReportDescriptor, ReportDescriptorLength)
 
-            this->Devices->Push(Device)
-
-            
+            this->Parser->Parse()
+            this->Parser->Execute()
         }
-    } */
+
+        define IPeriodicTransferHandle* ScheduleInputReports() {
+            EndpointInfo* Endpoint := this->Interface->Endpoints->At(0)
+            
+            return this->Base->ScheduleInterruptTransfer(Endpoint->Number, RequestDataPhaseDirection::DeviceToHost, Endpoint~>Descriptor->Interval)
+        }
+    }
+
+    class ProtocolDriver implements USB::IDriver, derives INew {
+        define i8* Name() {
+            return "USB::HID::HumanInputDevice Dummy Interface Driver"
+        }
+
+        PointerArray* Devices ; <HumanInputDevice*>
+
+        define void New() {
+            this->Devices := PointerArray:New()
+        }
+
+        define InterfaceMatchResult MatchInterface(USB::Device* Base, InterfaceInfo* Interface) {
+            if (Interface->HIDDescriptors->Count() = 0) {
+                return InterfaceMatchResult::None
+            }
+
+            if (Interface~>Descriptor->Class = USB_CLASS_HID) {
+                return InterfaceMatchResult::ClassMatch
+            }
+
+            return InterfaceMatchResult::None
+        }
+
+        define void* AttachInterface(USB::Device* Base, InterfaceInfo* Interface) {
+            HumanInputDevice* HID := new HumanInputDevice(Base, Interface)
+
+            this->Devices->Push(HID)
+
+            return HID
+        }
+    }
 }
+
+USB::HID::ProtocolDriver* USB_HID_PROTOCOL_DRIVER := new USB::HID::ProtocolDriver()
+i32 USB_HID_PROTOCOL_DRIVER_ID := RegisterUSBDriver(USB_HID_PROTOCOL_DRIVER)
+
+#Require "./src/drivers/USB/Keyboard.rlx"

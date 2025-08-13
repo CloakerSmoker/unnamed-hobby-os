@@ -282,11 +282,14 @@ namespace USB::UHCI {
 
         Synchronization::Semaphore* Interrupt
 
-        i32 NextDeviceAddress
+        USB::Bus* Bus
 
-        define void New(PCIeAddress* Address, PCIeDevice* _Device) {
+        define void New(PCIeAddress* Address, PCIeDevice* _Device, USB::Bus* _Bus) {
             this->Address := Address
             this->Device := _Device
+            this->Bus := _Bus
+
+            _Bus->Controller := this
 
             this->Interrupt := new Synchronization::Semaphore(0)
 
@@ -300,8 +303,6 @@ namespace USB::UHCI {
             Print("UCHI IOBase %x, Version %x\n", this->IOBase, this->USBVersion)
 
             this->QueueHeadsInFlight := new PointerArray()
-            this->NextDeviceAddress := 1
-
             this->PeriodicTransfers := new PointerArray()
         }
 
@@ -427,7 +428,7 @@ namespace USB::UHCI {
             return Difference
         }
 
-        define void ScheduleNextQuarter(i32 CurrentFrameNumber, PeriodicTransferHandle* Handle) {
+        define void ScheduleNextQuarter(i8 NeedsAlignment, i32 CurrentFrameNumber, PeriodicTransferHandle* Handle) {
             i32 TimeUntilFinalScheduledFrame := 0
 
             i32 Count := Handle->ScheduledTDs->Count()
@@ -467,7 +468,7 @@ namespace USB::UHCI {
             i32 FinalScheduledFrame := CurrentFrameNumber + TimeUntilFinalScheduledFrame
             i32 MaxScheduledFrame := CurrentFrameNumber + 256
 
-            if (FinalScheduledFrame % Handle->Period != Handle->Phase) {
+            if (NeedsAlignment && FinalScheduledFrame % Handle->Period != Handle->Phase) {
                 Info("FinalScheduledFrame %i is not aligned with Period %i\n", FinalScheduledFrame, Handle->Period)
 
                 i32 Remainder := FinalScheduledFrame % Handle->Period
@@ -499,6 +500,10 @@ namespace USB::UHCI {
                     break
                 }
             }
+        }
+
+        define void ScheduleNextQuarter(i32 CurrentFrameNumber, PeriodicTransferHandle* Handle) {
+            this->ScheduleNextQuarter(0, CurrentFrameNumber, Handle)
         }
 
         define i32 GetCurrentFrameNumber() {
@@ -741,8 +746,8 @@ namespace USB::UHCI {
 
             this->QueueHeadsInFlight->Push(QH)
 
-            this->DumpLink(this->PackLink(QH, LinkFlags::IsQueueHead))
-            this->DumpLink(this->PackLink(this->PeriodicQueueHeads[QueueHeadPeriod::_1_MS], LinkFlags::IsQueueHead))
+            ;this->DumpLink(this->PackLink(QH, LinkFlags::IsQueueHead))
+            ;this->DumpLink(this->PackLink(this->PeriodicQueueHeads[QueueHeadPeriod::_1_MS], LinkFlags::IsQueueHead))
 
             this->ScheduleQueueHead(QueueHeadPeriod::_1_MS, QH)
 
@@ -777,7 +782,7 @@ namespace USB::UHCI {
 
             i32 CurrentFrameNumber := this->GetCurrentFrameNumber()
 
-            this->ScheduleNextQuarter(CurrentFrameNumber, Handle)
+            this->ScheduleNextQuarter(true, CurrentFrameNumber, Handle)
 
             return Handle
         }
@@ -806,6 +811,8 @@ namespace USB::UHCI {
             this->Free(Transfer)
         }
 
+        RegisterFields::Port[2] Ports
+
         define void CheckPort(Registers Port) {
             if (this->Stopped) {
                 return
@@ -816,6 +823,23 @@ namespace USB::UHCI {
             }
 
             RegisterFields::Port PortFields := this->Read16(Port) As RegisterFields::Port
+
+            if (Port = Registers::Port1) {
+                if (PortFields = this->Ports[0]) {
+                    return
+                }
+                else {
+                    this->Ports[0] := PortFields
+                }
+            }
+            else if (Port = Registers::Port2) {
+                if (PortFields = this->Ports[1]) {
+                    return
+                }
+                else {
+                    this->Ports[1] := PortFields
+                }
+            }
 
             Info("Port %x: %b (Present? %i)\n", Port, PortFields, PortFields.Present)
 
@@ -856,7 +880,7 @@ namespace USB::UHCI {
 
                     ;this->FrameList[200] := this->RemoveLinkFlag(this->FrameList[200], LinkFlags::Terminator)
 
-                    i32 Address := this->NextDeviceAddress++
+                    i32 Address := this->Bus->AssignAddress()
 
                     Print("Setting address %i\n", Address)
 
@@ -869,8 +893,10 @@ namespace USB::UHCI {
 
                     ; Address now set, hand off to USB driver
 
-                    USB::Device* Dev := new USB::Device(this, Address)
-                    USB::DeviceDescriptor* _Device := Dev->Descriptor
+                    this->Bus->Attach(Address)
+
+                    ;USB::Device* Dev := new USB::Device(this, Address)
+                    ;USB::DeviceDescriptor* _Device := Dev->Descriptor
 
                     /* SleepMS(10)
 
@@ -878,21 +904,13 @@ namespace USB::UHCI {
                     RegisterFields::Command CommandFields := 0 As RegisterFields::Command
                     this->Write16(Registers::Command, CommandFields As i16) */
 
-                    Print("What a wonderful %s %s you have plugged in !!!!!!\n", 
-                        USBIDs->GetVendorName(_Device->VendorID),
-                        USBIDs->GetDeviceName(_Device->VendorID, _Device->ProductID)
-                    )
-
-                    Print("USB Device Strings:\n")
-                    Print("  Manufacturer: %usb-string-descriptor\n", Dev->ManufacturerString)
-                    Print("  Product: %usb-string-descriptor\n", Dev->ProductString)
-                    Print("  Serial Number: %usb-string-descriptor\n", Dev->SerialNumberString)
+                    
 
                     ;Device* Dev := new Device(this, _Device)
 
-                    SleepMS(10)
+                    ;SleepMS(10)
 
-                    this->Stop()
+                    ;this->Stop()
                     
                 }
 

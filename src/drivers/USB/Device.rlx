@@ -4,7 +4,7 @@
 i8 PCI_SUBCLASS_USB_CONTROLLER := 0x3
 i8 PCI_INTERFACE_EHCI := 0x20
 
-#Require "src/drivers/USB/HID.rlx"
+PointerArray* USB_DRIVERS := PointerArray:New() ; <USB::IDriver*>
 
 namespace USB {
     enum TransferSpeed {
@@ -44,6 +44,8 @@ namespace USB {
         PointerArray* Endpoints ; <EndpointInfo*>
         i32 EndpointBase
 
+        void* DriverData
+
         static self* New(DescriptorHeader* Descriptor, StringDescriptor* InterfaceString) {
             self* this := Alloc(#self)
 
@@ -55,6 +57,16 @@ namespace USB {
             this->Endpoints := PointerArray:New()
 
             return this
+        }
+
+        define i8 Is(i32 Class, i32 SubClass, i32 Protocol) {
+            return this~>Descriptor->Class = Class && this~>Descriptor->SubClass = SubClass && this~>Descriptor->Protocol = Protocol
+        }
+        define i8 Is(i32 Class, i32 SubClass) {
+            return this~>Descriptor->Class = Class && this~>Descriptor->SubClass = SubClass
+        }
+        define i8 Is(i32 Class) {
+            return this~>Descriptor->Class = Class
         }
     }
 
@@ -97,48 +109,6 @@ namespace USB {
         virtual void Stop()
     }
 
-    interface IBinding {
-        virtual IBinding* GetDriver()
-    }
-
-    interface IDriver {
-        virtual i8 Match(Device*)
-        virtual i8 MatchInterface(Device*, InterfaceInfo*)
-
-        virtual void* Attach(Device*)
-        virtual void* AttachInterface(Device*, InterfaceInfo*)
-
-        virtual void Remove(Device*)
-        virtual void RemoveInterface(Device*, InterfaceInfo*)
-    }
-
-    class Bus derives INew {
-        i32 BusNumber
-        IController* Controller
-
-        i32 NextAddress
-
-        PointerArray* Devices ; <Device*>
-
-        define void New(IController* Controller, i32 BusNumber) {
-            this->Controller := Controller
-            this->BusNumber := BusNumber
-
-            this->NextAddress := 1
-        }
-
-        define i32 AssignAddress() {
-            return this->NextAddress++
-        }
-
-        define void OnDeviceAttached(i32 Address) {
-
-        }
-        define void OnDeviceRemoved(i32 Address) {
-
-        }
-    }
-
     class Device derives INew {
         IController* Controller
 
@@ -160,6 +130,8 @@ namespace USB {
 
         PointerArray* Configurations ; <ConfigurationInfo*>
         ConfigurationInfo* CurrentConfiguration
+
+        void* DriverData
 
         define ITransferHandle* SendControlTransferToDevice(SetupPacket* Setup, void* Buffer, i32 Length) {
             Setup->Recipient := RequestRecipient::Device
@@ -472,7 +444,152 @@ namespace USB {
             this~>Setup->MakeSetConfiguration(0)
             this->SendControlTransferToDevice(this~>Setup, null, 0)->Wait()->Free()
 
+            this->CurrentConfiguration := this->Configurations->At(0)
+        }
+    }
+
+    interface IBinding {
+        virtual IBinding* GetDriver()
+    }
+
+    enum DeviceMatchResult {
+        None := 0,
+        VendorProductMatch := 1
+    }
+
+    enum InterfaceMatchResult {
+        None := 0,
+        ClassMatch := 1,
+        ClassSubclassMatch := 2,
+        ClassSubclassProtocolMatch := 3
+    }
+
+    interface IDriver {
+        virtual i8* Name()
+
+        virtual DeviceMatchResult Match(Device* Attached) {
+            return DeviceMatchResult::None
+        }
+
+        virtual InterfaceMatchResult MatchInterface(Device* Attached, InterfaceInfo* Info) {
+            return InterfaceMatchResult::None
+        }
+
+        virtual void* Attach(Device* Attached) {
+            return null
+        }
+        virtual void* AttachInterface(Device* Attached, InterfaceInfo* Info) {
+            return null
+        }
+
+        virtual void Remove(Device* Removed) {
+            ; Default implementation does nothing
+        }
+        virtual void RemoveInterface(Device* Removed, InterfaceInfo* Info) {
+            ; Default implementation does nothing
+        }
+    }
+
+    class Bus derives INew {
+        i32 BusNumber
+        IController* Controller
+
+        i32 NextAddress
+
+        PointerArray* Devices ; <Device*>
+
+        define void New(i32 BusNumber) {
+            this->BusNumber := BusNumber
+
+            this->NextAddress := 1
+            this->Devices := PointerArray:New()
+        }
+
+        define i32 AssignAddress() {
+            return this->NextAddress++
+        }
+
+        define Device* Attach(i32 Address) {
+            Device* Attached := new Device(this->Controller, Address)
+            DeviceDescriptor* AttachedDescriptor := Attached->Descriptor
+
+            Print("What a wonderful %s %s you have plugged in !!!!!!\n", 
+                USBIDs->GetVendorName(AttachedDescriptor->VendorID),
+                USBIDs->GetDeviceName(AttachedDescriptor->VendorID, AttachedDescriptor->ProductID)
+            )
+
+            Print("USB Device Strings:\n")
+            Print("  Manufacturer: %usb-string-descriptor\n", Attached->ManufacturerString)
+            Print("  Product: %usb-string-descriptor\n", Attached->ProductString)
+            Print("  Serial Number: %usb-string-descriptor\n", Attached->SerialNumberString)
+
+            this->Devices->Push(Attached)
             
+            i32 Count := USB_DRIVERS->Count()
+
+            IDriver* BestDeviceMatch := null
+
+            for (i32 Index := 0, Index < Count, Index++) {
+                IDriver* Driver := USB_DRIVERS->At(Index)
+
+                if (Driver->Match(Attached) != DeviceMatchResult::None) {
+                    if (BestDeviceMatch) {
+                        BestDeviceMatch := null ; Conflicting drivers registered
+                    }
+                    else {
+                        BestDeviceMatch := Driver
+                    }
+                }
+            }
+
+            if (BestDeviceMatch) {
+                Print("Bound device %i to driver %s\n", Address, BestDeviceMatch->Name())
+
+                Attached->DriverData := BestDeviceMatch->Attach(Attached)
+            }
+            else {
+                i32 InterfaceCount := Attached->CurrentConfiguration->Interfaces->Count()
+
+                for (i32 InterfaceIndex := 0, InterfaceIndex < InterfaceCount, InterfaceIndex++) {
+                    InterfaceInfo* Interface := Attached->CurrentConfiguration->Interfaces->At(InterfaceIndex)
+
+                    IDriver* BestInterfaceMatch := null
+                    InterfaceMatchResult BestMatchResult := InterfaceMatchResult::None
+
+                    for (i32 Index := 0, Index < Count, Index++) {
+                        IDriver* Driver := USB_DRIVERS->At(Index)
+
+                        InterfaceMatchResult Result := Driver->MatchInterface(Attached, Interface)
+
+                        if (Result > BestMatchResult) {
+                            BestInterfaceMatch := Driver
+                        }
+                    }
+
+                    if (BestInterfaceMatch) {
+                        Print("Bound interface %i of device %i to driver %s\n", InterfaceIndex, Address, BestInterfaceMatch->Name())
+
+                        Interface->DriverData := BestInterfaceMatch->AttachInterface(Attached, Interface)
+                    }
+                    else {
+                        Print("No driver found for interface %i of device %i\n", InterfaceIndex, Attached->Address)
+                    }
+                }
+            }
+
+            return Attached
+        }
+        define void Remove(i32 Address) {
+
         }
     }
 }
+
+define i32 RegisterUSBDriver(USB::IDriver* Driver) {
+    i32 ID := USB_DRIVERS->Count()
+    USB_DRIVERS->Push(Driver)
+
+    return ID
+}
+
+#Require "src/drivers/USB/HID.rlx"
