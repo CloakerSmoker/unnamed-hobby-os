@@ -41,6 +41,56 @@ define void ExecuteLS(i64 ArgC, i8** ArgV) {
 
 i32 LS_COMMAND_ID := RegisterCommand("ls", &ExecuteLS)
 
+define void Tree(i32 Depth, IDirectory* Target) {
+    void* State := Target->Enumerate()
+    i32 Count := 0
+    VFSDirectoryEntry Entry
+
+    while (Target->Next(&State, &Entry)) {
+        for (i32 Index := 0, Index < Depth, Index++) {
+            Print("  ")
+        }
+
+        if (Entry.Type = VFSDirectoryEntryType::Directory) {
+            Print("%i %s/\n", Count, Entry.Name)
+            Tree(Depth + 1, Entry.Directory)
+        }
+        else if (Entry.Type = VFSDirectoryEntryType::File) {
+            Print("%i %s\n", Count, Entry.Name)
+        }
+        else if (Entry.Type = VFSDirectoryEntryType::Hole) {
+            Print("%i %s (hole)\n", Count, Entry.Name)
+        }
+
+        Count += 1
+    }
+}
+
+define void ExecuteTree(i64 ArgC, i8** ArgV) {
+    IDirectory* Target := CurrentDirectory
+
+    if (ArgC = 2) {
+        i8* Path := ArgV[1]
+
+        VFSDirectoryEntry Entry
+        if !(Lookup(CurrentDirectory, Path, &Entry)) {
+            Print("'%s' does not exist\n", Path)
+            return
+        }
+
+        if (Entry.Type != VFSDirectoryEntryType::Directory) {
+            Print("'%s' not a directory\n", Path)
+            return
+        }
+
+        Target := Entry.Directory
+
+        Tree(0, Target)
+    }
+}
+
+i32 TREE_COMMAND_ID := RegisterCommand("tree", &ExecuteTree)
+
 define void ExecuteCD(i64 ArgC, i8** ArgV) {
     if (ArgC = 2) {
         i8* Path := ArgV[1]
