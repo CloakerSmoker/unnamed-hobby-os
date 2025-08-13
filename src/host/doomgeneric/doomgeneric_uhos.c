@@ -110,7 +110,7 @@ void DG_Init() {
 
     FB_Stride = FB_Width * FB_Depth;
 
-	InputStream = fopen("/dev/ps2/keyboard", "r");
+	InputStream = fopen("/dev/hid/keyboard1", "r");
 }
 
 #include "i_video.h"

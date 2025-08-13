@@ -315,8 +315,8 @@ define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Devic
 
 		PCIeAddress* Address := new PCIeAddress(0, Bus, Slot, Function)
 
-		UHCIController := new USB::UHCI::Controller(Address, Device)
-		USB0 := new USB::Bus(UHCIController, 0)
+		USB0 := new USB::Bus(0)
+		UHCIController := new USB::UHCI::Controller(Address, Device, USB0)
 	}
 }
 
@@ -479,7 +479,9 @@ define void VFSRunShellTask() {
 		}
 	} */
 
-    ;VFSExecuteShellCommand("execute /doom/doom.elf -iwad /doom/DOOM.WAD -mb 64")
+	SleepMS(1000)
+	VFSExecuteShellCommand("tree /dev")
+    VFSExecuteShellCommand("execute /doom/doom.elf -iwad /doom/DOOM.WAD -mb 64")
 	VFSRunShell(KernelTerminal)
 }
 
@@ -761,7 +763,7 @@ define void Main(TrampolineInfo* Info) {
 
 	Info("UHCI Controller initialized\n")
 
-	StartScheduler()
+	;StartScheduler()
 
 	Task* NetworkThread := Scheduler->AddLightTask(&NetworkSetupTask, "Network Setup")
 	NetworkThread->State := TASK_CAN_RUN
@@ -769,7 +771,8 @@ define void Main(TrampolineInfo* Info) {
 	Task* ShellThread := Scheduler->AddLightTask(&VFSRunShellTask, "VFS Shell")
 	ShellThread->State := TASK_CAN_RUN
 
-	;StartScheduler()
+	StartScheduler()
+
 	;*/
 
 	;/*
