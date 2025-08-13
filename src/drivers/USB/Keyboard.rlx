@@ -1,0 +1,300 @@
+
+i32 USB_HID_USAGE_PAGE_KEYBOARD := 0x07
+
+i32* USB_HID_KEYBOARD_USAGE_TO_KEY_CODE := i32[
+    0   , 0   , 0   , 0   , ; 000-003
+    'a' , 'b' , 'c' , 'd' , ; 004-007
+    'e' , 'f' , 'g' , 'h' , ; 008-00B
+    'i' , 'j' , 'k' , 'l' , ; 00C-00F
+    'm' , 'n' , 'o' , 'p' , ; 010-013
+    'q' , 'r' , 's' , 't' , ; 014-017
+    'u' , 'v' , 'w' , 'x' , ; 018-01B
+    'y' , 'z' ,             ; 01C-01D
+    '1' , '2' , '3' , '4' , ; 01E-021
+    '5' , '6' , '7' , '8' , ; 022-025
+    '9' , '0' ,             ; 026-027
+    KEY_ENTER , KEY_ESCAPE, ; 028-029
+    KEY_BACKSPACE, KEY_TAB, ; 02A-02B
+    ' ' , '-' , '=' , '[' , ; 02C-02F
+    ']' , '\' , '#' , ';' , ; 030-033
+    ''' , '`' , ',' , '.' , ; 034-037
+    '/' , 0   ,             ; 038-039 (039 = Caps)
+    KEY_F1, KEY_F2 , KEY_F3 , KEY_F4 , ; 03A-03D
+    KEY_F5, KEY_F6 , KEY_F7 , KEY_F8 , ; 03E-041
+    KEY_F9, KEY_F10, KEY_F11, KEY_F12, ; 042-045
+    0               , 0              , 0                      , ; 046-048 (045 = Print Screen)
+    KEY_INSERT      , KEY_HOME       , KEY_PAGE_UP            , ; 049-04B
+    KEY_DELETE      , KEY_END        , KEY_PAGE_DOWN          , ; 04C-04E
+    KEY_RIGHT       , KEY_LEFT       , KEY_DOWN      , KEY_UP   ; 04F-052
+]
+
+i32 USB_HID_KEYBOARD_USAGE_TO_KEY_CODE_SIZE := 0x53
+
+namespace USB::HID {
+
+    enum KeyboardUsage As i32 {
+        LeftControl := 0xE0,
+        LeftShift := 0xE1,
+        LeftAlt := 0xE2,
+        LeftGUI := 0xE3,
+        RightControl := 0xE4,
+        RightShift := 0xE5,
+        RightAlt := 0xE6,
+        RightGUI := 0xE7
+    }
+
+    class Keyboard implements IFileHandle, derives INew {
+        HumanInputDevice* Base
+
+        ReportLayout* Layout
+        IPeriodicTransferHandle* TransferHandle
+
+        KeyboardUsage[32] HeldKeys
+        i32 HeldKeyCount
+
+        i8 Modifiers
+
+        KeyInput[32] Queue
+	    i32 QueueHead
+	    i32 QueueTail
+
+        define i32 MapUsageToKeyCode(KeyboardUsage Usage) {
+            if (Usage As i32 < USB_HID_KEYBOARD_USAGE_TO_KEY_CODE_SIZE) {
+                return USB_HID_KEYBOARD_USAGE_TO_KEY_CODE[Usage As i32] As i32
+            }
+
+            return 0
+        }
+
+        define void QueueKey(i8 Modifiers, KeyboardUsage Usage) {
+            ;Print("Keyboard Usage %s (%x) maps to key code ", USBIDs->GetUsageName(USB_HID_USAGE_PAGE_KEYBOARD, Usage As i32), Usage)
+
+            ;PrintModifiers(Modifiers)
+
+            i32 KeyCode := this->MapUsageToKeyCode(Usage As KeyboardUsage)
+
+            if (KeyCode != 0) {
+                i32 Index := this->QueueTail++ % 32
+                KeyInput* Input := this->Queue[Index]
+
+                Input->Assign(Modifiers, KeyCode)
+
+                ;PrintKeyName(KeyCode)
+            }
+            else {
+                ;Print("N/A")
+            }
+
+            ;Print("\n")
+            ;Print("}")
+        }
+
+        define void Press(KeyboardUsage Usage) {
+            if (Usage = KeyboardUsage::LeftControl || Usage = KeyboardUsage::RightControl) {
+                this->Modifiers |= KEY_MODIFIER_CONTROL
+            }
+            else if (Usage = KeyboardUsage::LeftShift || Usage = KeyboardUsage::RightShift) {
+                this->Modifiers |= KEY_MODIFIER_SHIFT
+            }
+            else if (Usage = KeyboardUsage::LeftAlt || Usage = KeyboardUsage::RightAlt) {
+                this->Modifiers |= KEY_MODIFIER_ALT
+            }
+            else if (Usage = KeyboardUsage::LeftGUI || Usage = KeyboardUsage::RightGUI) {
+                ; this->Modifiers |= KEY_MODIFIER_GUI lol
+            }
+
+            this->QueueKey(this->Modifiers, Usage)
+        }
+
+        define void Release(KeyboardUsage Usage) {
+            if (Usage = KeyboardUsage::LeftControl || Usage = KeyboardUsage::RightControl) {
+                this->Modifiers &= ~KEY_MODIFIER_CONTROL
+            }
+            else if (Usage = KeyboardUsage::LeftShift || Usage = KeyboardUsage::RightShift) {
+                this->Modifiers &= ~KEY_MODIFIER_SHIFT
+            }
+            else if (Usage = KeyboardUsage::LeftAlt || Usage = KeyboardUsage::RightAlt) {
+                this->Modifiers &= ~KEY_MODIFIER_ALT
+            }
+            else if (Usage = KeyboardUsage::LeftGUI || Usage = KeyboardUsage::RightGUI) {
+                ; this->Modifiers &= ~KEY_MODIFIER_GUI lol
+            }
+
+            this->QueueKey(this->Modifiers | KEY_MODIFIER_RELEASED, Usage)
+        }
+
+        define void ReportThread() {
+            ReportLayout* Layout := this->Layout
+
+            loop {
+                Layout->Buffer := this->TransferHandle->Wait()
+
+                KeyboardUsage[32] PressedKeys
+                i32 PressedKeyCount := 0
+
+                i32 Count := Layout->Fields->Count()
+
+                for (i32 Index := 0, Index < Count, Index++) {
+                    ReportField* Field := Layout->Fields->At(Index)
+                    MainItem* Item := Field->Item
+                    ItemInfo* Info := Item->Info
+                    InputItemData Data := Info->InputData
+
+                    i64 Value := Layout->Read(Field)
+
+                    if (Data.HasFlag(MainItemFlag::Array)) {
+                        if (Value != 0) {
+                            PressedKeys[PressedKeyCount++] := Value As KeyboardUsage
+                        }
+                    }
+                    else if !(Data.HasFlag(MainItemFlag::Constant)) {
+                        if (Item->UsagePage = USB_HID_USAGE_PAGE_KEYBOARD && Value != 0) {
+                            PressedKeys[PressedKeyCount++] := Item->Usage As KeyboardUsage
+                        }
+                    }
+                }
+
+                i32 Count := this->HeldKeyCount
+
+                for (i32 Index := 0, Index < Count, Index++) {
+                    KeyboardUsage Usage := this->HeldKeys[Index]
+
+                    i8 StillHeld := 0
+
+                    for (i32 PressedIndex := 0, PressedIndex < PressedKeyCount, PressedIndex++) {
+                        if (PressedKeys[PressedIndex] = Usage) {
+                            StillHeld := true
+                            break
+                        }
+                    }
+
+                    if !(StillHeld) {
+                        this->Release(Usage)
+                    }
+                }
+
+                i32 Count := PressedKeyCount
+
+                for (i32 Index := 0, Index < Count, Index++) {
+                    KeyboardUsage Usage := PressedKeys[Index]
+
+                    i8 FreshlyPressed := true
+
+                    for (i32 HeldIndex := 0, HeldIndex < this->HeldKeyCount, HeldIndex++) {
+                        if (this->HeldKeys[HeldIndex] = Usage) {
+                            FreshlyPressed := false
+                            break
+                        }
+                    }
+
+                    if (FreshlyPressed) {
+                        this->Press(Usage)
+                    }
+                }
+
+                this->HeldKeyCount := PressedKeyCount
+                MoveMemory(this->HeldKeys, PressedKeys, PressedKeyCount * #i32)
+            }
+        }
+
+        Task* ReportTask
+
+        define void New(HumanInputDevice* Base) {
+            this->Base := Base
+            this->Layout := Base->Parser->InputReportLayouts->PointerAt(0)
+            this->TransferHandle := Base->ScheduleInputReports()
+
+            this->ReportTask := Scheduler->AddLightTask(null, "USB::HID::Keyboard Report Handler")
+            this->ReportTask~>Context->CallMethod(this, &self.ReportThread)
+            this->ReportTask->Unblock()
+        }
+
+        define i32 Available() {
+            return (this->QueueTail - this->QueueHead) % 32
+        }
+
+        define i32 Poll(i32 Mode) {
+            if (Mode & POLL_FOR_READ) {
+                if (this->Available() > 0) {
+                    return POLL_CAN_READ
+                }
+            }
+
+            return 0
+        }
+
+        define i32 Read(void* Buffer, i32 Size) {
+            i32 Desired := Size / #KeyInput
+            i32 Available := this->Available()
+
+            i32 Read := Desired
+
+            if (Desired > Available) {
+                Read := Available
+            }
+
+            KeyInput* Results := Buffer
+
+            for (i32 Index := 0, Index < Read, Index += 1) {
+                i32 SourceIndex := this->QueueHead++ % 32
+
+                MoveMemory(Results[Index], this->Queue[SourceIndex], #KeyInput)
+            }
+
+            return Read * #KeyInput
+        }
+    }
+
+    class KeyboardDriver implements USB::IDriver, derives INew {
+        define i8* Name() {
+            return "USB::HID::Keyboard Generic Keyboard Driver"
+        }
+
+        PointerArray* Devices ; <Keyboard*>
+
+        define void New() {
+            this->Devices := PointerArray:New()
+        }
+
+        define InterfaceMatchResult MatchInterface(USB::Device* Attached, InterfaceInfo* Info) {
+            if (Info->Is(USB_CLASS_HID, USB_HID_SUBCLASS_BOOT, USB_HID_BOOT_PROTOCOL_KEYBOARD)) {
+                return InterfaceMatchResult::ClassSubclassProtocolMatch
+            }
+            else if (Info->Is(USB_CLASS_HID, USB_HID_SUBCLASS_NONE, USB_HID_PROTOCOL_KEYBOARD)) {
+                return InterfaceMatchResult::ClassSubclassProtocolMatch
+            }
+
+            return InterfaceMatchResult::None
+        }
+
+        define void* AttachInterface(USB::Device* Attached, InterfaceInfo* Info) {
+            HumanInputDevice* HID := new HumanInputDevice(Attached, Info)
+
+            Keyboard* Keeb := new Keyboard(HID)
+
+            this->Devices->Add(Keeb)
+
+            IDirectory* DevHID := null
+
+            VFSDirectoryEntry DevHIDEntry
+            if (Lookup(VFSDevicesDirectory, "hid", &DevHIDEntry)) {
+                DevHID := DevHIDEntry.Directory
+            }
+            else {
+                DevHID := VFSDevicesDirectory->CreateDirectory()
+                VFSDevicesDirectory->Insert("hid", DevHID)
+            }
+
+            DevHID->Insert(FormatString("keyboard%i", this->Devices->Count()), new VFSDeviceSingletonFile(Keeb))
+
+            VFSExecuteShellCommand("tree /dev")
+
+            ;Halt()
+
+            return Keeb
+        }
+    }
+}
+
+USB::HID::KeyboardDriver* USB_HID_KEYBOARD_DRIVER := new USB::HID::KeyboardDriver()
+i32 USB_HID_KEYBOARD_DRIVER_ID := RegisterUSBDriver(USB_HID_KEYBOARD_DRIVER)
