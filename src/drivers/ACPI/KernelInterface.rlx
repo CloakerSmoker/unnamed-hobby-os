@@ -341,12 +341,12 @@ define void SetupACPI() {
 
     VFSDirectoryEntry Entry
     if !(Lookup(VFSRootDirectory, "ACPICA.elf", &Entry)) {
-        Print("'/ACPICA.elf' does not exist\n")
+        Panic("'/ACPICA.elf' does not exist\n")
         return
     }
 
     if (Entry.Type != VFSDirectoryEntryType::File) {
-        Print("'/ACPICA.elf' not a file\n")
+        Panic("'/ACPICA.elf' not a file\n")
         return
     }
 
