@@ -37,6 +37,7 @@ namespace USB {
 
     struct InterfaceInfo {
         InterfaceDescriptor Descriptor
+        i32 Number
         StringDescriptor* InterfaceString
 
         PointerArray* HIDDescriptors ; <DescriptorHeader*>
@@ -46,8 +47,10 @@ namespace USB {
 
         void* DriverData
 
-        static self* New(DescriptorHeader* Descriptor, StringDescriptor* InterfaceString) {
+        static self* New(i32 Number, DescriptorHeader* Descriptor, StringDescriptor* InterfaceString) {
             self* this := Alloc(#self)
+
+            this->Number := Number
 
             MoveMemory(this~>Descriptor, Descriptor, #InterfaceDescriptor)
             this->InterfaceString := InterfaceString
@@ -99,9 +102,13 @@ namespace USB {
         virtual void* Wait()
         virtual void Stop()
         virtual void Free()
+
+        virtual i32 TransferredLength()
     }
 
     interface IController {
+        virtual Bus* GetBus()
+
         virtual ITransferHandle* SendControlTransfer(i32, i32, TransferSpeed, SetupPacket*, void*, i32)
         virtual IPeriodicTransferHandle* ScheduleInterruptTransfer(i32, i32, TransferSpeed, RequestDataPhaseDirection, i32)
         virtual void Free(ITransferHandle*)
@@ -132,6 +139,10 @@ namespace USB {
         ConfigurationInfo* CurrentConfiguration
 
         void* DriverData
+
+        define ITransferHandle* SendControlTransfer(SetupPacket* Setup, void* Buffer, i32 Length) {
+            return this->Controller->SendControlTransfer(this->Address, 0, this->Speed, Setup, Buffer, Length)
+        }
 
         define ITransferHandle* SendControlTransferToDevice(SetupPacket* Setup, void* Buffer, i32 Length) {
             Setup->Recipient := RequestRecipient::Device
@@ -198,6 +209,9 @@ namespace USB {
         define void* GetDescriptor(i32 InterfaceNumber, USB::DescriptorType Type, i8 Index, i32* OutLength) {
             return this->GetDescriptor(InterfaceNumber, Type, LanguageID::None, Index, OutLength)
         }
+        define void* GetDescriptor(i32 InterfaceNumber, USB::DescriptorType Type, i8 Index) {
+            return this->GetDescriptor(InterfaceNumber, Type, LanguageID::None, Index, null)
+        }
         define void* GetDescriptor(USB::DescriptorType Type, LanguageID Language, i8 Index) {
             return this->GetDescriptor(-1, Type, Language, Index, null)
         }
@@ -262,7 +276,9 @@ namespace USB {
 
                     if (Header->Type = USB::DescriptorType::Interface) {
                         InterfaceDescriptor* InterfaceHeader := Header As InterfaceDescriptor*
-                        CurrentInterface := new InterfaceInfo(Header, this->GetStringDescriptor(LanguageID::EnglishUS, InterfaceHeader->InterfaceStringIndex))
+
+                        i32 InterfaceNumber := Configuration->Interfaces->Count()
+                        CurrentInterface := new InterfaceInfo(InterfaceNumber, Header, this->GetStringDescriptor(LanguageID::EnglishUS, InterfaceHeader->InterfaceStringIndex))
 
                         Configuration->Interfaces->Push(CurrentInterface)
                     }
@@ -561,8 +577,11 @@ namespace USB {
 
                         InterfaceMatchResult Result := Driver->MatchInterface(Attached, Interface)
 
+                        Print("For Interface %i, driver %s returned match result %i\n", InterfaceIndex, Driver->Name(), Result)
+
                         if (Result > BestMatchResult) {
                             BestInterfaceMatch := Driver
+                            BestMatchResult := Result
                         }
                     }
 
@@ -591,5 +610,7 @@ define i32 RegisterUSBDriver(USB::IDriver* Driver) {
 
     return ID
 }
+
+#Require "src/drivers/USB/Hub.rlx"
 
 #Require "src/drivers/USB/HID.rlx"

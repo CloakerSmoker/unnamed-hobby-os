@@ -1,0 +1,406 @@
+
+i32 USB_CLASS_HUB := 0x09
+i32 USB_HUB_SUBCLASS_UNUSED := 0
+
+namespace USB::HubProtocol {
+
+    enum HubFeatureSelector As i16 {
+        LocalPowerChange := 0,
+        OverCurrentChange := 1
+    }
+
+    enum PortFeatureSelector As i16 {
+        Connection := 0,
+        Enable := 1,
+        Suspend := 2,
+        OverCurrent := 3,
+        Reset := 4,
+        Power := 8,
+        LowSpeed := 9,
+
+        ConnectionChange := 16,
+        EnableChange := 17,
+        SuspendChange := 18,
+        OverCurrentChange := 19,
+        ResetChange := 20
+    }
+
+    struct HubSetupPacket {
+        SetupPacket Base
+
+        define void ClearHubFeature(HubFeatureSelector Feature) {
+            SetupPacket* Base := this~>Base
+
+            Base->To(RequestRecipient::Device, RequestType::Class, RequestDataPhaseDirection::HostToDevice)
+
+            Base->StandardRequest := StandardRequests::CLEAR_FEATURE
+            Base->Value := Feature As i16
+            Base->Index := 0
+            Base->Length := 0
+        }
+
+        define void ClearPortFeature(PortFeatureSelector Feature, i8 PortNumber) {
+            SetupPacket* Base := this~>Base
+
+            Base->To(RequestRecipient::Other, RequestType::Class, RequestDataPhaseDirection::HostToDevice)
+
+            Base->StandardRequest := StandardRequests::CLEAR_FEATURE
+            Base->Value := Feature As i16
+            Base->Index := (PortNumber + 1) As i16
+            Base->Length := 0
+        }
+
+        define void GetBusState(i8 PortNumber) {
+            SetupPacket* Base := this~>Base
+
+            Base->To(RequestRecipient::Other, RequestType::Class, RequestDataPhaseDirection::DeviceToHost)
+
+            Base->StandardRequest := StandardRequests::GET_STATUS
+            Base->Value := 0
+            Base->Index := (PortNumber + 1) As i16
+            Base->Length := 1
+        }
+
+        define void GetHubDescriptor(DescriptorType Type, i8 Index, i16 Length) {
+            SetupPacket* Base := this~>Base
+
+            Base->To(RequestRecipient::Device, RequestType::Class, RequestDataPhaseDirection::DeviceToHost)
+
+            Base->StandardRequest := StandardRequests::GET_DESCRIPTOR
+            Base->Value := Type As i16
+            Base->Index := Index
+            Base->Length := Length
+        }
+
+        define void GetHubStatus() {
+            SetupPacket* Base := this~>Base
+
+            Base->To(RequestRecipient::Device, RequestType::Class, RequestDataPhaseDirection::DeviceToHost)
+
+            Base->StandardRequest := StandardRequests::GET_STATUS
+            Base->Value := 0
+            Base->Index := 0
+            Base->Length := 4
+        }
+
+        define void GetPortStatus(i8 PortNumber) {
+            SetupPacket* Base := this~>Base
+
+            Base->To(RequestRecipient::Other, RequestType::Class, RequestDataPhaseDirection::DeviceToHost)
+
+            Base->StandardRequest := StandardRequests::GET_STATUS
+            Base->Value := 0
+            Base->Index := (PortNumber + 1) As i16
+            Base->Length := 4
+        }
+
+        define void SetHubDescriptor(i8 Type, i8 Index, i16 Length) {
+            SetupPacket* Base := this~>Base
+
+            Base->To(RequestRecipient::Device, RequestType::Class, RequestDataPhaseDirection::HostToDevice)
+
+            Base->StandardRequest := StandardRequests::SET_DESCRIPTOR
+            Base->Value := Type
+            Base->Index := Index
+            Base->Length := Length
+        }
+
+        define void SetHubFeature(HubFeatureSelector Feature) {
+            SetupPacket* Base := this~>Base
+
+            Base->To(RequestRecipient::Device, RequestType::Class, RequestDataPhaseDirection::HostToDevice)
+
+            Base->StandardRequest := StandardRequests::SET_FEATURE
+            Base->Value := Feature As i16
+            Base->Index := 0
+            Base->Length := 0
+        }
+
+        define void SetPortFeature(PortFeatureSelector Feature, i8 PortNumber) {
+            SetupPacket* Base := this~>Base
+
+            Base->To(RequestRecipient::Other, RequestType::Class, RequestDataPhaseDirection::HostToDevice)
+
+            Base->StandardRequest := StandardRequests::SET_FEATURE
+            Base->Value := Feature As i16
+            Base->Index := (PortNumber + 1) As i16
+            Base->Length := 0
+        }
+    }
+
+    enum PowerSwitchingMode As i8 {
+        Ganged := 0,
+        Individual := 1,
+        None := 2
+    }
+
+    enum OverCurrentProtectionMode As i8 {
+        Global := 0,
+        Individual := 1,
+        None := 2
+    }
+
+    struct HubDescriptor {
+        DescriptorHeader Header
+        i8 PortCount
+        
+        bits As i16 {
+            PowerSwitchingMode [0:1] PowerSwitching
+            [2] IsCompoundDevice
+            OverCurrentProtectionMode [3:4] OverCurrentProtection
+        }
+
+        i8 PortPowerDelay
+        i8 ControllerCurrentRequirement
+        i8[0] RemovableDeviceBitmap
+        i8[0] PortPowerControlBitmap
+    }
+
+    struct HubStatus {
+        bits As i16 {
+            [0] LocalPowerLost
+            [1] OverCurrent
+        }
+
+        bits As i16 {
+            [0] LocalPowerChange
+            [1] OverCurrentChange
+        }
+    }
+
+    struct PortStatus {
+        bits As i16 {
+            [0] Connection
+            [1] Enable
+            [2] Suspend
+            [3] OverCurrent
+            [4] Reset
+            [8] Power
+            [9] LowSpeed
+        }
+
+        bits As i16 {
+            [0] ConnectionChange
+            [1] EnableChange
+            [2] SuspendChange
+            [3] OverCurrentChange
+            [4] ResetChange
+        }
+    }
+
+    struct Port {
+        PortStatus Status
+        USB::Device* Attached
+    }
+
+    class Hub derives INew {
+        USB::Device* Base
+        InterfaceInfo* Info
+        i32 Interface
+
+        USB::Bus* Bus
+
+        HubSetupPacket* Setup
+
+        HubDescriptor* Descriptor
+
+        i32 PortCount
+        PointerArray* Ports ; <Port*>
+
+        IPeriodicTransferHandle* StatusChangeTransfer
+
+        define ITransferHandle* SendControlTransfer(void* Buffer, i32 Length) {
+            return this->Base->SendControlTransferToInterface(this->Interface, this->Setup~>Base, Buffer, Length)
+        }
+        define ITransferHandle* SendControlTransfer(HubSetupPacket* Setup, void* Buffer, i32 Length) {
+            return this->Base->SendControlTransferToInterface(this->Interface, Setup~>Base, Buffer, Length)
+        }
+
+        Task* PortThreadTask
+
+        define void GetPortStatus(i32 PortNumber, Port* Out) {
+            this->Setup->GetPortStatus(PortNumber As i8)
+            this->Base->SendControlTransfer(this->Setup~>Base, &Out->Status, #PortStatus)->Wait()->Free()
+        }
+
+        define void SetPortFeature(i32 PortNumber, PortFeatureSelector Feature) {
+            this->Setup->SetPortFeature(Feature, PortNumber As i8)
+            this->Base->SendControlTransfer(this->Setup~>Base, null, 0)->Wait()->Free()
+        }
+
+        define void ClearPortFeature(i32 PortNumber, PortFeatureSelector Feature) {
+            this->Setup->ClearPortFeature(Feature, PortNumber As i8)
+            this->Base->SendControlTransfer(this->Setup~>Base, null, 0)->Wait()->Free()
+        }
+
+        define void PortThread() {
+            Print("USB Hub Port Thread Started\n")
+
+            loop {
+                if (this->StatusChangeTransfer = null) {
+                    continue
+                }
+
+                i8* StatusChangeBuffer := this->StatusChangeTransfer->Wait()
+
+                Print("Hub Status Change\n")
+
+                i8 HubStatusChanged := StatusChangeBuffer[0] & 1
+
+                if (HubStatusChanged) {
+                    HubStatus hStatus
+                    this->Setup->GetHubStatus()
+                    this->Base->SendControlTransfer(this->Setup~>Base, &hStatus, #HubStatus)->Wait()->Free()
+
+                    Print("Hub Status Changed: LocalPowerLost=%i, OverCurrent=%i\n", hStatus.LocalPowerLost, hStatus.OverCurrent)
+                    Print("Hub Status Change: LocalPowerChange=%i, OverCurrentChange=%i\n", hStatus.LocalPowerChange, hStatus.OverCurrentChange)
+                }
+
+                for (i32 Index := 0, Index < this->PortCount, Index++) {
+                    i32 ByteIndex := (Index + 1) / 8
+                    i32 BitIndex := (Index + 1) % 8
+
+                    i8 PortStatusChanged := (StatusChangeBuffer[ByteIndex] & (1 << BitIndex)) != 0
+
+                    if (PortStatusChanged) {
+                        Print("Port %i Status Changed\n", Index)
+
+                        Port* Current := this->Ports->At(Index)
+
+                        this->GetPortStatus(Index, Current)
+
+                        PortStatus* Status := Current~>Status
+
+                        Print("Port %i Status:\n", Index)
+                        Print("  Connection=%i, Enable=%i, Suspend=%i, OverCurrent=%i, Reset=%i\n", Status->Connection, Status->Enable, Status->Suspend, Status->OverCurrent, Status->Reset)
+                        Print("  Power=%i, LowSpeed=%i\n", Status->Power, Status->LowSpeed)
+                        Print("  ConnectionChange=%i, EnableChange=%i, SuspendChange=%i, OverCurrentChange=%i, ResetChange=%i\n",
+                              Status->ConnectionChange,
+                              Status->EnableChange,
+                              Status->SuspendChange,
+                              Status->OverCurrentChange,
+                              Status->ResetChange)
+                        
+                        if (Status->ConnectionChange) {
+                            this->ClearPortFeature(Index, PortFeatureSelector::ConnectionChange)
+
+                            if (Status->Connection) {
+                                this->SetPortFeature(Index, PortFeatureSelector::Reset)
+                            }
+                        }
+
+                        if (Status->ResetChange) {
+                            this->ClearPortFeature(Index, PortFeatureSelector::ResetChange)
+                        }
+
+                        if (Status->EnableChange) {
+                            this->ClearPortFeature(Index, PortFeatureSelector::EnableChange)
+
+                            if (Status->Enable) {
+                                Print("Port %i Enabled\n", Index)
+
+                                i32 Address := this->Bus->AssignAddress()
+
+                                Print("Assigned Address %i\n", Address)
+
+                                this->Setup~>Base->MakeSetAddress(Address As i8)
+
+                                ; We have to bypass the hub device itself entirely here
+                                ;  because the hub device is specifically not allowed to
+                                ;   send transfers to any address besides its own.
+                                this->Base->Controller->SendControlTransfer(0, 0, this->Base->Speed, this->Setup~>Base, null, 0)->Wait()->Free()
+
+                                this->Bus->Attach(Address)
+                            }
+                            else {
+                                Print("Port %i Disabled\n", Index)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        define void New(USB::Device* Base, InterfaceInfo* Info) {
+            this->Base := Base
+            this->Info := Info
+
+            this->Bus := Base->Controller->GetBus()
+
+            this->Interface := Info->Number
+
+            Print("USB Hub Protocol Driver: Attaching to interface %i\n", this->Interface)
+
+            this->Setup := Base~>Setup As void*
+
+            ; Since GetHubDescriptor is a CLASS REQUEST FOR SOME REASON
+            ;  we need to paste the entire contents of Base->GetDescriptor instead
+            ;   of giving it the proper brain damage to handle class requests.
+
+            i64 HeaderBuffer := 0
+            DescriptorHeader* Header := &HeaderBuffer As DescriptorHeader*
+            
+            this->Setup->GetHubDescriptor(DescriptorType::Hub, 0, 8)
+            Base->SendControlTransferToDevice(this->Setup~>Base, Header, #DescriptorHeader)->Wait()->Free()
+
+            i32 DescriptorLength := Header->Length
+            this->Descriptor := Alloc(DescriptorLength)
+
+            this->Setup->GetHubDescriptor(DescriptorType::Hub, 0, Header->Length)
+            Base->SendControlTransferToDevice(this->Setup~>Base, this->Descriptor, DescriptorLength)->Wait()->Free()
+
+            Print("Hub Has %i Ports\n", this->Descriptor->PortCount)
+
+            this->PortCount := this->Descriptor->PortCount
+
+            this->Ports := new PointerArray()
+
+            for (i32 Index := 0, Index < this->PortCount, Index++) {
+                this->Ports->Push(Alloc(#Port))
+            }
+
+            EndpointInfo* StatusChangeEndpoint := this->Info->Endpoints->At(0)
+
+            this->StatusChangeTransfer := Base->ScheduleInterruptTransfer(StatusChangeEndpoint->Number, RequestDataPhaseDirection::DeviceToHost, 128)
+
+            this->PortThreadTask := Scheduler->AddLightTask(null, "USB Hub Status Change Thread")
+            this->PortThreadTask~>Context->CallMethod(this, &self.PortThread)
+            this->PortThreadTask->Unblock()
+        }
+    }
+
+    class Driver implements USB::IDriver, derives INew {
+        define i8* Name() {
+            return "USB::Hub::Hub"
+        }
+
+        PointerArray* Devices ; <Hub*>
+
+        define void New() {
+            this->Devices := new PointerArray()
+        }
+
+        define InterfaceMatchResult MatchInterface(USB::Device* Device, InterfaceInfo* Info) {
+            if (Info->Is(USB_CLASS_HUB, USB_HUB_SUBCLASS_UNUSED)) {
+                return InterfaceMatchResult::ClassSubclassMatch
+            }
+            else if (Info->Is(USB_CLASS_HUB)) {
+                return InterfaceMatchResult::ClassMatch
+            }
+            else {
+                return InterfaceMatchResult::None
+            }
+        }
+
+        define void* AttachInterface(USB::Device* Base, InterfaceInfo* Info) {
+            Hub* Attached := new Hub(Base, Info)
+
+            this->Devices->Push(Attached)
+
+            return Attached
+        }
+    }
+}
+
+USB::HubProtocol::Driver* USB_HUB_DRIVER := new USB::HubProtocol::Driver()
+i32 USB_HUB_DRIVER_ID := RegisterUSBDriver(USB_HUB_DRIVER)

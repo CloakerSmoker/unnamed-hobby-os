@@ -21,6 +21,7 @@ namespace USB {
     enum StandardRequests As i8 {
         GET_STATUS := 0,
         CLEAR_FEATURE := 1,
+        GET_STATE := 2,
         SET_FEATURE := 3,
         SET_ADDRESS := 5,
         GET_DESCRIPTOR := 6,
@@ -39,6 +40,12 @@ namespace USB {
             RequestRecipient [0:4] Recipient
             RequestType [5:6] Type
             RequestDataPhaseDirection [7] DataDirection
+        }
+
+        define void To(RequestRecipient Recipient, RequestType Type, RequestDataPhaseDirection Direction) {
+            this->Recipient := Recipient
+            this->Type := Type
+            this->DataDirection := Direction
         }
 
         union {

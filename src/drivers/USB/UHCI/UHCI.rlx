@@ -221,6 +221,7 @@ namespace USB::UHCI {
         PointerArray* FreeTDs
 
         void* Buffer
+        i32 TransferredLength
 
         Synchronization::Semaphore* Fired
 
@@ -236,7 +237,8 @@ namespace USB::UHCI {
             this->Fired := new Synchronization::Semaphore(0)
         }
 
-        define void Complete() {
+        define void Complete(i32 TransferredLength) {
+            this->TransferredLength := TransferredLength
             this->Fired->Signal()
         }
 
@@ -244,6 +246,10 @@ namespace USB::UHCI {
             this->Fired->Wait()
 
             return this->Buffer
+        }
+
+        define i32 TransferredLength() {
+            return this->TransferredLength
         }
 
         define void Free() {
@@ -304,6 +310,10 @@ namespace USB::UHCI {
 
             this->QueueHeadsInFlight := new PointerArray()
             this->PeriodicTransfers := new PointerArray()
+        }
+
+        define USB::Bus* GetBus() {
+            return this->Bus
         }
 
         define void Write16(Registers Target, i16 Value) {
@@ -536,7 +546,7 @@ namespace USB::UHCI {
                             if !(TD->Active) {
                                 ; If the TD was completed
 
-                                Handle->Complete()
+                                Handle->Complete(TD->ActualLength + 1)
                             }
                         }
                     }

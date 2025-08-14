@@ -7,7 +7,8 @@ namespace USB {
         Endpoint := 5,
         HID := 0x21,
         HID_Report := 0x22,
-        HID_Physical := 0x23
+        HID_Physical := 0x23,
+        Hub := 0x29
     }
 
     struct DescriptorHeader {

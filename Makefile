@@ -399,7 +399,7 @@ endif
 
 HELP_TEXT+=uhci: Add a UHCI controller
 ifneq (,$(findstring uhci,$(flags)))
-	QEMU_FLAGS+=-device ich9-usb-uhci1 -device usb-mouse,bus=usb-bus.0,port=1 -device usb-kbd,bus=usb-bus.0,port=2
+	QEMU_FLAGS+=-device ich9-usb-uhci1 -device usb-mouse,bus=usb-bus.0,port=1 -device usb-hub,bus=usb-bus.0,port=2,pcap=hub.pcap -device usb-kbd,bus=usb-bus.0 -device usb-kbd,bus=usb-bus.0 -device usb-kbd,bus=usb-bus.0 -device usb-kbd,bus=usb-bus.0
 endif
 
 HELP_TEXT+=ehci: Add an EHCI controller, and use a USB device as the boot device instead of an AHCI device|
