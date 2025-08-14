@@ -209,15 +209,6 @@ namespace USB::HubProtocol {
 
         IPeriodicTransferHandle* StatusChangeTransfer
 
-        define ITransferHandle* SendControlTransfer(void* Buffer, i32 Length) {
-            return this->Base->SendControlTransferToInterface(this->Interface, this->Setup~>Base, Buffer, Length)
-        }
-        define ITransferHandle* SendControlTransfer(HubSetupPacket* Setup, void* Buffer, i32 Length) {
-            return this->Base->SendControlTransferToInterface(this->Interface, Setup~>Base, Buffer, Length)
-        }
-
-        Task* PortThreadTask
-
         define void GetPortStatus(i32 PortNumber, Port* Out) {
             this->Setup->GetPortStatus(PortNumber As i8)
             this->Base->SendControlTransfer(this->Setup~>Base, &Out->Status, #PortStatus)->Wait()->Free()
@@ -233,14 +224,12 @@ namespace USB::HubProtocol {
             this->Base->SendControlTransfer(this->Setup~>Base, null, 0)->Wait()->Free()
         }
 
+        Task* PortThreadTask
+
         define void PortThread() {
             Print("USB Hub Port Thread Started\n")
 
             loop {
-                if (this->StatusChangeTransfer = null) {
-                    continue
-                }
-
                 i8* StatusChangeBuffer := this->StatusChangeTransfer->Wait()
 
                 Print("Hub Status Change\n")
