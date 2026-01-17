@@ -288,21 +288,13 @@ namespace USB::HubProtocol {
                             if (Status->Enable) {
                                 Print("Port %i Enabled\n", Index)
 
-                                i32 Address := this->Bus->AssignAddress()
-
-                                Print("Assigned Address %i\n", Address)
-
-                                this->Setup~>Base->MakeSetAddress(Address As i8)
-
-                                ; We have to bypass the hub device itself entirely here
-                                ;  because the hub device is specifically not allowed to
-                                ;   send transfers to any address besides its own.
-                                this->Base->Controller->SendControlTransfer(0, 0, this->Base->Speed, this->Setup~>Base, null, 0)->Wait()->Free()
-
-                                this->Bus->Attach(Address)
+                                Current->Attached := this->Bus->NotifyAttach()
                             }
                             else {
                                 Print("Port %i Disabled\n", Index)
+
+                                this->Bus->NotifyRemove(Current->Attached)
+                                Current->Attached := null
                             }
                         }
                     }

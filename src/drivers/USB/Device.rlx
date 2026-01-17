@@ -45,6 +45,7 @@ namespace USB {
         PointerArray* Endpoints ; <EndpointInfo*>
         i32 EndpointBase
 
+        IDriver* Driver
         void* DriverData
 
         static self* New(i32 Number, DescriptorHeader* Descriptor, StringDescriptor* InterfaceString) {
@@ -110,6 +111,7 @@ namespace USB {
         virtual Bus* GetBus()
 
         virtual ITransferHandle* SendControlTransfer(i32, i32, TransferSpeed, SetupPacket*, void*, i32)
+        virtual ITransferHandle* SendBulkTransfer(i32, i32, TransferSpeed, void*, i32)
         virtual IPeriodicTransferHandle* ScheduleInterruptTransfer(i32, i32, TransferSpeed, RequestDataPhaseDirection, i32)
         virtual void Free(ITransferHandle*)
 
@@ -138,6 +140,7 @@ namespace USB {
         PointerArray* Configurations ; <ConfigurationInfo*>
         ConfigurationInfo* CurrentConfiguration
 
+        IDriver* Driver
         void* DriverData
 
         define ITransferHandle* SendControlTransfer(SetupPacket* Setup, void* Buffer, i32 Length) {
@@ -510,6 +513,7 @@ namespace USB {
         i32 BusNumber
         IController* Controller
 
+        SetupPacket AssignAddressSetup
         i32 NextAddress
 
         PointerArray* Devices ; <Device*>
@@ -525,7 +529,12 @@ namespace USB {
             return this->NextAddress++
         }
 
-        define Device* Attach(i32 Address) {
+        define Device* NotifyAttach() {
+            i32 Address := this->NextAddress++
+            
+            this~>AssignAddressSetup->MakeSetAddress(Address As i8)
+            this->Controller->SendControlTransfer(0, 0, TransferSpeed::Low, this~>AssignAddressSetup, null, 0)->Wait()->Free()
+
             Device* Attached := new Device(this->Controller, Address)
             DeviceDescriptor* AttachedDescriptor := Attached->Descriptor
 
@@ -561,6 +570,7 @@ namespace USB {
             if (BestDeviceMatch) {
                 Print("Bound device %i to driver %s\n", Address, BestDeviceMatch->Name())
 
+                Attached->Driver := BestDeviceMatch
                 Attached->DriverData := BestDeviceMatch->Attach(Attached)
             }
             else {
@@ -588,6 +598,7 @@ namespace USB {
                     if (BestInterfaceMatch) {
                         Print("Bound interface %i of device %i to driver %s\n", InterfaceIndex, Address, BestInterfaceMatch->Name())
 
+                        Interface->Driver := BestInterfaceMatch
                         Interface->DriverData := BestInterfaceMatch->AttachInterface(Attached, Interface)
                     }
                     else {
@@ -598,8 +609,21 @@ namespace USB {
 
             return Attached
         }
-        define void Remove(i32 Address) {
+        define void NotifyRemove(Device* Removed) {
+            if (Removed->Driver) {
+                Removed->Driver->Remove(Removed)
+            }
+            else {
+                i32 InterfaceCount := Removed->CurrentConfiguration->Interfaces->Count()
 
+                for (i32 InterfaceIndex := 0, InterfaceIndex < InterfaceCount, InterfaceIndex++) {
+                    InterfaceInfo* Interface := Removed->CurrentConfiguration->Interfaces->At(InterfaceIndex)
+
+                    if (Interface->Driver) {
+                        Interface->Driver->RemoveInterface(Removed, Interface)
+                    }
+                }
+            }
         }
     }
 }
