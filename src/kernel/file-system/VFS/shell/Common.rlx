@@ -52,17 +52,20 @@ define void Tree(i32 Depth, IDirectory* Target) {
         }
 
         if (Entry.Type = VFSDirectoryEntryType::Directory) {
-            Print("%i %s/\n", Count, Entry.Name)
+            Print("%i %s/\n", Count++, Entry.Name)
+
+            if (StringEquals(Entry.Name, ".") || StringEquals(Entry.Name, "..")) {
+                continue
+            }
+
             Tree(Depth + 1, Entry.Directory)
         }
         else if (Entry.Type = VFSDirectoryEntryType::File) {
-            Print("%i %s\n", Count, Entry.Name)
+            Print("%i %s\n", Count++, Entry.Name)
         }
         else if (Entry.Type = VFSDirectoryEntryType::Hole) {
-            Print("%i %s (hole)\n", Count, Entry.Name)
+            Print("%i %s (hole)\n", Count++, Entry.Name)
         }
-
-        Count += 1
     }
 }
 

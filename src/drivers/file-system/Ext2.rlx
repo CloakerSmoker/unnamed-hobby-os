@@ -2,6 +2,7 @@
 #Require "$/MemoryBase.rlx"
 #Require "./src/utility/x64.rlx"
 #Require "./src/utility/Random.rlx"
+#Require "./src/drivers/file-system/Common.rlx"
 
 ;#Require "./src/kernel/file-system/FileSystem.rlx"
 #Require "./src/kernel/file-system/Handle.rlx"
@@ -447,7 +448,9 @@ enum Ext2AllocateType {
 declare IFileHandle* Ext2OpenINode(Ext2*, Ext2INode*)
 declare IFileHandle* Ext2OpenINodeNumber(Ext2*, i32)
 
-struct Ext2 {
+i32 EXT2_DATA_BLOCK_SIZE := 0x400
+
+class Ext2 {
 	Ext2SuperBlock* SuperBlock
 	Ext2BlockGroupDescriptor* BlockGroupTable
 
@@ -1606,173 +1609,6 @@ struct Ext2 {
 	
 	; ==============================
 	
-	define i32 Read(Ext2INode* Node, i32* OutOffset, void* Buffer, i32 Size) {
-		i32 BytesRead := 0
-		i32 Offset := *OutOffset
-		
-		if (Offset + Size >= Node->FileSizeLow) {
-			Size := Node->FileSizeLow - Offset
-		}
-		
-		i32 FirstBlock := Offset / 1024
-		
-		if (Offset % 1024) {
-			; Read the first (partial) block
-		
-			this->ReadINodeData(this->TempBlock, Node, FirstBlock)
-			
-			i32 FirstBlockRemainder := Offset % 1024
-			i32 FirstBlockSize := 1024 - FirstBlockRemainder
-			
-			if (Size < FirstBlockSize) {
-				FirstBlockSize := Size
-			}
-			
-			MoveMemory(Buffer, this->TempBlock + FirstBlockRemainder, FirstBlockSize)
-
-			FirstBlock += 1
-			
-			Buffer += FirstBlockSize
-			Size -= FirstBlockSize
-			
-			BytesRead += FirstBlockSize
-		}
-
-		i32 BlockCount := Size / 1024
-		
-		; Read any middle (full) blocks, and the last full block (if the last block is full)
-		
-		;for (i32 Index := 0, Index < BlockCount, Index++) {
-		;	this->ReadINodeData(Buffer, Node, FirstBlock + Index)
-		;	
-		;	Buffer += 1024
-		;	BytesRead += 1024
-		;}
-		
-		i32 Index := FirstBlock
-		i32 LastBlock := FirstBlock + BlockCount
-		i32 MiddleRead := 0
-		
-		while (MiddleRead < BlockCount) {
-			Ext2Extent NextExtent
-			
-			this->FindINodeDataExtent(Node, Index, &NextExtent)
-			
-			i32 Start := NextExtent.First
-			i32 End := Start + NextExtent.Count
-			
-			if (DEBUG_EXT2_OPTIMIZATION) {
-				Info("[EXT2] Read inode %i extent %x-%x ", Node->INodeNumber, NextExtent.First, NextExtent.First + NextExtent.Count)
-			}
-			
-			if (Index + NextExtent.Count > LastBlock) {
-				NextExtent.Count := LastBlock - Index
-				
-				if (DEBUG_EXT2_OPTIMIZATION) {
-					Info(" (truncated extent to %x)", NextExtent.First + NextExtent.Count)
-				}
-			}
-			
-			if (DEBUG_EXT2_OPTIMIZATION) {
-				Info("\n")
-			}
-			
-			this->ReadExtent(&NextExtent, Buffer)
-			
-			Buffer += NextExtent.Count * 1024
-			Index += NextExtent.Count
-			
-			MiddleRead += NextExtent.Count
-			BytesRead += NextExtent.Count * 1024
-		}
-		
-		if (Size % 1024) {
-			; Read the last (partial) block
-			
-			i32 LastBlock := FirstBlock + BlockCount
-			
-			this->ReadINodeData(this->TempBlock, Node, LastBlock)
-			
-			MoveMemory(Buffer, this->TempBlock, Size % 1024)
-			
-			BytesRead += Size % 1024
-		}
-		
-		*OutOffset += BytesRead
-		
-		return BytesRead
-	}
-	
-	define void Write(Ext2INode* Node, i32* OutOffset, void* Data, i32 Size) {
-		i32 Offset := *OutOffset
-	
-		i32 BlockCount := Size / 1024	
-		i32 NextBlock := Offset / 1024
-		i32 FirstBlockExistingData := Offset % 1024
-		
-		if (FirstBlockExistingData && Node->FileSizeLow > 0) {
-			; Writing data which starts in the middle of a block, which means that we need to read the old data
-			;  and overwrite it, then write this first block back
-			
-			this->ReadINodeData(this->TempBlock, Node, NextBlock) ; Get old data
-			
-			; Figure out where to start writing/how much to write. 
-			; This covers a [---|XXX|---] style write along with a [---|XXX|YYY] style write
-			
-			i32 FirstBlockWriteStart := FirstBlockExistingData
-			i32 FirstBlockWriteSize := Size
-			
-			if (FirstBlockWriteSize > 1024) {
-				; [---|XXX|YYY] style, we need to figure out how big [XXX|YYY] is, aka 1024 - [---]
-				
-				FirstBlockWriteSize := 1024 - FirstBlockExistingData
-			}
-			
-			MoveMemory(this->TempBlock + FirstBlockWriteStart, Data, FirstBlockWriteSize)
-			
-			this->WriteINodeBlock(Node, NextBlock, this->TempBlock)
-			
-			;Print("[wrote %x bytes to offset %x of first block]", FirstBlockWriteSize, NewFirstBlockSize)
-			
-			Offset += FirstBlockWriteSize
-			Data += FirstBlockWriteSize
-			Size -= FirstBlockWriteSize
-			
-			NextBlock += 1
-			BlockCount -= 1
-		}
-		
-		for (i32 Index := 0, Index < BlockCount, Index++) {
-			this->WriteINodeBlock(Node, NextBlock + Index, Data)
-			
-			Data += 1024
-		}
-		
-		i32 LastBlockSize := Size % 1024
-		
-		if (LastBlockSize) {
-			i32 LastBlock := NextBlock + BlockCount
-			
-			if (LastBlock * 1024 < Node->FileSizeLow) {
-				this->ReadINodeData(this->TempBlock, Node, LastBlock)
-				;Print("[Read %s from tail block]", this->TempBlock)
-			}
-			
-			MoveMemory(this->TempBlock, Data, LastBlockSize)
-			FastSetMemory8(this->TempBlock + LastBlockSize, 1024 - LastBlockSize, 0)
-			;Print("[Writing %s to tail block]", this->TempBlock)
-			
-			this->WriteINodeBlock(Node, LastBlock, this->TempBlock)
-		}
-		
-		*OutOffset += Size
-		
-		Node->FileSizeLow := *OutOffset
-		this->WriteINode(Node)
-
-		this->Sync(false)
-	}
-	
 	define void Status(Ext2INode* Node, FileStatus* Out) {
 		Out->Size := Node->FileSizeLow
 		Out->BlockSize := 512
@@ -1800,13 +1636,18 @@ struct Ext2 {
 	}
 }
 
-class Ext2FileHandle implements IFileHandle, derives INew {
+class Ext2FileHandle implements IFileHandle, IFileBlockHandle, derives INew {
 	Ext2* FS
 	Ext2INode Node
+
+	BlockAlignedIO* AlignedIO
+	void* ScratchBlock
 
 	define void New(Ext2* FS, Ext2INode* Node) {
 		this->FS := FS
 		MoveMemory(this~>Node, Node, #Ext2INode)
+		this->AlignedIO := new BlockAlignedIO(this)
+		this->ScratchBlock := Alloc(EXT2_DATA_BLOCK_SIZE)
 	}
 
 	i32 NextByteOffset
@@ -1814,11 +1655,43 @@ class Ext2FileHandle implements IFileHandle, derives INew {
 	define void Status(FileStatus* Out) {
 		this->FS->Status(this~>Node, Out)
 	}
+
+	define i32 GetFileBlockSize() {
+		return EXT2_DATA_BLOCK_SIZE
+	}
+
+	define i8 ReadFileBlock(i32 LogicalBlockNumber, void* Buffer) {
+		try {
+			i32 DataBlock := this->FS->FindINodeDataBlock(this~>Node, LogicalBlockNumber, false)
+			this->FS->ReadBlock(DataBlock, Buffer)
+
+			return true
+		}
+		catch (i64 Exception) {
+			if (Exception = EXT2_EXCEPTION_NO_DATA_BLOCK) {
+				return false
+			}
+
+			Throw(Exception)
+		}
+
+		return false
+	}
+
+	define i8 WriteFileBlock(i32 LogicalBlockNumber, void* Buffer) {
+		i32 DataBlock := this->FS->FindINodeDataBlock(this~>Node, LogicalBlockNumber, true)
+		this->FS->WriteBlock(DataBlock, Buffer)
+
+		return true
+	}
+
 	define i32 Read(void* Buffer, i32 Size) {
-		return this->FS->Read(this~>Node, this~>NextByteOffset, Buffer, Size)
+		return this->AlignedIO->Read(this~>NextByteOffset, this~>Node->FileSizeLow, Buffer, Size, this->ScratchBlock)
 	}
 	define i32 Write(void* Buffer, i32 Size) {
-		this->FS->Write(this~>Node, this~>NextByteOffset, Buffer, Size)
+		this->AlignedIO->Write(this~>NextByteOffset, this~>Node~>FileSizeLow, Buffer, Size, this->ScratchBlock)
+		this->FS->WriteINode(this~>Node)
+		this->FS->Sync(false)
 		
 		return Size
 	}

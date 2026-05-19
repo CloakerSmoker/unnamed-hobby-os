@@ -28,6 +28,9 @@ interface IDirectory {
 
     virtual IDirectory* CreateDirectory()
     virtual IFile* CreateFile()
+    virtual IFile* CreateSpecialFile(void* Data) {
+        return null
+    }
 
     virtual i8 Insert(VFSDirectoryEntry*)
 

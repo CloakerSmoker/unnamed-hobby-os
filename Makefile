@@ -147,6 +147,11 @@ gpt /dev/loop0 scan
 format fat32 /dev/loop0p0 40M
 format ext2 /dev/loop0p1 70M
 
+mount fat32 /dev/loop0p0 /efi
+
+install /host/build/Boot.efi /efi/EFI/BOOT/BOOTX64.EFI
+install /host/build/KernelCommandLine.txt /efi/EFI/BOOT/KCMDLN.TXT
+
 mount ext2 /dev/loop0p1 /root
 
 install /host/build/Trampoline.elf /root/Trampoline.elf
@@ -159,6 +164,8 @@ install /host/misc/files/DOOM.WAD /root/doom/DOOM.WAD
 
 install /host/misc/files/sponge.six /root/usr/share/demo/sponge.six
 install /host/misc/files/dum.six /root/usr/share/demo/dum.six
+
+install /host/build/TLS.elf /root/usr/bin/TLS.elf
 
 $(shell python3 src/host/busybox.py --install $(BUSYBOX_SRC) | tr '\n' '\1')
 
@@ -208,7 +215,7 @@ $(BUILD)/Disk.img:
 	echo "$$MAKE_DISK_SCRIPT" | tr '\1' '\n' | $(BUILD)/HostFileShell.elf --script
 	echo "$$GET_GUIDS_SCRIPT" | tr '\1' '\n' | $(BUILD)/HostFileShell.elf --silent | tr '\n' ' ' > $(BUILD)/KernelCommandLine.txt
 	
-	$(BUILD)/FAT32Tool.elf "File($@,512)>GPT(0)" \
+#	$(BUILD)/FAT32Tool.elf "File($@,512)>GPT(0)" \
 		"disklabel HOS-BOOT" \
 		"mkdir EFI" \
 		"cd EFI" \
@@ -399,7 +406,7 @@ endif
 
 HELP_TEXT+=uhci: Add a UHCI controller
 ifneq (,$(findstring uhci,$(flags)))
-	QEMU_FLAGS+=-device ich9-usb-uhci1 -device usb-mouse,bus=usb-bus.0,port=1 -device usb-hub,bus=usb-bus.0,port=2,pcap=hub.pcap -device usb-kbd,bus=usb-bus.0 -device usb-kbd,bus=usb-bus.0 -device usb-kbd,bus=usb-bus.0 -device usb-kbd,bus=usb-bus.0
+	QEMU_FLAGS+=-device ich9-usb-uhci1 -device usb-mouse,bus=usb-bus.0,port=1 -device usb-hub,bus=usb-bus.0,port=2,pcap=hub.pcap -device usb-kbd,bus=usb-bus.0 -device usb-storage,bus=usb-bus.0,drive=stick -drive if=none,id=stick,format=raw,file=build/USB.img
 endif
 
 HELP_TEXT+=ehci: Add an EHCI controller, and use a USB device as the boot device instead of an AHCI device|

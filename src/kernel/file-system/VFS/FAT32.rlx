@@ -1,5 +1,115 @@
 #Require "./src/drivers/file-system/FAT32.rlx"
 
+class AnonymousFAT32File implements IFile, derives INew {
+    FAT32Device* FS
+
+    union {
+        VFSFileHandle* Handle
+        
+        struct {
+            ; Dummy entries to make the memory layout the same as FAT32File
+            ;  so when this object is replaced with an actual FAT32File,
+            ;   the vtables and sizes will match up and the transition will be seamless.
+            
+            i32 ParentDirectoryCluster
+            FAT32DirectoryEntry Entry
+        }
+    }
+
+    define void New(FAT32Device* FS) {
+        this->FS := FS
+        this->Handle := null
+    }
+
+    define i8 IsEphemeral() {
+        return false
+    }
+
+    define IFileHandle* Open(i32 Flags) {
+        if (this->Handle = null) {
+            this->Handle := new VFSFileHandle()
+        }
+
+        return this->Handle
+    }
+}
+
+class AnonymousFAT32Directory implements IDirectory, derives INew {
+    FAT32Device* FS
+
+    union {
+        VFSDirectory* Directory
+
+        struct {
+            i32 Cluster
+            AVLTree* Cache ; <i8*, VFSDirectoryEntry>
+        }
+    }
+
+    define void New(FAT32Device* FS) {
+        this->FS := FS
+        this->Directory := new VFSDirectory()
+    }
+
+    define i32 Count() {
+        return this->Directory->Count()
+    }
+    define i8 Lookup(i8* Name, VFSDirectoryEntry* Result) {
+        return this->Directory->Lookup(Name, Result)
+    }
+
+    define void* Enumerate() {
+        return this->Directory->Enumerate()
+    }
+    define i8 Next(void** RawState, VFSDirectoryEntry* Result) {
+        return this->Directory->Next(RawState, Result)
+    }
+
+    define i8 IsEphemeral() {
+        return false
+    }
+
+    define IDirectory* CreateDirectory() {
+        return new AnonymousFAT32Directory(this->FS)
+    }
+    define IFile* CreateFile() {
+        return new AnonymousFAT32File(this->FS)
+    }
+
+    define i8 Insert(VFSDirectoryEntry* Entry) {
+        return this->Directory->Insert(Entry)
+    }
+    define i8 Remove(i8* Name) {
+        return this->Directory->Remove(Name)
+    }
+}
+
+class FAT32File implements IFile, derives INew {
+    FAT32Device* FS
+    
+    i32 ParentDirectoryCluster
+    FAT32DirectoryEntry Entry
+
+    define void New(FAT32Device* FS, i32 ParentDirectoryCluster, FAT32DirectoryEntry* Entry) {
+        this->FS := FS
+
+        this->ParentDirectoryCluster := ParentDirectoryCluster
+        MoveMemory(this~>Entry, Entry, #FAT32DirectoryEntry)
+    }
+
+    define i8 IsEphemeral() {
+        return false
+    }
+
+    define IFileHandle* Open(i32 Flags) {
+        return new FAT32FileHandle(
+            this->FS,
+            this->ParentDirectoryCluster, this~>Entry
+        )
+    }
+}
+
+
 struct FAT32DirectoryEnumerateState {
     i32 Handle
 }
@@ -61,6 +171,7 @@ class FAT32Directory implements IDirectory, derives INew {
             }
             else if (Entry->IsFile()) {
                 NewCacheEntry.Type := VFSDirectoryEntryType::File
+                NewCacheEntry.File := FAT32File:New(this->FS, this->Cluster, Entry)
             }
             else {
                 return null
@@ -99,21 +210,27 @@ class FAT32Directory implements IDirectory, derives INew {
     define i8 Next(void** RawState, VFSDirectoryEntry* Result) {
         FAT32DirectoryEnumerateState* State := RawState As void*
 
-        FAT32DirectoryEntry* Next := this->FS->WalkDirectoryNext(this->Cluster, State~>Handle)
+        loop {
+            FAT32DirectoryEntry* Next := this->FS->WalkDirectoryNext(this->Cluster, State~>Handle)
 
-        if (Next) {
-            i8[128] NameBuffer
-            Next->GetName(NameBuffer)
+            if (Next = null) {
+                break
+            }
 
-            VFSDirectoryEntry* Cached := this->FindOrCacheEntry(NameBuffer, Next)
+            if (Next && Next->Attributes != FAT32_DIRECTORY_ENTRY_ATTRIBUTE_VOLUME_ID) {
+                i8[128] NameBuffer
+                Next->GetName(NameBuffer)
 
-            if (Cached) {
-                if (Cached->Type = VFSDirectoryEntryType::Hole) {
-                    return this->Next(RawState, Result)
-                }
-                else {
-                    MoveMemory(Result, Cached, #VFSDirectoryEntry)
-                    return true
+                VFSDirectoryEntry* Cached := this->FindOrCacheEntry(NameBuffer, Next)
+
+                if (Cached) {
+                    if (Cached->Type = VFSDirectoryEntryType::Hole) {
+                        return this->Next(RawState, Result)
+                    }
+                    else {
+                        MoveMemory(Result, Cached, #VFSDirectoryEntry)
+                        return true
+                    }
                 }
             }
         }
@@ -126,20 +243,81 @@ class FAT32Directory implements IDirectory, derives INew {
     }
 
     define IDirectory* CreateDirectory() {
-        i32 DirectoryClusterNumber := this->FS->AllocateCluster()
-
-        return FAT32Directory:New(this->FS, DirectoryClusterNumber)
+        return new AnonymousFAT32Directory(this->FS)
     }
     define IFile* CreateFile() {
-        i32 FileClusterNumber := this->FS->AllocateCluster()
-
-        return null
+        return new AnonymousFAT32File(this->FS)
     }
 
     define i8 Insert(VFSDirectoryEntry* Entry) {
         ;this->Children->Insert(FNV1A(Entry->Name), Entry)
 
-        Print("PANIC: FAT32 WRITE\n")
+        i64 Hash := FNV1A(Entry->Name)
+
+        this->Cache->Print()
+
+        VFSDirectoryEntry* ExistingEntry := this->Cache->Get(Hash)
+
+        if (ExistingEntry && ExistingEntry->Type != VFSDirectoryEntryType::Hole) {
+            return false
+        }
+
+        if (Entry->Type = VFSDirectoryEntryType::Directory) {
+            AnonymousFAT32Directory* AnonymousDirectory := Entry->Directory As AnonymousFAT32Directory*
+
+            i32 DirectoryCluster := this->FS->CreateDirectory(this->Cluster, Entry->Name)
+            FAT32Directory* ActualDirectory := new FAT32Directory(this->FS, DirectoryCluster)
+
+            void* State := AnonymousDirectory->Enumerate()
+            VFSDirectoryEntry AnonymousEntry
+
+            while (AnonymousDirectory->Next(&State, &AnonymousEntry)) {
+                ActualDirectory->Insert(&AnonymousEntry)
+            }
+
+            MoveMemory(AnonymousDirectory, ActualDirectory, #FAT32Directory)
+            Free(ActualDirectory)
+
+            VFSDirectoryEntry NewCacheEntry {
+                Name: CloneMemory(Entry->Name, StringLength(Entry->Name) + 1),
+                Type: VFSDirectoryEntryType::Directory,
+                Directory: AnonymousDirectory
+            }
+
+            this->Cache->Insert(Hash, &NewCacheEntry)
+        }
+        else if (Entry->Type = VFSDirectoryEntryType::File) {
+            AnonymousFAT32File* AnonymousFile := Entry->File As AnonymousFAT32File*
+
+            i32 FirstCluster := this->FS->CreateFile(this->Cluster, Entry->Name)
+            FAT32DirectoryEntry* ActualEntry := this->FS->FindDirectoryEntryByName(this->Cluster, Entry->Name)
+            FAT32File* ActualFile := new FAT32File(this->FS, this->Cluster, ActualEntry)
+
+            if (AnonymousFile->Handle) {
+                ; If the anonymous file has been written to, copy its contents to the actual file on disk.
+
+                IFileHandle* ActualHandle := ActualFile->Open()
+
+                ActualHandle->Write(
+                    AnonymousFile->Handle->Buffer,
+                    AnonymousFile->Handle->Size
+                )
+
+                ActualHandle->Close()
+            }
+
+            ; may god forgive us
+            MoveMemory(AnonymousFile, ActualFile, #FAT32File)
+            Free(ActualFile)
+
+            VFSDirectoryEntry NewCacheEntry {
+                Name: CloneMemory(Entry->Name, StringLength(Entry->Name) + 1),
+                Type: VFSDirectoryEntryType::File,
+                File: AnonymousFile
+            }
+
+            this->Cache->Insert(Hash, &NewCacheEntry)
+        }
 
         return true
     }

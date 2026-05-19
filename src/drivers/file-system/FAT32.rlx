@@ -1,4 +1,6 @@
 #Require "./src/drivers/block-device/BlockDevice.rlx"
+#Require "./src/drivers/file-system/Common.rlx"
+#Require "./src/kernel/file-system/Handle.rlx"
 
 i8 FAT32_MEDIA_TYPE_FIXED := 0xF8 As i8
 i8 FAT32_MEDIA_TYPE_REMOVABLE := 0xF0 As i8
@@ -224,7 +226,9 @@ struct FAT32DirectoryCluster {
 	}
 }
 
-struct FAT32Device {
+declare IFileHandle* FAT32OpenEntry(FAT32Device*, i32, FAT32DirectoryEntry*)
+
+class FAT32Device {
 	IBlockDevice* Device
 	
 	FAT32BootSector RawHeader
@@ -297,7 +301,22 @@ struct FAT32Device {
 	define i32 ClusterToSector(i32 Cluster) {
 		return this->FirstClusterSector + (Cluster - 2) * this->SectorsPerCluster
 	}
-	
+
+	define void Status(FAT32DirectoryEntry* Entry, FileStatus* Out) {
+		Out->Size := Entry->FileSize
+		Out->BlockSize := this->ClusterSize
+		Out->BlockCount := (Entry->FileSize / this->ClusterSize) + 1
+
+		Out->Mode := 0o777
+
+		if (Entry->IsDirectory()) {
+			Out->Type := FileStatusType::Directory
+		}
+		else {
+			Out->Type := FileStatusType::File
+		}
+	}
+
 	define i32 ReadFAT(i32 Index) {
 		i32 Sector := Index / FAT32_FAT_ENTRIES_PER_SECTOR
 		i32 IndexInSector := Index % FAT32_FAT_ENTRIES_PER_SECTOR
@@ -354,6 +373,26 @@ struct FAT32Device {
 		this->WriteFAT(Previous, Result)
 		
 		return Result
+	}
+
+	define i32 EnsureClusterForOffset(i32 FirstCluster, i32 Offset) {
+		i32 Current := FirstCluster
+
+		if (Current < 2) {
+			return -1
+		}
+
+		for (i32 Index := 0, Index < Offset, Index += 1) {
+			i32 Next := this->ReadFAT(Current)
+
+			if (Next >= 0x0FFF_FFF7 || Next < 0) {
+				Next := this->AllocateChainedCluster(Current)
+			}
+
+			Current := Next
+		}
+
+		return Current
 	}
 	
 	define i32 LookupClusterChain(i32 First, i32 Offset) {
@@ -455,52 +494,54 @@ struct FAT32Device {
 		return Result
 	}
 	
-	define i32 AddDirectoryEntry(i32 DirectoryCluster, FAT32DirectoryEntry* New) {
+	define i32 InsertDirectoryEntry(i32 DirectoryCluster, FAT32DirectoryEntry* New) {
 		i32 EntryIndex := 0
-		
+
+		i32 CurrentCluster := DirectoryCluster
+
+		Print("Adding directory entry to cluster %i\n", DirectoryCluster)
+		Print("%hexdump\n", New, #FAT32DirectoryEntry)
+		Print("\n\n")
+
 		loop {
-			i32 ClusterIndex := EntryIndex / 16
-			i32 IndexInCluster := EntryIndex % 16
-			
-			i32 Cluster := this->LookupClusterChain(DirectoryCluster, ClusterIndex)
-			
-			if (Cluster = -1) {
-				i32 LastDirectoryCluster := this->LookupClusterChain(DirectoryCluster, ClusterIndex - 1)
-				i32 NewDirectoryCluster := this->AllocateChainedCluster(LastDirectoryCluster)
+			this->ReadClusterData(CurrentCluster, this->TempDirectorySector)
+
+			for (i32 Index := 0, Index < 16, Index++) {
+				FAT32DirectoryEntry* Entry := this->TempDirectorySector->At(Index)
 				
-				MoveMemory(this->TempDirectorySector->At(0), New, #FAT32DirectoryEntry)
-				this->TempDirectorySector->At(1)->Name[0] := 0
+				if (Entry->Name[0] = 0 || Entry->Name[0] = FAT32_DIRECTORY_ENTRY_NAME_DELETED) {
+					Print("Found free entry at index %i in cluster %i\n", Index, CurrentCluster)
+
+					Print("%hexdump\n", Entry, #FAT32DirectoryEntry)
+
+					MoveMemory(Entry, New, #FAT32DirectoryEntry)
+					
+					this->WriteClusterData(CurrentCluster, this->TempDirectorySector)
+					
+					return EntryIndex
+				}
 				
-				this->WriteClusterData(DirectoryCluster, ClusterIndex, this->TempDirectorySector)
+				EntryIndex += 1
+			}
+
+			i32 NextCluster := this->ReadFAT(CurrentCluster)
+
+			if (NextCluster >= 0x0FFF_FFF7 || NextCluster < 0) {
+				break
 			}
 			else {
-				this->ReadClusterData(DirectoryCluster, ClusterIndex, this->TempDirectorySector)
-				
-				FAT32DirectoryEntry* Next := this->TempDirectorySector->At(IndexInCluster)
-				
-				if (Next~>Name[0] = 0) {
-					FAT32DirectoryEntry* TailEntry := this->TempDirectorySector->At(IndexInCluster)
-					
-					MoveMemory(TailEntry, New, #FAT32DirectoryEntry)
-					
-					this->WriteClusterData(DirectoryCluster, ClusterIndex, this->TempDirectorySector)
-				}
-				else if (Next~>Name[0] = FAT32_DIRECTORY_ENTRY_NAME_DELETED) {
-					MoveMemory(Next, New, #FAT32DirectoryEntry)
-					
-					this->WriteClusterData(DirectoryCluster, ClusterIndex, this->TempDirectorySector)
-				}
-				else {
-					EntryIndex += 1
-					
-					continue
-				}
+				CurrentCluster := NextCluster
 			}
-			
-			return EntryIndex
 		}
+
+		i32 AllocatedCluster := this->AllocateChainedCluster(CurrentCluster)
+
+		FastZeroMemory(this->TempDirectorySector, this->ClusterSize)
+		MoveMemory(this->TempDirectorySector->At(0), New, #FAT32DirectoryEntry)
 		
-		return -1
+		this->WriteClusterData(AllocatedCluster, this->TempDirectorySector)
+		
+		return EntryIndex
 	}
 	
 	define i32 FindDirectoryEntryIndexByName(i32 DirectoryCluster, i8* Name) {
@@ -618,34 +659,38 @@ struct FAT32Device {
 		FAT32DirectoryEntry TempDirectoryEntry
 	}
 	
-	define i32 MakeDirectoryEntry(i32 DirectoryCluster, i8* Name, i8 Attributes, i32 Size, i32 FirstCluster) {
+	define i32 CreateDirectoryEntry(i32 DirectoryCluster, i8* Name, i8 Attributes, i32 Size, i32 FirstCluster) {
 		for (i32 Index := 0, Index < 32, Index++) {
 			this->TempDirectoryEntryBuffer[Index] := 0
 		}
 		
 		FAT32DirectoryEntry* New := this~>TempDirectoryEntry
+
+		Print("Directory entry for %i.%s cluster %i\n", DirectoryCluster, Name, FirstCluster)
 		
 		New->SetName(Name)
 		New->SetFirstCluster(FirstCluster)
 		New->Attributes := Attributes
 		New->FileSize := Size
 		
-		return this->AddDirectoryEntry(DirectoryCluster, New)
+		return this->InsertDirectoryEntry(DirectoryCluster, New)
 	}
-	define i32 MakeDirectoryEntry(i32 DirectoryCluster, i8* Name, i8 Attributes, i32 FirstCluster) {
-		return this->MakeDirectoryEntry(DirectoryCluster, Name, Attributes, 0, FirstCluster)
+	define i32 CreateDirectoryEntry(i32 DirectoryCluster, i8* Name, i8 Attributes, i32 FirstCluster) {
+		return this->CreateDirectoryEntry(DirectoryCluster, Name, Attributes, 0, FirstCluster)
 	}
-	define i32 MakeFile(i32 DirectoryCluster, i8* Name) {
-		return this->MakeDirectoryEntry(DirectoryCluster, Name, 0, this->AllocateCluster())
+	define i32 CreateFile(i32 DirectoryCluster, i8* Name) {
+		return this->CreateDirectoryEntry(DirectoryCluster, Name, 0, this->AllocateCluster())
 	}
-	define i32 MakeDirectory(i32 DirectoryCluster, i8* Name) {
+	define i32 CreateDirectory(i32 DirectoryCluster, i8* Name) {
 		i32 NewDirectoryCluster := this->AllocateCluster()
+
+		Print("Allocated cluster %i for new directory %i.%s\n", NewDirectoryCluster, DirectoryCluster, Name)
 		
-		i32 Result := this->MakeDirectoryEntry(DirectoryCluster, Name, FAT32_DIRECTORY_ENTRY_ATTRIBUTE_DIRECTORY, NewDirectoryCluster)
-		this->MakeDirectoryEntry(NewDirectoryCluster, ".", FAT32_DIRECTORY_ENTRY_ATTRIBUTE_DIRECTORY, NewDirectoryCluster)
-		this->MakeDirectoryEntry(NewDirectoryCluster, "..", FAT32_DIRECTORY_ENTRY_ATTRIBUTE_DIRECTORY, 0)
+		this->CreateDirectoryEntry(DirectoryCluster, Name, FAT32_DIRECTORY_ENTRY_ATTRIBUTE_DIRECTORY, NewDirectoryCluster)
+		this->CreateDirectoryEntry(NewDirectoryCluster, ".", FAT32_DIRECTORY_ENTRY_ATTRIBUTE_DIRECTORY, NewDirectoryCluster)
+		this->CreateDirectoryEntry(NewDirectoryCluster, "..", FAT32_DIRECTORY_ENTRY_ATTRIBUTE_DIRECTORY, DirectoryCluster)
 		
-		return Result
+		return NewDirectoryCluster
 	}
 	
 	
@@ -716,9 +761,9 @@ struct FAT32Device {
 		FAT32DirectoryEntry* VolumeIDEntry := Alloc(#FAT32DirectoryEntry)
 
 		VolumeIDEntry->Attributes := FAT32_DIRECTORY_ENTRY_ATTRIBUTE_VOLUME_ID
-		MoveMemory(VolumeIDEntry->Name, "NO NAME    ", 11)
+		MoveMemory(VolumeIDEntry->Name, "NO_NAME    ", 11)
 
-		this->AddDirectoryEntry(this->Header->RootDirectoryCluster, VolumeIDEntry)
+		this->InsertDirectoryEntry(this->Header->RootDirectoryCluster, VolumeIDEntry)
 	}
 
 	define void BurnLabel(i8* Label) {
@@ -738,21 +783,165 @@ struct FAT32Device {
 
 		this->UpdateDirectoryEntry(this->Header->RootDirectoryCluster, 0, VolumeIDEntry)
 	}
+
+	define IFileHandle* OpenEntry(i32 ParentDirectoryCluster, FAT32DirectoryEntry* Entry) {
+		return FAT32OpenEntry(this, ParentDirectoryCluster, Entry)
+	}
 }
 
-/*
-struct FAT32FileHandle {
-	#Include "./src/kernel/file-system/HandleInstance.rlx"
-
+class FAT32FileHandle implements IFileHandle, IFileBlockHandle, derives INew {
 	FAT32Device* FS
-	
+
+	i32 ParentDirectoryCluster
 	FAT32DirectoryEntry Entry
 
-	define i32 Read(void* Buffer, i32 Size) {
+	i32 FirstCluster
 
+	BlockAlignedIO* AlignedIO
+	void* ScratchBlock
+
+	define void New(FAT32Device* FS, i32 ParentDirectoryCluster, FAT32DirectoryEntry* Entry) {
+		this->FS := FS
+
+		this->ParentDirectoryCluster := ParentDirectoryCluster
+		MoveMemory(this~>Entry, Entry, #FAT32DirectoryEntry)
+		
+		this->FirstCluster := this~>Entry->GetFirstCluster()
+
+		this->AlignedIO := new BlockAlignedIO(this)
+		this->ScratchBlock := Alloc(FS->ClusterSize)
+	}
+
+	i32 NextByteOffset
+
+	define void Status(FileStatus* Out) {
+		this->FS->Status(this~>Entry, Out)
+	}
+
+	define i32 GetFileBlockSize() {
+		return this->FS->ClusterSize
+	}
+
+	define i8 ReadFileBlock(i32 LogicalBlockNumber, void* Buffer) {
+		i32 Cluster := this->FS->LookupClusterChain(this->FirstCluster, LogicalBlockNumber)
+
+		if (Cluster = -1) {
+			return false
+		}
+
+		this->FS->ReadClusterData(Cluster, Buffer)
+
+		return true
+	}
+
+	define i8 WriteFileBlock(i32 LogicalBlockNumber, void* Buffer) {
+		Print("Write file block %i\n", LogicalBlockNumber)
+
+		i32 Cluster := this->FS->EnsureClusterForOffset(this->FirstCluster, LogicalBlockNumber)
+
+		Print("Maps to cluster %i\n", Cluster)
+
+		if (Cluster = -1) {
+			return false
+		}
+
+		this->FS->WriteClusterData(Cluster, Buffer)
+
+		return true
+	}
+
+	define i32 Read(void* Buffer, i32 Size) {
+		return this->AlignedIO->Read(this~>NextByteOffset, this~>Entry->FileSize, Buffer, Size, this->ScratchBlock)
 	}
 	define i32 Write(void* Buffer, i32 Size) {
-		
+		Print("Write %i bytes at offset %i\n", Size, this->NextByteOffset)
+		this->AlignedIO->Write(this~>NextByteOffset, this~>Entry~>FileSize, Buffer, Size, this->ScratchBlock)
+
+		this->FS->UpdateDirectoryEntry(this->ParentDirectoryCluster, this~>Entry->Name, this~>Entry)
+
+		return Size
+	}
+	define i32 Seek(i32 Destination, SeekMode Mode) {
+		if (Mode = SeekMode::Set) {
+			this->NextByteOffset := Destination
+		}
+		else if (Mode = SeekMode::Offset) {
+			this->NextByteOffset += Destination
+		}
+		else if (Mode = SeekMode::End) {
+			this->NextByteOffset := this~>Entry->FileSize + Destination
+		}
+
+		if (this->NextByteOffset < 0) {
+			this->NextByteOffset := 0
+			Throw(HANDLE_ERROR_BAD_PARAMETER)
+		}
+
+		return this->NextByteOffset
+	}
+	define i32 Tell() {
+		return this->NextByteOffset
 	}
 }
-*/
+
+class FAT32DirectoryHandle implements IFileHandle, derives INew {
+	FAT32Device* FS
+
+	i32 ParentDirectoryCluster
+	FAT32DirectoryEntry Entry
+
+	define void New(FAT32Device* FS, i32 ParentDirectoryCluster, FAT32DirectoryEntry* Entry) {
+		this->FS := FS
+		this->ParentDirectoryCluster := ParentDirectoryCluster
+		MoveMemory(this~>Entry, Entry, #FAT32DirectoryEntry)
+	}
+
+	i32 NextEntryIndex
+
+	define i32 GetDirectoryCluster() {
+		return this->Entry.GetFirstCluster()
+	}
+
+	define void Status(FileStatus* Out) {
+		this->FS->Status(this~>Entry, Out)
+	}
+	define void Seek(i32 Destination, SeekMode Mode) {
+		if (Mode = SeekMode:Set) {
+			this->NextEntryIndex := Destination
+		}
+		else if (Mode = SeekMode:Offset) {
+			this->NextEntryIndex += Destination
+		}
+
+		if (Mode = SeekMode:End || this->NextEntryIndex < 0) {
+			this->NextEntryIndex := 0
+			Throw(HANDLE_ERROR_BAD_PARAMETER)
+		}
+	}
+	define i32 Tell() {
+		return this->NextEntryIndex
+	}
+
+	define i32 Read(DirectoryEntry* Out, i32 Count) {
+		return 0
+	}
+
+	define IFileHandle* Open(i8* Path) {
+		FAT32DirectoryEntry* Found := this->FS->FindDirectoryEntryByPath(this->GetDirectoryCluster(), Path)
+
+		if (Found = null) {
+			return null
+		}
+
+		return this->FS->OpenEntry(this->GetDirectoryCluster(), Found)
+	}
+}
+
+define IFileHandle* FAT32OpenEntry(FAT32Device* FS, i32 ParentDirectoryCluster, FAT32DirectoryEntry* Entry) {
+	if (Entry->IsDirectory()) {
+		return new FAT32DirectoryHandle(FS, ParentDirectoryCluster, Entry)
+	}
+	else {
+		return new FAT32FileHandle(FS, ParentDirectoryCluster, Entry)
+	}
+}
