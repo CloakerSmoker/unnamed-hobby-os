@@ -424,3 +424,114 @@ define void ExecuteEcho(i64 ArgC, i8** ArgV) {
 }
 
 i32 ECHO_COMMAND_ID := RegisterCommand("echo", &ExecuteEcho)
+
+define void ExecuteMakeNode(i64 ArgC, i8** ArgV) {
+    if (ArgC != 4) {
+        return
+    }
+
+    i8* Path := ArgV[1]
+    i8* TypeString := ArgV[2]
+    i8* MajorMinor := ArgV[3]
+
+    i8 Type := TypeString[0]
+
+    if (StringEquals(TypeString, "block")) {
+        Type := 'b'
+    }
+    else if (StringEquals(TypeString, "char")) {
+        Type := 'c'
+    }
+    else {
+        Print("Invalid type '%s'\n", TypeString)
+        return
+    }
+
+    i32 Major := 0
+    i32 Minor := 0
+
+    for (i32 Index := 0, Index < StringLength(MajorMinor), Index++) {
+        if (MajorMinor[Index] = ':') {
+            MajorMinor[Index] := 0
+            Major := AToI(MajorMinor) As i32
+            Minor := AToI(&MajorMinor[Index + 1]) As i32
+            break
+        }
+    }
+
+    FilePath NodePath
+    ParsePath(Path, &NodePath)
+
+    IDirectory* ParentDirectory := LookupParentDirectory(CurrentDirectory, &NodePath)
+
+    if !(ParentDirectory) {
+        Print("'%s' not found\n", Path)
+        return
+    }
+
+    VFSDirectoryEntry OldEntry
+    if (ParentDirectory->Lookup(NodePath.FileName, &OldEntry)) {
+        Print("'%s' already exists\n", Path)
+        return
+    }
+
+    IFile* Node := ParentDirectory->CreateSpecialFile(Type, Major, Minor)
+
+    VFSDirectoryEntry Entry {
+        Type: VFSDirectoryEntryType::File,
+        Name: CloneString(NodePath.FileName),
+        File: Node
+    }
+
+    ParentDirectory->Insert(&Entry)
+}
+
+i32 MAKE_NODE_COMMAND_ID := RegisterCommand("mknod", &ExecuteMakeNode)
+
+define void ExecuteHardLink(i64 ArgC, i8** ArgV) {
+    if (ArgC != 3) {
+        return
+    }
+
+    i8* ExistingPath := ArgV[1]
+    i8* NewPath := ArgV[2]
+
+    VFSDirectoryEntry ExistingEntry
+    if !(Lookup(CurrentDirectory, ExistingPath, &ExistingEntry)) {
+        Print("'%s' not found\n", ExistingPath)
+        return
+    }
+
+    if (ExistingEntry.Type != VFSDirectoryEntryType::File) {
+        Print("'%s' not a file\n", ExistingPath)
+        return
+    }
+
+    IFile* ExistingFile := ExistingEntry.File
+
+    FilePath NewFilePath
+    ParsePath(NewPath, &NewFilePath)
+
+    IDirectory* ParentDirectory := LookupParentDirectory(CurrentDirectory, &NewFilePath)
+
+    if !(ParentDirectory) {
+        Print("'%s' not found\n", NewPath)
+        return
+    }
+
+    VFSDirectoryEntry OldEntry
+    if (ParentDirectory->Lookup(NewFilePath.FileName, &OldEntry)) {
+        Print("'%s' already exists\n", NewPath)
+        return
+    }
+
+    VFSDirectoryEntry Entry {
+        Type: VFSDirectoryEntryType::File,
+        Name: CloneString(NewFilePath.FileName),
+        File: ExistingFile
+    }
+
+    ParentDirectory->Insert(&Entry)
+}
+
+i32 HARD_LINK_COMMAND_ID := RegisterCommand("hardlink", &ExecuteHardLink)

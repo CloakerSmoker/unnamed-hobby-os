@@ -28,7 +28,7 @@ interface IDirectory {
 
     virtual IDirectory* CreateDirectory()
     virtual IFile* CreateFile()
-    virtual IFile* CreateSpecialFile(void* Data) {
+    virtual IFile* CreateSpecialFile(... Args) {
         return null
     }
 
