@@ -144,7 +144,23 @@ class VFSOverlayDirectory implements IDirectory, derives INew {
     }
 
     define IFile* CreateFile() {
-        Throw('UNIMP')
+        if (this->WriteMode = VFSOverlayWriteMode::OnlyEphemeralToOverlay) {
+            return this->Base->CreateFile()
+        }
+        else if (this->WriteMode = VFSOverlayWriteMode::AllToOverlay) {
+            return this->Overlay->CreateFile()
+        }
+
+        return null
+    }
+
+    define IFile* CreateSpecialFile(... Args) {
+        if (this->WriteMode = VFSOverlayWriteMode::OnlyEphemeralToOverlay) {
+            return this->Base->CreateSpecialFile(Args)
+        }
+        else if (this->WriteMode = VFSOverlayWriteMode::AllToOverlay) {
+            return this->Overlay->CreateSpecialFile(Args)
+        }
 
         return null
     }

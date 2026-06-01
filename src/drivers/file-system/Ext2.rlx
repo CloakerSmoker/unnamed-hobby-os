@@ -226,6 +226,10 @@ struct Ext2INode {
 	define void MakeMagicFile(i8 Type) {
 		this->SetType(Type)
 	}
+	define void MakeMagicFileMajorMinor(i8 Type, i32 Major, i32 Minor) {
+		this->SetType(Type)
+		this->DirectBlocks[0] := ((Major & 0xFF) << 8) | (Minor & 0xFF)
+	}
 	define i8 IsDirectory() {
 		return this->GetType() = INODE_DIRECTORY
 	}
@@ -1367,6 +1371,15 @@ class Ext2 {
 		i32 Result := this->CreateINode(&Node)
 
 		Node->MakeFile()
+		this->WriteINode(Node)
+
+		return Result
+	}
+	define i32 CreateSpecialFile(i8 EntryType, i32 Major, i32 Minor) {
+		Ext2INode* Node := null
+		i32 Result := this->CreateINode(&Node)
+
+		Node->MakeMagicFileMajorMinor(EntryType, Major, Minor)
 		this->WriteINode(Node)
 
 		return Result

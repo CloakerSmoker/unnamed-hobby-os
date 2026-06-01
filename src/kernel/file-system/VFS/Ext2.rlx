@@ -164,6 +164,34 @@ class VFSExt2Directory implements IDirectory, derives INew {
 
         return VFSExt2File:New(this->FS, this->FS->ReadINode(FileNodeNumber))
     }
+    define IFile* CreateSpecialFile(... Parameters) {
+        i32 ParameterCount := Parameters[0] As i32
+
+        if (ParameterCount = 3) {
+            i8 TypeCharacter := Parameters[3] As i8
+            i32 Major := Parameters[1] As i32
+            i32 Minor := Parameters[2] As i32
+
+            i8 EntryType := 0
+
+            if (TypeCharacter = 'C') {
+                EntryType := INODE_CHARACTER_DEVICE
+            }
+            else if (TypeCharacter = 'B') {
+                EntryType := INODE_BLOCK_DEVICE
+            }
+            else {
+                return null
+            }
+
+            i32 FileNodeNumber := this->FS->CreateSpecialFile(EntryType, Major, Minor)
+
+            return VFSExt2File:New(this->FS, this->FS->ReadINode(FileNodeNumber))
+        }
+        else {
+            return null
+        }
+    }
 
     define i8 Insert(VFSDirectoryEntry* Entry) {
         ;this->Children->Insert(FNV1A(Entry->Name), Entry)

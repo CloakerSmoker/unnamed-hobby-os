@@ -204,7 +204,7 @@ endef
 
 export GET_GUIDS_SCRIPT
 
-$(BUILD)/Disk.img: $(BUILD)/FAT32Tool.elf $(BUILD)/Ext2Tool.elf
+#$(BUILD)/Disk.img: $(BUILD)/FAT32Tool.elf $(BUILD)/Ext2Tool.elf
 $(BUILD)/Disk.img: $(BUILD)/Boot.efi $(BUILD)/Trampoline.elf $(BUILD)/Kernel.elf $(BUILD)/ACPICA.elf
 $(BUILD)/Disk.img: $(BUILD)/HostFileShell.elf
 $(BUILD)/Disk.img: $(BUILD)/doom.elf
@@ -225,7 +225,7 @@ $(BUILD)/Disk.img:
 		"import $(BUILD)/KernelCommandLine.txt KCMDLN.TXT" \
 		"quit"
 	
-	$(BUILD)/Ext2Tool.elf "File($@,512)>GPT(1)" \
+#	$(BUILD)/Ext2Tool.elf "File($@,512)>GPT(1)" \
 		"mkdir dev" \
 		"cd dev" \
 		"mknod tty1 c 4 1" \

@@ -137,7 +137,9 @@ class FAT32Directory implements IDirectory, derives INew {
                 break
             }
 
-            Count += 1
+            if (Next && Next->Attributes != FAT32_DIRECTORY_ENTRY_ATTRIBUTE_VOLUME_ID) {
+                Count += 1
+            }
         }
 
         return Count

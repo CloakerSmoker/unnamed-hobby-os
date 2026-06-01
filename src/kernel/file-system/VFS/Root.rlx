@@ -10,6 +10,9 @@ define void MountRoot(IDirectory* NewRoot) {
 
     IDirectory* Root := VFSOverlayDirectory:New(NewRoot, RootOverlay, VFSOverlayWriteMode::OnlyEphemeralToOverlay) As IDirectory*
 
+    Root->Insert(".", Root)
+    Root->Insert("..", Root)
+
     VFSRootOverlayDirectory:= RootOverlay
     VFSRootDirectory := Root
 }
@@ -96,7 +99,9 @@ define void ParsePath(i8* Path, i32 Length, FilePath* Out) {
         }
     }
 
-    Out->Append(Start, Length)
+    if (Start < Length) {
+        Out->Append(Start, Length)
+    }
 
     Out->Seal()
 }
@@ -112,7 +117,7 @@ define i8 Lookup(IDirectory* At, FilePath* Path, VFSDirectoryEntry* Result) {
         if (Path->Count = 0) {
             Result->Type := VFSDirectoryEntryType::Directory
             Result->Name := "/"
-            Result->Directory := Current
+            Result->Directory := VFSRootDirectory
 
             return true
         }
@@ -208,10 +213,16 @@ define i8 Mount(IDirectory* At, i8* RawPath, IDirectory* Root) {
         }
     }
 
+    IDirectory* Overlay := VFSDirectory:New()
+    IDirectory* RootOverlay := VFSOverlayDirectory:New(Root, Overlay, VFSOverlayWriteMode::OnlyEphemeralToOverlay)
+
+    RootOverlay->Insert(".", RootOverlay)
+    RootOverlay->Insert("..", Current)
+
     VFSDirectoryEntry NewEntry {
         Type: VFSDirectoryEntryType::Directory,
         Name: CloneString(Path->FileName),
-        Directory: Root
+        Directory: RootOverlay
     }
 
     if (Current->TypeID() = typeid:(VFSOverlayDirectory)) {
