@@ -1,8 +1,28 @@
 
 interface IFileBlockHandle {
     virtual i32 GetFileBlockSize()
+
     virtual i8 ReadFileBlock(i32 BlockNumber, void* Buffer)
+    virtual i8 ReadFileBlocks(i32 StartingBlockNumber, i32 BlockCount, void* Buffer) {
+        for (i32 Index := 0, Index < BlockCount, Index++) {
+            if !(this->ReadFileBlock(StartingBlockNumber + Index, Buffer + Index * this->GetFileBlockSize())) {
+                return false
+            }
+        }
+
+        return true
+    }
+
     virtual i8 WriteFileBlock(i32 BlockNumber, void* Buffer)
+    virtual i8 WriteFileBlocks(i32 StartingBlockNumber, i32 BlockCount, void* Buffer) {
+        for (i32 Index := 0, Index < BlockCount, Index++) {
+            if !(this->WriteFileBlock(StartingBlockNumber + Index, Buffer + Index * this->GetFileBlockSize())) {
+                return false
+            }
+        }
+
+        return true
+    }
 }
 
 class BlockAlignedIO derives INew {
@@ -50,13 +70,15 @@ class BlockAlignedIO derives INew {
 
         i32 FullBlockCount := Remaining / BlockSize
 
+        this->FileHandle->ReadFileBlocks(FirstBlock, FullBlockCount, Buffer)
+/* 
         for (i32 Index := 0, Index < FullBlockCount, Index += 1) {
             if !(this->FileHandle->ReadFileBlock(FirstBlock + Index, Buffer)) {
                 FastSetMemory8(Buffer, BlockSize, 0)
             }
 
             Buffer += BlockSize
-        }
+        } */
 
         Remaining -= FullBlockCount * BlockSize
 
@@ -64,6 +86,7 @@ class BlockAlignedIO derives INew {
             if !(this->FileHandle->ReadFileBlock(FirstBlock + FullBlockCount, ScratchBlock)) {
                 FastSetMemory8(ScratchBlock, BlockSize, 0)
             }
+
             MoveMemory(Buffer, ScratchBlock, Remaining)
         }
 
