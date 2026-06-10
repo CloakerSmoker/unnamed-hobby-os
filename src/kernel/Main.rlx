@@ -759,7 +759,7 @@ define void Main(TrampolineInfo* Info) {
 
 	Print("Initializing UHCI controller...\n")
 
-	;UHCIController->Setup()
+	UHCIController->Setup()
 
 	Info("UHCI Controller initialized\n")
 

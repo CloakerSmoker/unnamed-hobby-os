@@ -61,14 +61,15 @@ namespace USB::HubProtocol {
             Base->Length := 1
         }
 
-        define void GetHubDescriptor(DescriptorType Type, i8 Index, i16 Length) {
+        define void MakeGetHubDescriptor(DescriptorType Type, i8 Index, i16 Length) {
             SetupPacket* Base := this~>Base
 
             Base->To(RequestRecipient::Device, RequestType::Class, RequestDataPhaseDirection::DeviceToHost)
 
             Base->StandardRequest := StandardRequests::GET_DESCRIPTOR
-            Base->Value := Type As i16
-            Base->Index := Index
+            Base->GetDescriptor.Type := Type
+            Base->GetDescriptor.Index := Index
+            Base->Index := 0
             Base->Length := Length
         }
 
@@ -229,8 +230,10 @@ namespace USB::HubProtocol {
         define void PortThread() {
             Print("USB Hub Port Thread Started\n")
 
+            i8[64] StatusChangeBuffer
+
             loop {
-                i8* StatusChangeBuffer := this->StatusChangeTransfer->Wait()
+                this->StatusChangeTransfer->Read(StatusChangeBuffer)
 
                 Print("Hub Status Change\n")
 
@@ -321,13 +324,15 @@ namespace USB::HubProtocol {
             i64 HeaderBuffer := 0
             DescriptorHeader* Header := &HeaderBuffer As DescriptorHeader*
             
-            this->Setup->GetHubDescriptor(DescriptorType::Hub, 0, 8)
+            this->Setup->MakeGetHubDescriptor(DescriptorType::Hub, 0, #DescriptorHeader As i16)
             Base->SendControlTransferToDevice(this->Setup~>Base, Header, #DescriptorHeader)->Wait()->Free()
 
             i32 DescriptorLength := Header->Length
             this->Descriptor := Alloc(DescriptorLength)
 
-            this->Setup->GetHubDescriptor(DescriptorType::Hub, 0, Header->Length)
+            Print("Hub descriptor is %i bytes\n", DescriptorLength)
+
+            this->Setup->MakeGetHubDescriptor(DescriptorType::Hub, 0, Header->Length)
             Base->SendControlTransferToDevice(this->Setup~>Base, this->Descriptor, DescriptorLength)->Wait()->Free()
 
             Print("Hub Has %i Ports\n", this->Descriptor->PortCount)
@@ -342,7 +347,7 @@ namespace USB::HubProtocol {
 
             EndpointInfo* StatusChangeEndpoint := this->Info->Endpoints->At(0)
 
-            this->StatusChangeTransfer := Base->ScheduleInterruptTransfer(StatusChangeEndpoint->Number, RequestDataPhaseDirection::DeviceToHost, 128)
+            this->StatusChangeTransfer := Base->ScheduleInterruptTransfer(StatusChangeEndpoint->Number, RequestDataPhaseDirection::DeviceToHost, 8, StatusChangeEndpoint~>Descriptor->Interval)
 
             this->PortThreadTask := Scheduler->AddLightTask(null, "USB Hub Status Change Thread")
             this->PortThreadTask~>Context->CallMethod(this, &self.PortThread)

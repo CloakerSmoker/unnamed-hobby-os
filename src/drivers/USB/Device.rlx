@@ -100,19 +100,26 @@ namespace USB {
     }
 
     interface IPeriodicTransferHandle {
-        virtual void* Wait()
+        virtual i8 Write(void*, i8)
+        virtual void Write(void* Buffer) {
+            this->Write(Buffer, false) ; Blocking write by default
+        }
+
+        virtual i8 Read(void*, i8)
+        virtual void Read(void* Buffer) {
+            this->Read(Buffer, true) ; Blocking read by default
+        }
+        
         virtual void Stop()
         virtual void Free()
-
-        virtual i32 TransferredLength()
     }
 
     interface IController {
         virtual Bus* GetBus()
 
         virtual ITransferHandle* SendControlTransfer(i32, i32, TransferSpeed, SetupPacket*, void*, i32)
-        virtual ITransferHandle* SendBulkTransfer(i32, i32, TransferSpeed, void*, i32)
-        virtual IPeriodicTransferHandle* ScheduleInterruptTransfer(i32, i32, TransferSpeed, RequestDataPhaseDirection, i32)
+        virtual ITransferHandle* SendBulkTransfer(i32, i32, TransferSpeed, RequestDataPhaseDirection, void*, i32)
+        virtual IPeriodicTransferHandle* ScheduleInterruptTransfer(i32, i32, TransferSpeed, RequestDataPhaseDirection, i32, i32)
         virtual void Free(ITransferHandle*)
 
         virtual void Stop()
@@ -233,8 +240,8 @@ namespace USB {
             return null
         }
 
-        define IPeriodicTransferHandle* ScheduleInterruptTransfer(i32 Endpoint, RequestDataPhaseDirection Direction, i32 PollingInterval) {
-            return this->Controller->ScheduleInterruptTransfer(this->Address, Endpoint, this->Speed, Direction, PollingInterval)
+        define IPeriodicTransferHandle* ScheduleInterruptTransfer(i32 Endpoint, RequestDataPhaseDirection Direction, i32 Size, i32 PollingInterval) {
+            return this->Controller->ScheduleInterruptTransfer(this->Address, Endpoint, this->Speed, Direction, Size, PollingInterval)
         }
 
 
@@ -460,7 +467,12 @@ namespace USB {
 
             Print("Selecting configuration 0\n")
 
-            this~>Setup->MakeSetConfiguration(0)
+            ConfigurationInfo* Info := this->Configurations->At(0)
+            i8 Value := Info~>Descriptor->Value
+
+            Print("Configuation 0 is selected via value %i\n", Value)
+
+            this~>Setup->MakeSetConfiguration(Value)
             this->SendControlTransferToDevice(this~>Setup, null, 0)->Wait()->Free()
 
             this->CurrentConfiguration := this->Configurations->At(0)
@@ -530,6 +542,8 @@ namespace USB {
         }
 
         define Device* NotifyAttach() {
+            Print("Notifying bus %i of new USB device\n", this->BusNumber)
+
             i32 Address := this->NextAddress++
             
             this~>AssignAddressSetup->MakeSetAddress(Address As i8)

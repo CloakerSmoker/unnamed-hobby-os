@@ -767,7 +767,7 @@ namespace USB::HID {
         define IPeriodicTransferHandle* ScheduleInputReports() {
             EndpointInfo* Endpoint := this->Interface->Endpoints->At(0)
             
-            return this->Base->ScheduleInterruptTransfer(Endpoint->Number, RequestDataPhaseDirection::DeviceToHost, Endpoint~>Descriptor->Interval)
+            return this->Base->ScheduleInterruptTransfer(Endpoint->Number, RequestDataPhaseDirection::DeviceToHost, 64, Endpoint~>Descriptor->Interval)
         }
     }
 

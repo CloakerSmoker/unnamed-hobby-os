@@ -95,15 +95,23 @@ namespace USB::UHCI {
             TransferToken [0:7] Token
         }
 
-        i32 BufferPointer
+        i32 PhysicalBufferPointer
 
-        void* DataBuffer
-        i32 PeriodicFrameNumber
+        PeriodicTransferBuffer* PeriodicBuffer
+        void* Buffer
+        i64 ScheduledGlobalFrameNumber
     }
 
     struct QueueHead {
-        i32 HorizontalLink
-        i32 VerticalLink
+        union {
+            i32 HorizontalLink
+            i32 Link ; READ ONLY BY HC
+        }
+
+        union {
+            i32 VerticalLink
+            i32 ElementLink ; READ/WRITE BY HC
+        }
 
         i8* Name
         i8 Complete
@@ -111,6 +119,26 @@ namespace USB::UHCI {
         QueueHead* Previous
         TransferHandle* Handle
     }
+/*
+
+TDs are read-only for the HC
+QHs are read-only for the HC in their HorizontalLink, but VerticalLink is read/write for the HC
+
+Isochronous transfers get scheduled by linking their TDs directly into the frame list
+Since they have interval=1 and are always active, the HC will just execute them every frame and we can update their buffer and length as needed
+
+TDs will need distinct buffers since they might return less/no data sometimes
+
+The final isochronous TD (or the frame list entry itself if none) will point to a frame-specific QH for all interrupt transfers scheduled for that frame
+
+Interrupt transfers will be scheduled by linking their TDs into the vertical list of the frame-specific QH, and linking that QH into the frame list if it's not already linked for that frame. Since the HC always starts at the head of the frame list and executes all transfers linked there, we can guarantee interrupt transfers will be scheduled within 1ms of when we link them in.
+
+The horizontal link will point to a "control QH" for control transfers (depth first), and finally a "bulk QH" for bulk transfers (also depth first, so they run after control transfers). Both of these QHs will be linked into the frame list at all times, so we can just link transfer TDs into their vertical lists as needed.
+
+
+Periodic transfers (interrupt and isochronous) will need a pool of TDs/QHs that can be scheduled on demand since the HC might still be processing a TD when we want to schedule it for the next frame. For isochronous transfers this is easy since we can just have one TD per frame, but for interrupt transfers we'll need to have enough TDs in the pool to cover the worst case where we schedule a new transfer every ms and each transfer takes 255ms to complete (since the error count is 3, and the HC will retry a transfer up to 3 times on error before giving up and completing it with an error status). So in the worst case we'll need 256 TDs per interrupt transfer, but we can probably get away with much less in practice since most transfers should complete successfully within a few tries.
+
+*/
 
     struct PCIeOverlay {
         i8[0x20] _
@@ -126,52 +154,68 @@ namespace USB::UHCI {
         DepthFirst := 4
     }
 
-    enum QueueHeadPeriod {
-        _1_MS := 0,
-        _2_MS := 1,
-        _4_MS := 2,
-        _8_MS := 3,
-        _16_MS := 4,
-        _32_MS := 5,
-        _64_MS := 6,
-        _128_MS := 7,
-        _256_MS := 8,
-        _512_MS := 9,
-        _1024_MS := 10
+    enum TransferType {
+        Control,
+        Bulk
     }
 
     class TransferHandle implements USB::ITransferHandle, derives INew {
+        TransferType Type
+
         IController* Controller
 
         SetupPacket* Setup
+
         QueueHead* QH
         PointerArray* TDs
 
-        void* OriginalDataBuffer
-        void* RelocatedDataBuffer
+        void* OriginalBuffer
+        void* RelocatedBuffer
+        i32 Size
 
-        define void New(IController* Controller, SetupPacket* Setup, QueueHead* QH, void* DataBuffer, void* RelocatedBuffer) {
+        Synchronization::Semaphore* Completed
+        i32 TransferredSize
+
+        define void New(TransferType Type, IController* Controller, QueueHead* QH, void* OriginalBuffer, void* RelocatedBuffer, i32 Size) {
+            this->Type := Type
+            
             this->Controller := Controller
 
-            this->Setup := Setup
             this->QH := QH
             this->TDs := new PointerArray()
 
-            this->OriginalDataBuffer := DataBuffer
-            this->RelocatedDataBuffer := RelocatedBuffer
+            this->OriginalBuffer := OriginalBuffer
+            this->RelocatedBuffer := RelocatedBuffer
+            this->Size := Size
+
+            this->Completed := new Synchronization::Semaphore(0)
 
             this->QH->Handle := this
+        }
+
+        define void New(IController* Controller, SetupPacket* Setup, QueueHead* QH, void* OriginalBuffer, void* RelocatedBuffer) {
+            this->Setup := Setup
+            
+            this->New(TransferType::Control, Controller, QH, OriginalBuffer, RelocatedBuffer, Setup->Length)
+        }
+
+        define void New(IController* Controller, QueueHead* QH, void* OriginalBuffer, void* RelocatedBuffer, i32 Size) {
+            this->New(TransferType::Bulk, Controller, QH, OriginalBuffer, RelocatedBuffer, Size)
         }
 
         define void AddTransferDescriptor(TransferDescriptor* TD) {
             this->TDs->Add(TD)
         }
 
+        define void* Read(i32* OutSize) {
+            return null
+        }
+
         define void Complete() {
             this->QH->Complete := true
 
             if (this->Setup->DataDirection = RequestDataPhaseDirection::DeviceToHost) {
-                void* Buffer := this->OriginalDataBuffer
+                void* Buffer := this->OriginalBuffer
                 i32 Count := this->TDs->Count()
 
                 for (i32 Index := 0, Index < Count, Index++) {
@@ -183,17 +227,18 @@ namespace USB::UHCI {
 
                     i32 Size := TD->ActualLength + 1
 
-                    MoveMemory(Buffer, TD->DataBuffer, Size)
+                    MoveMemory(Buffer, TD->Buffer, Size)
 
+                    this->TransferredSize += Size
                     Buffer += Size
                 }
             }
 
-            this->QH->Completed->Signal()
+            this->Completed->Signal()
         }
 
         define ITransferHandle* Wait() {
-            this->QH->Completed->Wait()
+            this->Completed->Wait()
 
             return this
         }
@@ -201,6 +246,7 @@ namespace USB::UHCI {
         define void Free() {
             this->Controller->Free(this)
             this->TDs->Free()
+            ;this->Completed->Free()
             this->Delete()
         }
     }
@@ -210,48 +256,197 @@ namespace USB::UHCI {
         Isochronous
     }
 
+    struct PeriodicTransferBuffer {
+        i32 Size
+        void* Buffer
+
+        static self* New(void* Buffer) {
+            self* this := Alloc(#self)
+
+            this->Buffer := Buffer
+
+            return this
+        }
+    }
+
     class PeriodicTransferHandle implements USB::IPeriodicTransferHandle, derives INew {
         IController* Controller
         
+        TransferSpeed Speed
         PeriodicTransferType Type
+        TransferToken Token
+
         i32 Period
         i32 Phase
+
+        i32 SingleTransferSize
+        i32 SingleTransferBandwidth ; Guesstimate in bytes
 
         PointerArray* ScheduledTDs
         PointerArray* FreeTDs
 
-        void* Buffer
-        i32 TransferredLength
+        ; These swap role based on token
+        ; IN  - FilledBuffers are filled by device, FreeBuffers are empty
+        ;       driver consumes filled buffers and returns them to free
+        ; OUT - FilledBuffers are filled by driver, FreeBuffers are empty
+        ;       driver consumes free buffers and returns them to free
+        
+        Synchronization::Lock* BuffersLock
+        PointerArray* FilledBuffers
+        PointerArray* ScheduledBuffers
+        PointerArray* FreeBuffers
 
         Synchronization::Semaphore* Fired
 
-        define void New(IController* Controller, PeriodicTransferType Type, i32 Period, i32 Phase, void* Buffer) {
+        define void New(IController* Controller, TransferSpeed Speed, PeriodicTransferType Type, TransferToken Token, i32 SingleTransferSize, i32 Period, i32 Phase) {
             this->Controller := Controller
+
+            this->Speed := Speed
             this->Type := Type
+            this->Token := Token
+            this->SingleTransferSize := SingleTransferSize
+
+            ; Guesstimate bandwidth usage of non-payload data as 32 bytes
+            this->SingleTransferBandwidth := 32
+
+            if (Speed = TransferSpeed::Low) {
+                ; Guess low speed transfers as taking 8x longer
+
+                this->SingleTransferBandwidth += (SingleTransferSize * 8)
+            }
+            else {
+                this->SingleTransferBandwidth += SingleTransferSize
+            }
+
             this->Period := Period
-            this->Buffer := Buffer
+            this->Phase := Phase
 
             this->ScheduledTDs := new PointerArray()
             this->FreeTDs := new PointerArray()
 
+            this->BuffersLock := new Synchronization::Lock()
+            this->FreeBuffers := new PointerArray()
+            this->ScheduledBuffers := new PointerArray()
+            this->FilledBuffers := new PointerArray()
+
             this->Fired := new Synchronization::Semaphore(0)
         }
 
-        define void Complete(i32 TransferredLength) {
-            this->TransferredLength := TransferredLength
+        define void ProvideTransferDescriptor(TransferDescriptor* TD) {
+            this->FreeTDs->Add(TD)
+        }
+        define void ProvideBuffer(void* Buffer) {
+            this->BuffersLock->Acquire()
+            this->FreeBuffers->Add(new PeriodicTransferBuffer(Buffer))
+            this->BuffersLock->Release()
+        }
+
+        define PeriodicTransferBuffer* ScheduleOutgoingBuffer() {
+            this->BuffersLock->Acquire()
+
+            PeriodicTransferBuffer* Result := null
+
+            if (this->Token = TransferToken::IN) {
+                if (this->FreeBuffers->Count() = 0) {
+                    Panic("UCHI: No free buffers available for periodic IN transfer!")
+                }
+
+                Result := this->FreeBuffers->Pop()
+            }
+            else if (this->Token = TransferToken::OUT) {
+                if (this->FilledBuffers->Count() = 0) {
+                    Panic("UCHI: No filled buffers available for periodic OUT transfer!")
+                }
+
+                Result := this->FilledBuffers->Pop()
+            }
+
+            this->ScheduledBuffers->Add(Result)
+
+            this->BuffersLock->Release()
+
+            return Result
+        }
+
+        define void RetireIncomingBuffer(void* Buffer) {
+            this->BuffersLock->Acquire()
+
+            this->ScheduledBuffers->RemoveValue(Buffer)
+
+            if (this->Token = TransferToken::IN) {
+                this->FreeBuffers->Add(Buffer)
+            }
+            else if (this->Token = TransferToken::OUT) {
+                this->FilledBuffers->Add(Buffer)
+            }
+
+            this->BuffersLock->Release()
+
             this->Fired->Signal()
         }
 
-        define void* Wait() {
-            this->Fired->Wait()
+        define i32 GetFreeBufferCount() {
+            this->BuffersLock->Acquire()
+            i32 Result := this->FreeBuffers->Count()
+            this->BuffersLock->Release()
 
-            return this->Buffer
+            return Result
         }
 
-        define i32 TransferredLength() {
-            return this->TransferredLength
+        define i32 GetFilledBufferCount() {
+            this->BuffersLock->Acquire()
+            i32 Result := this->FilledBuffers->Count()
+            this->BuffersLock->Release()
+
+            return Result
         }
 
+        define i8 Write(void* Data, i8 NonBlocking) {
+            if (this->Token != TransferToken::OUT) {
+                Panic("UHCI: Attempted to write to non-OUT periodic transfer!")
+            }
+
+            if (this->GetFreeBufferCount() = 0) {
+                if (NonBlocking) {
+                    return false
+                }
+
+                this->Fired->Wait()
+            }
+
+            this->BuffersLock->Acquire()
+            void* Buffer := this->FreeBuffers->Pop()
+            MoveMemory(Buffer, Data, this->SingleTransferSize)
+            this->FilledBuffers->Add(Buffer)
+            this->BuffersLock->Release()
+
+            return true
+        }
+
+        define i8 Read(void* Data, i8 NonBlocking) {
+            if (this->Token != TransferToken::IN) {
+                Panic("UHCI: Attempted to read from non-IN periodic transfer!")
+            }
+
+            if (this->GetFilledBufferCount() = 0) {
+                if (NonBlocking) {
+                    return false
+                }
+
+                this->Fired->Wait()
+            }
+
+            this->BuffersLock->Acquire()
+            void* Buffer := this->FilledBuffers->Pop()
+            MoveMemory(Data, Buffer, this->SingleTransferSize)
+            this->FreeBuffers->Add(Buffer)
+            this->BuffersLock->Release()
+
+            return true
+        }
+
+
+        
         define void Free() {
 
         }
@@ -276,13 +471,12 @@ namespace USB::UHCI {
         i64 HeapPoolPhysical
 
         QueueHead* ControlTransferQueue
-        QueueHead* ControlTransferQueueTail
-
         QueueHead* BulkTransferQueue
-        QueueHead* BulkTransferQueueTail
 
         PointerArray* QueueHeadsInFlight ; Control and bulk transfers waiting for completion, scheduled via their respective QH
-        PointerArray* PeriodicTransfers ; Interrupt and isochronous transfers, scheduled via `ScheduleNextQuarter`
+        
+        PointerArray* IsochronousTransfers
+        PointerArray* InterruptTransfers
 
         i32 IOBase
         i8 USBVersion
@@ -313,7 +507,8 @@ namespace USB::UHCI {
             Print("UCHI IOBase %x, Version %x\n", this->IOBase, this->USBVersion)
 
             this->QueueHeadsInFlight := new PointerArray()
-            this->PeriodicTransfers := new PointerArray()
+            this->InterruptTransfers := new PointerArray()
+            this->IsochronousTransfers := new PointerArray()
         }
 
         define USB::Bus* GetBus() {
@@ -390,7 +585,7 @@ namespace USB::UHCI {
             else {
                 TransferDescriptor* TD := this->PhysicalToVirtual(Link & 0x7FFF_FFF0)
 
-                Info("%x TransferDescriptor {%s, %i, %x} -> ", Link, nameof:(TD->Token), TD->MaximumLength, TD->BufferPointer)
+                Info("%x TransferDescriptor {%s, %i, %x} -> ", Link, nameof:(TD->Token), TD->MaximumLength, TD->PhysicalBufferPointer)
 
                 this->DumpLink(Indent, TD->Link)
             }
@@ -399,121 +594,267 @@ namespace USB::UHCI {
             this->DumpLink(0, Link)
         }
 
-        i8 Stopped
-
-        define i8 FrameWasInLast(i32 CurrentFrameNumber, i32 LastFrames, i32 FrameNumber) {
-            i32 Difference := CurrentFrameNumber - FrameNumber
-
-            if (Difference < 0) {
-                Difference += 1024
+        define void DumpLinkGraphVizInternal(i32 Link) {
+            if (Link & LinkFlags::Terminator) {
+                ; Terminator
             }
+            else if (Link & LinkFlags::IsQueueHead) {
+                ; Queue Head
 
-            return Difference < LastFrames
-        }
+                i32 DepthFirst := Link & LinkFlags::DepthFirst
 
-        define i32 TimeSinceFrame(i32 CurrentFrameNumber, i32 FrameNumber) {
-            i32 Difference := CurrentFrameNumber - FrameNumber
+                QueueHead* Queue := this->PhysicalToVirtual(Link & 0x7FFF_FFF0)
+                Info("\"%x\" [shape=box,label=\"QH %s\"];\n", Link & 0x7FFF_FFF0, Queue->Name)
 
-            if (Difference < 0) {
-                Difference += 1024
-            }
+                if (DepthFirst) {
+                    if (Queue->VerticalLink & LinkFlags::Terminator = 0) {
+                        Info("\"%x\" -> \"%x\" [label=\"Vertical (FIRST)\"];\n", Link & 0x7FFF_FFF0, Queue->VerticalLink & 0x7FFF_FFF0)
+                        this->DumpLinkGraphVizInternal(Queue->VerticalLink)
+                    }
 
-            return Difference
-        }
-
-        define i32 TimeUntilFrame(i32 CurrentFrameNumber, i32 FrameNumber) {
-            i32 Difference := FrameNumber - CurrentFrameNumber
-
-            if (Difference < 0) {
-                Difference += 1024
-            }
-
-            return Difference
-        }
-
-        define void ScheduleNextQuarter(i8 NeedsAlignment, i32 CurrentFrameNumber, PeriodicTransferHandle* Handle) {
-            i32 TimeUntilFinalScheduledFrame := 0
-
-            i32 Count := Handle->ScheduledTDs->Count()
-
-            ;Info("Before: %i Scheduled TDs, %i Free TDs\n", Count, Handle->FreeTDs->Count())
-
-            for (i32 Index := Count - 1, Index >= 0, Index--) {
-                TransferDescriptor* TD := Handle->ScheduledTDs->At(Index)
-
-                if (TD->Active = 0 || this->FrameWasInLast(CurrentFrameNumber, 256, TD->PeriodicFrameNumber)) {
-                    ; This frame is scheduled in the past (aka it's done and we can reuse the TD)
-
-                    Handle->ScheduledTDs->Remove(Index)
-                    Handle->FreeTDs->Push(TD)
-
-                    this->FrameList[TD->PeriodicFrameNumber] := this->PackLink(this->ControlTransferQueue, LinkFlags::IsQueueHead)
+                    if (Queue->HorizontalLink & LinkFlags::Terminator = 0) {
+                        Info("\"%x\" -> \"%x\" [label=\"Horizontal (NEXT)\"];\n", Link & 0x7FFF_FFF0, Queue->HorizontalLink & 0x7FFF_FFF0)
+                        this->DumpLinkGraphVizInternal(Queue->HorizontalLink)
+                    }
                 }
                 else {
-                    i32 TimeUntil := this->TimeUntilFrame(CurrentFrameNumber, TD->PeriodicFrameNumber)
+                    if (Queue->HorizontalLink & LinkFlags::Terminator = 0) {
+                        Info("\"%x\" -> \"%x\" [label=\"Horizontal (FIRST)\"];\n", Link & 0x7FFF_FFF0, Queue->HorizontalLink & 0x7FFF_FFF0)
+                        this->DumpLinkGraphVizInternal(Queue->HorizontalLink)
+                    }
 
-                    if (TimeUntil > TimeUntilFinalScheduledFrame) {
-                        TimeUntilFinalScheduledFrame := TimeUntil
+                    if (Queue->VerticalLink & LinkFlags::Terminator = 0) {
+                        Info("\"%x\" -> \"%x\" [label=\"Vertical (NEXT)\"];\n", Link & 0x7FFF_FFF0, Queue->VerticalLink & 0x7FFF_FFF0)
+                        this->DumpLinkGraphVizInternal(Queue->VerticalLink)
                     }
                 }
             }
+            else {
+                ; TD
+                TransferDescriptor* TD := this->PhysicalToVirtual(Link & 0x7FFF_FFF0)
 
-            ;Info("After: %i Scheduled TDs, %i Free TDs\n", Handle->ScheduledTDs->Count(), Handle->FreeTDs->Count())
+                i32 Length := TD->MaximumLength + 1
 
-            ;Info("%i frames until schedule runs out\n", TimeUntilFinalScheduledFrame)
+                if (Length = 0x800) {
+                    Length := 0
+                }
 
-            if (TimeUntilFinalScheduledFrame > 256) {
-                ; The next quarter is already scheduled, no need to do anything
+                Info("\"%x\" [shape=ellipse,label=\"TD %s, Len %i, DT %i\"];\n", Link & 0x7FFF_FFF0, nameof:(TD->Token), Length, TD->DataToggle)
 
-                return
-            }
-
-            i32 FinalScheduledFrame := CurrentFrameNumber + TimeUntilFinalScheduledFrame
-            i32 MaxScheduledFrame := CurrentFrameNumber + 256
-
-            if (NeedsAlignment && FinalScheduledFrame % Handle->Period != Handle->Phase) {
-                Info("FinalScheduledFrame %i is not aligned with Period %i\n", FinalScheduledFrame, Handle->Period)
-
-                i32 Remainder := FinalScheduledFrame % Handle->Period
-
-                FinalScheduledFrame += Handle->Period - Remainder
-            }
-
-            ;Info("Scheduling next quarter: %i to %i\n", FinalScheduledFrame, MaxScheduledFrame)
-
-            i32 Count := Handle->FreeTDs->Count()
-
-            for (i32 Index := Count - 1, Index >= 0, Index--) {
-                TransferDescriptor* TD := Handle->FreeTDs->At(Index)
-
-                TD->PeriodicFrameNumber := FinalScheduledFrame % 1024
-                FinalScheduledFrame += Handle->Period
-
-                TD->Link := this->FrameList[TD->PeriodicFrameNumber]
-                this->FrameList[TD->PeriodicFrameNumber] := this->PackLink(TD)
-
-                TD->Active := true
-
-                ;Info("Scheduling TD %x for frame %i\n", TD, TD->PeriodicFrameNumber)
-
-                Handle->FreeTDs->Remove(Index)
-                Handle->ScheduledTDs->Push(TD)
-
-                if (FinalScheduledFrame >= MaxScheduledFrame) {
-                    break
+                if (TD->Link & LinkFlags::Terminator = 0) {
+                    Info("\"%x\" -> \"%x\";\n", Link & 0x7FFF_FFF0, TD->Link & 0x7FFF_FFF0)
+                    this->DumpLinkGraphVizInternal(TD->Link)
                 }
             }
         }
 
-        define void ScheduleNextQuarter(i32 CurrentFrameNumber, PeriodicTransferHandle* Handle) {
-            this->ScheduleNextQuarter(0, CurrentFrameNumber, Handle)
+        define void DumpLinkGraphViz(i32 Link) {
+            Info("digraph G {\n")
+
+            this->DumpLinkGraphVizInternal(Link)
+
+            Info("}\n")
+        }
+
+        i8 Stopped
+
+        i64 RetiredHighWatermark
+        i64 ScheduledHighWatermark
+
+        define i32 ScheduleSinglePeriodicTransfer(i32** ppTailLink, PeriodicTransferHandle* Handle, i64 GlobalFrameNumber) {
+            if (GlobalFrameNumber % Handle->Period = Handle->Phase) {
+                ; This transfer should be scheduled in this frame
+
+                i32 FreeTDsCount := Handle->FreeTDs->Count()
+
+                if (FreeTDsCount = 0) {
+                    Panic("UHCI: No free TDs available for periodic transfer scheduling!\n")
+                }
+
+                TransferDescriptor* TD := Handle->FreeTDs->Pop()
+
+                TD->MaximumLength := (Handle->SingleTransferSize - 1) As i16
+
+                TD->PeriodicBuffer := Handle->ScheduleOutgoingBuffer()
+                TD->PhysicalBufferPointer := this->VirtualToPhysical(TD->PeriodicBuffer->Buffer)
+                
+                TD->ScheduledGlobalFrameNumber := GlobalFrameNumber
+                TD->Active := true
+
+                i32* pTailLink := *ppTailLink
+
+                pTailLink[0] := this->PackLink(TD, 0)
+                ppTailLink[0] := TD~>Link
+
+                Handle->ScheduledTDs->Push(TD)
+
+                return Handle->SingleTransferBandwidth
+            }
+
+            return 0
+        }
+
+        define void ScheduleSingleFrame(i64 GlobalFrameNumber) {
+            if (GlobalFrameNumber < this->ScheduledHighWatermark) {
+                return
+            }
+
+            i32 BandwidthScheduled := 0
+
+            ; Schedule all periodic transfers for this frame
+
+            i32 FrameNumber := (GlobalFrameNumber % 1024) As i32
+            i32* pTailLink := &this->FrameList[FrameNumber]
+
+
+            i32 IsochronousCount := this->IsochronousTransfers->Count()
+
+            for (i32 Index := 0, Index < IsochronousCount, Index++) {
+                PeriodicTransferHandle* Handle := this->IsochronousTransfers->At(Index)
+
+                BandwidthScheduled += this->ScheduleSinglePeriodicTransfer(&pTailLink, Handle, GlobalFrameNumber)
+            }
+
+            i32 InterruptCount := this->InterruptTransfers->Count()
+
+            for (i32 Index := 0, Index < InterruptCount, Index++) {
+                PeriodicTransferHandle* Handle := this->InterruptTransfers->At(Index)
+
+                BandwidthScheduled += this->ScheduleSinglePeriodicTransfer(&pTailLink, Handle, GlobalFrameNumber)
+            }
+
+            if (BandwidthScheduled > 900) {
+                Info("Warning: UHCI periodic bandwidth overcommit! Scheduled %i bytes for frame %i\n", BandwidthScheduled, FrameNumber)
+            }
+
+            *pTailLink := this->PackLink(this->ControlTransferQueue, LinkFlags::IsQueueHead | LinkFlags::DepthFirst)
+
+            ;pTailLink[0] := this->PackLink(this->ControlQueueHead, 0)
+        }
+
+
+        define void ScheduleNextQuarter(i64 GlobalFrameNumber) {
+            Info("Scheduling quarter %i - %i\n", GlobalFrameNumber, GlobalFrameNumber + 256)
+
+            i64 Target := GlobalFrameNumber + 256
+            i64 Gap := Target - this->ScheduledHighWatermark
+
+            Info("High Watermark %i, Gap %i\n", this->ScheduledHighWatermark, Gap)
+
+            for (i64 Index := 0, Index < Gap, Index++) {
+                this->ScheduleSingleFrame(this->ScheduledHighWatermark + Index)
+            }
+
+            this->ScheduledHighWatermark := Target
+        }
+
+        define void RetireSinglePeriodicTransfer(PeriodicTransferHandle* Handle, i64 GlobalFrameNumber) {
+            i32 ScheduledTDsCount := Handle->ScheduledTDs->Count()
+
+            for (i32 TDIndex := ScheduledTDsCount - 1, TDIndex >= 0, TDIndex--) {
+                TransferDescriptor* TD := Handle->ScheduledTDs->At(TDIndex)
+
+                if (TD->ScheduledGlobalFrameNumber = GlobalFrameNumber) {
+                    ; This TD was scheduled for this frame, retire it
+
+                    Handle->ScheduledTDs->Remove(TDIndex)
+                    Handle->FreeTDs->Push(TD)
+
+                    if !(TD->Active) {
+                        Info("UHCI: Retiring inactive periodic TD\n")
+                    }
+
+                    Handle->RetireIncomingBuffer(TD->Buffer)
+                }
+            }
+        }
+
+        define void RetireSingleFrame(i64 GlobalFrameNumber) {
+            if (GlobalFrameNumber < this->RetiredHighWatermark) {
+                return
+            }
+
+            this->RetiredHighWatermark := GlobalFrameNumber
+
+            i32 IsochronousCount := this->IsochronousTransfers->Count()
+
+            for (i32 Index := 0, Index < IsochronousCount, Index++) {
+                PeriodicTransferHandle* Handle := this->IsochronousTransfers->At(Index)
+
+                this->RetireSinglePeriodicTransfer(Handle, GlobalFrameNumber)
+            }
+
+            i32 InterruptCount := this->InterruptTransfers->Count()
+
+            for (i32 Index := 0, Index < InterruptCount, Index++) {
+                PeriodicTransferHandle* Handle := this->InterruptTransfers->At(Index)
+
+                this->RetireSinglePeriodicTransfer(Handle, GlobalFrameNumber)
+            }
+        }
+
+        define void RetirePastFrames(i64 GlobalFrameNumber) {
+            ; Called at least every 128 frames to retire any periodic transfers that were scheduled in the past but haven't been retired yet (e.g. because the interrupt thread was busy with something else when they were supposed to be retired)
+
+            i64 Gap := GlobalFrameNumber - this->RetiredHighWatermark
+
+            if (Gap >= 256) {
+                Panic("UHCI: 256 frame retirement gap")
+            }
+
+            for (i64 Index := 0, Index < Gap, Index++) {
+                this->RetireSingleFrame(this->RetiredHighWatermark + Index)
+            }
+        }
+
+        define void RetireQueueHeads(i64 GlobalFrameNumber) {
+            i32 Count := this->QueueHeadsInFlight->Count()
+
+            Info("**********\n")
+
+            this->DumpLinkGraphViz(this->PackLink(this->ControlTransferQueue, LinkFlags::IsQueueHead))
+
+            for (i32 Index := Count - 1, Index >= 0, Index--) {
+                ; Iterate backwards since we might remove items from the list
+
+                QueueHead* QH := this->QueueHeadsInFlight->At(Index)
+
+                if (QH->VerticalLink & 1) {
+                    Info("Retiring Queue Head %s (%x)\n", QH->Name, this->VirtualToPhysical(QH))
+
+                    ; This QH has been processed by the HC, retire it
+
+                    QH->Handle->Complete()
+
+                    this->QueueHeadsInFlight->Remove(Index)
+                }
+            }
+
+            QueueHead* Current := this->ControlTransferQueue
+
+            while (Current->HorizontalLink & LinkFlags::Terminator = 0) {
+                QueueHead* Next := this->PhysicalToVirtual(Current->HorizontalLink & 0x7FFF_FFF0)
+
+                if (Next = this->BulkTransferQueue) {
+                    break
+                }
+
+                if (Next->VerticalLink & LinkFlags::Terminator) {
+                    Current->HorizontalLink := Next->HorizontalLink
+                }
+            }
         }
 
         define i32 GetCurrentFrameNumber() {
             return (this->Read16(Registers::FrameNumber) As i32) & 0x3FF
         }
 
+        i32 CycleCounter
+        i32 LastFrameNumber
+
         define void InterruptThread() {
+            Print("UHCI Interrupt Thread started\n")
+
             loop {
                 i8 IsRealInterrupt := this->Interrupt->Wait(128)
 
@@ -521,57 +862,22 @@ namespace USB::UHCI {
 
                 i32 CurrentFrameNumber := this->GetCurrentFrameNumber()
 
-                i32 Count := this->PeriodicTransfers->Count()
-
-                for (i32 Index := 0, Index < Count, Index++) {
-                    PeriodicTransferHandle* Handle := this->PeriodicTransfers->At(Index)
-
-                    ; Check if any TDs scheduled for this handle have been recently completed
-
-                    i32 ScheduledTDsCount := Handle->ScheduledTDs->Count()
-
-                    for (i32 TDIndex := 0, TDIndex < ScheduledTDsCount, TDIndex++) {
-                        TransferDescriptor* TD := Handle->ScheduledTDs->At(TDIndex)
-
-                        ; If the TD is recent
-
-                        if (this->FrameWasInLast(CurrentFrameNumber, 256, TD->PeriodicFrameNumber)) {
-                            if !(TD->Active) {
-                                ; If the TD was completed
-
-                                Handle->Complete(TD->ActualLength + 1)
-                            }
-                        }
-                    }
-
-                    this->ScheduleNextQuarter(CurrentFrameNumber, Handle)
+                if (CurrentFrameNumber < this->LastFrameNumber) {
+                    this->CycleCounter++
+                    Print("New UHCI cycle: %i\n", this->CycleCounter)
                 }
 
-                i32 Count := this->QueueHeadsInFlight->Count()
+                this->LastFrameNumber := CurrentFrameNumber
 
-                for (i32 Index := Count - 1, Index >= 0, Index--) {
-                    QueueHead* QH := this->QueueHeadsInFlight->At(Index)
+                i64 GlobalFrameNumber := (this->CycleCounter * 1024) + CurrentFrameNumber
 
-                    ;Print("InterruptThread: IFQH #%i: VerticalLink %x, HorizontalLink %x\n", Index, QH->VerticalLink, QH->HorizontalLink)
 
-                    if (QH->VerticalLink & 1) {
-                        QH->Handle->Complete()
+                this->RetirePastFrames(GlobalFrameNumber)
+                this->ScheduleNextQuarter(GlobalFrameNumber)
 
-                        QH->Previous->VerticalLink := QH->HorizontalLink
+                Info("Scheduled out to %i\n", this->ScheduledHighWatermark)
 
-                        if (QH->HorizontalLink & LinkFlags::IsQueueHead) {
-                            QueueHead* NextQH := this->PhysicalToVirtual(QH->HorizontalLink & 0x7FFF_FFF0)
-                            NextQH->Previous := QH->Previous
-                        }
-
-                        ;this->Stop := true
-
-                        ;RegisterFields::Command CommandFields := 0 As RegisterFields::Command
-                        ;this->Write16(Registers::Command, CommandFields As i16)
-
-                        this->QueueHeadsInFlight->Remove(Index)
-                    }
-                }
+                this->RetireQueueHeads(GlobalFrameNumber)
             }
         }
 
@@ -594,6 +900,70 @@ namespace USB::UHCI {
             if (StatusFields.InterruptWasFromError) {
                 Print("UHCI Error!\n")
                 this->Stop()
+
+                i32 FrameNumber := this->GetCurrentFrameNumber()
+                i64 GlobalFrameNumber := (this->CycleCounter * 1024) + FrameNumber
+
+                Info("UHCI Controller Error at frame %i (global frame %i)\n", FrameNumber, GlobalFrameNumber)
+
+                this->DumpLinkGraphViz(this->FrameList[FrameNumber])
+
+                i32 ErrorLink := this->FrameList[FrameNumber]
+                i32 Current := ErrorLink
+                TransferDescriptor* TD := null
+
+                Info("FrameList[%i] = %x\n", FrameNumber, ErrorLink)
+
+                loop {
+                    i32 Next := LinkFlags::Terminator As i32
+
+                    if (Current & LinkFlags::IsQueueHead) {
+                        QueueHead* QH := this->PhysicalToVirtual(Current & 0x7FFF_FFF0)
+
+                        Info(" -> QH, HL: %x, VL: %x, DF? %i\n", QH->HorizontalLink, QH->VerticalLink, Current & LinkFlags::IsQueueHead)
+
+                        Next := QH->HorizontalLink
+                        i32 OppositeLink := QH->VerticalLink
+
+                        if (ErrorLink & LinkFlags::DepthFirst) {
+                            Next := QH->VerticalLink
+                            OppositeLink := QH->HorizontalLink
+                        }
+
+                        if (Next & LinkFlags::Terminator) {
+                            Next := OppositeLink
+                        }
+                    }
+                    else {
+                        TD := this->PhysicalToVirtual(Current & 0x7FFF_FFF0)
+                        
+                        Info("-> TD, done\n")
+
+                        break
+                    }
+
+                    if (Next & LinkFlags::Terminator) {
+                        break
+                    }
+
+                    Current := Next
+                }
+
+                i32 Size := TD->MaximumLength + 1
+
+                if (Size = 0x800) {
+                    Size := 0
+                }
+
+                Info("Error on TD %x, Token %s, Size %i, DT %i\n", this->VirtualToPhysical(TD), nameof:(TD->Token), Size, TD->DataToggle)
+
+                Info("{\n")
+                Info("\tActualLength: %i\n", TD->ActualLength)
+                Info("\tBitstuffError? %i\n", TD->BitstuffError)
+                Info("\tTimeoutOrCRCError? %i\n", TD->TimeoutOrCRCError)
+                Info("\tBabbleDetected? %i\n", TD->BabbleDetected)
+                Info("\tDataBufferError? %i\n", TD->DataBufferError)
+                Info("\tStalled? %i\n", TD->Stalled)
             }
             else if (StatusFields.HostSystemError) {
                 Print("UHCI Host System Error!\n")
@@ -641,19 +1011,23 @@ namespace USB::UHCI {
 
             if (Speed = TransferSpeed::Low) {
                 Out->IsLowSpeedDevice := true
-                Out->MaximumLength := 7
             }
             else {
                 Out->IsLowSpeedDevice := false
-                Out->MaximumLength := 63
             }
+
+            if (Length = 0) {
+                Length := 0x800
+            }
+
+            Out->MaximumLength := (Length - 1) As i16
             
             Out->ShouldInterruptOnComplete := true
             Out->Token := Token
             ;Out->ActualLength := Length As i16
 
             if (Buffer) {
-                Out->BufferPointer := this->VirtualToPhysical(Buffer)
+                Out->PhysicalBufferPointer := this->VirtualToPhysical(Buffer)
             }
 
             return Out
@@ -663,27 +1037,42 @@ namespace USB::UHCI {
             return this->Heap->Allocate(Size)
         }
 
-        define void ScheduleControlTransfer(TransferHandle* Handle) {
-            if (this->ControlTransferQueueTail) {
-                this->ControlTransferQueueTail->HorizontalLink := this->PackLink(Handle->QH, LinkFlags::IsQueueHead)
+        define QueueHead* FindQueueTail(QueueHead* Head, i32 AlternativeTerminator) {
+            QueueHead* Current := Head
+
+            loop {
+                i32 Horizontal := Current->HorizontalLink
+
+                if (Horizontal & LinkFlags::Terminator != 0 || Horizontal = AlternativeTerminator) {
+                    return Current
+                }
+
+                Current := this->PhysicalToVirtual(Horizontal & 0x7FFF_FFF0)
             }
 
-            this->ControlTransferQueueTail := Handle->QH
+            return null
+        }
 
-            Handle->HorizontalLink := this->PackLink(this->BulkTransferQueue, LinkFlags::IsQueueHead)
+        define void ScheduleControlTransfer(TransferHandle* Handle) {
+            i32 BulkTransferLink := this->PackLink(this->BulkTransferQueue, LinkFlags::IsQueueHead | LinkFlags::DepthFirst)
+
+            QueueHead* Tail := this->FindQueueTail(this->ControlTransferQueue, BulkTransferLink)
+
+            Handle->QH->HorizontalLink := BulkTransferLink
+
+            Tail->HorizontalLink := this->PackLink(Handle->QH, LinkFlags::IsQueueHead | LinkFlags::DepthFirst)
         }
 
         define void ScheduleBulkTransfer(TransferHandle* Handle) {
-            if (this->BulkTransferQueueTail) {
-                this->BulkTransferQueueTail->HorizontalLink := this->PackLink(Handle->QH, LinkFlags::IsQueueHead)
-            }
+            QueueHead* Tail := this->FindQueueTail(this->BulkTransferQueue, 0)
 
-            this->BulkTransferQueueTail := Handle->QH
+            Handle->QH->HorizontalLink := this->PackLink(null, LinkFlags::Terminator)
+
+            Tail->HorizontalLink := this->PackLink(Handle->QH, LinkFlags::IsQueueHead | LinkFlags::DepthFirst)
         }
 
         define ITransferHandle* SendBulkTransfer(i32 Address, i32 Endpoint, TransferSpeed Speed, RequestDataPhaseDirection DataDirection, void* Buffer, i32 DataLength) {
-            QueueHead* QH := this->AllocateQueueHead("Transfer")
-            QH->Completed := new Synchronization::Semaphore(0)
+            QueueHead* QH := this->AllocateQueueHead("Bulk Transfer")
 
             void* RelocatedBuffer := this->Heap->Allocate(DataLength)
 
@@ -712,7 +1101,8 @@ namespace USB::UHCI {
                 }
 
                 TransferDescriptor* TD := this->AllocateTransferDescriptor(Address, Endpoint, Speed, Token, PacketSize, PacketData)
-                TD->DataBuffer := PacketData
+                TD->Buffer := PacketData
+                TD->PhysicalBufferPointer := this->VirtualToPhysical(PacketData)
 
                 Handle->AddTransferDescriptor(TD)
 
@@ -741,9 +1131,18 @@ namespace USB::UHCI {
             return Handle
         }
 
+        i32 ControlTransferCount
+
         define ITransferHandle* SendControlTransfer(i32 Address, i32 Endpoint, TransferSpeed Speed, SetupPacket* Setup, void* Buffer, i32 DataLength) {
-            QueueHead* QH := this->AllocateQueueHead("Transfer")
-            QH->Completed := new Synchronization::Semaphore(0)
+            Info("SendControlTransfer to %i:%i, Speed %s, DataDirection %s, DataLength %i\n", Address, Endpoint, nameof:(Speed), nameof:(Setup->DataDirection), DataLength)
+            Info("%hexdump\n", Buffer, DataLength)
+
+            if (DataLength = 0) {
+                ;DisableInterrupts()
+                ;Panic("UHCI: Control transfer with zero data length is not supported in this implementation!")
+            }
+
+            QueueHead* QH := this->AllocateQueueHead(FormatString("Control Transfer %i", this->ControlTransferCount++))
 
             SetupPacket* RelocatedSetupPacket := this->Heap->Allocate(#SetupPacket)
             MoveMemory(RelocatedSetupPacket, Setup, #SetupPacket)
@@ -776,6 +1175,8 @@ namespace USB::UHCI {
             TransferDescriptor* Previous := SetupTD
             void* PacketData := RelocatedBuffer
 
+            i8 DataToggle := 1
+
             while (DataLength > 0) {
                 i32 PacketSize := MaxSize
 
@@ -784,15 +1185,20 @@ namespace USB::UHCI {
                 }
 
                 TransferDescriptor* TD := this->AllocateTransferDescriptor(Address, Endpoint, Speed, TransferToken::IN, PacketSize, PacketData)
-                TD->DataBuffer := PacketData
+                TD->DataToggle := DataToggle
+                TD->Buffer := PacketData
+                TD->PhysicalBufferPointer := this->VirtualToPhysical(PacketData)
 
-                Handle->AddTransferDescriptor(TD)
+                Handle->TDs->Push(TD)
 
                 PacketData += PacketSize
                 DataLength -= PacketSize
+                DataToggle := !DataToggle
             }
 
             TransferDescriptor* StatusTD := this->AllocateTransferDescriptor(Address, Endpoint, Speed, StatusToken, 0, null)
+
+            StatusTD->DataToggle := true
 
             Handle->AddTransferDescriptor(StatusTD)
 
@@ -809,43 +1215,44 @@ namespace USB::UHCI {
 
             this->QueueHeadsInFlight->Push(QH)
 
+            Info("=========== Scheduling %s ==========\n", QH->Name)
+
             ;this->DumpLink(this->PackLink(QH, LinkFlags::IsQueueHead))
             ;this->DumpLink(this->PackLink(this->PeriodicQueueHeads[QueueHeadPeriod::_1_MS], LinkFlags::IsQueueHead))
 
+            this->DumpLinkGraphViz(this->PackLink(QH, LinkFlags::IsQueueHead))
             this->ScheduleControlTransfer(Handle)
+            ;this->DumpLinkGraphViz(this->PackLink(QH, LinkFlags::IsQueueHead))
+            ;this->DumpLinkGraphViz(this->FrameList[0])
 
             return Handle
         }
 
-        define IPeriodicTransferHandle* ScheduleInterruptTransfer(i32 Address, i32 Endpoint, TransferSpeed Speed, RequestDataPhaseDirection Direction, i32 Period) {
+        define IPeriodicTransferHandle* ScheduleInterruptTransfer(i32 Address, i32 Endpoint, TransferSpeed Speed, RequestDataPhaseDirection Direction, i32 Size, i32 Period) {
+            Print("Scheduling interrupt transfer to %i:%i, Speed %s, Direction %s, Size %i, Period %i\n", Address, Endpoint, nameof:(Speed), nameof:(Direction), Size, Period)
+
             TransferToken Token := TransferToken::OUT
 
             if (Direction = USB::RequestDataPhaseDirection::DeviceToHost) {
                 Token := TransferToken::IN
             }
 
-            i32 MaxSize := 8
+            PeriodicTransferHandle* Handle := new PeriodicTransferHandle(
+                this, Speed, PeriodicTransferType::Interrupt, Token,
+                Size, Period, 0
+            )
 
-            if (Speed = TransferSpeed::Full) {
-                MaxSize := 64
-            }
+            i32 TransfersPerQuarter := (256 / Period) + 1
 
-            void* Buffer := this->Heap->Allocate(MaxSize)
-            PeriodicTransferHandle* Handle := new PeriodicTransferHandle(this, PeriodicTransferType::Interrupt, Period, 0, Buffer)
+            for (i32 Index := 0, Index < TransfersPerQuarter, Index++) {
+                TransferDescriptor* TD := this->AllocateTransferDescriptor(Address, Endpoint, Speed, Token, Size, null)
+                Handle->ProvideTransferDescriptor(TD)
 
-            i32 TDsPerQuarter := (256 / Period) + 1
-
-            for (i32 Index := 0, Index < TDsPerQuarter, Index++) {
-                TransferDescriptor* TD := this->AllocateTransferDescriptor(Address, Endpoint, Speed, Token, MaxSize, Buffer)
-
-                Handle->FreeTDs->Push(TD)
+                void* Buffer := this->Allocate(Size)
+                Handle->ProvideBuffer(Buffer)
             }
             
-            this->PeriodicTransfers->Push(Handle)
-
-            i32 CurrentFrameNumber := this->GetCurrentFrameNumber()
-
-            this->ScheduleNextQuarter(true, CurrentFrameNumber, Handle)
+            this->InterruptTransfers->Push(Handle)
 
             return Handle
         }
@@ -863,7 +1270,7 @@ namespace USB::UHCI {
             }
 
             this->Heap->Free(Transfer->QH)
-            this->Heap->Free(Transfer->RelocatedDataBuffer)
+            ;this->Heap->Free(Transfer->RelocatedDataBuffer)
         }
 
         define void WaitAndFree(ITransferHandle* Handle) {
@@ -943,20 +1350,7 @@ namespace USB::UHCI {
 
                     ;this->FrameList[200] := this->RemoveLinkFlag(this->FrameList[200], LinkFlags::Terminator)
 
-                    i32 Address := this->Bus->AssignAddress()
-
-                    Print("Setting address %i\n", Address)
-
-                    SetupPacket SetupSetAddress
-                    SetupSetAddress.MakeSetAddress(Address As i8)
-
-                    this->SendControlTransfer(0, 0, TransferSpeed::Low, &SetupSetAddress, null, 0)->Wait()->Free()
-
-                    SleepMS(50)
-
-                    ; Address now set, hand off to USB driver
-
-                    this->Bus->Attach(Address)
+                    this->Bus->NotifyAttach()
 
                     ;USB::Device* Dev := new USB::Device(this, Address)
                     ;USB::DeviceDescriptor* _Device := Dev->Descriptor
@@ -1029,38 +1423,16 @@ namespace USB::UHCI {
 
             Print("UHCI Heap @ %x, Physical %x\n", this->HeapPoolVirtual, this->HeapPoolPhysical)
 
-            for (i32 Index := 0, Index <= 10, Index++) {
-                this->PeriodicQueueHeads[Index] := this->AllocateQueueHead(FormatString("Every %i MS", 1 << Index))
-            }
+            ; Set up control transfer queue
+            this->ControlTransferQueue := this->AllocateQueueHead("Control Queue")
+            this->BulkTransferQueue := this->AllocateQueueHead("Bulk Queue")
 
-            i32 TerminatorLink := this->PackLink(null, LinkFlags::Terminator)
+            this->ControlTransferQueue->HorizontalLink := this->PackLink(this->BulkTransferQueue, LinkFlags::IsQueueHead | LinkFlags::DepthFirst)
 
-            this->PeriodicQueueHeads[0]->HorizontalLink := this->PackLink(null, LinkFlags::Terminator)
+            ; Populate frame list
+            this->ScheduleNextQuarter(0)
 
-            for (i32 Index := 0, Index < 10, Index++) {
-                QueueHead* LowerQH := this->PeriodicQueueHeads[Index + 1]
-                QueueHead* HigherQH := this->PeriodicQueueHeads[Index]
-
-                LowerQH->HorizontalLink := this->PackLink(HigherQH, LinkFlags::IsQueueHead)
-
-                ;Print("Set '%s' horizontal link to '%s'\n", LowerQH->Name, HigherQH->Name)
-
-                ;this->DumpLink(this->PackLink(LowerQH, LinkFlags::IsQueueHead))
-                ;this->DumpLink(LowerQH->HorizontalLink)
-            }
-
-            ;this->DumpLink(this->PackLink(this->PeriodicQueueHeads[3], LinkFlags::IsQueueHead))
-
-            for (i32 Index := 0, Index < 1024, Index++) {
-                for (i32 Period := 10, Period >= 0, Period--) {
-                    i32 Value := 1 << Period
-
-                    if (Index % Value = 0) {
-                        this->FrameList[Index] := this->PackLink(this->PeriodicQueueHeads[Period], LinkFlags::IsQueueHead)
-                        break
-                    }
-                }
-            }
+            this->DumpLinkGraphViz(this->FrameList[0])
 
             /* QueueHead* GetDescriptorQH := this->AllocateQueueHead("Get Descriptor")
 

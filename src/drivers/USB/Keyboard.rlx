@@ -127,7 +127,7 @@ namespace USB::HID {
             ReportLayout* Layout := this->Layout
 
             loop {
-                Layout->Buffer := this->TransferHandle->Wait()
+                this->TransferHandle->Read(Layout->Buffer)
 
                 KeyboardUsage[32] PressedKeys
                 i32 PressedKeyCount := 0
@@ -202,6 +202,7 @@ namespace USB::HID {
         define void New(HumanInputDevice* Base) {
             this->Base := Base
             this->Layout := Base->Parser->InputReportLayouts->PointerAt(0)
+            this->Layout->Buffer := Alloc(this->Layout->Size)
             this->TransferHandle := Base->ScheduleInputReports()
 
             this->ReportTask := Scheduler->AddLightTask(null, "USB::HID::Keyboard Report Handler")
