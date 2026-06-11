@@ -12,11 +12,13 @@ define void Halt() {
 }
 
 define void Exit(i32 Code) {
+    DisableInterrupts()
     Info("EXIT CALLED\n%stackdump\nHALTING")
     Halt()
 }
 
 define void Panic(i8* Reason) {
+    DisableInterrupts()
     Info("PANIC: %s\n%stackdump\nHALTING\n", Reason)
     Halt()
 }
