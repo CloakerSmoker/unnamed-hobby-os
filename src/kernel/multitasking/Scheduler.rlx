@@ -308,9 +308,42 @@ define void SchedulerRestart() {
 	Scheduler->RunCurrent()
 }
 
+
+define void DUMP_TASKS() {
+	Info("=======================================\n")
+	Info("Task Dump\n\n")
+
+	Info("Current Task: %x (%s)\n", CurrentTask, CurrentTask->Name)
+
+	Info("\nNeeds To Run:\n")
+
+	ListNode* Node := null
+
+	while (Scheduler->NeedsToRun->Next(&Node)) {
+		Task* Current := Scheduler->NeedsToRun->Self(Node)
+
+		Info("  %x (%s) - %s\n", Current, Current->Name, nameof:(Current->State As TaskState))
+	}
+
+	ListNode* Node := null
+
+	Info("\nHas Ran:\n")
+
+	while (Scheduler->HasRan->Next(&Node)) {
+		Task* Current := Scheduler->HasRan->Self(Node)
+
+		Info("  %x (%s) - %s\n", Current, Current->Name, nameof:(Current->State As TaskState))
+	}
+
+}
+
 i8 SchedulerStarted := false
 
+declare void DO_NOT_OPTIMIZE_AWAY(void*)
+
 define void StartScheduler() {
+	DO_NOT_OPTIMIZE_AWAY(&DUMP_TASKS)
+
 	DisableInterrupts()
 	
 	SchedulerStarted := true

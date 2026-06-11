@@ -1,16 +1,28 @@
 
+PointerArray* ALL_TASK_LISTS := new PointerArray()
+PointerArray* ALL_SEMAPHORES := new PointerArray()
+PointerArray* ALL_LOCKS := new PointerArray()
+
 namespace Synchronization {
     class TaskList derives INew {
+        i8* Name
         PointerArray* Tasks
 
-        define void New() {
+        define void New(i8* Name) {
+            this->Name := Name
             this->Tasks := PointerArray:New()
+
+            ALL_TASK_LISTS->Push(this)
         }
 
         define i8 Wait(i32 TimeoutMS) {
+            if (TimeoutMS < 0) {
+                return AWOKEN_BY_ALARM
+            }
+
             this->Tasks->Add(CurrentTask)
 
-            if (TimeoutMS <= 0) {
+            if (TimeoutMS = 0) {
                 SchedulerBlock()
                 
                 return AWOKEN_BY_OTHER
@@ -48,12 +60,18 @@ namespace Synchronization {
     }
 
     class Semaphore derives INew {
+        i8* Name
+
         TaskList* Waiters
         i32 Value
 
-        define void New(i32 InitialValue) {
-            this->Waiters := new TaskList()
+        define void New(i8* Name, i32 InitialValue) {
+            this->Name := Name
+            this->Waiters := new TaskList(Name)
+
             this->Value := InitialValue
+
+            ALL_SEMAPHORES->Push(this)
         }
 
         define i8 Wait(i32 Value, i32 TimeoutMS) {
@@ -83,6 +101,13 @@ namespace Synchronization {
             this->Wait(0)
         }
 
+        define void Decrement(i32 Value) {
+            this->Wait(Value, 0)
+        }
+        define void Decrement() {
+            this->Wait(1, 0)
+        }
+
         define void Signal(i32 Value) {
             i8 ShouldEnableInterrupts := InterrupsAreEnabled()
 
@@ -99,16 +124,30 @@ namespace Synchronization {
         define void Signal() {
             this->Signal(1)
         }
+
+        define void Increment() {
+            this->Signal(1)
+        }
+        define void Increment(i32 Value) {
+            this->Signal(Value)
+        }
     }
 
     class Lock derives INew {
-        i8 Locked
+        i8* Name
+
         TaskList* Waiters
+        i8 Locked
+
         Task* Owner
 
-        define void New() {
+        define void New(i8* Name) {
+            this->Name := Name
+            this->Waiters := new TaskList(Name)
+
             this->Locked := 0
-            this->Waiters := new TaskList()
+
+            ALL_LOCKS->Push(this)
         }
 
         define i8 Acquire(i32 TimeoutMS) {
@@ -135,6 +174,22 @@ namespace Synchronization {
             this->Acquire(0)
         }
 
+        define i8 TryAcquire() {
+            DisableInterrupts()
+
+            if (this->Locked) {
+                EnableInterrupts()
+                return false
+            }
+
+            this->Locked := true
+            this->Owner := CurrentTask
+
+            EnableInterrupts()
+
+            return true
+        }
+
         define void Release() {
             DisableInterrupts()
 
@@ -147,3 +202,54 @@ namespace Synchronization {
         }
     }
 }
+
+define void DUMP_TASK_LISTS() {
+    Info("TASK LISTS:\n")
+
+    for (i32 Index := 0, Index < ALL_TASK_LISTS->Count(), Index++) {
+        Synchronization::TaskList* TL := ALL_TASK_LISTS->Get(Index)
+
+        Info("  %s:\n", TL->Name)
+
+        for (i32 TaskIndex := 0, TaskIndex < TL->Tasks->Count(), TaskIndex++) {
+            Task* T := TL->Tasks->Get(TaskIndex)
+
+            Info("    %s\n", T->Name)
+        }
+    }
+}
+
+define void DUMP_SEMAPHORES() {
+    Info("SEMAPHORES:\n")
+
+    for (i32 Index := 0, Index < ALL_SEMAPHORES->Count(), Index++) {
+        Synchronization::Semaphore* S := ALL_SEMAPHORES->Get(Index)
+
+        Info("  %s: %i\n", S->Name, S->Value)
+    }
+}
+
+define void DUMP_LOCKS() {
+    Info("LOCKS:\n")
+
+    for (i32 Index := 0, Index < ALL_LOCKS->Count(), Index++) {
+        Synchronization::Lock* L := ALL_LOCKS->Get(Index)
+
+        i8* State := "UNLOCKED"
+
+        if (L->Locked) {
+            State := "LOCKED"
+        }
+
+        Info("  %s: %s\n", L->Name, State)
+
+        if (L->Locked) {
+            Info("    Owner: %s\n", L->Owner->Name)
+        }
+    }
+}
+
+; lol
+void DO_NOT_OPTIMIZE_AWAY_DUMP_TASK_LISTS := DO_NOT_OPTIMIZE_AWAY(&DUMP_TASK_LISTS)
+void DO_NOT_OPTIMIZE_AWAY_DUMP_SEMAPHORES := DO_NOT_OPTIMIZE_AWAY(&DUMP_SEMAPHORES)
+void DO_NOT_OPTIMIZE_AWAY_DUMP_LOCKS := DO_NOT_OPTIMIZE_AWAY(&DUMP_LOCKS)
