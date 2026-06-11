@@ -26,7 +26,7 @@ i8 LET_IT_BURN := true ; If true, don't handle *any* exceptions, let the system 
 
 i8 DEBUG_SCHEDULER         := false ; Logs task switches plus why
 i8 DEBUG_SLOW_CLOCK        := false ; Uses a very low clock speed to reduce output clutter
-i8 DEBUG_SYSTEM_CALLS      := true ; Logs system call names/parameters + result
+i8 DEBUG_SYSTEM_CALLS      := false ; Logs system call names/parameters + result
 i8 DEBUG_SYS_READ          := false ; Logs a hexdump of data moved by `read()`
 i8 DEBUG_SYS_WRITE         := false ; Logs a hexdump of data moved by `write()`
 i8 DEBUG_TERMINAL_ESCAPES  := false ; Logs ANSI escapes as the terminal processes them

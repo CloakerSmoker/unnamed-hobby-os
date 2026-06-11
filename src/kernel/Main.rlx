@@ -479,10 +479,10 @@ define void VFSRunShellTask() {
 		}
 	} */
 
-	;SleepMS(10000)
+	SleepMS(10000)
 	;VFSExecuteShellCommand("tree /dev")
-    ;VFSExecuteShellCommand("execute /doom/doom.elf -iwad /doom/DOOM.WAD -mb 64")
-	VFSRunShell(KernelTerminal)
+    VFSExecuteShellCommand("execute /doom/doom.elf -iwad /doom/DOOM.WAD -mb 64")
+	;VFSRunShell(KernelTerminal)
 }
 
 #Require "./src/kernel/file-system/VFS/DirectoryFileHandle.rlx"

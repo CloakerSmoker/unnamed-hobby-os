@@ -80,7 +80,10 @@ class BlockAlignedIO derives INew {
             Buffer += BlockSize
         } */
 
-        Remaining -= FullBlockCount * BlockSize
+        i32 Middle := FullBlockCount * BlockSize
+
+        Remaining -= Middle
+        Buffer += Middle
 
         if (Remaining) {
             if !(this->FileHandle->ReadFileBlock(FirstBlock + FullBlockCount, ScratchBlock)) {

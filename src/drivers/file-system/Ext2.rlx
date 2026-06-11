@@ -1674,7 +1674,7 @@ class Ext2FileHandle implements IFileHandle, IFileBlockHandle, derives INew {
 	}
 
 	define i8 ReadFileBlock(i32 LogicalBlockNumber, void* Buffer) {
-		Info("RFB LBN %i\n", LogicalBlockNumber)
+		;Info("RFB LBN %i\n", LogicalBlockNumber)
 
 		try {
 			i32 DataBlock := this->FS->FindINodeDataBlock(this~>Node, LogicalBlockNumber, false)
@@ -1697,13 +1697,13 @@ class Ext2FileHandle implements IFileHandle, IFileBlockHandle, derives INew {
 		i32 BlockNumber := FirstBlockNumber
 		i32 BlocksLeft := BlockCount
 
-		;Print("RFB LBN %i, BC %i\n", FirstBlockNumber, BlockCount)
+		;Info("RFB LBN %i, BC %i\n", FirstBlockNumber, BlockCount)
 
 		while (BlocksLeft > 0) {
 			Ext2Extent CurrentExtent
 			this->FS->FindINodeDataExtent(this~>Node, BlockNumber, &CurrentExtent)
 
-			;Print("Got extent for block %i: Start %i, Count %i\n", BlockNumber, CurrentExtent.First, CurrentExtent.Count)
+			;Info("Got extent for block %i: Start %i, Count %i\n", BlockNumber, CurrentExtent.First, CurrentExtent.Count)
 
 			i32 ExtentStart := CurrentExtent.First
 			i32 ExtentLength := CurrentExtent.Count
