@@ -15,6 +15,12 @@ namespace Synchronization {
             ALL_TASK_LISTS->Push(this)
         }
 
+        define void Free() {
+            ALL_TASK_LISTS->RemoveValue(this)
+            this->Tasks->Free()
+            this->Delete()
+        }
+
         define i8 Wait(i32 TimeoutMS) {
             if (TimeoutMS < 0) {
                 return AWOKEN_BY_ALARM
@@ -72,6 +78,12 @@ namespace Synchronization {
             this->Value := InitialValue
 
             ALL_SEMAPHORES->Push(this)
+        }
+
+        define void Free() {
+            ALL_SEMAPHORES->RemoveValue(this)
+            this->Waiters->Free()
+            this->Delete()
         }
 
         define i8 Wait(i32 Value, i32 TimeoutMS) {
@@ -148,6 +160,12 @@ namespace Synchronization {
             this->Locked := 0
 
             ALL_LOCKS->Push(this)
+        }
+
+        define void Free() {
+            ALL_LOCKS->RemoveValue(this)
+            this->Waiters->Free()
+            this->Delete()
         }
 
         define i8 Acquire(i32 TimeoutMS) {

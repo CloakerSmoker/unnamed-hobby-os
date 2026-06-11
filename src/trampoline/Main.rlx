@@ -27,7 +27,29 @@ void* TRAMPOLINE_ADDRESS := 0x80_0000 As void*
 #Require "@/ExceptionBase.rlx"
 
 #Require "./src/utility/x64.rlx"
-#Require "./src/kernel/lib/Exit.rlx"
+
+declare void Info(i8*, ...)
+declare void DisableInterrupts()
+
+define void Hang() {
+    loop {asm {emit, 0xF4}}
+}
+
+define void Halt() {
+    loop {asm {emit, 0xF4}}
+}
+
+define void Exit(i32 Code) {
+    DisableInterrupts()
+    Info("EXIT CALLED\n%stackdump\nHALTING")
+    Halt()
+}
+
+define void Panic(i8* Reason) {
+    DisableInterrupts()
+    Info("PANIC: %s\n%stackdump\nHALTING\n", Reason)
+    Halt()
+}
 
 #Require "./src/bootloader/BootInfo.rlx"
 #Require "./src/trampoline/Info.rlx"

@@ -127,7 +127,7 @@ namespace USB::HID {
             ReportLayout* Layout := this->Layout
 
             loop {
-                this->TransferHandle->Read(Layout->Buffer)
+                i32 BytesRead := this->TransferHandle->Read(Layout->Buffer)
 
                 KeyboardUsage[32] PressedKeys
                 i32 PressedKeyCount := 0

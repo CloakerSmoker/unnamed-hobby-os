@@ -252,7 +252,7 @@ namespace USB {
             this->ControlEndpoint := new EndpointInfo(null)
             this->Configurations := PointerArray:New()
 
-            this->Speed := TransferSpeed::Low
+            this->Speed := TransferSpeed::High
 
             this->Descriptor := this->GetDescriptor(USB::DescriptorType::Device, 0)
             

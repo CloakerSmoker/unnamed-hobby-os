@@ -225,7 +225,7 @@ namespace USB::UHCI {
         define void Free() {
             this->Controller->Free(this)
             this->TDs->Free()
-            ;this->Completed->Free()
+            this->Completed->Free()
             this->Delete()
         }
     }
@@ -237,10 +237,14 @@ namespace USB::UHCI {
 
     class PeriodicTransferHandle implements USB::IPeriodicTransferHandle, derives INew {
         IController* Controller
+
+        i8* Name
         
         TransferSpeed Speed
         PeriodicTransferType Type
         TransferToken Token
+        i32 Address
+        i32 Endpoint
 
         i32 Period
         i32 Phase
@@ -268,22 +272,19 @@ namespace USB::UHCI {
 
         define void New(IController* Controller) {
             this->Controller := Controller
-
-            this->TransferDescriptorsLock := new Synchronization::Lock("UHCI Periodic Transfer Descriptors Lock")
+            
             this->FreeTransferDescriptors := new PointerArray()
             this->ScheduledTransferDescriptors := new PointerArray()
             this->FilledTransferDescriptors := new PointerArray()
-
-            this->FilledCount := new Synchronization::Semaphore("FilledCount", 0)
-            this->ScheduledCount := new Synchronization::Semaphore("ScheduledCount", 0)
-            this->FreeCount := new Synchronization::Semaphore("FreeCount", 0)
         }
 
-        define void DescribeTransfer(TransferSpeed Speed, PeriodicTransferType Type, TransferToken Token, i32 SingleTransferSize) {
+        define void DescribeTransfer(TransferSpeed Speed, PeriodicTransferType Type, TransferToken Token, i32 SingleTransferSize, i32 Address, i32 Endpoint) {
             this->Speed := Speed
             this->Type := Type
             this->Token := Token
             this->SingleTransferSize := SingleTransferSize
+            this->Address := Address
+            this->Endpoint := Endpoint
 
             ; Guesstimate bandwidth usage of non-payload data as 32 bytes
             this->SingleTransferBandwidth := 32
@@ -301,6 +302,20 @@ namespace USB::UHCI {
         define void DescribeTiming(i32 Period, i32 Phase) {
             this->Period := Period
             this->Phase := Phase
+
+            this->Name := FormatString("%s %s %s WITH %i.%i",
+                nameof:(this->Speed),
+                nameof:(this->Type),
+                nameof:(this->Token),
+                this->Address,
+                this->Endpoint
+            )
+
+            this->TransferDescriptorsLock := new Synchronization::Lock(FormatString("%s Lock", this->Name))
+
+            this->FilledCount := new Synchronization::Semaphore(FormatString("%s FilledCount", this->Name), 0)
+            this->ScheduledCount := new Synchronization::Semaphore(FormatString("%s ScheduledCount", this->Name), 0)
+            this->FreeCount := new Synchronization::Semaphore(FormatString("%s FreeCount", this->Name), 0)
         }
 
         define void ProvideTransferDescriptor(TransferDescriptor* TD) {
@@ -313,9 +328,9 @@ namespace USB::UHCI {
         define void DumpStatus() {
             this->TransferDescriptorsLock->Acquire()
 
-            Info("Free TDs: %i\n", this->FreeTransferDescriptors->Count())
-            Info("Scheduled TDs: %i\n", this->ScheduledTransferDescriptors->Count())
-            Info("Filled TDs: %i\n", this->FilledTransferDescriptors->Count())
+            Info("%s Free TDs: %i\n", this->Name, this->FreeTransferDescriptors->Count())
+            Info("%s Scheduled TDs: %i\n", this->Name, this->ScheduledTransferDescriptors->Count())
+            Info("%s Filled TDs: %i\n", this->Name, this->FilledTransferDescriptors->Count())
 
             this->TransferDescriptorsLock->Release()
         }
@@ -327,7 +342,7 @@ namespace USB::UHCI {
 
             if (this->Token = TransferToken::IN) {
                 if (this->FreeTransferDescriptors->Count() = 0) {
-                    Panic("UCHI: No free transfer descriptors available for periodic IN transfer!")
+                    Panic(FormatString("UHCI: %s: No free transfer descriptors available for periodic IN transfer!", this->Name))
                 }
 
                 Result := this->FreeTransferDescriptors->Pop()
@@ -335,7 +350,7 @@ namespace USB::UHCI {
             }
             else if (this->Token = TransferToken::OUT) {
                 if (this->FilledTransferDescriptors->Count() = 0) {
-                    Panic("UHCI: No filled transfer descriptors available for periodic OUT transfer!")
+                    Panic(FormatString("UHCI: %s: No filled transfer descriptors available for periodic OUT transfer!", this->Name))
                 }
 
                 Result := this->FilledTransferDescriptors->Pop()
@@ -1219,10 +1234,13 @@ namespace USB::UHCI {
 
             PeriodicTransferHandle* Handle := new PeriodicTransferHandle(this)
 
-            Handle->DescribeTransfer(Speed, PeriodicTransferType::Interrupt, Token, Size)
+            Handle->DescribeTransfer(Speed, PeriodicTransferType::Interrupt, Token, Size, Address, Endpoint)
             Handle->DescribeTiming(Period, 0)
 
-            i32 TransfersPerQuarter := (256 / Period) + 1
+            ; Give drivers 128ms worth of headroom before running out
+            ;  of buffers
+
+            i32 TransfersPerQuarter := ((256 + 128) / Period) + 1
 
             for (i32 Index := 0, Index < TransfersPerQuarter, Index++) {
                 TransferDescriptor* TD := this->AllocateTransferDescriptor(Address, Endpoint, Speed, Token, Size, this->Allocate(Size))
