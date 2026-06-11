@@ -233,9 +233,11 @@ namespace USB::HubProtocol {
             i8[64] StatusChangeBuffer
 
             loop {
-                this->StatusChangeTransfer->Read(StatusChangeBuffer)
+                i32 Size := this->StatusChangeTransfer->Read(StatusChangeBuffer)
 
-                Print("Hub Status Change\n")
+                Print("Read %i bytes from status change endpoint\n", Size)
+
+                ;Print("Hub Status Change\n")
 
                 i8 HubStatusChanged := StatusChangeBuffer[0] & 1
 
@@ -347,7 +349,9 @@ namespace USB::HubProtocol {
 
             EndpointInfo* StatusChangeEndpoint := this->Info->Endpoints->At(0)
 
-            this->StatusChangeTransfer := Base->ScheduleInterruptTransfer(StatusChangeEndpoint->Number, RequestDataPhaseDirection::DeviceToHost, 8, StatusChangeEndpoint~>Descriptor->Interval)
+            i32 Interval := (StatusChangeEndpoint~>Descriptor->Interval As i32) & 0xFF
+
+            this->StatusChangeTransfer := Base->ScheduleInterruptTransfer(StatusChangeEndpoint->Number, RequestDataPhaseDirection::DeviceToHost, 8, Interval)
 
             this->PortThreadTask := Scheduler->AddLightTask(null, "USB Hub Status Change Thread")
             this->PortThreadTask~>Context->CallMethod(this, &self.PortThread)

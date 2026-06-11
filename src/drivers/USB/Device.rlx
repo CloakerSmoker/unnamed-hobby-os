@@ -100,14 +100,14 @@ namespace USB {
     }
 
     interface IPeriodicTransferHandle {
-        virtual i8 Write(void*, i8)
-        virtual void Write(void* Buffer) {
-            this->Write(Buffer, false) ; Blocking write by default
+        virtual i32 Write(void*, i8)
+        virtual i32 Write(void* Buffer) {
+            return this->Write(Buffer, false) ; Blocking write by default
         }
 
-        virtual i8 Read(void*, i8)
-        virtual void Read(void* Buffer) {
-            this->Read(Buffer, true) ; Blocking read by default
+        virtual i32 Read(void*, i8)
+        virtual i32 Read(void* Buffer) {
+            return this->Read(Buffer, false) ; Blocking read by default
         }
         
         virtual void Stop()

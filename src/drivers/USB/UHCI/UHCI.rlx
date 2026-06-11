@@ -96,9 +96,8 @@ namespace USB::UHCI {
         }
 
         i32 PhysicalBufferPointer
-
-        PeriodicTransferBuffer* PeriodicBuffer
         void* Buffer
+
         i64 ScheduledGlobalFrameNumber
     }
 
@@ -119,26 +118,6 @@ namespace USB::UHCI {
         QueueHead* Previous
         TransferHandle* Handle
     }
-/*
-
-TDs are read-only for the HC
-QHs are read-only for the HC in their HorizontalLink, but VerticalLink is read/write for the HC
-
-Isochronous transfers get scheduled by linking their TDs directly into the frame list
-Since they have interval=1 and are always active, the HC will just execute them every frame and we can update their buffer and length as needed
-
-TDs will need distinct buffers since they might return less/no data sometimes
-
-The final isochronous TD (or the frame list entry itself if none) will point to a frame-specific QH for all interrupt transfers scheduled for that frame
-
-Interrupt transfers will be scheduled by linking their TDs into the vertical list of the frame-specific QH, and linking that QH into the frame list if it's not already linked for that frame. Since the HC always starts at the head of the frame list and executes all transfers linked there, we can guarantee interrupt transfers will be scheduled within 1ms of when we link them in.
-
-The horizontal link will point to a "control QH" for control transfers (depth first), and finally a "bulk QH" for bulk transfers (also depth first, so they run after control transfers). Both of these QHs will be linked into the frame list at all times, so we can just link transfer TDs into their vertical lists as needed.
-
-
-Periodic transfers (interrupt and isochronous) will need a pool of TDs/QHs that can be scheduled on demand since the HC might still be processing a TD when we want to schedule it for the next frame. For isochronous transfers this is easy since we can just have one TD per frame, but for interrupt transfers we'll need to have enough TDs in the pool to cover the worst case where we schedule a new transfer every ms and each transfer takes 255ms to complete (since the error count is 3, and the HC will retry a transfer up to 3 times on error before giving up and completing it with an error status). So in the worst case we'll need 256 TDs per interrupt transfer, but we can probably get away with much less in practice since most transfers should complete successfully within a few tries.
-
-*/
 
     struct PCIeOverlay {
         i8[0x20] _
@@ -188,7 +167,7 @@ Periodic transfers (interrupt and isochronous) will need a pool of TDs/QHs that 
             this->RelocatedBuffer := RelocatedBuffer
             this->Size := Size
 
-            this->Completed := new Synchronization::Semaphore(0)
+            this->Completed := new Synchronization::Semaphore(FormatString("%s Completed", this->QH->Name), 0)
 
             this->QH->Handle := this
         }
@@ -256,19 +235,6 @@ Periodic transfers (interrupt and isochronous) will need a pool of TDs/QHs that 
         Isochronous
     }
 
-    struct PeriodicTransferBuffer {
-        i32 Size
-        void* Buffer
-
-        static self* New(void* Buffer) {
-            self* this := Alloc(#self)
-
-            this->Buffer := Buffer
-
-            return this
-        }
-    }
-
     class PeriodicTransferHandle implements USB::IPeriodicTransferHandle, derives INew {
         IController* Controller
         
@@ -282,25 +248,38 @@ Periodic transfers (interrupt and isochronous) will need a pool of TDs/QHs that 
         i32 SingleTransferSize
         i32 SingleTransferBandwidth ; Guesstimate in bytes
 
-        PointerArray* ScheduledTDs
-        PointerArray* FreeTDs
-
         ; These swap role based on token
         ; IN  - FilledBuffers are filled by device, FreeBuffers are empty
         ;       driver consumes filled buffers and returns them to free
         ; OUT - FilledBuffers are filled by driver, FreeBuffers are empty
         ;       driver consumes free buffers and returns them to free
         
-        Synchronization::Lock* BuffersLock
-        PointerArray* FilledBuffers
-        PointerArray* ScheduledBuffers
-        PointerArray* FreeBuffers
+        Synchronization::Lock* TransferDescriptorsLock
+        PointerArray* FilledTransferDescriptors
+        PointerArray* ScheduledTransferDescriptors
+        PointerArray* FreeTransferDescriptors
 
-        Synchronization::Semaphore* Fired
+        Synchronization::Semaphore* FilledCount
+        Synchronization::Semaphore* ScheduledCount
+        Synchronization::Semaphore* FreeCount
 
-        define void New(IController* Controller, TransferSpeed Speed, PeriodicTransferType Type, TransferToken Token, i32 SingleTransferSize, i32 Period, i32 Phase) {
+        ; Pretty sure there's a compiler bug here when INew is derived
+        ;  and there's a `define void New(...)` method with lots of parameters
+
+        define void New(IController* Controller) {
             this->Controller := Controller
 
+            this->TransferDescriptorsLock := new Synchronization::Lock("UHCI Periodic Transfer Descriptors Lock")
+            this->FreeTransferDescriptors := new PointerArray()
+            this->ScheduledTransferDescriptors := new PointerArray()
+            this->FilledTransferDescriptors := new PointerArray()
+
+            this->FilledCount := new Synchronization::Semaphore("FilledCount", 0)
+            this->ScheduledCount := new Synchronization::Semaphore("ScheduledCount", 0)
+            this->FreeCount := new Synchronization::Semaphore("FreeCount", 0)
+        }
+
+        define void DescribeTransfer(TransferSpeed Speed, PeriodicTransferType Type, TransferToken Token, i32 SingleTransferSize) {
             this->Speed := Speed
             this->Type := Type
             this->Token := Token
@@ -317,132 +296,160 @@ Periodic transfers (interrupt and isochronous) will need a pool of TDs/QHs that 
             else {
                 this->SingleTransferBandwidth += SingleTransferSize
             }
+        }
 
+        define void DescribeTiming(i32 Period, i32 Phase) {
             this->Period := Period
             this->Phase := Phase
-
-            this->ScheduledTDs := new PointerArray()
-            this->FreeTDs := new PointerArray()
-
-            this->BuffersLock := new Synchronization::Lock()
-            this->FreeBuffers := new PointerArray()
-            this->ScheduledBuffers := new PointerArray()
-            this->FilledBuffers := new PointerArray()
-
-            this->Fired := new Synchronization::Semaphore(0)
         }
 
         define void ProvideTransferDescriptor(TransferDescriptor* TD) {
-            this->FreeTDs->Add(TD)
-        }
-        define void ProvideBuffer(void* Buffer) {
-            this->BuffersLock->Acquire()
-            this->FreeBuffers->Add(new PeriodicTransferBuffer(Buffer))
-            this->BuffersLock->Release()
+            this->TransferDescriptorsLock->Acquire()
+            this->FreeTransferDescriptors->Push(TD)
+            this->FreeCount->Increment()
+            this->TransferDescriptorsLock->Release()
         }
 
-        define PeriodicTransferBuffer* ScheduleOutgoingBuffer() {
-            this->BuffersLock->Acquire()
+        define void DumpStatus() {
+            this->TransferDescriptorsLock->Acquire()
 
-            PeriodicTransferBuffer* Result := null
+            Info("Free TDs: %i\n", this->FreeTransferDescriptors->Count())
+            Info("Scheduled TDs: %i\n", this->ScheduledTransferDescriptors->Count())
+            Info("Filled TDs: %i\n", this->FilledTransferDescriptors->Count())
+
+            this->TransferDescriptorsLock->Release()
+        }
+
+        define TransferDescriptor* ScheduleOutgoingTransferDescriptor() {
+            this->TransferDescriptorsLock->Acquire()
+
+            TransferDescriptor* Result := null
 
             if (this->Token = TransferToken::IN) {
-                if (this->FreeBuffers->Count() = 0) {
-                    Panic("UCHI: No free buffers available for periodic IN transfer!")
+                if (this->FreeTransferDescriptors->Count() = 0) {
+                    Panic("UCHI: No free transfer descriptors available for periodic IN transfer!")
                 }
 
-                Result := this->FreeBuffers->Pop()
+                Result := this->FreeTransferDescriptors->Pop()
+                this->FreeCount->Decrement()
             }
             else if (this->Token = TransferToken::OUT) {
-                if (this->FilledBuffers->Count() = 0) {
-                    Panic("UCHI: No filled buffers available for periodic OUT transfer!")
+                if (this->FilledTransferDescriptors->Count() = 0) {
+                    Panic("UHCI: No filled transfer descriptors available for periodic OUT transfer!")
                 }
 
-                Result := this->FilledBuffers->Pop()
+                Result := this->FilledTransferDescriptors->Pop()
+                this->FilledCount->Decrement()
             }
 
-            this->ScheduledBuffers->Add(Result)
+            this->ScheduledTransferDescriptors->Push(Result)
+            this->ScheduledCount->Increment()
 
-            this->BuffersLock->Release()
+            this->TransferDescriptorsLock->Release()
+
+            Result->MaximumLength := (this->SingleTransferSize - 1) As i16
+            Result->ActualLength := 0
+            Result->Active := true
 
             return Result
         }
 
-        define void RetireIncomingBuffer(void* Buffer) {
-            this->BuffersLock->Acquire()
+        define void RetireTransferDescriptor(TransferDescriptor* TD) {
+            this->TransferDescriptorsLock->Acquire()
 
-            this->ScheduledBuffers->RemoveValue(Buffer)
+            this->ScheduledTransferDescriptors->RemoveValue(TD)
+            this->ScheduledCount->Decrement()
 
-            if (this->Token = TransferToken::IN) {
-                this->FreeBuffers->Add(Buffer)
+            if (TD->ActualLength = 0) {
+                ; No data was transferred, return buffer to appropriate pool without signaling
+
+                if (this->Token = TransferToken::IN) {
+                    this->FreeTransferDescriptors->Push(TD)
+                    this->FreeCount->Increment()
+                }
+                else if (this->Token = TransferToken::OUT) {
+                    this->FilledTransferDescriptors->Push(TD)
+                    this->FilledCount->Increment()
+                }
+
+                this->TransferDescriptorsLock->Release()
             }
-            else if (this->Token = TransferToken::OUT) {
-                this->FilledBuffers->Add(Buffer)
+            else {
+                if (this->Token = TransferToken::IN) {
+                    this->FilledTransferDescriptors->Push(TD)
+                    this->FilledCount->Increment()
+                }
+                else if (this->Token = TransferToken::OUT) {
+                    this->FreeTransferDescriptors->Push(TD)
+                    this->FreeCount->Increment()
+                }
+
+                this->TransferDescriptorsLock->Release()
             }
-
-            this->BuffersLock->Release()
-
-            this->Fired->Signal()
         }
 
-        define i32 GetFreeBufferCount() {
-            this->BuffersLock->Acquire()
-            i32 Result := this->FreeBuffers->Count()
-            this->BuffersLock->Release()
-
-            return Result
-        }
-
-        define i32 GetFilledBufferCount() {
-            this->BuffersLock->Acquire()
-            i32 Result := this->FilledBuffers->Count()
-            this->BuffersLock->Release()
-
-            return Result
-        }
-
-        define i8 Write(void* Data, i8 NonBlocking) {
+        define i32 Write(void* Data, i8 NonBlocking) {
             if (this->Token != TransferToken::OUT) {
                 Panic("UHCI: Attempted to write to non-OUT periodic transfer!")
             }
 
-            if (this->GetFreeBufferCount() = 0) {
-                if (NonBlocking) {
-                    return false
-                }
+            i32 Timeout := 0
 
-                this->Fired->Wait()
+            if (NonBlocking) {
+                Timeout := -1
             }
 
-            this->BuffersLock->Acquire()
-            void* Buffer := this->FreeBuffers->Pop()
-            MoveMemory(Buffer, Data, this->SingleTransferSize)
-            this->FilledBuffers->Add(Buffer)
-            this->BuffersLock->Release()
+            if (this->FreeCount->Wait(Timeout)) {
+                ; We have a free transfer descriptor
 
-            return true
+                this->TransferDescriptorsLock->Acquire()
+
+                TransferDescriptor* TD := this->FreeTransferDescriptors->Pop()
+
+                MoveMemory(TD->Buffer, Data, this->SingleTransferSize)
+
+                this->FilledTransferDescriptors->Push(TD)
+                this->FilledCount->Increment()
+
+                this->TransferDescriptorsLock->Release()
+            }
+            else {
+                return 0
+            }
+
+            return this->SingleTransferSize
         }
 
-        define i8 Read(void* Data, i8 NonBlocking) {
+        define i32 Read(void* Data, i8 NonBlocking) {
             if (this->Token != TransferToken::IN) {
                 Panic("UHCI: Attempted to read from non-IN periodic transfer!")
             }
 
-            if (this->GetFilledBufferCount() = 0) {
-                if (NonBlocking) {
-                    return false
-                }
+            i32 Timeout := 0
 
-                this->Fired->Wait()
+            if (NonBlocking) {
+                Timeout := -1
             }
 
-            this->BuffersLock->Acquire()
-            void* Buffer := this->FilledBuffers->Pop()
-            MoveMemory(Data, Buffer, this->SingleTransferSize)
-            this->FreeBuffers->Add(Buffer)
-            this->BuffersLock->Release()
+            if (this->FilledCount->Wait(Timeout)) {
+                ; We have a filled transfer descriptor to consume
 
-            return true
+                this->TransferDescriptorsLock->Acquire()
+
+                TransferDescriptor* TD := this->FilledTransferDescriptors->Pop()
+
+                MoveMemory(Data, TD->Buffer, this->SingleTransferSize)
+
+                this->FreeTransferDescriptors->Push(TD)
+                this->FreeCount->Increment()
+
+                this->TransferDescriptorsLock->Release()
+            }
+            else {
+                return 0
+            }
+
+            return this->SingleTransferSize
         }
 
 
@@ -495,7 +502,7 @@ Periodic transfers (interrupt and isochronous) will need a pool of TDs/QHs that 
 
             _Bus->Controller := this
 
-            this->Interrupt := new Synchronization::Semaphore(0)
+            this->Interrupt := new Synchronization::Semaphore("UHCI Interrupt", 0)
 
             FirstUHCIController := this
 
@@ -665,28 +672,14 @@ Periodic transfers (interrupt and isochronous) will need a pool of TDs/QHs that 
             if (GlobalFrameNumber % Handle->Period = Handle->Phase) {
                 ; This transfer should be scheduled in this frame
 
-                i32 FreeTDsCount := Handle->FreeTDs->Count()
-
-                if (FreeTDsCount = 0) {
-                    Panic("UHCI: No free TDs available for periodic transfer scheduling!\n")
-                }
-
-                TransferDescriptor* TD := Handle->FreeTDs->Pop()
-
-                TD->MaximumLength := (Handle->SingleTransferSize - 1) As i16
-
-                TD->PeriodicBuffer := Handle->ScheduleOutgoingBuffer()
-                TD->PhysicalBufferPointer := this->VirtualToPhysical(TD->PeriodicBuffer->Buffer)
+                TransferDescriptor* TD := Handle->ScheduleOutgoingTransferDescriptor()
                 
                 TD->ScheduledGlobalFrameNumber := GlobalFrameNumber
-                TD->Active := true
 
                 i32* pTailLink := *ppTailLink
 
                 pTailLink[0] := this->PackLink(TD, 0)
                 ppTailLink[0] := TD~>Link
-
-                Handle->ScheduledTDs->Push(TD)
 
                 return Handle->SingleTransferBandwidth
             }
@@ -734,12 +727,12 @@ Periodic transfers (interrupt and isochronous) will need a pool of TDs/QHs that 
 
 
         define void ScheduleNextQuarter(i64 GlobalFrameNumber) {
-            Info("Scheduling quarter %i - %i\n", GlobalFrameNumber, GlobalFrameNumber + 256)
+            ;Info("Scheduling quarter %i - %i\n", GlobalFrameNumber, GlobalFrameNumber + 256)
 
             i64 Target := GlobalFrameNumber + 256
             i64 Gap := Target - this->ScheduledHighWatermark
 
-            Info("High Watermark %i, Gap %i\n", this->ScheduledHighWatermark, Gap)
+            ;Info("High Watermark %i, Gap %i\n", this->ScheduledHighWatermark, Gap)
 
             for (i64 Index := 0, Index < Gap, Index++) {
                 this->ScheduleSingleFrame(this->ScheduledHighWatermark + Index)
@@ -749,32 +742,34 @@ Periodic transfers (interrupt and isochronous) will need a pool of TDs/QHs that 
         }
 
         define void RetireSinglePeriodicTransfer(PeriodicTransferHandle* Handle, i64 GlobalFrameNumber) {
-            i32 ScheduledTDsCount := Handle->ScheduledTDs->Count()
+            while (Handle->ScheduledTransferDescriptors->Count() > 0) {
+                 TransferDescriptor* TD := Handle->ScheduledTransferDescriptors->At(0)
 
-            for (i32 TDIndex := ScheduledTDsCount - 1, TDIndex >= 0, TDIndex--) {
-                TransferDescriptor* TD := Handle->ScheduledTDs->At(TDIndex)
-
-                if (TD->ScheduledGlobalFrameNumber = GlobalFrameNumber) {
-                    ; This TD was scheduled for this frame, retire it
-
-                    Handle->ScheduledTDs->Remove(TDIndex)
-                    Handle->FreeTDs->Push(TD)
+                if (TD->ScheduledGlobalFrameNumber <= GlobalFrameNumber) {
+                    ; This TD was scheduled in the past, retire it
 
                     if !(TD->Active) {
                         Info("UHCI: Retiring inactive periodic TD\n")
                     }
 
-                    Handle->RetireIncomingBuffer(TD->Buffer)
+                    Handle->RetireTransferDescriptor(TD)
+                }
+                else {
+                    break
                 }
             }
+
+            Handle->DumpStatus()
         }
 
-        define void RetireSingleFrame(i64 GlobalFrameNumber) {
-            if (GlobalFrameNumber < this->RetiredHighWatermark) {
-                return
-            }
+        define void RetirePastFrames(i64 GlobalFrameNumber) {
+            ; Called at least every 128 frames to retire any periodic transfers that were scheduled in the past but haven't been retired yet (e.g. because the interrupt thread was busy with something else when they were supposed to be retired)
 
-            this->RetiredHighWatermark := GlobalFrameNumber
+            i64 Gap := GlobalFrameNumber - this->RetiredHighWatermark
+
+            if (Gap >= 256) {
+                Panic("UHCI: 256 frame retirement gap")
+            }
 
             i32 IsochronousCount := this->IsochronousTransfers->Count()
 
@@ -791,28 +786,16 @@ Periodic transfers (interrupt and isochronous) will need a pool of TDs/QHs that 
 
                 this->RetireSinglePeriodicTransfer(Handle, GlobalFrameNumber)
             }
-        }
 
-        define void RetirePastFrames(i64 GlobalFrameNumber) {
-            ; Called at least every 128 frames to retire any periodic transfers that were scheduled in the past but haven't been retired yet (e.g. because the interrupt thread was busy with something else when they were supposed to be retired)
-
-            i64 Gap := GlobalFrameNumber - this->RetiredHighWatermark
-
-            if (Gap >= 256) {
-                Panic("UHCI: 256 frame retirement gap")
-            }
-
-            for (i64 Index := 0, Index < Gap, Index++) {
-                this->RetireSingleFrame(this->RetiredHighWatermark + Index)
-            }
+            this->RetiredHighWatermark := GlobalFrameNumber
         }
 
         define void RetireQueueHeads(i64 GlobalFrameNumber) {
             i32 Count := this->QueueHeadsInFlight->Count()
 
-            Info("**********\n")
+            ;Info("**********\n")
 
-            this->DumpLinkGraphViz(this->PackLink(this->ControlTransferQueue, LinkFlags::IsQueueHead))
+            ;this->DumpLinkGraphViz(this->PackLink(this->ControlTransferQueue, LinkFlags::IsQueueHead))
 
             for (i32 Index := Count - 1, Index >= 0, Index--) {
                 ; Iterate backwards since we might remove items from the list
@@ -864,7 +847,7 @@ Periodic transfers (interrupt and isochronous) will need a pool of TDs/QHs that 
 
                 if (CurrentFrameNumber < this->LastFrameNumber) {
                     this->CycleCounter++
-                    Print("New UHCI cycle: %i\n", this->CycleCounter)
+                    ;Print("New UHCI cycle: %i\n", this->CycleCounter)
                 }
 
                 this->LastFrameNumber := CurrentFrameNumber
@@ -875,7 +858,7 @@ Periodic transfers (interrupt and isochronous) will need a pool of TDs/QHs that 
                 this->RetirePastFrames(GlobalFrameNumber)
                 this->ScheduleNextQuarter(GlobalFrameNumber)
 
-                Info("Scheduled out to %i\n", this->ScheduledHighWatermark)
+                ;Info("Scheduled out to %i\n", this->ScheduledHighWatermark)
 
                 this->RetireQueueHeads(GlobalFrameNumber)
             }
@@ -1027,6 +1010,7 @@ Periodic transfers (interrupt and isochronous) will need a pool of TDs/QHs that 
             ;Out->ActualLength := Length As i16
 
             if (Buffer) {
+                Out->Buffer := Buffer
                 Out->PhysicalBufferPointer := this->VirtualToPhysical(Buffer)
             }
 
@@ -1101,8 +1085,6 @@ Periodic transfers (interrupt and isochronous) will need a pool of TDs/QHs that 
                 }
 
                 TransferDescriptor* TD := this->AllocateTransferDescriptor(Address, Endpoint, Speed, Token, PacketSize, PacketData)
-                TD->Buffer := PacketData
-                TD->PhysicalBufferPointer := this->VirtualToPhysical(PacketData)
 
                 Handle->AddTransferDescriptor(TD)
 
@@ -1186,8 +1168,6 @@ Periodic transfers (interrupt and isochronous) will need a pool of TDs/QHs that 
 
                 TransferDescriptor* TD := this->AllocateTransferDescriptor(Address, Endpoint, Speed, TransferToken::IN, PacketSize, PacketData)
                 TD->DataToggle := DataToggle
-                TD->Buffer := PacketData
-                TD->PhysicalBufferPointer := this->VirtualToPhysical(PacketData)
 
                 Handle->TDs->Push(TD)
 
@@ -1237,19 +1217,17 @@ Periodic transfers (interrupt and isochronous) will need a pool of TDs/QHs that 
                 Token := TransferToken::IN
             }
 
-            PeriodicTransferHandle* Handle := new PeriodicTransferHandle(
-                this, Speed, PeriodicTransferType::Interrupt, Token,
-                Size, Period, 0
-            )
+            PeriodicTransferHandle* Handle := new PeriodicTransferHandle(this)
+
+            Handle->DescribeTransfer(Speed, PeriodicTransferType::Interrupt, Token, Size)
+            Handle->DescribeTiming(Period, 0)
 
             i32 TransfersPerQuarter := (256 / Period) + 1
 
             for (i32 Index := 0, Index < TransfersPerQuarter, Index++) {
-                TransferDescriptor* TD := this->AllocateTransferDescriptor(Address, Endpoint, Speed, Token, Size, null)
-                Handle->ProvideTransferDescriptor(TD)
+                TransferDescriptor* TD := this->AllocateTransferDescriptor(Address, Endpoint, Speed, Token, Size, this->Allocate(Size))
 
-                void* Buffer := this->Allocate(Size)
-                Handle->ProvideBuffer(Buffer)
+                Handle->ProvideTransferDescriptor(TD)
             }
             
             this->InterruptTransfers->Push(Handle)
