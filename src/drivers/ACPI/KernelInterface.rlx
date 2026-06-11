@@ -109,8 +109,10 @@ define void ACPI_Stall(i64 Time) {
     ; todo
 }
 
+i32 ACPI_SemaphoreCount := 0
+
 define void* ACPI_CreateSemaphore(i32 InitialValue) {
-    return new Synchronization::Semaphore(InitialValue)
+    return new Synchronization::Semaphore(FormatString("ACPI %i", ACPI_SemaphoreCount++), InitialValue)
 }
 
 define void ACPI_DeleteSemaphore(void* RawSemaphore) {
