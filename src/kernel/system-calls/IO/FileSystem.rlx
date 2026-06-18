@@ -250,13 +250,13 @@ define i64 SystemCallWriteMultiple(i64 FileDescriptor, i64 USER_Vectors, i32 Cou
 
 		void* NextBuffer := CurrentProcess->MapAddressForRead(Next.Address, Next.Size As i32)
 
-		Info("sys_writev(%i, %x, %i): ", FileDescriptor, Next.Address, Next.Size As i32)
+		;Info("sys_writev(%i, %x, %i): ", FileDescriptor, Next.Address, Next.Size As i32)
 
 		for (i32 I := 0, I < Next.Size As i32, I++) {
-			Info("%c", ((NextBuffer As i8*)[I]))
+			;Info("%c", ((NextBuffer As i8*)[I]))
 		}
 
-		Info("\n")
+		;Info("\n")
 		
 		TotalWritten += Handle->Write(NextBuffer, Next.Size As i32)
 	}
