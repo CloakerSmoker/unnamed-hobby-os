@@ -145,6 +145,8 @@ namespace USB::UHCI {
 
         SetupPacket* Setup
 
+        RequestDataPhaseDirection DataDirection
+
         QueueHead* QH
         PointerArray* TDs
 
@@ -155,9 +157,10 @@ namespace USB::UHCI {
         Synchronization::Semaphore* Completed
         i32 TransferredSize
 
-        define void New(TransferType Type, IController* Controller, QueueHead* QH, void* OriginalBuffer, void* RelocatedBuffer, i32 Size) {
+        define void New(TransferType Type, IController* Controller, RequestDataPhaseDirection DataDirection, QueueHead* QH, void* OriginalBuffer, void* RelocatedBuffer, i32 Size) {
             this->Type := Type
-            
+            this->DataDirection := DataDirection
+
             this->Controller := Controller
 
             this->QH := QH
@@ -175,11 +178,11 @@ namespace USB::UHCI {
         define void New(IController* Controller, SetupPacket* Setup, QueueHead* QH, void* OriginalBuffer, void* RelocatedBuffer) {
             this->Setup := Setup
             
-            this->New(TransferType::Control, Controller, QH, OriginalBuffer, RelocatedBuffer, Setup->Length)
+            this->New(TransferType::Control, Controller, Setup->DataDirection, QH, OriginalBuffer, RelocatedBuffer, Setup->Length)
         }
 
-        define void New(IController* Controller, QueueHead* QH, void* OriginalBuffer, void* RelocatedBuffer, i32 Size) {
-            this->New(TransferType::Bulk, Controller, QH, OriginalBuffer, RelocatedBuffer, Size)
+        define void New(IController* Controller, RequestDataPhaseDirection Direction, QueueHead* QH, void* OriginalBuffer, void* RelocatedBuffer, i32 Size) {
+            this->New(TransferType::Bulk, Controller, Direction, QH, OriginalBuffer, RelocatedBuffer, Size)
         }
 
         define void AddTransferDescriptor(TransferDescriptor* TD) {
@@ -193,7 +196,7 @@ namespace USB::UHCI {
         define void Complete() {
             this->QH->Complete := true
 
-            if (this->Setup->DataDirection = RequestDataPhaseDirection::DeviceToHost) {
+            if (this->DataDirection = RequestDataPhaseDirection::DeviceToHost) {
                 void* Buffer := this->OriginalBuffer
                 i32 Count := this->TDs->Count()
 
@@ -357,14 +360,15 @@ namespace USB::UHCI {
                 this->FilledCount->Decrement()
             }
 
+            FastZeroMemory(Result->Buffer, this->SingleTransferSize)
+            Result->MaximumLength := (this->SingleTransferSize - 1) As i16
+            Result->ActualLength := 0
+            Result->Active := true
+
             this->ScheduledTransferDescriptors->Push(Result)
             this->ScheduledCount->Increment()
 
             this->TransferDescriptorsLock->Release()
-
-            Result->MaximumLength := (this->SingleTransferSize - 1) As i16
-            Result->ActualLength := 0
-            Result->Active := true
 
             return Result
         }
@@ -376,18 +380,12 @@ namespace USB::UHCI {
             this->ScheduledCount->Decrement()
 
             if (TD->ActualLength = 0) {
-                ; No data was transferred, return buffer to appropriate pool without signaling
+                ; No data was transferred, return buffer to free/uninitialized pool
 
                 if (this->Token = TransferToken::IN) {
                     this->FreeTransferDescriptors->Push(TD)
                     this->FreeCount->Increment()
                 }
-                else if (this->Token = TransferToken::OUT) {
-                    this->FilledTransferDescriptors->Push(TD)
-                    this->FilledCount->Increment()
-                }
-
-                this->TransferDescriptorsLock->Release()
             }
             else {
                 if (this->Token = TransferToken::IN) {
@@ -398,9 +396,9 @@ namespace USB::UHCI {
                     this->FreeTransferDescriptors->Push(TD)
                     this->FreeCount->Increment()
                 }
-
-                this->TransferDescriptorsLock->Release()
             }
+
+            this->TransferDescriptorsLock->Release()
         }
 
         define i32 Write(void* Data, i8 NonBlocking) {
@@ -446,16 +444,56 @@ namespace USB::UHCI {
                 Timeout := -1
             }
 
+            i32 Size := 0
+
             if (this->FilledCount->Wait(Timeout)) {
                 ; We have a filled transfer descriptor to consume
 
                 this->TransferDescriptorsLock->Acquire()
 
-                TransferDescriptor* TD := this->FilledTransferDescriptors->Pop()
+                i32 Count := this->FilledTransferDescriptors->Count()
 
-                MoveMemory(Data, TD->Buffer, this->SingleTransferSize)
+                if (Count != 1) {
+                    ;Info("More than one TD available to read\n")
 
-                this->FreeTransferDescriptors->Push(TD)
+                    for (i32 Index := 0, Index < Count, Index++) {
+                        TransferDescriptor* TD := this->FilledTransferDescriptors->At(Index)
+
+                        ;Info("TD %i: %x, GFN %i\n", Index, TD, TD->ScheduledGlobalFrameNumber)
+                    }
+                }
+
+                ; Select the oldest TD (the one with the lowest scheduled global frame number) to read
+                ;  we have to do this because Controller.RetireSinglePeriodicTransfer sucks
+                ;   and enumerates while modifying and goes backwards
+
+                TransferDescriptor* FirstTD := this->FilledTransferDescriptors->At(0)
+
+                for (i32 Index := 0, Index < Count, Index++) {
+                    TransferDescriptor* TD := this->FilledTransferDescriptors->At(Index)
+
+                    if (TD->ScheduledGlobalFrameNumber < FirstTD->ScheduledGlobalFrameNumber) {
+                        FirstTD := TD
+                    }
+                }
+
+                this->FilledTransferDescriptors->RemoveValue(FirstTD)
+
+                Size := FirstTD->ActualLength + 1
+
+                MoveMemory(Data, FirstTD->Buffer, Size)
+
+                Info("RR %x (buf: %x) @ %i: ", FirstTD, FirstTD->Buffer, FirstTD->ScheduledGlobalFrameNumber)
+
+                i8* Bytes := FirstTD->Buffer
+
+                for (i32 Index := 0, Index < Size, Index++) {
+                    Info(" %X", Bytes[Index])
+                }
+
+                Info("\n")
+
+                this->FreeTransferDescriptors->Push(FirstTD)
                 this->FreeCount->Increment()
 
                 this->TransferDescriptorsLock->Release()
@@ -464,7 +502,7 @@ namespace USB::UHCI {
                 return 0
             }
 
-            return this->SingleTransferSize
+            return Size
         }
 
 
@@ -678,6 +716,10 @@ namespace USB::UHCI {
             Info("}\n")
         }
 
+        define i32 GetCurrentFrameNumber() {
+            return (this->Read16(Registers::FrameNumber) As i32) & 0x3FF
+        }
+
         i8 Stopped
 
         i64 RetiredHighWatermark
@@ -685,9 +727,15 @@ namespace USB::UHCI {
 
         define i32 ScheduleSinglePeriodicTransfer(i32** ppTailLink, PeriodicTransferHandle* Handle, i64 GlobalFrameNumber) {
             if (GlobalFrameNumber % Handle->Period = Handle->Phase) {
+                Info("%i mod %i = %i, ", GlobalFrameNumber, Handle->Period, GlobalFrameNumber % Handle->Period)
+
                 ; This transfer should be scheduled in this frame
 
                 TransferDescriptor* TD := Handle->ScheduleOutgoingTransferDescriptor()
+
+                i32 FrameNumber := (GlobalFrameNumber % 1024) As i32
+
+                Info(" sched %x in slot %i\n", this->PackLink(TD, 0), FrameNumber)
                 
                 TD->ScheduledGlobalFrameNumber := GlobalFrameNumber
 
@@ -747,6 +795,10 @@ namespace USB::UHCI {
             i64 Target := GlobalFrameNumber + 256
             i64 Gap := Target - this->ScheduledHighWatermark
 
+            if (GlobalFrameNumber > this->ScheduledHighWatermark) {
+                Panic("UHCI: Did not schedule next quarter in time!")
+            }
+
             ;Info("High Watermark %i, Gap %i\n", this->ScheduledHighWatermark, Gap)
 
             for (i64 Index := 0, Index < Gap, Index++) {
@@ -756,25 +808,87 @@ namespace USB::UHCI {
             this->ScheduledHighWatermark := Target
         }
 
-        define void RetireSinglePeriodicTransfer(PeriodicTransferHandle* Handle, i64 GlobalFrameNumber) {
-            while (Handle->ScheduledTransferDescriptors->Count() > 0) {
-                 TransferDescriptor* TD := Handle->ScheduledTransferDescriptors->At(0)
+        declare void Stop()
 
-                if (TD->ScheduledGlobalFrameNumber <= GlobalFrameNumber) {
+        define void RetireSinglePeriodicTransfer(PeriodicTransferHandle* Handle, i64 GlobalFrameNumber) {
+
+            i32 Count := Handle->ScheduledTransferDescriptors->Count()
+
+            for (i32 Index := Count - 1, Index >= 0, Index--) {
+                TransferDescriptor* TD := Handle->ScheduledTransferDescriptors->At(Index)
+
+                if (TD->ScheduledGlobalFrameNumber < GlobalFrameNumber) {
                     ; This TD was scheduled in the past, retire it
 
-                    if !(TD->Active) {
-                        Info("UHCI: Retiring inactive periodic TD\n")
+                    if (TD->Active) {
+                        ;Info("UHCI: Retiring active periodic TD\n")
                     }
+
+                    Info("RET TD %x (buf: %x) @ %i, GFN %i\n", this->PackLink(TD, 0), TD->Buffer, GlobalFrameNumber, TD->ScheduledGlobalFrameNumber)
+
+                    ;Info("RET %i @ %i\n", TD->ScheduledGlobalFrameNumber, GlobalFrameNumber)
 
                     Handle->RetireTransferDescriptor(TD)
                 }
-                else {
-                    break
+                else if (TD->ScheduledGlobalFrameNumber = GlobalFrameNumber) {
+                    ; We have no way to know how much of this frame is complete.
+                    ; We'll try again next time
+                }
+                else if (TD->ScheduledGlobalFrameNumber - 1 = GlobalFrameNumber) {
+                    ; Apparently this is a problem too
+                }
+                else if (TD->ScheduledGlobalFrameNumber > GlobalFrameNumber) {
+                    if (TD->ActualLength) {
+                        this->Stop()
+
+                        Info("TD %x completed in the future! GFN %i, Current GFN %i\n", this->VirtualToPhysical(TD), TD->ScheduledGlobalFrameNumber, GlobalFrameNumber)
+                        i32 FrameNumber := this->GetCurrentFrameNumber()
+
+                        Info("Current Hardware Frame Number: %i\n", FrameNumber)
+
+                        Info("=== Frame list as of current GFN ===\n")
+                        this->DumpLinkGraphViz(this->FrameList[(GlobalFrameNumber - 1 ) % 1024])
+                        Info("=== Frame list as of TD's scheduled GFN ===\n")
+                        this->DumpLinkGraphViz(this->FrameList[(TD->ScheduledGlobalFrameNumber % 1024) As i32])
+
+                        for (i32 CheckIndex := 0, CheckIndex < 64, CheckIndex++) {
+                            i32 CheckFrameNumber := ((GlobalFrameNumber - CheckIndex) % 1024) As i32
+
+                            i32 CheckLink := this->FrameList[CheckFrameNumber]
+                            i32 ControlQHLink := this->PackLink(this->ControlTransferQueue, LinkFlags::IsQueueHead | LinkFlags::DepthFirst)
+
+                            i8 Found := false
+
+                            while (CheckLink != ControlQHLink) {
+                                TransferDescriptor* CheckTD := this->PhysicalToVirtual(CheckLink & 0x7FFF_FFF0)
+
+                                if (CheckTD = TD) {
+                                    Info("Found TD in frame %i\n", CheckFrameNumber)
+                                    Found := true
+                                    break
+                                }
+                                else {
+                                    if (CheckTD->Link & LinkFlags::Terminator) {
+                                        Found := true
+                                        break
+                                    }
+
+                                    CheckLink = CheckTD->Link
+                                }
+                            }
+
+                            if (Found) {
+                                break
+                            }
+                        }
+
+
+                        Panic("TD Completed in the future!!!!")
+                    }
                 }
             }
 
-            Handle->DumpStatus()
+            ;Handle->DumpStatus()
         }
 
         define void RetirePastFrames(i64 GlobalFrameNumber) {
@@ -841,10 +955,6 @@ namespace USB::UHCI {
                     Current->HorizontalLink := Next->HorizontalLink
                 }
             }
-        }
-
-        define i32 GetCurrentFrameNumber() {
-            return (this->Read16(Registers::FrameNumber) As i32) & 0x3FF
         }
 
         i32 CycleCounter
@@ -1070,8 +1180,12 @@ namespace USB::UHCI {
             Tail->HorizontalLink := this->PackLink(Handle->QH, LinkFlags::IsQueueHead | LinkFlags::DepthFirst)
         }
 
-        define ITransferHandle* SendBulkTransfer(i32 Address, i32 Endpoint, TransferSpeed Speed, RequestDataPhaseDirection DataDirection, void* Buffer, i32 DataLength) {
-            QueueHead* QH := this->AllocateQueueHead("Bulk Transfer")
+        i32 BulkTransferCount
+
+        define ITransferHandle* SendBulkTransfer(i32 Address, i32 Endpoint, i8* pDataToggle, TransferSpeed Speed, RequestDataPhaseDirection DataDirection, void* Buffer, i32 DataLength) {
+            i8* Name := FormatString("Bulk Transfer %i", this->BulkTransferCount++)
+
+            QueueHead* QH := this->AllocateQueueHead(Name)
 
             void* RelocatedBuffer := this->Heap->Allocate(DataLength)
 
@@ -1079,9 +1193,13 @@ namespace USB::UHCI {
                 MoveMemory(RelocatedBuffer, Buffer, DataLength)
             }
 
-            TransferHandle* Handle := new TransferHandle(this, null, QH, Buffer, RelocatedBuffer)
+            TransferHandle* Handle := new TransferHandle(this, DataDirection, QH, Buffer, RelocatedBuffer, DataLength)
 
             TransferToken Token := TransferToken::OUT
+
+            if (DataDirection = USB::RequestDataPhaseDirection::DeviceToHost) {
+                Token := TransferToken::IN
+            }
 
             i32 MaxSize := 8
 
@@ -1101,6 +1219,9 @@ namespace USB::UHCI {
 
                 TransferDescriptor* TD := this->AllocateTransferDescriptor(Address, Endpoint, Speed, Token, PacketSize, PacketData)
 
+                TD->DataToggle := *pDataToggle
+                pDataToggle[0] := !pDataToggle[0]
+
                 Handle->AddTransferDescriptor(TD)
 
                 PacketData += PacketSize
@@ -1119,6 +1240,13 @@ namespace USB::UHCI {
             QH->VerticalLink := this->PackLink(Handle->TDs->At(0), LinkFlags::DepthFirst)
 
             this->QueueHeadsInFlight->Push(QH)
+
+            Info("=========== Scheduling %s ==========\n", QH->Name)
+
+            ;this->DumpLink(this->PackLink(QH, LinkFlags::IsQueueHead))
+            ;this->DumpLink(this->PackLink(this->PeriodicQueueHeads[QueueHeadPeriod::_1_MS], LinkFlags::IsQueueHead))
+
+            this->DumpLinkGraphViz(this->PackLink(QH, LinkFlags::IsQueueHead))
 
             ;this->DumpLink(this->PackLink(QH, LinkFlags::IsQueueHead))
             ;this->DumpLink(this->PackLink(this->PeriodicQueueHeads[QueueHeadPeriod::_1_MS], LinkFlags::IsQueueHead))
@@ -1181,7 +1309,7 @@ namespace USB::UHCI {
                     PacketSize := DataLength
                 }
 
-                TransferDescriptor* TD := this->AllocateTransferDescriptor(Address, Endpoint, Speed, TransferToken::IN, PacketSize, PacketData)
+                TransferDescriptor* TD := this->AllocateTransferDescriptor(Address, Endpoint, Speed, Token, PacketSize, PacketData)
                 TD->DataToggle := DataToggle
 
                 Handle->TDs->Push(TD)
@@ -1505,6 +1633,8 @@ namespace USB::UHCI {
             RegisterFields::Interrupt InterruptFields := 0 As RegisterFields::Interrupt
             InterruptFields.InterruptOnComplete := true
             this->Write16(Registers::InterruptEnable, InterruptFields As i16)
+
+            this->ScheduleNextQuarter(0)
 
             CommandFields.RunStop := true
             CommandFields.Enable64BitPackets := true
