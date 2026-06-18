@@ -113,6 +113,9 @@ namespace Synchronization {
             this->Wait(0)
         }
 
+        define void Decrement(i32 Value, i32 TimeoutMS) {
+            this->Wait(Value, TimeoutMS)
+        }
         define void Decrement(i32 Value) {
             this->Wait(Value, 0)
         }
