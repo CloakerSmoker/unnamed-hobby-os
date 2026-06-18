@@ -21,7 +21,7 @@ namespace USB {
     struct EndpointInfo {
         EndpointDescriptor Descriptor
         i32 Number
-        i8 Toggle
+        i8 DataToggle
 
         static self* New(DescriptorHeader* Descriptor) {
             self* this := Alloc(#self)
@@ -118,7 +118,7 @@ namespace USB {
         virtual Bus* GetBus()
 
         virtual ITransferHandle* SendControlTransfer(i32, i32, TransferSpeed, SetupPacket*, void*, i32)
-        virtual ITransferHandle* SendBulkTransfer(i32, i32, TransferSpeed, RequestDataPhaseDirection, void*, i32)
+        virtual ITransferHandle* SendBulkTransfer(i32, i32, i8*, TransferSpeed, RequestDataPhaseDirection, void*, i32)
         virtual IPeriodicTransferHandle* ScheduleInterruptTransfer(i32, i32, TransferSpeed, RequestDataPhaseDirection, i32, i32)
         virtual void Free(ITransferHandle*)
 
@@ -244,6 +244,10 @@ namespace USB {
             return this->Controller->ScheduleInterruptTransfer(this->Address, Endpoint, this->Speed, Direction, Size, PollingInterval)
         }
 
+        define ITransferHandle* SendBulkTransfer(EndpointInfo* Endpoint, RequestDataPhaseDirection Direction, void* Buffer, i32 Length) {
+            return this->Controller->SendBulkTransfer(this->Address, Endpoint->Number, Endpoint~>DataToggle, this->Speed, Direction, Buffer, Length)
+        }
+
 
         define void New(IController* Controller, i32 Address) {
             this->Controller := Controller
@@ -252,7 +256,7 @@ namespace USB {
             this->ControlEndpoint := new EndpointInfo(null)
             this->Configurations := PointerArray:New()
 
-            this->Speed := TransferSpeed::High
+            this->Speed := TransferSpeed::Full
 
             this->Descriptor := this->GetDescriptor(USB::DescriptorType::Device, 0)
             

@@ -214,8 +214,14 @@ int DG_GetKey(int* pressed, unsigned char* doomKey) {
 		KernelKeyInput Input = {0};
 		int BytesRead = read(fileno(InputStream), &Input, sizeof(Input));
 
+		//printf("Read %d bytes from input stream\n", BytesRead);
+
 		for (int i = 0; KernelKeyMappings[i].KernelKeyCode != 0; i++) {
 			if (KernelKeyMappings[i].KernelKeyCode == Input.KeyCode) {
+				//printf("Kernel key code %d maps to Doom key code %d\n", Input.KeyCode, KernelKeyMappings[i].DoomKeyCode);
+				//printf("Modifiers: %d\n", Input.Modifiers);
+				//printf("Pressed? %s\n", (Input.Modifiers & KERNEL_KEY_MODIFIER_RELEASED) ? "No" : "Yes");
+
 				*doomKey = KernelKeyMappings[i].DoomKeyCode;
 				*pressed = Input.Modifiers & KERNEL_KEY_MODIFIER_RELEASED ? 0 : 1;
 				return 1; // Special key

@@ -54,9 +54,11 @@ namespace USB::HID {
 
         i8 Modifiers
 
+        Synchronization::Lock* QueueLock
+
         KeyInput[32] Queue
-	    i32 QueueHead
-	    i32 QueueTail
+	    i32 QueueRead
+	    i32 QueueWrite
 
         define i32 MapUsageToKeyCode(KeyboardUsage Usage) {
             if (Usage As i32 < USB_HID_KEYBOARD_USAGE_TO_KEY_CODE_SIZE) {
@@ -74,10 +76,18 @@ namespace USB::HID {
             i32 KeyCode := this->MapUsageToKeyCode(Usage As KeyboardUsage)
 
             if (KeyCode != 0) {
-                i32 Index := this->QueueTail++ % 32
+                this->QueueLock->Acquire()
+
+                i32 Index := this->QueueWrite++ % 32
                 KeyInput* Input := this->Queue[Index]
 
                 Input->Assign(Modifiers, KeyCode)
+
+                this->QueueLock->Release()
+
+                Info("Queued: %key-modifiers %key-name\n", Modifiers, KeyCode)
+
+                ;Info("Queued. RD %i, WR %i, Available %i\n", this->QueueRead, this->QueueWrite, this->QueueWrite - this->QueueRead)
 
                 ;PrintKeyName(KeyCode)
             }
@@ -201,8 +211,15 @@ namespace USB::HID {
 
         define void New(HumanInputDevice* Base) {
             this->Base := Base
+
+            Device* BaseDevice := Base->Base
+            EndpointInfo* Endpoint := Base->Interface->Endpoints->At(0)
+
+            this->QueueLock := new Synchronization::Lock(FormatString("USB::HID::Keyboard Queue Lock %i.%i", BaseDevice->Address, Endpoint->Number))
+
             this->Layout := Base->Parser->InputReportLayouts->PointerAt(0)
             this->Layout->Buffer := Alloc(this->Layout->Size)
+
             this->TransferHandle := Base->ScheduleInputReports()
 
             this->ReportTask := Scheduler->AddLightTask(null, "USB::HID::Keyboard Report Handler")
@@ -211,22 +228,37 @@ namespace USB::HID {
         }
 
         define i32 Available() {
-            return (this->QueueTail - this->QueueHead) % 32
+            return (this->QueueWrite - this->QueueRead) % 32
         }
 
         define i32 Poll(i32 Mode) {
             if (Mode & POLL_FOR_READ) {
-                if (this->Available() > 0) {
-                    return POLL_CAN_READ
+                this->QueueLock->Acquire()
+
+                i32 Available := this->Available()
+                i32 Result := 0
+
+                if (Available > 0) {
+                    ;Info("Poll. RD %i, WR %i, Available %i\n", this->QueueRead, this->QueueWrite, this->QueueWrite - this->QueueRead)
+                    Result := POLL_CAN_READ
                 }
+
+                this->QueueLock->Release()
+
+                return Result
             }
 
             return 0
         }
 
         define i32 Read(void* Buffer, i32 Size) {
+            this->QueueLock->Acquire()
+
             i32 Desired := Size / #KeyInput
             i32 Available := this->Available()
+
+            ;Info("Read. RD %i, WR %i, Available %i\n", this->QueueRead, this->QueueWrite, this->QueueWrite - this->QueueRead)
+            ;Info("Desired %i bytes, %i inputs\n", Size, Desired)
 
             i32 Read := Desired
 
@@ -237,10 +269,12 @@ namespace USB::HID {
             KeyInput* Results := Buffer
 
             for (i32 Index := 0, Index < Read, Index += 1) {
-                i32 SourceIndex := this->QueueHead++ % 32
+                i32 SourceIndex := this->QueueRead++ % 32
 
                 MoveMemory(Results[Index], this->Queue[SourceIndex], #KeyInput)
             }
+
+            this->QueueLock->Release()
 
             return Read * #KeyInput
         }
