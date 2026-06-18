@@ -406,12 +406,13 @@ endif
 
 HELP_TEXT+=uhci: Add a UHCI controller
 ifneq (,$(findstring uhci,$(flags)))
-	QEMU_FLAGS+=-device ich9-usb-uhci1 -device usb-mouse,bus=usb-bus.0,port=1 -device usb-hub,bus=usb-bus.0,port=2,pcap=hub.pcap -device usb-kbd,bus=usb-bus.0 -device usb-storage,bus=usb-bus.0,drive=stick -drive if=none,id=stick,format=raw,file=build/USB.img
+#	QEMU_FLAGS+=-device ich9-usb-uhci1 -device usb-mouse,bus=usb-bus.0,port=1 -device usb-hub,bus=usb-bus.0,port=2,pcap=hub.pcap -device usb-kbd,bus=usb-bus.0,pcap=keeb.pcap -device usb-storage,bus=usb-bus.0,drive=stick -drive if=none,id=stick,format=raw,file=build/USB.img
+	QEMU_FLAGS+=-device ich9-usb-uhci1 -device usb-storage,bus=usb-bus.0,port=2,drive=stick,pcap=ustick.pcap -drive if=none,id=stick,format=raw,file=build/USB.img -device usb-kbd,bus=usb-bus.0,port=1,pcap=keeb.pcap -trace "usb_msd*"
 endif
 
 HELP_TEXT+=ehci: Add an EHCI controller, and use a USB device as the boot device instead of an AHCI device|
 ifneq (,$(findstring ehci,$(flags)))
-	DISK_FLAGS:=-drive if=none,id=stick,format=raw,file=build/USB.img -usb -device usb-ehci,id=ehci -device usb-storage,bus=ehci.0,drive=stick
+	DISK_FLAGS:=-drive if=none,id=stick,format=raw,file=build/USB.img -usb -device usb-ehci,id=ehci -device usb-storage,bus=ehci.0,drive=stick,pcap=stick.pcap
 endif
 
 HELP_TEXT+=-dint: dint

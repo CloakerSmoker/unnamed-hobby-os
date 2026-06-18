@@ -223,6 +223,8 @@ ICH9::AHCI::Controller* SATAController := null
 #Require "./src/drivers/USB/EHCI/EHCI.rlx"
 #Require "./src/drivers/USB/UHCI/UHCI.rlx"
 
+#Require "./src/drivers/USB/MassStorage/BulkOnlyTransport.rlx"
+
 ; Dummy to ensure a function isn't optimized away
 define void DO_NOT_OPTIMIZE_AWAY(void* Function) asm { ret }
 
@@ -481,7 +483,7 @@ define void VFSRunShellTask() {
 
 	SleepMS(10000)
 	;VFSExecuteShellCommand("tree /dev")
-    VFSExecuteShellCommand("execute /doom/doom.elf -iwad /doom/DOOM.WAD -mb 64")
+    ;VFSExecuteShellCommand("execute /doom/doom.elf -iwad /doom/DOOM.WAD -mb 64")
 	;VFSRunShell(KernelTerminal)
 }
 

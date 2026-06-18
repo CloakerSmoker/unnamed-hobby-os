@@ -1,0 +1,307 @@
+
+namespace SCSI {
+
+    enum DataDirection {
+        None := 0,
+        HostToDevice := 1,
+        DeviceToHost := 2
+    }
+
+    struct Request {
+        i8 LogicalUnitNumber
+        DataDirection Direction
+
+        i8[16] CommandBuffer
+        i32 CommandSize
+        
+        union {
+            void* OutgoingBuffer
+            void* IncomingBuffer
+            void* DataBuffer
+        }
+
+        union {
+            i32 OutgoingSize
+            i32 IncomingSize
+            i32 DataSize
+        }
+    }
+
+    enum RequestStatus {
+        Good,
+        CheckCondition
+    }
+
+    interface IRequestHandle {
+        virtual RequestStatus Wait()
+        virtual void Free()
+    }
+
+    interface IController {
+        virtual IRequestHandle* SendRequest(Request*)
+    }
+
+    enum OperationCode As i8 {
+        TestUnitReady := 0x00,
+        RequestSense := 0x03,
+        Inquiry := 0x12,
+        ReadCapacity10 := 0x25,
+        Read10 := 0x28
+    }
+
+    struct InquiryCommand unaligned {
+        OperationCode OperationCode
+        i8 EVPD
+        i8 PageCode
+        i16 AllocationLength
+        i8 Control
+    }
+
+    struct InquiryResponse {
+        bits As i8 {
+            [0:4] PeripheralDeviceType
+            [5:7] PeripheralQualifier
+        }
+
+        bits As i8 {
+            [7] RemovableMedia
+        }
+
+        i8 Version
+
+        bits As i8 {
+            [0:3] ResponseDataFormat
+            [4] HISUP
+            [5] NORMACA
+        }
+
+        i8 AdditionalLength
+
+        bits As i8 {
+            [0] Protect
+            [3] ThirdPartyCopy
+            [4:5] TargetPortGroupSupport
+            [6] AccessControlCoordinator
+            [7] SCCS
+        }
+
+        bits As i8 {
+            [4] MultiPort
+            [6] EnclosureServices
+        }
+
+        bits As i8 {
+            [1] CommandQueue
+        }
+
+        i8[8] VendorIdentification
+        i8[16] ProductIdentification
+        i8[4] ProductRevisionLevel
+
+        i8[8] DriveSerialNumber
+    }
+
+    struct TestUnitReadyCommand unaligned {
+        OperationCode OperationCode
+        i8[3] _
+        i8 Control
+    }
+
+    struct RequestSenseCommand unaligned {
+        OperationCode OperationCode
+        i8 DESC
+        i8[2] _
+        i8 AllocationLength
+        i8 Control
+    }
+
+    enum ResponseCode As i8 {
+        CurrentError := 0x70,
+        DeferredError := 0x71
+    }
+
+    enum SenseKey As i8 {
+        NoSense := 0x00,
+        RecoveredError := 0x01,
+        NotReady := 0x02,
+        MediumError := 0x03,
+        HardwareError := 0x04,
+        IllegalRequest := 0x05,
+        UnitAttention := 0x06,
+        DataProtect := 0x07,
+        BlankCheck := 0x08,
+        VendorSpecific := 0x09,
+        CopyAborted := 0x0A,
+        AbortedCommand := 0x0B,
+        VolumeOverflow := 0x0D,
+        Miscompare := 0x0E,
+        Completed := 0x0F
+    }
+
+    struct RequestSenseFixedFormatResponse {
+        bits As i8 {
+            ResponseCode [0:6] ResponseCode
+            [7] Valid
+        }
+
+        i8 _
+
+        bits As i8 {
+            SenseKey [0:3] SenseKey
+            [5] ILI
+            [6] EOM
+            [7] FileMark
+        }
+
+        i8[4] Information
+        i8 AdditionalSenseLength
+        i8[4] CommandSpecificInformation
+        i8 AdditionalSenseCode
+        i8 AdditionalSenseCodeQualifier
+        i8 FieldReplaceableUnitCode
+        i8[6] SenseKeySpecific
+    }
+
+    struct ReadCapacity10Command unaligned {
+        OperationCode OperationCode
+        i8[8] _
+        i8 Control
+    }
+
+    struct ReadCapacity10Response {
+        i32 LastLogicalBlockAddress
+        i32 BlockSize
+
+        define void SwapEndian() {
+            this->LastLogicalBlockAddress := NetworkInt(this->LastLogicalBlockAddress)
+            this->BlockSize := NetworkInt(this->BlockSize)
+        }
+    }
+
+    struct Read10Request unaligned {
+        OperationCode OperationCode
+
+        bits As i8 {
+            [2] RARC
+            [3] FUA
+            [4] DPO
+            [5:7] RDPROTECT
+        }
+
+        i32 LogicalBlockAddress
+        i8 GroupNumber
+
+        i16 TransferLength
+        i8 Control
+
+        define void SwapEndian() {
+            this->LogicalBlockAddress := NetworkInt(this->LogicalBlockAddress)
+            this->TransferLength := NetworkShort(this->TransferLength)
+        }
+    }
+
+    class Bus derives INew {
+        IController* Controller
+        i32 MaxLogicalUnitNumber
+
+        define void New(IController* Controller, i32 MaxLUN) {
+            this->Controller := Controller
+            this->MaxLogicalUnitNumber := MaxLUN
+        }
+
+        define IRequestHandle* Inquire(i8 LogicalUnitNumber, InquiryResponse* Response) {
+            Request* R := Alloc(#Request)
+
+            InquiryCommand* Command := R->CommandBuffer As InquiryCommand*
+
+            Command->OperationCode := OperationCode::Inquiry
+            Command->EVPD := 0
+            Command->PageCode := 0
+            Command->AllocationLength := #InquiryResponse As i16
+            Command->Control := 0
+
+            R->CommandSize := #InquiryCommand
+
+            R->LogicalUnitNumber := LogicalUnitNumber
+            R->Direction := DataDirection::DeviceToHost
+            R->IncomingBuffer := Response
+            R->IncomingSize := #InquiryResponse
+
+            return this->Controller->SendRequest(R)
+        }
+
+        define IRequestHandle* TestUnitReady(i8 LogicalUnitNumber) {
+            Request* R := Alloc(#Request)
+
+            TestUnitReadyCommand* Command := R->CommandBuffer As TestUnitReadyCommand*
+
+            Command->OperationCode := OperationCode::TestUnitReady
+            Command->Control := 0
+
+            R->CommandSize := 16
+
+            R->LogicalUnitNumber := LogicalUnitNumber
+            R->Direction := DataDirection::None
+
+            return this->Controller->SendRequest(R)
+        }
+
+        define IRequestHandle* RequestFixedSense(i8 LogicalUnitNumber, RequestSenseFixedFormatResponse* Response) {
+            Request* R := Alloc(#Request)
+
+            RequestSenseCommand* Command := R->CommandBuffer As RequestSenseCommand*
+
+            Command->OperationCode := OperationCode::RequestSense
+            Command->AllocationLength := #RequestSenseFixedFormatResponse As i8
+
+            R->CommandSize := #RequestSenseCommand
+
+            R->LogicalUnitNumber := LogicalUnitNumber
+            R->Direction := DataDirection::DeviceToHost
+            R->IncomingBuffer := Response
+            R->IncomingSize := #RequestSenseFixedFormatResponse
+
+            return this->Controller->SendRequest(R)
+        }
+
+        define IRequestHandle* ReadCapacity10(i8 LogicalUnitNumber, ReadCapacity10Response* Response) {
+            Request* R := Alloc(#Request)
+
+            ReadCapacity10Command* Command := R->CommandBuffer As ReadCapacity10Command*
+
+            Command->OperationCode := OperationCode::ReadCapacity10
+            Command->Control := 0
+
+            R->CommandSize := #ReadCapacity10Command
+
+            R->LogicalUnitNumber := LogicalUnitNumber
+            R->Direction := DataDirection::DeviceToHost
+            R->IncomingBuffer := Response
+            R->IncomingSize := #ReadCapacity10Response
+
+            return this->Controller->SendRequest(R)
+        }
+
+        define IRequestHandle* Read10(i8 LogicalUnitNumber, i32 LogicalBlockAddress, i32 BlockSize, i32 BlockCount, void* Buffer) {
+            Request* R := Alloc(#Request)
+
+            Read10Request* Command := R->CommandBuffer As Read10Request*
+
+            Command->OperationCode := OperationCode::Read10
+            Command->LogicalBlockAddress := LogicalBlockAddress
+            Command->TransferLength := BlockCount As i16
+            Command->Control := 0
+
+            Command->SwapEndian()
+
+            R->CommandSize := #Read10Request
+
+            R->LogicalUnitNumber := LogicalUnitNumber
+            R->Direction := DataDirection::DeviceToHost
+            R->IncomingBuffer := Buffer
+            R->IncomingSize := BlockCount * BlockSize
+
+            return this->Controller->SendRequest(R)
+        }
+    }
+}

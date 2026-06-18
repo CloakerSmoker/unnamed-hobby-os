@@ -1,0 +1,344 @@
+
+#Require "./src/drivers/block-device/SCSI/SCSI.rlx"
+
+i8 USB_CLASS_MASS_STORAGE := 0x08
+i8 USB_SUBCLASS_SCSI := 0x06
+i8 USB_PROTOCOL_BULK_ONLY := 0x50
+
+namespace USB::MassStorage::BulkOnlyTransport {
+    struct BulkOnlySetupPacket {
+        SetupPacket Base
+
+        define void Reset(i32 InterfaceNumber) {
+            SetupPacket* Setup := this~>Base
+
+            Setup->To(RequestRecipient::Interface, RequestType::Class, RequestDataPhaseDirection::HostToDevice)
+
+            Setup->ClassRequest := 0xFF As i8 ; Bulk-only reset
+            Setup->Index := InterfaceNumber As i16
+        }
+
+        define void GetMaxLUN(i32 InterfaceNumber) {
+            SetupPacket* Setup := this~>Base
+
+            Setup->To(RequestRecipient::Interface, RequestType::Class, RequestDataPhaseDirection::DeviceToHost)
+
+            Setup->ClassRequest := 0xFE As i8 ; Get max LUN
+            Setup->Index := InterfaceNumber As i16
+            Setup->Value := 0
+            Setup->Length := 1
+        }
+    }
+
+    enum CommandBlockWrapperFlags As i8 {
+        HostToDevice := 0x00,
+        DeviceToHost := 0x80
+    }
+
+    struct CommandBlockWrapper unaligned {
+        i32 Signature ; 'USBC' (0x43425355)
+        i32 Tag
+        i32 DataTransferSize
+        CommandBlockWrapperFlags Flags
+        i8 LUN
+        i8 CommandSize
+        i8[16] Command
+    }
+
+    enum CommandStatusWrapperStatus As i8 {
+        Good := 0x00,
+        CheckCondition := 0x01,
+        PhaseError := 0x02
+    }
+
+    struct CommandStatusWrapper {
+        i32 Signature ; 'USBS' (0x53425355)
+        i32 Tag
+        i32 DataResidue
+        CommandStatusWrapperStatus Status
+    }
+
+    class RequestHandle implements SCSI::IRequestHandle, derives INew {
+        void* WrappedCommand
+
+        ITransferHandle* CommandTransfer
+        ITransferHandle* DataTransfer
+        ITransferHandle* StatusTransfer
+
+        CommandStatusWrapper Status
+
+        define void New(void* WrappedCommand, ITransferHandle* Command, ITransferHandle* Data) {
+            this->WrappedCommand := WrappedCommand
+            this->CommandTransfer := Command
+            this->DataTransfer := Data
+        }
+
+        define SCSI::RequestStatus Wait() {
+            this->CommandTransfer->Wait()
+
+            if (this->DataTransfer) {
+                this->DataTransfer->Wait()
+            }
+            
+            this->StatusTransfer->Wait()
+
+            return ((this~>Status->Status As i32) & 0xFF) As SCSI::RequestStatus
+        }
+
+        define void Free() {
+            this->CommandTransfer->Free()
+
+            if (this->DataTransfer) {
+                this->DataTransfer->Free()
+            }
+
+            this->StatusTransfer->Free()
+        }
+    }
+
+    class MassStorageDevice implements SCSI::IController, IBlockDevice, derives INew {
+        USB::Device* Base
+
+        InterfaceInfo* Interface
+
+        EndpointInfo* OutEndpoint
+        EndpointInfo* InEndpoint
+
+        SCSI::Bus* Bus
+
+        i64 BlockCount
+        i32 BlockSize
+
+        define void New(USB::Device* Base, InterfaceInfo* Interface) {
+            this->Base := Base
+            this->Interface := Interface
+
+            i32 Count := Interface->Endpoints->Count()
+
+            for (i32 Index := 0, Index < Count, Index++) {
+                EndpointInfo* Endpoint := Interface->Endpoints->At(Index)
+                EndpointDescriptor* Descriptor := Endpoint~>Descriptor
+
+                if (Descriptor->Attributes = EndpointAttributes::Bulk) {
+                    if (Descriptor->Direction = EndpointDirection::Out) {
+                        if (this->OutEndpoint = null) {
+                            this->OutEndpoint := Endpoint
+                        }
+                    }
+                    else {
+                        if (this->InEndpoint = null) {
+                            this->InEndpoint := Endpoint
+                        }
+                    }
+                }
+
+                if (this->OutEndpoint != null && this->InEndpoint != null) {
+                    break
+                }
+            }
+
+            if (this->OutEndpoint = null || this->InEndpoint = null) {
+                Panic("Mass storage device does not have required bulk endpoints")
+            }
+
+            BulkOnlySetupPacket Setup
+            FastZeroMemory(&Setup, #BulkOnlySetupPacket)
+
+            Setup.Reset(Interface->Descriptor->InterfaceNumber)
+
+            this->Base->SendControlTransfer(Setup~>Base, null, 0)->Wait()
+        }
+
+        define ITransferHandle* SendOut(void* Buffer, i32 Length) {
+            return this->Base->SendBulkTransfer(
+                this->OutEndpoint, RequestDataPhaseDirection::HostToDevice, Buffer, Length
+            )
+        }
+
+        define ITransferHandle* SendIn(void* Buffer, i32 Length) {
+            return this->Base->SendBulkTransfer(
+                this->InEndpoint, RequestDataPhaseDirection::DeviceToHost, Buffer, Length
+            )
+        }
+
+        define void* WrapCommand(i32 LUN, SCSI::DataDirection Direction, void* CommandBuffer, i32 CommandSize, i32 DataSize) {
+            CommandBlockWrapper* Wrapper := Alloc(#CommandBlockWrapper)
+
+            Wrapper->Signature := 'USBC' As i32
+            Wrapper->Tag := 0
+            Wrapper->DataTransferSize := DataSize
+
+            if (Direction = SCSI::DataDirection::HostToDevice) {
+                Wrapper->Flags := CommandBlockWrapperFlags::HostToDevice
+            }
+            else {
+                Wrapper->Flags := CommandBlockWrapperFlags::DeviceToHost
+            }
+            
+            Wrapper->LUN := LUN As i8
+            Wrapper->CommandSize := CommandSize As i8
+
+            MoveMemory(Wrapper->Command, CommandBuffer, CommandSize)
+
+            return Wrapper
+        }
+
+        define SCSI::IRequestHandle* SendRequest(SCSI::Request* R) {
+            Info("Sending SCSI request: LUN=%i, Direction=%i, CommandLength=%i, DataLength=%i\n", R->LogicalUnitNumber, R->Direction, R->CommandSize, R->DataSize)
+            Info("Command buffer:\n%hexdump\n", R->CommandBuffer, R->CommandSize)
+
+            if (R->CommandSize > 16) {
+                Panic("SCSI command size exceeds USB MSC BOT maximum of 16 bytes")
+            }
+
+            void* WrappedCommand := this->WrapCommand(R->LogicalUnitNumber, R->Direction, R->CommandBuffer, R->CommandSize, R->DataSize)
+            Info("Sent command wrapper:\n%hexdump\n", WrappedCommand, #CommandBlockWrapper)
+
+            ITransferHandle* CommandTransfer := this->SendOut(WrappedCommand, #CommandBlockWrapper)
+
+
+            ITransferHandle* DataTransfer := null
+
+            if (R->DataBuffer && R->DataSize > 0) {
+                if (R->Direction = SCSI::DataDirection::HostToDevice) {
+                    DataTransfer := this->SendOut(R->DataBuffer, R->DataSize)
+                }
+                else {
+                    DataTransfer := this->SendIn(R->DataBuffer, R->DataSize)
+                }
+            }
+
+            RequestHandle* Result := new RequestHandle(WrappedCommand, CommandTransfer, DataTransfer)
+
+            Result->StatusTransfer := this->SendIn(Result~>Status, #CommandStatusWrapper)
+
+            return Result
+        }
+
+        define i64 GetBlockSize() {
+            return this->BlockSize
+        }
+
+        ; Use SCSI layer to implement block device interface
+
+        define void Read(i64 FirstBlock, i64 BlockCount, void* Buffer) {
+            if (FirstBlock + BlockCount > this->BlockCount) {
+                Throw(BLOCK_DEVICE_READ_PAST_END)
+            }
+
+            if (this->Bus->Read10(0, FirstBlock As i32, this->BlockSize, BlockCount As i32, Buffer)->Wait() != SCSI::RequestStatus::Good) {
+                Panic("SCSI read(10) failed")
+            }
+        }
+        define void Write(i64 FirstBlock, i64 BlockCount, void* Buffer) {
+            if (FirstBlock + BlockCount > this->BlockCount) {
+                Throw(BLOCK_DEVICE_WRITE_PAST_END)
+            }
+
+            ;if (this->Bus->Write10(0, FirstBlock, this->BlockSize, BlockCount, Buffer)->Wait() != SCSI::RequestStatus::Good) {
+            ;    Panic("SCSI write(10) failed")
+            ;}
+        }
+    }
+
+    class ProtocolDriver implements USB::IDriver, derives INew {
+        define i8* Name() {
+            return "USB::MassStorage::BulkOnlyTransport::ProtocolDriver"
+        }
+
+        PointerArray* Devices ; <MassStorageDevice*>
+
+        define void New() {
+            this->Devices := new PointerArray()
+        }
+
+        define InterfaceMatchResult MatchInterface(Device* Base, InterfaceInfo* Interface) {
+            InterfaceDescriptor* Descriptor := Interface~>Descriptor
+
+            Print("Checking %i %i %i\n", Descriptor->Class, Descriptor->SubClass, Descriptor)
+
+            if (Descriptor->Class = USB_CLASS_MASS_STORAGE) {
+                if (Descriptor->SubClass = USB_SUBCLASS_SCSI) {
+                    if (Descriptor->Protocol = USB_PROTOCOL_BULK_ONLY) {
+                        return InterfaceMatchResult::ClassSubclassProtocolMatch
+                    }
+                }
+            }
+
+            return InterfaceMatchResult::None
+        }
+
+        define void* AttachInterface(USB::Device* Base, InterfaceInfo* Interface) {
+            MassStorageDevice* StorageDevice := new MassStorageDevice(Base, Interface)
+
+            StorageDevice->Bus := new SCSI::Bus(StorageDevice, 0)
+
+            SCSI::InquiryResponse* Response := Alloc(#SCSI::InquiryResponse)
+
+            SCSI::IRequestHandle* InquireHandle := StorageDevice->Bus->Inquire(0, Response)
+
+            if (InquireHandle->Wait() != SCSI::RequestStatus::Good) {
+                Panic("SCSI inquiry failed")
+            }
+
+            Print("%hexdump\n", Response, #SCSI::InquiryResponse)
+
+            SCSI::IRequestHandle* TestUnitReadyHandle := StorageDevice->Bus->TestUnitReady(0)
+
+            if (true || TestUnitReadyHandle->Wait() != SCSI::RequestStatus::Good) {
+                SCSI::RequestSenseFixedFormatResponse* SenseResponse := Alloc(#SCSI::RequestSenseFixedFormatResponse)
+
+                SCSI::IRequestHandle* RequestSenseHandle := StorageDevice->Bus->RequestFixedSense(0, SenseResponse)
+
+                if (RequestSenseHandle->Wait() != SCSI::RequestStatus::Good) {
+                    Panic("SCSI request sense failed")
+                }
+
+                Print("%hexdump\n", SenseResponse, #SCSI::RequestSenseFixedFormatResponse)
+            }
+
+            SCSI::ReadCapacity10Response* CapacityResponse := Alloc(#SCSI::ReadCapacity10Response)
+            SCSI::IRequestHandle* ReadCapacityHandle := StorageDevice->Bus->ReadCapacity10(0, CapacityResponse)
+
+            if (ReadCapacityHandle->Wait() != SCSI::RequestStatus::Good) {
+                Panic("SCSI read capacity(10) failed")
+            }
+
+            CapacityResponse->SwapEndian()
+
+            Info("Read capacity response:\n%hexdump\n", CapacityResponse, #SCSI::ReadCapacity10Response)
+
+            StorageDevice->BlockCount := (CapacityResponse->LastLogicalBlockAddress As i64) + 1
+            StorageDevice->BlockSize := CapacityResponse->BlockSize
+
+            Info("Block count = %i, Block size = %i\n", StorageDevice->BlockCount, StorageDevice->BlockSize)
+
+            /*void* FirstBlock := Alloc(StorageDevice->BlockSize)
+
+            StorageDevice->Read(0, 1, FirstBlock)
+
+            Info("First block:\n%hexdump\n", FirstBlock, StorageDevice->BlockSize)*/
+
+            GPTPartitionTable* PartitionTable := new GPTPartitionTable(StorageDevice)
+
+            for (i32 Index := 0, Index < PartitionTable->Header->PartitionEntryCount, Index++) {
+                GPTPartitionEntry* NextPartition := PartitionTable->ReadPartitionEntry(Index)
+
+                if (NextPartition->StartingLBA = 0 && NextPartition->EndingLBA = 0) {
+                    continue
+                }
+                
+                Print("Partition %i:\n", Index)
+                PrintGPTPartitionEntry(NextPartition)
+            }
+
+            this->Devices->Add(StorageDevice)
+
+            return StorageDevice
+        }
+    }
+}
+
+USB::MassStorage::BulkOnlyTransport::ProtocolDriver* USB_BOT_PROTOCOL_DRIVER := new USB::MassStorage::BulkOnlyTransport::ProtocolDriver()
+i32 USB_BOT_PROTOCOL_DRIVER_ID := RegisterUSBDriver(USB_BOT_PROTOCOL_DRIVER)
+
