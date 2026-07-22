@@ -17,13 +17,13 @@ struct PageMapping {
     void* Virtual
     i64 Physical
     i64 Flags
-    i32 Size
+    i64 Size
 }
 
 struct VirtualMapping {
     void* Virtual
     i64 Physical
-    i32 Size
+    i64 Size
 }
 
 i32 PAGE_LEVEL_4K := 4
@@ -165,15 +165,15 @@ struct PageTrie {
         }
     }
 
-    define i32 LevelSize(i32 Level) {
+    define i64 LevelSize(i64 Level) {
         return 0x1000 << ((4 - Level) * 9)
     }
 
-    define i32 LevelPageCount(i32 Level) {
+    define i64 LevelPageCount(i64 Level) {
         return this->LevelSize(Level) / 0x1000
     }
 
-    define void SetRange(void* Address, i64 Destination, i32 Size, i64 Flags) {
+    define void SetRange(void* Address, i64 Destination, i64 Size, i64 Flags) {
         Info("Trie.SetRange(%x, %x, %i, %x)\n", Address, Destination, Size, Flags)
 
         while (Size != 0) {
@@ -197,8 +197,8 @@ struct PageTrie {
 
             this->Set(Address, Destination | Flags, Level)
 
-            i32 LevelSize := this->LevelSize(Level)
-            i32 LevelPageCount := LevelSize / PAGE_SIZE
+            i64 LevelSize := this->LevelSize(Level)
+            i64 LevelPageCount := LevelSize / PAGE_SIZE
 
             Address += LevelSize
             Destination += LevelSize
