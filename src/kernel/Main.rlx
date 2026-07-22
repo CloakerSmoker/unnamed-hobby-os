@@ -650,7 +650,7 @@ define void Main(TrampolineInfo* Info) {
 	Scheduler->Initialize()
 
 	PixelBuffer* FrameBuffer := Alloc(#PixelBuffer)
-	FrameBuffer->Initialize(ADDRESS_OF_FRAME_BUFFER, RGB32, SCREEN_WIDTH, SCREEN_HEIGHT)
+	FrameBuffer->Initialize(ADDRESS_OF_FRAME_BUFFER, RGB32, BootInfo->FrameBufferWidth, BootInfo->FrameBufferHeight)
 
 	PrimaryDisplay := FrameBuffer
 
@@ -725,6 +725,9 @@ define void Main(TrampolineInfo* Info) {
 	InitializePCIe(&VisitPCIeFunction)
 
 	Print("Done enumerating PCIe\n")
+
+	loop {}
+
 	;loop {}
 
 	;/*

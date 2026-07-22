@@ -150,15 +150,14 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 		
 		if (Mode->HorizontalResolution = 1024 && Mode->VerticalResolution = 768) {
 			if (Graphics->Mode->CurrentMode != Index) {
-				;WaitKey()
-				Graphics->SetMode(Index)
+				;Graphics->SetMode(Index)
 			}
 			
 			break
 		}
 	}
 	
-	SystemTable->ConsoleOutput->Reset()
+	;SystemTable->ConsoleOutput->Reset()
 	
 	Print("Hello new EFI world!\n")
 	
@@ -565,6 +564,8 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 	
 	BootloaderInfo BootInfo {
 		PhysicalFrameBuffer: FrameBuffer As i64,
+		FrameBufferWidth: Graphics->Mode->Info->HorizontalResolution,
+		FrameBufferHeight: Graphics->Mode->Info->VerticalResolution,
 
 		RSDP: RSDP As i64,
 

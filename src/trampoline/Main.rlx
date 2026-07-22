@@ -86,7 +86,7 @@ define void Main(BootloaderInfo* RawInfo) {
     COM_0.Initialize(COM_PORT_0, COM_DIVISOR_115200, COM_LINE_8N1)
 
     Terminal.LoadFON(i8[#File "./misc/fonts/OlivettiThin_8x14.fon"])
-    Terminal.SetFrameBuffer(RawInfo->PhysicalFrameBuffer As void*, RGB32, 1024, 768)
+    Terminal.SetFrameBuffer(RawInfo->PhysicalFrameBuffer As void*, RGB32, RawInfo->FrameBufferWidth, RawInfo->FrameBufferHeight)
     Terminal.Clear()
 
     i64 MaxAddress := RawInfo->MaxAddress
@@ -150,6 +150,9 @@ define void Main(BootloaderInfo* RawInfo) {
     if (PhysicalManagerBuffer = null) {
         Panic("Not enough contiguous free memory for physical memory allocation map")
     }
+
+    Print("Found %x - %x for physical memory bitmap\n", PhysicalManagerBuffer, PhysicalManagerBuffer + (ManagerPageCount * PAGE_SIZE))
+    
 
     PhysicalMemoryManager* PhysicalMemory := PhysicalMemoryManager:Adopt(PhysicalManagerBuffer, MaxAddress)
 
@@ -243,7 +246,7 @@ define void Main(BootloaderInfo* RawInfo) {
 
    ;VirtualMemory->PrintMappings()
 
-    SetCR4(GetCR4() | CR4_ENABLE_PAGE_SIZE)
+    ;SetCR4(GetCR4() | CR4_ENABLE_PAGE_SIZE)
 
     ;VirtualMemory->Enable(&MainContinuation, Info, KernelStack)
 
@@ -322,10 +325,23 @@ define void* MapKernel(TrampolineInfo* Info, void* KernelFileData, i32 KernelFil
 }
 
 define void MainContinuation(TrampolineInfo* Info) {
-    Info("Continuation\n")
+    Info("Running from virtual memory\n")
 
     ; PageTree is active, must invlpg changes
     Info~>PageTree->ShouldInvalidate := true
+
+    PageTrie* Tree := Info~>PageTree
+
+    i64 State := Tree->StartWalkMappings()
+    VirtualMapping Mapping
+
+    while (Tree->WalkMappingsNext(&State, &Mapping)) {
+        i64 Pages := Mapping.Size / PAGE_SIZE
+
+        Print("%x..%x -> %x..%x (%x pages)\n", Mapping.Virtual, Mapping.Virtual + Mapping.Size, Mapping.Physical, Mapping.Physical + Mapping.Size, Pages)
+    }
+
+    loop {}
 
     SetupHeap(Info, ADDRESS_OF_KERNEL_HEAP, PAGES_FOR_KERNEL_HEAP)
     Info("heap!\n")
