@@ -64,6 +64,8 @@ define void PreMain(TrampolineInfo* Info) {
 	PhysicalMemory := Trampoline->PhysicalMemory
 	KernelAddressSpace := Trampoline~>VirtualMemory
 	KernelHeap := Trampoline~>Heap
+
+	KernelVirtualMemory := Trampoline~>PageTree
 }
 
 define i64 VirtualToPhysical(void* RawVirtual) {
@@ -174,6 +176,8 @@ PrintOutputAdapterPrototype KernelPrinter {
 	PrintCharacters: &KernelPrintCharacters
 }
 
+declare void NotifyBlockDeviceAttach(i8*, IBlockDevice*)
+
 #Require "./src/drivers/block-device/BlockDevice.rlx"
 #Require "./src/drivers/block-device/ATABlockDevice.rlx"
 #Require "./src/drivers/block-device/GPTBlockDevice.rlx"
@@ -192,9 +196,11 @@ PrintOutputAdapterPrototype KernelPrinter {
 #Require "./src/kernel/file-system/VFS/BlockDeviceFileHandle.rlx"
 #Require "./src/kernel/file-system/VFS/ZeroDevice.rlx"
 
+IDirectory* VFSDevicesDirectory := null
+#Require "./src/drivers/block-device/Notify.rlx"
+
 #Require "./src/kernel/graphics/FrameBufferFileHandle.rlx"
 
-IDirectory* VFSDevicesDirectory := null
 
 #Require "./src/kernel/file-system/KernelShell.rlx"
 
@@ -215,10 +221,9 @@ IDirectory* VFSDevicesDirectory := null
 #Require "./src/kernel/networking/Loopback.rlx"
 #Require "./src/drivers/networking/E1000.rlx"
 
-#Require "./src/drivers/ICH9/AHCI.rlx"
-#Require "./src/drivers/block-device/ICH9/PortBlockDevice.rlx"
+#Require "./src/drivers/block-device/SATA/AHCI.rlx"
 
-ICH9::AHCI::Controller* SATAController := null
+SATA::AHCI::Controller* FirstAHCIController := null
 
 #Require "./src/drivers/USB/EHCI/EHCI.rlx"
 #Require "./src/drivers/USB/UHCI/UHCI.rlx"
@@ -277,14 +282,13 @@ define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Devic
 		else if (Device->ClassCode = PCI_CLASS_CODE_MASS_STORAGE_CONTROLLER && Device->SubClass = PCI_SUBCLASS_SATA_CONTROLLER) {
 			Print("SATA Controller found:\n%hexdump\n", Device, 0x40)
 
-			Info("SATA Controller %x:%x\n", Device->VendorID, Device->DeviceID)
-			Info("Supports MSI? %i\n", Device->CanUseMSI())
+			Print("SATA Controller %x:%x\n", Device->VendorID, Device->DeviceID)
+			Print("Supports MSI? %i\n", Device->CanUseMSI())
 
-			;if (false) {
-			Info("SATA MAP: %b\n", *((Device + 0x90) As i16*))
+			PCIeAddress* Address := new PCIeAddress(0, Bus, Slot, Function)
 
-			SATAController := Alloc(#ICH9::AHCI::Controller)
-			SATAController->Initialize(Device)
+			FirstAHCIController := new SATA::AHCI::Controller(Device, Address)
+
 			;}
 		}
 	}
@@ -388,63 +392,80 @@ define void PopulateDevicesDirectory(IDirectory* DevicesDirectory) {
 	; SATA Devices: /dev/sataX
 	; (and maybe: /dev/gpt/{partuuid})
 
+	/*
 	PhysicalPageAllocator* Physical := KernelHeapAllocate('CACHEHP', #PhysicalPageAllocator)
 	Physical->Initialize()
 	Physical->Manager := PhysicalMemory
 
-	i32 PopulatedPortCount := SATAController->Ports->Count()
+	i32 ControllerCount := ALL_AHCI_CONTROLLERS->Count()
 
-	for (i32 Index := 0, Index < PopulatedPortCount, Index++) {
-		ICH9::AHCI::DevicePort* Port := SATAController->Ports->At(Index)
+	for (i32 ControllerIndex := 0, ControllerIndex < ControllerCount, ControllerIndex++) {
+		SATA::AHCI::Controller* Controller := ALL_AHCI_CONTROLLERS->At(ControllerIndex)
 
-		if (Port->Type = SATA::DeviceType::SATA) {
-			Port->EnableInterrupts()
-			Port->StartCommands()
+		i32 PopulatedPortCount := Controller->Ports->Count()
 
-			Port->Identify()
+		Print("Scanning AHCI controller %i with %i ports\n", ControllerIndex, PopulatedPortCount)
 
-			Print("SATA Device %i is a %s, SN: %s\n", Port->Index, Port->Model, Port->SerialNumber)
+		for (i32 PortIndex := 0, PortIndex < PopulatedPortCount, PortIndex++) {
+			Print("Scanning port %i\n", PortIndex)
 
-			IBlockDevice* Device := new ICH9::AHCI::PortBlockDevice(Port)
-			IFileHandle* Handle := BlockDeviceFileHandle:New(Device)
-			IFile* File := VFSBlockDeviceFile:New(Handle)
+			SATA::DeviceType Type := Controller->GetPortDeviceType(PortIndex)
 
-			DevicesDirectory->Insert(FormatString("sata%i", Index), File)
+			if (Type = SATA::DeviceType::SATA) {
+				Print("Found SATA device on port %i\n", PortIndex)
 
-			GPTPartitionTable* PartitionTable := new GPTPartitionTable(Device)
+				;Port->CommunicationReset()
 
-			if !(PartitionTable->IsValid()) {
-				PartitionTable->Delete()
-				continue
-			}
+				SATA::Device* Device := new SATA::Device(Controller, PortIndex)
 
-			for (i32 Partition := 0, Partition < PartitionTable->Header->PartitionEntryCount, Partition++) {
-				GPTPartitionEntry* NextPartition := PartitionTable->ReadPartitionEntry(Partition)
+				Print("SATA Device %i is a %s, SN: %s\n", PortIndex, Device->Model, Device->SerialNumber)
+				
+				IFileHandle* Handle := BlockDeviceFileHandle:New(Device)
+				IFile* File := VFSBlockDeviceFile:New(Handle)
 
-				if (NextPartition->StartingLBA = 0 && NextPartition->EndingLBA = 0) {
+				DevicesDirectory->Insert(FormatString("sata%i", PortIndex), File)
+
+				GPTPartitionTable* PartitionTable := new GPTPartitionTable(Device)
+
+				if !(PartitionTable->IsValid()) {
+					PartitionTable->Delete()
 					continue
 				}
 
-				i8* FileName := FormatString("sata%ip%i", Index, Partition)
+				Print("Found GPT partition table on SATA device %i\n", PortIndex)
+				Print("Partition table has %i entries\n", PartitionTable->Header->PartitionEntryCount)
 
-				if (DevicesDirectory->Has(FileName)) {
-					Free(FileName)
-					continue
+				for (i32 Partition := 0, Partition < PartitionTable->Header->PartitionEntryCount, Partition++) {
+					GPTPartitionEntry* NextPartition := PartitionTable->ReadPartitionEntry(Partition)
+
+					if (NextPartition->StartingLBA = 0 && NextPartition->EndingLBA = 0) {
+						continue
+					}
+
+					Print("Partition %i: Type: %guid, GUID: %guid, Start: %x, End: %x\n", Partition, NextPartition~>PartitionTypeGUID, NextPartition~>PartitionGUID, NextPartition~>StartingLBA, NextPartition~>EndingLBA)
+
+					i8* FileName := FormatString("sata%ip%i", PortIndex, Partition)
+
+					if (DevicesDirectory->Has(FileName)) {
+						Free(FileName)
+						continue
+					}
+
+					i8* GUIDName := FormatString("%guid", NextPartition~>PartitionGUID)
+
+					IBlockDevice* PartitionDevice := new GPTPartitionBlockDevice(PartitionTable, Partition)
+					IBlockDevice* PartitionCacheDevice := new BlockCacheDevice(Physical, PartitionDevice, 128)
+
+					IFileHandle* PartitionHandle := BlockDeviceFileHandle:New(PartitionCacheDevice)
+					IFile* PartitionFile := VFSBlockDeviceFile:New(PartitionHandle)
+
+					DevicesDirectory->Insert(FileName, PartitionFile)
+					GPTDirectory->Insert(GUIDName, PartitionFile)
 				}
-
-				i8* GUIDName := FormatString("%guid", NextPartition~>PartitionGUID)
-
-				IBlockDevice* PartitionDevice := new GPTPartitionBlockDevice(PartitionTable, Partition)
-				IBlockDevice* PartitionCacheDevice := new BlockCacheDevice(Physical, PartitionDevice, 128)
-
-				IFileHandle* PartitionHandle := BlockDeviceFileHandle:New(PartitionCacheDevice)
-				IFile* PartitionFile := VFSBlockDeviceFile:New(PartitionHandle)
-
-				DevicesDirectory->Insert(FileName, PartitionFile)
-				GPTDirectory->Insert(GUIDName, PartitionFile)
 			}
 		}
 	}
+	*/
 }
 
 define void VFSRunShellTask() {
@@ -534,32 +555,17 @@ define void ExecuteExecute(i32 ArgC, i8** ArgV) {
 
 i32 EXECUTE_COMMAND_ID := RegisterCommand("execute", &ExecuteExecute)
 
-struct OpenFSErrors {
-	i8* NoEntry
-	i8* NotABlockDevice
-}
-
-OpenFSErrors OpenRootErrors {
-	NoEntry: "Could not find real root device. Good luck, you're on your own.",
-	NotABlockDevice: "Real root device is not a block device. Good luck, you're on your own."
-}
-
-OpenFSErrors OpenEFISystemErrors {
-	NoEntry: "Could not find EFI system device. Something's very broken.",
-	NotABlockDevice: "EFI system device is not a block device. What?"
-}
-
-define IDirectory* OpenFSFromPath(OpenFSErrors* Errors, i8* Path, IDirectory*(IBlockDevice*) OpenDevice) {
+define IDirectory* OpenFSFromPath(i8* Path, IDirectory*(IBlockDevice*) OpenDevice) {
 	VFSDirectoryEntry DeviceEntry
 
 	if !(Lookup(null, Path, &DeviceEntry)) {
-		Panic(Errors->NoEntry)
+		return null
 	}
 
     IFile* File := DeviceEntry.File
 
     if (File->TypeID() != typeid:(VFSBlockDeviceFile)) {
-        Panic(Errors->NotABlockDevice)
+        return null
     }
 
     VFSBlockDeviceFile* BlockDeviceFile := File
@@ -569,15 +575,24 @@ define IDirectory* OpenFSFromPath(OpenFSErrors* Errors, i8* Path, IDirectory*(IB
 	return OpenDevice(RootDevice)
 }
 
-define void MountPartitions(i8* RootPartitionGUID, i8* EFISystemPartitionGUID) {
-	i8* EFISystemPartitionPath := FormatString("/dev/disk/gpt/%s", EFISystemPartitionGUID)
-	i8* RootPartitionPath := FormatString("/dev/disk/gpt/%s", RootPartitionGUID)
+define i8 TryMountPartitions(i8* RootPartitionGUID, i8* EFISystemPartitionGUID) {
+	i8* EFISystemPartitionPath := FormatString("/dev/gpt/%s", EFISystemPartitionGUID)
+	i8* RootPartitionPath := FormatString("/dev/gpt/%s", RootPartitionGUID)
 
-	IDirectory* EFISystemRootDirectory := OpenFSFromPath(&OpenEFISystemErrors, EFISystemPartitionPath, &OpenFAT32)
-	IDirectory* RootDirectory := OpenFSFromPath(&OpenRootErrors, RootPartitionPath, &OpenExt2)
+	IDirectory* EFISystemRootDirectory := OpenFSFromPath(EFISystemPartitionPath, &OpenFAT32)
+	IDirectory* RootDirectory := OpenFSFromPath(RootPartitionPath, &OpenExt2)
+
+	if !(EFISystemRootDirectory && RootDirectory) {
+		Free(EFISystemPartitionPath)
+		Free(RootPartitionPath)
+
+		return false
+	}
 
 	MountRoot(RootDirectory)
 	Mount(null, "/efi", EFISystemRootDirectory)
+
+	return true
 }
 
 define void NetworkSetupTask() {
@@ -591,6 +606,50 @@ define void NetworkSetupTask() {
     Interface->SetKnobToggle("ARP.SpewGateway", true)
 }
 
+i8* ROOT_PARTITION_GUID := null
+i8* EFI_SYSTEM_PARTITION_GUID := null
+
+define void MainTask() {
+	; Start disk controllers
+
+	i32 ControllerCount := ALL_AHCI_CONTROLLERS->Count()
+
+	for (i32 ControllerIndex := 0, ControllerIndex < ControllerCount, ControllerIndex++) {
+		SATA::AHCI::Controller* Controller := ALL_AHCI_CONTROLLERS->At(ControllerIndex)
+
+		Print("Starting AHCI controller %i\n", ControllerIndex)
+		Controller->Start(ControllerIndex)
+	}
+
+	Print("Looking for disks:\n")
+	Print("  EFI Partition GUID: %s\n", EFI_SYSTEM_PARTITION_GUID)
+	Print("  Root Partition GUID: %s\n", ROOT_PARTITION_GUID)
+
+	; Wait for root/EFI partitions to be detected
+
+	i64 StartTime := GetUptimeMS()
+
+	loop {
+		if (TryMountPartitions(ROOT_PARTITION_GUID, EFI_SYSTEM_PARTITION_GUID)) {
+			break
+		}
+
+		SleepMS(1000)
+		Print(".")
+
+		if (GetUptimeMS() - StartTime > 30000) {
+			Panic("Could not find root/EFI partitions after 30 seconds, halting...")
+		}
+	}
+
+	; TODO: This needs to be earlier in the boot process.
+	; There's definitely root devices that we can't mount without ACPI
+	; but since we load ACPICA.elf from the root partition, we're screwed
+	SetupACPI()
+
+	Task* ShellThread := Scheduler->AddLightTask(&VFSRunShellTask, "VFS Shell")
+	ShellThread->State := TASK_CAN_RUN
+}
 
 define void Main(TrampolineInfo* Info) {
 	DO_NOT_OPTIMIZE_AWAY(&PreMain)
@@ -605,25 +664,22 @@ define void Main(TrampolineInfo* Info) {
 	i8*[10] ArgV
 
 	ParseCommandLine(BootInfo~>KernelCommandLine, &ArgC, ArgV)
-
-	i8* RootPartitionGUID := null
-	i8* EFISystemPartitionGUID := null
 	
 	for (i32 Index := 0, Index < ArgC, Index++) {
 		i8* Next := ArgV[Index]
 
 		if (StringEquals(Next, "--efi-system-guid")) {
-			EFISystemPartitionGUID := ArgV[++Index]
+			EFI_SYSTEM_PARTITION_GUID := ArgV[++Index]
 		}
 		else if (StringEquals(Next, "--root-guid")) {
-			RootPartitionGUID := ArgV[++Index]
+			ROOT_PARTITION_GUID := ArgV[++Index]
 		}
 	}
 
 	;KernelAddressSpace->PrintMappings()
 
-	Info("Root Partition       GUID: %s\n", RootPartitionGUID)
-	Info("EFI System Partition GUID: %s\n", EFISystemPartitionGUID)
+	Info("Root Partition       GUID: %s\n", ROOT_PARTITION_GUID)
+	Info("EFI System Partition GUID: %s\n", EFI_SYSTEM_PARTITION_GUID)
 
 	PhysicalPageAllocator* Physical := KernelHeapAllocate('PGTREEPM', #PhysicalPageAllocator)
 	Physical->Initialize()
@@ -642,7 +698,7 @@ define void Main(TrampolineInfo* Info) {
 	
 	Info("Loaded font\n")
 	
-	i32 FrameBufferPageCount := SizeToPageCount(FRAMEBUFFER_SIZE)
+	i32 FrameBufferPageCount := SizeToPageCount(BootInfo->FrameBufferWidth * BootInfo->FrameBufferHeight * 4)
 	KernelAddressSpace->MapRange(ADDRESS_OF_FRAME_BUFFER, BootInfo->PhysicalFrameBuffer / PAGE_SIZE, FrameBufferPageCount)
 	
 	Info("Mapped the framebuffer\n")
@@ -722,21 +778,20 @@ define void Main(TrampolineInfo* Info) {
 
 	;loop {}
 
+	KERNEL_JOBS := new JobQueue()
+
 	InitializePCIe(&VisitPCIeFunction)
 
 	Print("Done enumerating PCIe\n")
 
-	loop {}
-
 	;loop {}
 
-	;/*
-	if (SATAController = null) {
-		Panic("No SATA disk controller detected, hanging...\n")
-	}
-
 	PopulateDevicesDirectory(VFSDevicesDirectory)
-	MountPartitions(RootPartitionGUID, EFISystemPartitionGUID)
+	
+	Task* MainTaskThread := Scheduler->AddLightTask(&MainTask, "Main Task")
+	MainTaskThread->State := TASK_CAN_RUN
+
+	StartScheduler()
 
 	;i8*[2] Args {"/bin/ls", "/dev"}
 	;ExecuteLS(2, Args)
