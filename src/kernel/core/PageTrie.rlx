@@ -173,19 +173,19 @@ struct PageTrie {
         return this->LevelSize(Level) / 0x1000
     }
 
-    define void SetRange(void* Address, i64 Destination, i64 Size, i64 Flags) {
-        Info("Trie.SetRange(%x, %x, %i, %x)\n", Address, Destination, Size, Flags)
+    define void SetRange(void* Address, i64 Destination, i64 PageCount, i64 Flags) {
+        Info("Trie.SetRange(%x, %x, %i, %x)\n", Address, Destination, PageCount, Flags)
 
-        while (Size != 0) {
+        while (PageCount != 0) {
             PagePath Path
             this->SplitAddress(Address, &Path)
 
             i32 Level := PAGE_LEVEL_4K
 
-            if (Path.PT = 0 && Size >= PAGES_IN_2MB) {
+            if (Path.PT = 0 && PageCount >= PAGES_IN_2MB) {
                 ; Candidate for >4K page
 
-                if (Path.PD = 0 && Size >= PAGES_IN_1GB) {
+                if (Path.PD = 0 && PageCount >= PAGES_IN_1GB) {
                     ; Candidate for 1GB page
                     ;Level := PAGE_LEVEL_1G
                 }
@@ -202,7 +202,7 @@ struct PageTrie {
 
             Address += LevelSize
             Destination += LevelSize
-            Size -= LevelPageCount
+            PageCount -= LevelPageCount
         }
     }
 
@@ -368,7 +368,7 @@ struct PageTrie {
         return Out->Virtual = Address
     }
 
-    define void* FindGap(i64 Alignment, i64 Start, i32 PageCount) {
+    define void* FindGap(i64 Alignment, i64 Start, i64 PageCount) {
 		i64 State := this->StartWalkMappings(Start)
 		VirtualMapping Mapping
 
@@ -377,15 +377,20 @@ struct PageTrie {
 		while (this->WalkMappingsNext(&State, &Mapping)) {
 			i64 Start := Mapping.Virtual As i64
 
-            i64 AlignPadding := Start % Alignment
-			i64 GapPageCount := (Start - LastAddress) / PAGE_SIZE
+			i64 AlignedAddress := LastAddress
+            
+			if (AlignedAddress % Alignment != 0) {
+				AlignedAddress += Alignment - (AlignedAddress % Alignment)
+			}
 
-			;Info("Gap %x..%x (%i pages)\n", LastAddress, Start, GapPageCount)
+			i64 GapPageCount := (Start - AlignedAddress) / PAGE_SIZE
 
-			if (GapPageCount > (PageCount + AlignPadding)) {
+			;Info("Gap %x..%x (%i pages)\n", AlignedAddress, Start, GapPageCount)
+
+			if (GapPageCount > PageCount) {
 				;Info("Selected!\n")
 
-				return (LastAddress + AlignPadding) As void*
+				return AlignedAddress As void*
 			}
 
 			LastAddress := Start + Mapping.Size
@@ -396,7 +401,11 @@ struct PageTrie {
 		return null
     }
 
-    define void* FindGap(i64 Start, i32 PageCount) {
+    define void* FindGap(i64 Start, i64 PageCount) {
         return this->FindGap(1, Start, PageCount)
+    }
+
+    define void* FindGapAligned(i64 Size) {
+        return this->FindGap(Size, 0, Size / PAGE_SIZE)
     }
 }
