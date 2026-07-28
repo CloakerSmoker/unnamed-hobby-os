@@ -9,24 +9,6 @@ i32 PCIE_BUS_CONFIGURATION_SPACE_SIZE := PCIE_FUNCTION_CONFIGURATION_SPACE_SIZE 
 
 i8 PCIE_HEADER_TYPE_MULTI_FUNCTION := 0x80 As i8
 
-struct PCIeAddress {
-    i32 Segment
-    i32 Bus
-    i32 Device
-    i32 Function
-
-    static self* New(i32 Segment, i32 Bus, i32 Device, i32 Function) {
-        self* this := Alloc(#self)
-
-        this->Segment := Segment
-        this->Bus := Bus
-        this->Device := Device
-        this->Function := Function
-
-        return this
-    }
-}
-
 void* NextPCIeSegmentGroupAddress := ADDRESS_OF_PCIE_CONFIG
 
 struct PCIeSegmentGroup {
@@ -266,7 +248,7 @@ struct PCIeBridgeFields {
     i16 SecondaryStatus
 
     i16 MemoryBase
-    i16 MemoryLimmit
+    i16 MemoryLimit
     i16 PrefetchableMemoryBase
     i16 PrefetchableMemoryLimit
 }
@@ -430,25 +412,58 @@ struct PCIeDevice {
 }
 
 define void InitializePCIe(void(i32, i32, i32, PCIeDevice*) Visitor) {
-    ACPI_MCFG_ENTRY* First := BootInfo->PCISegmentGroups[0]
-
-	Info("Creating group\n")
-
-	PCIeSegmentGroup* Group := PCIeSegmentGroup:New(First)
-
-	Info("Adding to manager\n")
-
 	PCIeManager := PCIeSegmentGroupManager:New()
-	PCIeManager->AddSegmentGroup(Group)
 
-	Info("Getting root complex\n")
+    for (i32 Index := 0, Index < BootInfo->PCISegmentGroupCount, Index++) {
+        ACPI_MCFG_ENTRY* Entry := BootInfo->PCISegmentGroups[Index]
 
-	PCIeDevice* Root := PCIeManager->Get(0, 0, 0)
+        Info("Creating group %i\n", Index)
 
-	Info("Enumerating root complex\n")
+        PCIeSegmentGroup* Group := PCIeSegmentGroup:New(Entry)
 
-	Root->EnumerateAsBus(0, Visitor)
+        Info("Adding to manager\n")
+
+        PCIeManager->AddSegmentGroup(Group)
+
+        PCIeDevice* Root := PCIeManager->Get(Index, 0, 0, 0)
+
+	    Root->EnumerateAsBus(0, Visitor)
+    }
 }
+
+struct PCIeAddress {
+    i32 Segment
+    i32 Bus
+    i32 Device
+    i32 Function
+
+    static self* New(i32 Segment, i32 Bus, i32 Device, i32 Function) {
+        self* this := Alloc(#self)
+
+        this->Segment := Segment
+        this->Bus := Bus
+        this->Device := Device
+        this->Function := Function
+
+        return this
+    }
+}
+
+define void DoPCIeAddressPrint(PrintOutputAdapterPrototype* this, i8* Format, i32* FormatIndex, void* Parameters, i32 ParameterCount, i32* ParameterIndex) {
+    PCIeAddress* Address := Parameters[*ParameterIndex] As PCIeAddress*
+    
+    this->Print("%B/%B:%B.%B", Address->Segment, Address->Bus, Address->Device, Address->Function)
+
+    *ParameterIndex += 1
+}
+
+PrintFormatPrototype PCIePCIeAddressFormatPrototype {
+	Name: "pcie-address",
+	Format: &DoPCIeAddressPrint
+}
+
+i32 PCIE_ADDRESS_FORMAT_PROTOTYPE_ID := AddPrintFormat(&PCIePCIeAddressFormatPrototype)
+
 
 #Require "./src/drivers/PCI/IDs.rlx"
 
