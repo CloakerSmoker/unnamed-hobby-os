@@ -428,7 +428,7 @@ struct Process {
 				Mapping.Size -= OvershootSize As i32
 			}
 
-			KernelAddressSpace->MapRange(USER_NO_MANS_LAND + Offset, Mapping.Physical / PAGE_SIZE, Mapping.Size / PAGE_SIZE, Flags)
+			KernelAddressSpace->MapRange(USER_NO_MANS_LAND + Offset, Mapping.Physical / PAGE_SIZE, (Mapping.Size / PAGE_SIZE) As i32, Flags)
 
 			Offset += Mapping.Size
 

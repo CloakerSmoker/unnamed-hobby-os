@@ -165,7 +165,7 @@ define Process* Execute(void* Buffer, ExecuteParameters* Parameters) {
 	VirtualMapping Mapping
 
 	while (AddressSpace->WalkMappingsNext(&State, &Mapping)) {
-		i32 Pages := Mapping.Size / PAGE_SIZE
+		i64 Pages := Mapping.Size / PAGE_SIZE
 
 		Info("%x..%x -> %x..%x (%x pages)\n", Mapping.Virtual, Mapping.Virtual + Mapping.Size, Mapping.Physical, Mapping.Physical + Mapping.Size, Pages)
 	}
