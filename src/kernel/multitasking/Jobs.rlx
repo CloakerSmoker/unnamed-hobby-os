@@ -1,0 +1,118 @@
+
+
+i32 JOB_FLAG_FREE := 1
+
+struct Job {
+    i8* Name
+
+    void(void, void, void, void, void) Callback
+    void P1
+    void P2
+    void P3
+    void P4
+    void P5
+
+    Job* Next
+
+    i32 Priority
+    i32 ParameterCount
+}
+
+struct JobQueue {
+    Job* Head
+    Task* Worker
+
+    define void Queue(Job* J) {
+        DisableInterrupts()
+        Job** pTail := this~>Head
+
+        while (*pTail != null) {
+            pTail := (*pTail)~>Next
+
+            if ((*pTail)->Priority < J->Priority) {
+                break
+            }
+        }
+
+        J->Next := *pTail
+        *pTail := J
+        EnableInterrupts()
+    }
+
+    define void Queue(i32 Priority, void* Callback, void P1, void P2, void P3, void P4, void P5) {
+        Job* J := Alloc(#Job)
+
+        J->Priority := Priority
+        J->Callback := Callback
+        J->P1 := P1
+        J->P2 := P2
+        J->P3 := P3
+        J->P4 := P4
+        J->P5 := P5
+
+        this->Queue(J)
+    }
+    define void Queue(i32 Priority, void* Callback, void P1, void P2, void P3, void P4) {
+        this->Queue(Priority, Callback, P1, P2, P3, P4, 0)
+    }
+    define void Queue(i32 Priority, void* Callback, void P1, void P2, void P3) {
+        this->Queue(Priority, Callback, P1, P2, P3, 0, 0)
+    }
+    define void Queue(i32 Priority, void* Callback, void P1, void P2) {
+        this->Queue(Priority, Callback, P1, P2, 0, 0, 0)
+    }
+    define void Queue(i32 Priority, void* Callback, void P1) {
+        this->Queue(Priority, Callback, P1, 0, 0, 0, 0)
+    }
+    define void Queue(i32 Priority, void* Callback) {
+        this->Queue(Priority, Callback, 0, 0, 0, 0, 0)
+    }
+
+    define void Remove(Job* J) {
+        Job** pTail := this~>Head
+
+        while (*pTail != null) {
+            if (*pTail = J) {
+                *pTail := J->Next
+                break
+            }
+
+            pTail := (*pTail)~>Next
+        }
+    }
+
+    define void Execute() {
+        loop {
+            DisableInterrupts()
+            
+            while (this->Head = null) {
+                EnableInterrupts()
+                SchedulerYield()
+                DisableInterrupts()
+            }
+
+            Job* J := this->Head
+            this->Head := J->Next
+
+            EnableInterrupts()
+
+            J->Callback(J->P1, J->P2, J->P3, J->P4, J->P5)
+
+            Free(J)
+        }
+    }
+
+    static self* New() {
+        self* this := Alloc(#JobQueue)
+
+        this->Head := null
+        
+        this->Worker := Scheduler->AddLightTask(null, "JobQueue")
+        this->Worker~>Context->CallMethod(this, &self.Execute)
+        this->Worker->Unblock()
+
+        return this
+    }
+}
+
+JobQueue* KERNEL_JOBS := null

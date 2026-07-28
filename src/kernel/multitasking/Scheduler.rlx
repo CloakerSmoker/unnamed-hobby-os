@@ -155,8 +155,14 @@ struct TaskScheduler {
 	
 	define Task* MakeLightTask(void* Function, i8* Name) {
 		Task* NewTask := Task:NewWithStack(0, 2)
-		
-		NewTask~>Context->RIP := Function
+
+		if (Function = null) {
+			NewTask->State := TASK_BLOCKED
+		}
+		else {
+			NewTask~>Context->RIP := Function
+		}
+
 		NewTask->Name := Name
 		
 		return NewTask
@@ -361,3 +367,6 @@ define void StartScheduler() {
 define i8 IsSchedulerActive() {
 	return InterrupsAreEnabled() && SchedulerStarted
 }
+
+#Require "./src/kernel/multitasking/Jobs.rlx"
+

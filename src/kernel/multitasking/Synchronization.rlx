@@ -3,6 +3,9 @@ PointerArray* ALL_TASK_LISTS := new PointerArray()
 PointerArray* ALL_SEMAPHORES := new PointerArray()
 PointerArray* ALL_LOCKS := new PointerArray()
 
+i32 TIMEOUT_INSTANT := -1
+i32 TIMEOUT_FOREVER := 0
+
 namespace Synchronization {
     class TaskList derives INew {
         i8* Name
