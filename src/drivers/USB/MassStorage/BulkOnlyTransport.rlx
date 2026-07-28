@@ -99,6 +99,8 @@ namespace USB::MassStorage::BulkOnlyTransport {
     class MassStorageDevice implements SCSI::IController, IBlockDevice, derives INew {
         USB::Device* Base
 
+        i32 NextTag
+
         InterfaceInfo* Interface
 
         EndpointInfo* OutEndpoint
@@ -165,7 +167,7 @@ namespace USB::MassStorage::BulkOnlyTransport {
             CommandBlockWrapper* Wrapper := Alloc(#CommandBlockWrapper)
 
             Wrapper->Signature := 'USBC' As i32
-            Wrapper->Tag := 0
+            Wrapper->Tag := this->NextTag++
             Wrapper->DataTransferSize := DataSize
 
             if (Direction = SCSI::DataDirection::HostToDevice) {
@@ -196,6 +198,7 @@ namespace USB::MassStorage::BulkOnlyTransport {
 
             ITransferHandle* CommandTransfer := this->SendOut(WrappedCommand, #CommandBlockWrapper)
 
+            SleepMS(1) ; fuck it
 
             ITransferHandle* DataTransfer := null
 
