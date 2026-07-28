@@ -1,0 +1,79 @@
+
+declare void ExecuteTree(i64, i8**)
+
+define void NotifyBlockDeviceAttach(i8* Name, IBlockDevice* Device) {
+	; Notify the system that a new block device has been added
+	; if name = "sata", then we'll number it as "sata0", "sata1", etc.
+
+	Print("Block device attached: %s\n", Name)
+
+	IFileHandle* Handle := new BlockDeviceFileHandle(Device)
+	IFile* File := new VFSBlockDeviceFile(Handle)
+
+	i32 Number := 0
+	i8[100] NameBuffer
+
+	loop {
+		i32 Length := FormatString(NameBuffer, 100, "%s%i", Name, Number)
+		NameBuffer[Length] := 0
+
+		VFSDirectoryEntry Entry
+		if !(Lookup(VFSDevicesDirectory, NameBuffer, &Entry)) {
+			break
+		}
+
+		Number += 1
+	}
+
+	Print("Assigned block device name: %s\n", NameBuffer)
+
+	VFSDevicesDirectory->Insert(NameBuffer, File)
+
+	GPTPartitionTable* GPT := new GPTPartitionTable(Device)
+
+	if !(GPT->IsValid()) {
+		GPT->Delete()
+		return
+	}
+
+	IDirectory* GPTDirectory := null
+
+	VFSDirectoryEntry GPTEntry
+	if (Lookup(VFSDevicesDirectory, "gpt", &GPTEntry)) {
+		GPTDirectory := GPTEntry.Directory
+	}
+	else {
+		GPTDirectory := new VFSDirectory()
+		VFSDevicesDirectory->Insert("gpt", GPTDirectory)
+	}
+
+	Print("Block device %s has a valid GPT partition table\n", NameBuffer)
+	Print("  Partition count: %i\n", GPT->Header->PartitionEntryCount)
+
+	for (i32 Partition := 0, Partition < GPT->Header->PartitionEntryCount, Partition++) {
+		GPTPartitionEntry* NextPartition := GPT->ReadPartitionEntry(Partition)
+
+		if (NextPartition->StartingLBA = 0 && NextPartition->EndingLBA = 0) {
+			continue
+		}
+
+		Print("    Partition %i:\n", Partition)
+		Print("      Name: %s\n", NextPartition~>PartitionName)
+		Print("      GUID: %guid\n", NextPartition~>PartitionGUID)
+		Print("      Start - End: %x - %x\n", NextPartition~>StartingLBA, NextPartition~>EndingLBA)
+
+
+		i8* FileName := FormatString("%sp%i", NameBuffer, Partition)
+		i8* GUIDName := FormatString("%guid", NextPartition~>PartitionGUID)
+
+		IBlockDevice* PartitionDevice := new GPTPartitionBlockDevice(GPT, Partition)
+		;IBlockDevice* PartitionCacheDevice := new BlockCacheDevice(Physical, PartitionDevice, 128)
+
+		;IFileHandle* PartitionHandle := BlockDeviceFileHandle:New(PartitionCacheDevice)
+		IFileHandle* PartitionHandle := BlockDeviceFileHandle:New(PartitionDevice)
+		IFile* PartitionFile := VFSBlockDeviceFile:New(PartitionHandle)
+
+		VFSDevicesDirectory->Insert(FileName, PartitionFile)
+		GPTDirectory->Insert(GUIDName, PartitionFile)
+	}
+}
