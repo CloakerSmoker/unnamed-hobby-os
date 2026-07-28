@@ -114,6 +114,39 @@ Disk.qcow2: $(BUILD)/Disk.img
 
 LIGHT_CLEAN_FILES+= EFIBoot.qcow2
 
+# Network boot image
+
+define MAKE_NETWORK_BOOT_SCRIPT =
+dd bs=1M count=60M if=/dev/zero of=/host/build/NetworkBoot.img
+
+loop open /host/build/NetworkBoot.img
+
+gpt /dev/loop0 format 60M
+
+gpt /dev/loop0 set disk guid {AAAAAAAA-8101-EDEF-B110-1E59234ABFDF}
+
+gpt /dev/loop0 create 0
+gpt /dev/loop0 set partition 0 start 10M
+gpt /dev/loop0 set partition 0 end 50M
+gpt /dev/loop0 set partition 0 name "Main Data Partition"
+gpt /dev/loop0 set partition 0 type {EBD0A0A2-B9E5-4433-87C0-68B6B72699C7}
+gpt /dev/loop0 set partition 0 guid {4D5DA455-8101-EDEF-B110-1E59234ABFDF}
+
+gpt /dev/loop0 show partitions
+
+gpt /dev/loop0 scan
+
+format fat32 /dev/loop0p0 40M
+mount fat32 /dev/loop0p0 /efi
+
+install /host/build/NetworkBoot.efi /efi/EFI/BOOT/BOOTX64.EFI
+install /host/build/KernelCommandLine.txt /efi/EFI/BOOT/KCMDLN.TXT
+
+exit
+endef
+
+export MAKE_NETWORK_BOOT_SCRIPT
+
 # Full disk image
 
 define MAKE_DISK_SCRIPT =
@@ -149,7 +182,7 @@ format ext2 /dev/loop0p1 70M
 
 mount fat32 /dev/loop0p0 /efi
 
-install /host/build/Boot.efi /efi/EFI/BOOT/BOOTX64.EFI
+install /host/build/NetworkBoot.efi /efi/EFI/BOOT/BOOTX64.EFI
 install /host/build/KernelCommandLine.txt /efi/EFI/BOOT/KCMDLN.TXT
 
 mount ext2 /dev/loop0p1 /root
@@ -205,7 +238,7 @@ endef
 export GET_GUIDS_SCRIPT
 
 #$(BUILD)/Disk.img: $(BUILD)/FAT32Tool.elf $(BUILD)/Ext2Tool.elf
-$(BUILD)/Disk.img: $(BUILD)/Boot.efi $(BUILD)/Trampoline.elf $(BUILD)/Kernel.elf $(BUILD)/ACPICA.elf
+$(BUILD)/Disk.img: $(BUILD)/Boot.efi $(BUILD)/NetworkBoot.efi $(BUILD)/Trampoline.elf $(BUILD)/Kernel.elf $(BUILD)/ACPICA.elf
 $(BUILD)/Disk.img: $(BUILD)/HostFileShell.elf
 $(BUILD)/Disk.img: $(BUILD)/doom.elf
 $(BUILD)/Disk.img: $(BUSYBOX_SRC)/busybox.links $(shell python3 src/host/busybox.py --src $(BUSYBOX_SRC))
@@ -235,6 +268,7 @@ $(BUILD)/Disk.img:
 		"quit"
 	
 	echo "$$MAKE_USB_SCRIPT" | tr '\1' '\n' | $(BUILD)/HostFileShell.elf --script
+	echo "$$MAKE_NETWORK_BOOT_SCRIPT" | tr '\1' '\n' | $(BUILD)/HostFileShell.elf --script
 
 LIGHT_CLEAN_FILES+= $(BUILD)/Disk.img
 
@@ -264,7 +298,19 @@ secret-internal-deps: $(BUILD)/Boot.d
 $(BUILD)/Boot.d: $(RLX)
 	$(RLX) -i ./src/bootloader/EFIBoot.rlx -o $@ --makedep $(EFI_RLX_FLAGS)
 
-LIGHT_CLEAN_FILES+= $(BUILD)/Boot.efi $(BUILD)/Boot.d
+# Magic network bootloader
+
+$(BUILD)/NetworkBoot.efi: $(RLX)
+$(BUILD)/NetworkBoot.efi: $(BUILD)/NetworkBoot.d
+$(BUILD)/NetworkBoot.efi: $(shell cat $(BUILD)/NetworkBoot.d 2>/dev/null)
+	$(RLX) -i ./src/bootloader/NetworkEFIBoot.rlx -o $@ $(EFI_RLX_FLAGS)
+
+secret-internal-deps: $(BUILD)/NetworkBoot.d
+
+$(BUILD)/NetworkBoot.d: $(RLX)
+	$(RLX) -i ./src/bootloader/NetworkEFIBoot.rlx -o $@ --makedep $(EFI_RLX_FLAGS)
+
+LIGHT_CLEAN_FILES+= $(BUILD)/NetworkBoot.efi $(BUILD)/NetworkBoot.d
 
 # Trampoline
 
@@ -381,8 +427,8 @@ ifneq (,$(findstring no-reset,$(flags)))
 	QEMU_FLAGS+=-no-reboot -no-shutdown
 endif
 
-HELP_TEXT+=achi-debug: Have QEMU log debug messages related to AHCI|
-ifneq (,$(findstring achi-debug,$(flags)))
+HELP_TEXT+=ahci-debug: Have QEMU log debug messages related to AHCI|
+ifneq (,$(findstring ahci-debug,$(flags)))
 	QEMU_FLAGS+=--trace "ahci_*" --trace "handle_*" --trace "ide_*"
 endif
 
@@ -407,7 +453,7 @@ endif
 HELP_TEXT+=uhci: Add a UHCI controller
 ifneq (,$(findstring uhci,$(flags)))
 #	QEMU_FLAGS+=-device ich9-usb-uhci1 -device usb-mouse,bus=usb-bus.0,port=1 -device usb-hub,bus=usb-bus.0,port=2,pcap=hub.pcap -device usb-kbd,bus=usb-bus.0,pcap=keeb.pcap -device usb-storage,bus=usb-bus.0,drive=stick -drive if=none,id=stick,format=raw,file=build/USB.img
-	QEMU_FLAGS+=-device ich9-usb-uhci1 -device usb-storage,bus=usb-bus.0,port=2,drive=stick,pcap=ustick.pcap -drive if=none,id=stick,format=raw,file=build/USB.img -device usb-kbd,bus=usb-bus.0,port=1,pcap=keeb.pcap -trace "usb_msd*"
+	QEMU_FLAGS+=-device ich9-usb-uhci1 -device usb-storage,bus=usb-bus.0,port=2,drive=stick,pcap=ustick.pcap,commandlog=true -drive if=none,id=stick,format=raw,file=build/USB.img -trace "ausb_msd*"
 endif
 
 HELP_TEXT+=ehci: Add an EHCI controller, and use a USB device as the boot device instead of an AHCI device|
