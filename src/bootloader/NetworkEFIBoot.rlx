@@ -1,0 +1,904 @@
+i8 DEBUG_EXT2_OPTIMIZATION := false
+
+#Require "./src/utility/EFIApplication.rlx"
+#Require "@/Console.rlx"
+#Require "$/Memory.rlx"
+
+#Require "./src/utility/GUID.rlx"
+
+#Require "./src/drivers/block-device/BlockDevice.rlx"
+#Require "./src/drivers/block-device/EFIBlockDevice.rlx"
+
+define void SchedulerYield() {
+	for (i32 Index := 0, Index < 0x10_0000, Index++) {}
+}
+
+struct NetworkAddress {
+	i8 _
+}
+
+struct MemoryMapper {
+	i8 _
+}
+
+#Require "@/Time.rlx"
+#Require "./src/kernel/file-system/FileSystem.rlx"
+
+#Require "./src/drivers/file-system/FAT32.rlx"
+#Require "./src/drivers/file-system/Ext2.rlx"
+#Require "./src/drivers/GPT.rlx"
+
+#Require "./src/utility/ELF.rlx"
+#Require "./src/utility/PrintHelpers.rlx"
+#Require "./src/utility/CommandLine.rlx"
+
+#Require "./src/bootloader/BootInfo.rlx"
+
+define void* EFILoadELF(EFI_SYSTEM_TABLE* SystemTable, ELFHeader* Header, i64* OutMaxAddress) {
+	void* Data := Header
+	
+	ELFProgramHeader* ProgramHeaders := Header->GetProgramHeaders()
+
+	i64 CodeVirtual := 0
+	i64 CodePhysical := 0
+	i64 MaxAddress := 0
+	
+	for (i32 Index := 0, Index < Header->ProgramHeaderEntryCount, Index++) {
+		ELFProgramHeader* Next := ProgramHeaders[Index]
+		
+		if (Next->Type = ELF_SEGMENT_TYPE_LOAD) {
+			void* SectionData := Data + Next->FileOffset
+			void* SectionMemory := null + Next->PhysicalAddress
+			
+			i32 SectionPageCount := (Next->MemorySize / 0x1000) As i32
+			
+			if (Next->MemorySize % 0x1000) {
+				SectionPageCount += 1
+			}
+
+			i64 End := (SectionMemory As i64) + (SectionPageCount * 0x1000)
+
+			if (End > MaxAddress) {
+				MaxAddress := End
+			}
+
+			Print("Load... %i -> %x\n", Index, SectionMemory)
+
+			if (SectionMemory = null) {
+				Print("(skip)\n")
+				continue
+			}
+
+			if (Next->Flags & ELF_SEGMENT_FLAGS_EXECUTE) {
+				CodeVirtual := Next->VirtualAddress
+				CodePhysical := Next->PhysicalAddress
+			}
+			
+			SystemTable->BootServices->AllocatePages(EFI_MEMORY_ALLOCATE_ADDRESS, SectionPageCount, &SectionMemory)
+
+			SetMemory(SectionMemory, 0, Next->MemorySize)
+			MoveMemory(SectionMemory, SectionData, Next->FileSize As i32)
+		}
+	}
+
+	*OutMaxAddress := MaxAddress
+	
+	return null + CodePhysical + (Header->EntryPoint - CodeVirtual)
+}
+
+#Require "./src/drivers/ACPI.rlx"
+
+#Require "./src/utility/ProgressBar.rlx"
+
+define i32 SizeToPageCount(i64 Size) {
+	i32 Result := (Size / 0x1000) As i32
+
+	if (Size % 0x1000) {
+		Result += 1
+	}
+
+	return Result
+}
+
+define i8 LoadFile(IFileHandle* RootDirectory, i8* FileName, void** OutFileData, i32* OutFileSize) {
+	IFileHandle* Handle := RootDirectory->Open(FileName)
+
+	if (Handle = null) {
+		Print("Could not find '%s'\n", FileName)
+		return true
+	}
+
+	FileStatus Status
+	Handle->Status(&Status)
+
+	i32 Size := Status.Size As i32
+	i32 PageCount := SizeToPageCount(Size)
+
+	Print("%s is %i bytes (%x pages)\n", FileName, Size, PageCount)
+
+	void* File := SYSTEM_TABLE->BootServices->AllocatePages(PageCount)
+	
+	Print("Reading %s...\n", FileName)
+	
+	Handle->Read(File, Size)
+	
+	Print("Done, %s read to %x\n", FileName, File)
+	
+	; TODO: `->Close` crashes for some reason
+	;Handle->Close()
+
+	*OutFileData := File
+	*OutFileSize := Size
+
+	return false
+}
+
+#Require "./src/efi/Network.rlx"
+
+define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
+    i64 Status := 0
+
+	Print("Switching mode\n")
+	
+	EFI_GRAPHICS_OUTPUT_PROTOCOL* Graphics := null
+	SystemTable->BootServices->LocateProtocol(EFI_GRAPHICS_OUTPUT_PROTOCOL_GUID, &Graphics As void**)
+	
+	Print("Device has %i modes\n", Graphics->Mode->MaxMode)
+	
+	for (i32 Index := 0, Index < Graphics->Mode->MaxMode, Index++) {
+		EFI_GRAPHICS_OUTPUT_MODE_INFORMATION* Mode := Graphics->QueryMode(Index)
+		
+		Print("\t%ix%i %x\n", Mode->HorizontalResolution, Mode->VerticalResolution, Mode->PixelFormat)
+		
+		if (Mode->HorizontalResolution = 1024 && Mode->VerticalResolution = 768) {
+			if (Graphics->Mode->CurrentMode != Index) {
+				;Graphics->SetMode(Index)
+			}
+			
+			break
+		}
+	}
+	
+	;SystemTable->ConsoleOutput->Reset()
+	
+	Print("Hello new EFI world!\n")
+	
+	;SystemTable->ConsoleInput->Reset()
+	;SystemTable->BootServices->WaitForEvent(SystemTable->ConsoleInput->WaitForKey)
+	
+	EFI_DEVICE_PATH_TO_TEXT_PROTOCOL* ToText := null
+	SystemTable->BootServices->LocateProtocol(EFI_DEVICE_PATH_TO_TEXT_PROTOCOL_GUID, &ToText As void**)
+	
+	EFI_DEVICE_PATH_UTILITIES_PROTOCOL* DevicePathHelpers := null
+	SystemTable->BootServices->LocateProtocol(EFI_DEVICE_PATH_UTILITIES_PROTOCOL_GUID, &DevicePathHelpers As void**)
+	
+	if !(ToText) || !(DevicePathHelpers) {
+		Print("Can't find to text or device path helper protocol\n")
+		return 0
+	}
+	
+	ACPI_RSDP* RSDP := null
+	
+	for (i32 Index := 0, Index < SystemTable->NumberOfTableEntries, Index++) {
+		EFI_CONFIGURATION_TABLE* NextTable := SystemTable->ConfigurationTable[Index]
+		
+		if (NextTable~>VendorGUID->Equals(ACPI_RSDP_GUID)) {
+			RSDP := NextTable->VendorTable
+			break
+		}
+	}
+	
+	if !(RSDP) {
+		Print("Couldn't find RSDP, bailing out\n")
+		return 0
+	}
+	
+	;Print("\n\n")
+	
+	;Print("RSDP Signature: %l\n", RSDP->Signature)
+	
+	i32[16] IRQMappings
+	
+	for (i32 Index := 0, Index < 16, Index++) {
+		IRQMappings[Index] := Index
+	}
+	
+	i64 IOAPICBase := 0
+	i64 HPETBase := 0
+
+	i32 SegmentGroupCount := 0
+	ACPI_MCFG_ENTRY* SegmentGroups := null
+	
+	ACPI_TABLE* XSDT := RSDP->XSDTPhysicalAddress As void*
+	
+	for (i32 Index := 0, Index < XSDT~>Header->EntryCount(), Index++) {
+		ACPI_TABLE* NextACPITable := XSDT->EntryPhysicalAddresses[Index] As void*
+		
+		i32 Signature := NextACPITable~>Header->Signature
+		
+		Print("Table %i: %l\n", Index, Signature)
+		
+		if (Signature = ACPI_TABLE_SIGNATURE_MULTIPLE_APIC_DESCRIPTION) {
+			;Print("APIC {\n")
+			
+			ACPI_APIC_TABLE* APIC := NextACPITable->Data()
+			
+			;Print("\tLength: %x\n", NextACPITable~>Header->Length)
+			;Print("\tLocalAPICPhysicalAddress: %x\n", APIC->LocalAPICPhysicalAddress)
+			;Print("\tFlags: %x\n", APIC->Flags)
+			
+			i32 EntryIndex := 0
+			ACPI_APIC_TABLE_ENTRY* Current := APIC->First()
+			
+			while (Current) {
+				;Print("\t%i: %x\n", EntryIndex++, Current->Type)
+				
+				if (Current->Type = ACPI_APIC_ENTRY_TYPE_LOCAL_APIC) {
+					ACPI_LOCAL_APIC* Local := Current->Data()
+					
+					;Print("\t\tLocal APIC {\n")
+					;Print("\t\t\tProcessor ID: %x\n", Local->ProcessorID)
+					;Print("\t\t\tID: %x\n", Local->ID)
+					;Print("\t\t\tFlags: %x\n", Local->Flags)
+					;Print("\t\t}\n")
+				}
+				else if (Current->Type = ACPI_APIC_ENTRY_TYPE_IO_APIC) {
+					ACPI_IO_APIC* IO := Current->Data()
+					
+					IOAPICBase := IO->PhysicalAddress & 0xFFFF_FFFF
+					
+					Print("\t\tIO APIC {\n")
+					Print("\t\t\tID: %x\n", IO->ID)
+					Print("\t\t\tPhysicalAddress: %x\n", IO->PhysicalAddress)
+					Print("\t\t\tBase: %x\n", IO->GlobalInterruptBase)
+					Print("\t\t}\n")
+
+					;WaitKey()
+				}
+				else if (Current->Type = ACPI_APIC_ENTRY_TYPE_INTERRUPT_OVERRIDE_SOURCE) {
+					ACPI_INTERRUPT_OVERRIDE* Override := Current->Data()
+					
+					IRQMappings[Override->Source] := Override->GlobalInterruptNumber
+					
+					;Print("\t\tInterrupt Override {\n")
+					;Print("\t\t\tBus: %x\n", Override->Bus)
+					;Print("\t\t\tSource: %x\n", Override->Source)
+					;Print("\t\t\tGlobalInterruptNumber: %x\n", Override->GlobalInterruptNumber)
+					;Print("\t\t\tFlags: %x\n", Override->Flags)
+					;Print("\t\t}\n")
+				}
+				else if (Current->Type = ACPI_APIC_ENTRY_TYPE_INTERRUPT_OVERRIDE_SOURCE) {
+					ACPI_NMI_SOURCE* NMI := Current->Data()
+					
+					;Print("\t\tNMI Source {\n")
+					;Print("\t\t\tFlags: %x\n", NMI->Flags)
+					;Print("\t\t\tGlobalInterruptNumber: %x\n", NMI->GlobalInterruptNumber)
+					;Print("\t\t}\n")
+				}
+				else if (Current->Type = ACPI_APIC_ENTRY_TYPE_LOCAL_APIC_NMI) {
+					ACPI_LOCAL_APIC_NMI* LocalNMI := Current->Data()
+					
+					;Print("\t\tLocal APIC NMI {\n")
+					;Print("\t\t\tProcessor ID: %x\n", LocalNMI->ProcessorID)
+					;Print("\t\t\tFlags: %x\n", LocalNMI->Flags)
+					;Print("\t\t\tLocalInterruptNumber: %x\n", LocalNMI->LocalInterruptNumber)
+					;Print("\t\t}\n")
+				}
+				
+				Current := APIC->Next(Current)
+			}
+			
+			;Print("}\n")
+		}
+		else if (Signature = ACPI_TABLE_SIGNATURE_FIXED_ACPI_DESCRIPTION) {
+			ACPI_FADT* FADT := NextACPITable->Data()
+			ACPI_DSDT* DSDT := FADT->ExtendedDSDT As void*
+
+			/*
+			i32 Length := DSDT~>Header->Length
+
+			asm {cli}
+
+			Print("DSDT: ")
+
+			for (i32 Index := 0, Index < Length, Index++) {
+				Print("%B|", (DSDT As i8*)[Index])
+			}
+
+			Print("\n")
+
+			loop {}
+			
+			*/
+		}
+		else if (Signature = ACPI_TABLE_SIGNATURE_PCIE_CONFIG_DESCRIPTION) {
+			ACPI_MCFG* MCFG := NextACPITable->Data()
+			i32 MCFGCount := MCFG->Count()
+
+			SegmentGroups := MCFG->At(0)
+			SegmentGroupCount := MCFGCount
+
+			Print("MCFG Entry count: %i\n", MCFGCount)
+
+			for (i32 MCFGIndex := 0, MCFGIndex < MCFGCount, MCFGIndex++) {
+				ACPI_MCFG_ENTRY* Entry := MCFG->At(MCFGIndex)
+
+				Print("\t%i @ %x: %i.%i - %i.%i\n", MCFGIndex, Entry->BaseAddress, Entry->SegmentGroup, Entry->StartBusNumber, Entry->SegmentGroup, Entry->EndBusNumber)
+			}
+		}
+		else if (Signature = ACPI_TABLE_SIGNATURE_HPET_DESCRIPTION) {
+			ACPI_HPET_TABLE* HPET := NextACPITable->Data()
+
+			Print("HPET {\n")
+			Print("    EventTimerBlockID: %x\n", HPET->EventTimerBlockID)
+			Print("    Address: %s: %x\n", nameof:(HPET~>Address->Type), HPET~>Address->Address)
+			Print("    HPETNumber: %i\n", HPET->HPETNumber)
+			Print("    MinimumPeriod: %i\n", HPET->MinimumPeriod)
+			Print("}\n")
+
+			HPETBase := HPET~>Address->Address
+
+			;WaitKey()
+		}
+	}
+	
+	;SystemTable->ConsoleInput->Reset()
+	;SystemTable->BootServices->WaitForEvent(SystemTable->ConsoleInput->WaitForKey)
+
+	;return 0
+
+	;SystemTable->ConsoleInput->Reset()
+	;SystemTable->BootServices->WaitForEvent(SystemTable->ConsoleInput->WaitForKey)
+	
+	if !(IOAPICBase) {
+		Print("Couldn't find IO-APIC, bailing out\n")
+		return 0
+	}
+	
+	Print("IOAPIC: %x\n", IOAPICBase)
+	
+	Print("IRQ Mappings: ")
+	
+	for (i32 Index := 0, Index < 16, Index++) {
+		if (IRQMappings[Index] != Index) {
+			Print("%x - %x  ", Index, IRQMappings[Index])
+		}
+	}
+
+	;WaitKey()
+	
+	EFI_LOADED_IMAGE_PROTOCOL* LoadedImage := null
+	SystemTable->BootServices->HandleProtocol(ImageHandle, EFI_LOADED_IMAGE_PROTOCOL_GUID, &LoadedImage As void**)
+	
+	EFI_DEVICE_PATH_PROTOCOL* LoadedImageDevicePath := null
+	SystemTable->BootServices->HandleProtocol(LoadedImage->DeviceHandle, EFI_DEVICE_PATH_PROTOCOL_GUID, &LoadedImageDevicePath As void**)
+	
+	i16* LoadedImageDevicePathText := ToText->ConvertDevicePathToText(LoadedImageDevicePath, true, true)
+	
+	Print("Boot Device Path: %w\n", LoadedImageDevicePathText)
+	
+	SystemTable->BootServices->FreePool(LoadedImageDevicePathText)
+	
+	EFI_DEVICE_PATH_PROTOCOL* RootDevicePath := DevicePathHelpers->DuplicateDevicePath(LoadedImageDevicePath)
+	RootDevicePath->PopNode()
+	
+	
+	i16* RootDevicePathText := ToText->ConvertDevicePathToText(RootDevicePath, true, true)
+	
+	Print("Boot Device Parent Path: %w\n", RootDevicePathText)
+	
+	SystemTable->BootServices->FreePool(RootDevicePathText)
+
+	; Load kernel command line
+
+	EFI_SIMPLE_FILE_SYSTEM_PROTOCOL* SimpleFS := null
+	SystemTable->BootServices->HandleProtocol(LoadedImage->DeviceHandle, EFI_SIMPLE_FILE_SYSTEM_PROTOCOL_GUID, &SimpleFS As void**)
+
+	Print("SimpleFS: %x\n", SimpleFS)
+
+	EFI_FILE_PROTOCOL* SimpleFSRoot := SimpleFS->OpenVolume()
+
+	Print("SimpleFSRoot: %x\n", SimpleFSRoot)
+
+	EFI_FILE_PROTOCOL* CommandLine := SimpleFSRoot->Open("EFI\\BOOT\\KCMDLN.TXT"w, EFI_FILE_MODE_READ, EFI_FILE_ATTRIBUTE_READ_ONLY)
+	;EFI_FILE_PROTOCOL* CommandLine := SimpleFSRoot->Open("EFI\\BOOT\\BOOTX64.EFI"w, EFI_FILE_MODE_READ, EFI_FILE_ATTRIBUTE_READ_ONLY)
+
+	Print("CommandLine: %x\n", CommandLine)
+
+	void* CommandLineBuffer := SystemTable->BootServices->AllocatePages(2)
+	FastZeroMemory(CommandLineBuffer, 0x2000)
+	i32 CommandLineLength := CommandLine->Read(CommandLineBuffer, 0x2000)
+
+	Print("CommandLineBuffer: %s\n", CommandLineBuffer)
+
+	; Parse kernel command line
+
+	i64 ArgC := 0
+	i8*[10] ArgV
+
+	ParseCommandLine(CloneMemory(CommandLineBuffer, CommandLineLength), &ArgC, ArgV)
+
+	i8[16] RootPartitionGUID
+	i8[16] EFISystemPartitionGUID
+	
+	for (i32 Index := 0, Index < ArgC, Index++) {
+		i8* Argument := ArgV[Index]
+
+		if (StringEquals(Argument, "--efi-system-guid")) {
+			;EFISystemPartitionGUID := ArgV[++Index]
+			ParseGUID(ArgV[++Index], EFISystemPartitionGUID)
+		}
+		else if (StringEquals(Argument, "--root-guid")) {
+			;RootPartitionGUID := ArgV[++Index]
+			ParseGUID(ArgV[++Index], RootPartitionGUID)
+		}
+	}
+
+	Print("EFI System GUID: %guid\n", EFISystemPartitionGUID)
+	Print("Root Partition GUID: %guid\n", RootPartitionGUID)
+
+	;WaitKey()
+
+	EFI_HANDLE** NetworkControllerHandles := null
+	i32 NetworkControllerHandleCount := 0
+	EFI_STATUS NetworkHandleStatus := SystemTable->BootServices->LocateHandleBuffer(EFI_LOCATE_SEARCH_TYPE_BY_PROTOCOL, EFI_IPV4_SERVICE_BINDING_PROTOCOL_GUID, null, &NetworkControllerHandleCount, &NetworkControllerHandles)
+
+	if (NetworkHandleStatus != EFI_STATUS_SUCCESS || NetworkControllerHandleCount = 0) {
+		Print("No IPv4 controllers on first pass (%s / %x, count %i), forcing controller connect sweep\n", nameof:(NetworkHandleStatus), NetworkHandleStatus, NetworkControllerHandleCount)
+
+		i32 NumberHandles := 0
+		EFI_HANDLE** Handles := null
+
+		EFI_STATUS LocateStatus := SYSTEM_TABLE->BootServices->LocateHandleBuffer(EFI_LOCATE_SEARCH_TYPE_ALL_HANDLES, null, null, &NumberHandles, &Handles)
+
+		if (LocateStatus != EFI_STATUS_SUCCESS) {
+			Print("Could not locate handles for all controllers: %s / %x\n", nameof:(LocateStatus), LocateStatus)
+			loop {}
+		}
+
+		i32 ConnectedCount := 0
+
+		for (i32 Index := 0, Index < NumberHandles, Index++) {
+			EFI_HANDLE* Handle := Handles[Index]
+
+			EFI_STATUS ConnectStatus := SYSTEM_TABLE->BootServices->ConnectController(Handle, null, null, true)
+			
+			if (ConnectStatus = EFI_STATUS_SUCCESS) {
+				ConnectedCount += 1
+			}
+		}
+
+		Print("Connected +%i controllers out of %i\n", ConnectedCount, NumberHandles)
+
+		SYSTEM_TABLE->BootServices->FreePool(Handles As void*)
+
+		NetworkControllerHandleCount := 0
+		NetworkControllerHandles := null
+		NetworkHandleStatus := SystemTable->BootServices->LocateHandleBuffer(EFI_LOCATE_SEARCH_TYPE_BY_PROTOCOL, EFI_IPV4_SERVICE_BINDING_PROTOCOL_GUID, null, &NetworkControllerHandleCount, &NetworkControllerHandles)
+
+		if (NetworkHandleStatus != EFI_STATUS_SUCCESS || NetworkControllerHandleCount = 0) {
+			Print("No IPv4 controllers after forced connect (%s / %x, count %i)\n", nameof:(NetworkHandleStatus), NetworkHandleStatus, NetworkControllerHandleCount)
+			loop {}
+		}
+	}
+
+	for (i32 Index := 0, Index < NetworkControllerHandleCount, Index++) {
+		EFI_HANDLE* NextHandle := NetworkControllerHandles[Index]
+		
+		EFI_DEVICE_PATH_PROTOCOL* NextDevicePath := null
+		SystemTable->BootServices->HandleProtocol(NextHandle, EFI_DEVICE_PATH_PROTOCOL_GUID, &NextDevicePath As void**)
+		
+		i16* NextDevicePathText := ToText->ConvertDevicePathToText(NextDevicePath, true, true)
+		
+		Print("Network Controller %i: %w\n", Index, NextDevicePathText)
+
+		SystemTable->BootServices->ConnectController(NextHandle, null, null, true)
+		
+		SystemTable->BootServices->FreePool(NextDevicePathText)
+	}
+
+	; Find partitions listed on command line
+	
+	EFI_SERVICE_BINDING_PROTOCOL* DHCPServiceBinding := null
+    SystemTable->BootServices->LocateProtocol(EFI_DHCP4_SERVICE_BINDING_PROTOCOL_GUID, null, &DHCPServiceBinding As void**)
+
+    if !(DHCPServiceBinding) {
+        Print("Could not find DHCP service binding protocol\n")
+        loop {}
+    }
+
+    EFI_HANDLE* DHCPHandle := null
+    DHCPServiceBinding->CreateChild(&DHCPHandle)
+
+    if !(DHCPHandle) {
+        Print("Could not create DHCP child handle\n")
+        loop {}
+    }
+
+    EFI_DHCP4_PROTOCOL* DHCP := null
+    SystemTable->BootServices->HandleProtocol(DHCPHandle, EFI_DHCP4_PROTOCOL_GUID, &DHCP As void**)
+
+    if !(DHCP) {
+        Print("Could not find DHCP protocol\n")
+        loop {}
+    }
+
+	EFI_DHCP4_CONFIG_DATA* DHCPConfig := Alloc(#EFI_DHCP4_CONFIG_DATA)
+
+	if (DHCP->Configure(DHCPConfig)) {
+		Print("Could not configure DHCP protocol\n")
+		loop {}
+	}
+
+    EFI_DHCP4_MODE_DATA* ModeData := Alloc(#EFI_DHCP4_MODE_DATA)
+
+    if (DHCP->GetModeData(ModeData)) {
+        Print("Could not get DHCP mode data\n")
+        loop {}
+    }
+
+    i8* MAC := ModeData->ClientMACAddress
+
+    Print("DHCP Mode Data: %x\n", ModeData)
+    Print("DHCP State: %s\n", nameof:(ModeData->State))
+    Print("DHCP Client MAC: %B:%B:%B:%B:%B:%B\n", MAC[0], MAC[1], MAC[2], MAC[3], MAC[4], MAC[5])
+
+    EFI_EVENT* CompletionEvent := SystemTable->BootServices->CreateEvent(EFI_EVENT_NOTIFY_SIGNAL, EFI_TPL_CALLBACK, null, null)
+
+    if (DHCP->Start(CompletionEvent)) {
+        Print("Could not start DHCP protocol\n")
+        loop {}
+    }
+
+    SystemTable->BootServices->WaitForEvent(CompletionEvent)
+	SystemTable->BootServices->CloseEvent(CompletionEvent)
+
+    Print("Event woke!\n")
+
+    if (DHCP->GetModeData(ModeData)) {
+        Print("Could not get DHCP mode data\n")
+        loop {}
+    }
+
+    Print("DHCP State: %s\n", nameof:(ModeData->State))
+
+    if (ModeData->State != EFI_DHCP4_STATE_BOUND) {
+        Print("DHCP did not reach bound state\n")
+        loop {}
+    }
+
+    Print("DHCP Client Address: %ipv4\n", ModeData->ClientAddress)
+
+    EFI_SERVICE_BINDING_PROTOCOL* MTFTP4ServiceBinding := null
+    SystemTable->BootServices->LocateProtocol(EFI_MTFTP4_SERVICE_BINDING_PROTOCOL_GUID, null, &MTFTP4ServiceBinding As void**)
+
+    if !(MTFTP4ServiceBinding) {
+        Print("Could not find MTFTP service binding protocol\n")
+        loop {}
+    }
+
+    Print("I've got an MTFTP service binding protocol! %x\n", MTFTP4ServiceBinding)
+
+	EFI_HANDLE* MTFTP4Handle := null
+	MTFTP4ServiceBinding->CreateChild(&MTFTP4Handle)
+
+	if !(MTFTP4Handle) {
+		Print("Could not create MTFTP child handle\n")
+		loop {}
+	}
+
+	EFI_MTFTP4_PROTOCOL* MTFTP4 := null
+	SystemTable->BootServices->HandleProtocol(MTFTP4Handle, EFI_MTFTP4_PROTOCOL_GUID, &MTFTP4 As void**)
+
+	if !(MTFTP4) {
+		Print("Could not find MTFTP protocol\n")
+		loop {}
+	}
+
+	EFI_MTFTP4_CONFIG_DATA* MTFTP4Config := Alloc(#EFI_MTFTP4_CONFIG_DATA)
+
+	MTFTP4Config->StationIP := ModeData->ClientAddress
+	MTFTP4Config->SubnetMask := ModeData->SubnetMask
+	MTFTP4Config->LocalPort := 69
+
+	MTFTP4Config->GatewayIP := ModeData->RouterAddress
+	MTFTP4Config->ServerIP := PackIPv4(10, 2, 30, 100)
+	MTFTP4Config->InitialServerPort := 6969
+
+	EFI_STATUS ConfigureMTFTPStatus := MTFTP4->Configure(MTFTP4Config)
+
+	if (ConfigureMTFTPStatus != EFI_STATUS_SUCCESS) {
+		Print("Could not configure MTFTP protocol: %s\n", nameof:(ConfigureMTFTPStatus))
+		loop {}
+	}
+
+	EFI_MTFTP4_MODE_DATA* MTFTP4ModeData := Alloc(#EFI_MTFTP4_MODE_DATA)
+
+	MTFTP4->GetModeData(MTFTP4ModeData)
+
+	EFI_MTFTP4_CONFIG_DATA* C := MTFTP4ModeData~>ConfigData
+
+	Print("MTFTP4 Station IP: %ipv4\n", C->StationIP)
+	Print("MTFTP4 Subnet Mask: %ipv4\n", C->SubnetMask)
+	
+	Print("MTFTP4 Gateway IP: %ipv4\n", C->GatewayIP)
+	Print("MTFTP4 Server IP: %ipv4\n", C->ServerIP)
+
+
+	void* KernelData := null
+	i32 KernelSize := 0
+
+	EFI_STATUS ReadKernelStatus := MTFTP4->ReadFile("Kernel.elf", null, &KernelData, &KernelSize)
+
+	if (ReadKernelStatus != EFI_STATUS_SUCCESS) {
+		Print("Could not read kernel via MTFTP: %s\n", nameof:(ReadKernelStatus))
+	}
+
+	Print("Kernel read via MTFTP: %i bytes\n", KernelSize)
+
+	void* TrampolineData := null
+	i32 TrampolineSize := 0
+
+	EFI_STATUS ReadTrampolineStatus := MTFTP4->ReadFile("Trampoline.elf", null, &TrampolineData, &TrampolineSize)
+
+	if (ReadTrampolineStatus != EFI_STATUS_SUCCESS) {
+		Print("Could not read trampoline via MTFTP: %s\n", nameof:(ReadTrampolineStatus))
+	}
+
+	Print("Trampoline read via MTFTP: %i bytes\n", TrampolineSize)
+
+
+    /* EFI_SERVICE_BINDING_PROTOCOL* HTTPServiceBinding := null
+    SystemTable->BootServices->LocateProtocol(EFI_HTTP_SERVICE_BINDING_PROTOCOL_GUID, null, &HTTPServiceBinding As void**)
+
+    if !(HTTPServiceBinding) {
+        Print("Could not find HTTP service binding protocol\n")
+        loop {}
+    }
+
+    EFI_HANDLE* HTTPHandle := null
+    HTTPServiceBinding->CreateChild(&HTTPHandle)
+
+    if !(HTTPHandle) {
+        Print("Could not create HTTP child handle\n")
+        loop {}
+    }
+
+    EFI_HTTP_PROTOCOL* HTTP := null
+    SystemTable->BootServices->HandleProtocol(HTTPHandle, EFI_HTTP_PROTOCOL_GUID, &HTTP As void**)
+
+    if !(HTTP) {
+        Print("Could not find HTTP protocol\n")
+        loop {}
+    }
+
+    Print("I've got an HTTP protocol! %x\n", HTTP)
+
+    EFI_HTTP_CONFIG_DATA* HTTPConfig := Alloc(#EFI_HTTP_CONFIG_DATA)
+
+    HTTPConfig->Version := EFI_HTTP_VERSION::HTTP_1_1
+    HTTPConfig->LocalAddressIsIPv6 := false
+
+    EFI_HTTPv4_ACCESS_POINT* HTTPAccessPoint := Alloc(#EFI_HTTPv4_ACCESS_POINT)
+    HTTPAccessPoint->UseDefaultAddress := false
+    HTTPAccessPoint->LocalAddress := ModeData->ClientAddress
+    HTTPAccessPoint->LocalSubnet := ModeData->SubnetMask
+    HTTPAccessPoint->LocalPort := 5715
+    HTTPConfig->AccessPointV4 := HTTPAccessPoint
+
+    Print("Access Point: %ipv4:%i\n", HTTPAccessPoint->LocalAddress, HTTPAccessPoint->LocalPort)
+    Print("Subnet Mask: %ipv4\n", HTTPAccessPoint->LocalSubnet)
+
+    HTTP->Configure(null)
+
+    if (HTTP->Configure(HTTPConfig)) {
+        Print("Could not configure HTTP protocol\n")
+        loop {}
+    }
+
+    void* KernelData := null
+    i32 KernelSize := 0
+    i32 ResponseCode := HTTP->GET("http://proxmox.home:8000/Kernel.elf"w, &KernelData, &KernelSize)
+
+    ;Print("%hexdump\n", KernelData, 0x100)
+    ;loop {}
+
+    void* TrampolineData := null
+    i32 TrampolineSize := 0
+    i32 TrampolineResponseCode := HTTP->GET("http://proxmox.home:8000/Trampoline.elf"w, &TrampolineData, &TrampolineSize)
+
+    HTTPServiceBinding->DestroyChild(HTTPHandle) */
+
+	MTFTP4->Configure(null)
+	MTFTP4ServiceBinding->DestroyChild(MTFTP4Handle)
+
+	Free(MTFTP4Config)
+	Free(MTFTP4ModeData)
+
+    DHCP->Release()
+    DHCP->Stop()
+
+	Free(ModeData)
+	Free(DHCPConfig)
+
+    DHCPServiceBinding->DestroyChild(DHCPHandle)
+
+	; net done
+	
+	void* FrameBuffer := Graphics->Mode->FrameBufferBase
+	
+	Print("FrameBuffer @ %x\n", FrameBuffer)
+
+	RootDirectory := null
+
+	; Prep to call into trampoline
+	
+	i64 TrampolineMaxAddress := 0
+	void(BootloaderInfo*) TrampolineEntryPoint := EFILoadELF(SystemTable, TrampolineData, &TrampolineMaxAddress)
+	
+	Print("Trampoline entry: %x\n", TrampolineEntryPoint)
+	
+	;SystemTable->BootServices->FreePages(KernelFile, KernelPageCount)
+	
+	
+	i64 MemoryMapSize := 0
+	i64 MemoryDescriptorSize := 0
+	SystemTable->BootServices->GetMemoryMapInfo(&MemoryMapSize, &MemoryDescriptorSize)
+	
+	;Print("Memory map is %x bytes\n", MemoryMapSize)
+	;Print("%x bytes per descriptor, %x total\n", MemoryDescriptorSize, MemoryMapSize / MemoryDescriptorSize)
+	
+	EFI_MEMORY_DESCRIPTOR* MemoryMap := Alloc(MemoryMapSize As i32)
+	i64 MemoryMapKey := 0
+	
+	SystemTable->BootServices->GetMemoryMap(MemoryMapSize, MemoryMap, &MemoryMapKey)
+	
+	;Print("Memory map key: %x\n", MemoryMapKey)
+	;
+	;i64 MemoryMapCount := MemoryMapSize / MemoryDescriptorSize
+	;
+	;for (i32 Index := 0, Index < MemoryMapCount, Index++) {
+	;	EFI_MEMORY_DESCRIPTOR* NextMemory := MemoryMap + (Index * MemoryDescriptorSize)
+	;	
+	;	Print("%x\t ... %x", NextMemory->PhysicalStart, NextMemory->PhysicalStart + (NextMemory->NumberOfPages * 0x1000))
+	;	Print("\t -> ")
+	;	Print("%x\t ... %x", NextMemory->PhysicalStart, NextMemory->PhysicalStart + (NextMemory->NumberOfPages * 0x1000))
+	;	Print(" %s\n", EFIMemoryTypeToString(NextMemory->Type))
+	;}
+	
+	BootloaderInfo BootInfo {
+		PhysicalFrameBuffer: FrameBuffer As i64,
+		FrameBufferWidth: Graphics->Mode->Info->HorizontalResolution,
+		FrameBufferHeight: Graphics->Mode->Info->VerticalResolution,
+
+		RSDP: RSDP As i64,
+
+		IOAPICBase: IOAPICBase,
+		HPETBase: HPETBase,
+
+		PCISegmentGroupCount: SegmentGroupCount,
+
+		TrampolineMaxAddress: TrampolineMaxAddress,
+
+		KernelData: KernelData,
+		KernelSize: KernelSize
+	}
+
+	i64 MemoryMapCount := MemoryMapSize / MemoryDescriptorSize
+
+	AvailableMemoryRegion* AvailableRegions := BootInfo~>AvailableMemory
+	i32 AvailableIndex := 0
+
+	i64 TotalFree := 0
+	i64 MaxAddress := 0
+
+	if (MemoryMapCount > 20) {
+		MemoryMapCount := 20
+	}
+	
+	for (i32 Index := 0, Index < MemoryMapCount, Index++) {
+		EFI_MEMORY_DESCRIPTOR* NextRegion := MemoryMap + (Index * MemoryDescriptorSize)
+		i8 Available := false
+
+		if (NextRegion->Type = EFI_MEMORY_TYPE_LOADER_CODE || NextRegion->Type = EFI_MEMORY_TYPE_LOADER_DATA) {
+			Available := true
+		}
+		else if (NextRegion->Type = EFI_MEMORY_TYPE_BOOT_SERVICE_CODE || NextRegion->Type = EFI_MEMORY_TYPE_BOOT_SERVICE_DATA) {
+			Available := true
+		}
+		else if (NextRegion->Type = EFI_MEMORY_TYPE_CONVENTIONAL) {
+			Available := true
+		}
+
+		if (Available) {
+			AvailableMemoryRegion* Region := AvailableRegions[AvailableIndex++]
+
+			Region->Base := NextRegion->PhysicalStart
+			Region->Size := NextRegion->NumberOfPages
+
+			TotalFree += Region->Size
+			MaxAddress := Region->Base + (Region->Size * 0x1000)
+
+			Print("Available Memory @ %x (%x pages)\n", Region->Base, Region->Size)
+		}
+	}
+
+	i64 KB := 1024
+	i64 MB := KB * 1024
+	i64 GB := MB * 1024
+
+	i64 Bytes := TotalFree * 0x1000
+	i64 Remainder := Bytes
+
+	i64 FreeGB := Remainder / GB
+	Remainder %= GB
+
+	i64 FreeMB := Remainder / MB
+	Remainder %= MB
+
+	i64 FreeKB := Remainder / KB
+
+	Print("%x total pages free, %igb %imb %ikb\n", TotalFree, FreeGB, FreeMB, FreeKB)
+	Print("Maximum physical address: %x\n", MaxAddress)
+
+	BootInfo->AvailableCount := AvailableIndex
+	BootInfo->MaxAddress := MaxAddress
+
+	MoveMemory(BootInfo~>KernelCommandLine, CommandLineBuffer, CommandLineLength)
+	BootInfo~>KernelCommandLine[CommandLineLength] := 0
+
+	MoveMemory(BootInfo~>PCISegmentGroups, SegmentGroups, SegmentGroupCount * #ACPI_MCFG_ENTRY)
+	
+	MoveMemory(BootInfo~>IRQMappings, IRQMappings, 16 * #i32)
+	
+	Print("Any key to continue to kernel...\n")
+	WaitKey()
+	Print("Goodbye EFI!\n")
+
+	;WaitKey()
+	
+	SystemTable->BootServices->ExitBootServices(ImageHandle, MemoryMapKey)
+	
+	asm {cli}
+	
+	TrampolineEntryPoint(&BootInfo)
+	
+	;i32 SizeNeeded := 0
+	;SystemTable->BootServices->LocateHandle(EFI_LOCATE_SEARCH_TYPE_BY_PROTOCOL, EFI_BLOCK_IO_PROTOCOL_GUID, null, &SizeNeeded, null)
+	;EFI_HANDLE** Handles := SystemTable->BootServices->AllocatePool(SizeNeeded)
+	;SystemTable->BootServices->LocateHandle(EFI_LOCATE_SEARCH_TYPE_BY_PROTOCOL, EFI_BLOCK_IO_PROTOCOL_GUID, null, &SizeNeeded, Handles)
+	;i32 Count := SizeNeeded / 8
+	;
+	;PrintString(SystemTable, "There are ")
+	;PrintHex(SystemTable, Count)
+	;PrintString(SystemTable, " block devices\n")
+	;
+	;for (i32 Index := 0, Index < Count, Index++) {
+	;	EFI_BLOCK_IO_PROTOCOL* HandleBlockIO := null
+	;	
+	;	SystemTable->BootServices->HandleProtocol(Handles[Index], EFI_BLOCK_IO_PROTOCOL_GUID, &HandleBlockIO As void**)
+	;	
+	;	if (HandleBlockIO) {
+	;		EFI_DEVICE_PATH_PROTOCOL* HandlePath := null
+	;		
+	;		SystemTable->BootServices->HandleProtocol(Handles[Index], EFI_DEVICE_PATH_PROTOCOL_GUID, &HandlePath As void**)
+	;		
+	;		i16* DeviceText := ToText->ConvertDevicePathToText(HandlePath, true, true)
+	;		
+	;		PrintString(SystemTable, "Device ")
+	;		PrintHex(SystemTable, Index)
+	;		PrintString(SystemTable, ": ")
+	;		SystemTable->ConsoleOutput->OutputString(DeviceText)
+	;		PrintString(SystemTable, "\n")
+	;		
+	;		SystemTable->BootServices->FreePool(DeviceText)
+	;	}
+	;}
+	;
+	;SystemTable->BootServices->FreePool(Handles)
+	
+	SystemTable->ConsoleInput->Reset()
+	SystemTable->BootServices->WaitForEvent(SystemTable->ConsoleInput->WaitForKey)
+
+    return Status
+}

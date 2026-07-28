@@ -515,7 +515,7 @@ struct EFI_GRAPHICS_OUTPUT_MODE_INFORMATION {
 	i32 HorizontalResolution
 	i32 VerticalResolution
 	i32 PixelFormat
-	i32 PixelInformation
+	i32[4] PixelInformation
 	i32 PixelsPerScanLine
 }
 
@@ -544,6 +544,18 @@ struct EFI_GRAPHICS_OUTPUT_PROTOCOL {
 	}
 	define i64 SetMode(i32 ModeNumber) {
 		return EFICall(this, ModeNumber As void*, this->_SetMode)
+	}
+}
+
+struct EFI_SERVICE_BINDING_PROTOCOL {
+	void* _CreateChild
+	void* _DestroyChild
+
+	define i64 CreateChild(EFI_HANDLE** pChildHandle) {
+		return EFICall(this, pChildHandle, this->_CreateChild)
+	}
+	define i64 DestroyChild(EFI_HANDLE* ChildHandle) {
+		return EFICall(this, ChildHandle, this->_DestroyChild)
 	}
 }
 
@@ -599,6 +611,53 @@ define i8* EFIMemoryTypeToString(i32 Type) {
 i32 EFI_LOCATE_SEARCH_TYPE_ALL := 0
 i32 EFI_LOCATE_SEARCH_TYPE_REGISTER_NOTIFY := 1
 i32 EFI_LOCATE_SEARCH_TYPE_BY_PROTOCOL := 2
+
+i32 EFI_EVENT_TIMER         := 0x80000000 As i32
+i32 EFI_EVENT_RUNTIME       := 0x40000000
+i32 EFI_EVENT_NOTIFY_WAIT   := 0x00000100
+i32 EFI_EVENT_NOTIFY_SIGNAL := 0x00000200
+
+i32 EFI_TPL_APPLICATION := 4
+i32 EFI_TPL_CALLBACK := 8
+i32 EFI_TPL_NOTIFY := 16
+i32 EFI_TPL_HIGH_LEVEL := 31
+
+enum EFI_STATUS As i64 {
+	SUCCESS := 0,
+	LOAD_ERROR := 1,
+	INVALID_PARAMETER := 2,
+	UNSUPPORTED := 3,
+	BAD_BUFFER_SIZE := 4,
+	BUFFER_TOO_SMALL := 5,
+	NOT_READY := 6,
+	DEVICE_ERROR := 7,
+	WRITE_PROTECTED := 8,
+	OUT_OF_RESOURCES := 9,
+	VOLUME_CORRUPTED := 10,
+	VOLUME_FULL := 11,
+	NO_MEDIA := 12,
+	MEDIA_CHANGED := 13,
+	NOT_FOUND := 14,
+	ACCESS_DENIED := 15,
+	NO_RESPONSE := 16,
+	NO_MAPPING := 17,
+	TIMEOUT := 18,
+	NOT_STARTED := 19,
+	ALREADY_STARTED := 20,
+	ABORTED := 21,
+	ICMP_ERROR := 22,
+	TFTP_ERROR := 23,
+	PROTOCOL_ERROR := 24,
+	INCOMPATIBLE_VERSION := 25,
+	SECURITY_VIOLATION := 26,
+	CRC_ERROR := 27,
+	END_OF_MEDIA := 28,
+	END_OF_FILE := 29,
+	INVALID_LANGUAGE := 30,
+	COMPROMISED_DATA := 31,
+	IP_ADDRESS_CONFLICT := 32,
+	HTTP_ERROR := 33
+}
 
 struct EFI_BOOT_SERVICES {
 	EFI_TABLE_HEADER Header
@@ -708,6 +767,17 @@ struct EFI_BOOT_SERVICES {
 	define i64 FreePool(void* Buffer) {
 		return EFICall(Buffer, this->_FreePool)
 	}
+
+	define EFI_EVENT* CreateEvent(i32 Type, i32 NotifyTPL, void* NotifyFunction, void* NotifyContext) {
+		EFI_EVENT* Result := null
+		
+		EFICall(Type As void*, NotifyTPL As void*, NotifyFunction, NotifyContext, &Result, this->_CreateEvent)
+		
+		return Result
+	}
+	define i64 CloseEvent(EFI_EVENT* Event) {
+		return EFICall(Event, this->_CloseEvent)
+	}
 	
 	define i64 WaitForEvent(EFI_EVENT* Event) {
 		i32 SignalIndex := 0
@@ -738,8 +808,15 @@ struct EFI_BOOT_SERVICES {
 	define i64 LocateProtocol(EFI_GUID* Protocol, void* Registration, void** Interface) {
 		return EFICall(Protocol, Registration, Interface, this->_LocateProtocol)
 	}
-	define i64 LocateProtocol(EFI_GUID* Protocol, void** Interface) {
-		return EFICall(Protocol, null, Interface, this->_LocateProtocol)
+	define EFI_STATUS LocateProtocol(EFI_GUID* Protocol, void** Interface) {
+		return (EFICall(Protocol, null, Interface, this->_LocateProtocol) & 0xFF) As EFI_STATUS
+	}
+
+	define EFI_STATUS LocateHandleBuffer(i32 SearchType, EFI_GUID* Protocol, void* SearchKey, i32* NumberHandles, EFI_HANDLE*** Buffer) {
+		return (EFICall(SearchType As void*, Protocol, SearchKey, NumberHandles, Buffer, this->_LocateHandleBuffer) & 0xFF) As EFI_STATUS
+	}
+	define EFI_STATUS ConnectController(EFI_HANDLE* ControllerHandle, EFI_GUID* DriverImageHandle, EFI_DEVICE_PATH_PROTOCOL* RemainingDevicePath, i8 Recursive) {
+		return (EFICall(ControllerHandle, DriverImageHandle, RemainingDevicePath, Recursive As void*, this->_ConnectController) & 0xFF) As EFI_STATUS
 	}
 }
 

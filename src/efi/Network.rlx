@@ -1,0 +1,661 @@
+
+EFI_GUID* EFI_DHCP4_SERVICE_BINDING_PROTOCOL_GUID := i8[0xd8, 0x39, 0x9a, 0x9d, 0x42, 0xbd, 0x73, 0x4a, 0xa4, 0xd5, 0x8e, 0xe9, 0x4b, 0xe1, 0x13, 0x80] As EFI_GUID*
+
+struct EFI_DHCP4_PACKET_OPTION {
+    i8 Opcode
+    i8 Length
+    i8[0] Data
+}
+
+struct EFI_DHCP4_CONFIG_DATA {
+    i32 DiscoverTryCount
+    i32* DiscoverTimeout
+    i32 RequestTryCount
+    i32* RequestTimeout
+
+    i32 ClientAddress
+
+    void* Callback
+    void* CallbackContext
+
+    i32 OptionCount
+    EFI_DHCP4_PACKET_OPTION** Options
+}
+
+enum EFI_DHCP4_STATE {
+    STOPPED := 0,
+    INIT := 1,
+    SELECTING := 2,
+    REQUESTING := 3,
+    BOUND := 4,
+    RENEWING := 5,
+    REBINDING := 6,
+    INIT_REBOOT := 7,
+    REBOOTING := 8
+}
+
+struct EFI_DHCP4_MODE_DATA {
+    EFI_DHCP4_STATE State
+    i32 _
+
+    EFI_DHCP4_CONFIG_DATA ConfigData
+
+    i32 ClientAddress
+
+    i8[32] ClientMACAddress
+
+    i32 ServerAddress
+    i32 RouterAddress
+    i32 SubnetMask
+
+    i32 LeaseTime
+
+    void* ReplyPacket
+
+}
+
+EFI_GUID* EFI_DHCP4_PROTOCOL_GUID := i8[0x18, 0x97, 0x21, 0x8a, 0xf5, 0x4e, 0x61, 0x47, 0x91, 0xc8, 0xc0, 0xf0, 0x4b, 0xda, 0x9e, 0x56] As EFI_GUID*
+
+struct EFI_DHCP4_PROTOCOL {
+    void* _GetModeData
+    void* _Configure
+    void* _Start
+    void* _RenewRebind
+    void* _Release
+    void* _Stop
+    void* _Build
+    void* _TransmitReceive
+    void* _Parse
+
+    define i64 GetModeData(EFI_DHCP4_MODE_DATA* ModeData) {
+        return EFICall(this, ModeData As void*, #EFI_DHCP4_MODE_DATA As void*, this->_GetModeData)
+    }
+
+    define i64 Configure(EFI_DHCP4_CONFIG_DATA* ConfigData) {
+        return EFICall(this, ConfigData As void*, this->_Configure)
+    }
+
+    define i64 Start(EFI_EVENT* CompletionEvent) {
+        return EFICall(this, CompletionEvent As void*, this->_Start)
+    }
+
+    define i64 Release() {
+        return EFICall(this, this->_Release)
+    }
+
+    define i64 Stop() {
+        return EFICall(this, this->_Stop)
+    }
+}
+
+define i32 PackIPv4(i32 A, i32 B, i32 C, i32 D) {
+    return (D << 24) | (C << 16) | (B << 8) | A
+}
+
+define void DoIPV4AddressPrint(PrintOutputAdapterPrototype* this, i8* Format, i32* FormatIndex, void* Parameters, i32 ParameterCount, i32* ParameterIndex) {
+    i32 Address := Parameters[*ParameterIndex] As i32
+    i8* Bytes := &Address As void*
+
+    this->Print("%i.%i.%i.%i", (Bytes[0] As i32) & 0xFF, (Bytes[1] As i32) & 0xFF, (Bytes[2] As i32) & 0xFF, (Bytes[3] As i32) & 0xFF)
+
+    *ParameterIndex += 1
+}
+
+PrintFormatPrototype IPV4AddressFormatPrototype {
+	Name: "ipv4",
+	Format: &DoIPV4AddressPrint
+}
+
+i32 IPV4_ADDRESS_FORMAT_PROTOTYPE_ID := AddPrintFormat(&IPV4AddressFormatPrototype)
+
+i32 EFI_LOCATE_SEARCH_TYPE_ALL_HANDLES := 0
+
+EFI_GUID* EFI_HTTP_SERVICE_BINDING_PROTOCOL_GUID := i8[0xaf, 0xe6, 0xc8, 0xbd, 0xbc, 0xd9, 0x79, 0x43, 0xa7, 0x2a, 0xe0, 0xc4, 0xe7, 0x5d, 0xae, 0x1c] As EFI_GUID*
+EFI_GUID* EFI_HTTP_PROTOCOL_GUID := i8[0x9B, 0xB2, 0x59, 0x7A, 0x0B, 0x91, 0x71, 0x41, 0x82, 0x42, 0xA8, 0x5A, 0x0D, 0xF2, 0x5B, 0x5B] As EFI_GUID*
+
+enum EFI_HTTP_VERSION {
+    HTTP_1_0,
+    HTTP_1_1,
+    UNSUPPORTED
+}
+
+struct EFI_HTTPv4_ACCESS_POINT unaligned {
+    i8 UseDefaultAddress
+    i32 LocalAddress
+    i32 LocalSubnet
+
+    i8 _
+    i16 LocalPort
+}
+
+struct EFI_HTTP_CONFIG_DATA {
+    EFI_HTTP_VERSION Version
+    i32 TimeoutMilliseconds
+    i32 LocalAddressIsIPv6
+
+    EFI_HTTPv4_ACCESS_POINT* AccessPointV4
+}
+
+enum EFI_HTTP_METHOD {
+    GET
+    POST
+    PATCH
+    OPTIONS
+    CONNECT
+    HEAD
+    PUT
+    DELETE
+    TRACE
+}
+
+struct EFI_HTTP_REQUEST_DATA {
+    EFI_HTTP_METHOD Method
+    i16* URL
+}
+
+struct EFI_HTTP_RESPONSE_DATA {
+    i32 StatusCode
+}
+
+struct EFI_HTTP_HEADER {
+    i8* FieldName
+    i8* FieldValue
+}
+
+struct EFI_HTTP_MESSAGE {
+    union {
+        EFI_HTTP_REQUEST_DATA* Request
+        EFI_HTTP_RESPONSE_DATA* Response
+    }
+
+    i64 HeaderCount
+    EFI_HTTP_HEADER* Headers
+    i64 BodyLength
+    void* Body
+}
+
+struct EFI_HTTP_TOKEN {
+    EFI_EVENT* Event
+    EFI_STATUS Status
+    EFI_HTTP_MESSAGE* Message
+}
+
+i8 HTTP_REQUEST_COMPLETED := false
+
+define void HTTPOnRequestComplete(EFI_EVENT* Event, EFI_HTTP_PROTOCOL* HTTP) {
+    ; UEFI signals callbacks as (Event, Context).
+    HTTP_REQUEST_COMPLETED := true
+}
+
+i8 HTTP_RESPONSE_COMPLETED := false
+
+define void HTTPOnResponseComplete(EFI_EVENT* Event, EFI_HTTP_PROTOCOL* HTTP) {
+    ; UEFI signals callbacks as (Event, Context).
+    HTTP_RESPONSE_COMPLETED := true
+}
+
+struct EFI_HTTP_PROTOCOL {
+    void* _GetModeData
+    void* _Configure
+    void* _Request
+    void* _Cancel
+    void* _Response
+    void* _Poll
+
+    define EFI_STATUS Configure(EFI_HTTP_CONFIG_DATA* ConfigData) {
+        return EFICall(this, ConfigData As void*, this->_Configure) As EFI_STATUS
+    }
+    define EFI_STATUS Request(EFI_HTTP_TOKEN* Token) {
+        return EFICall(this, Token As void*, this->_Request) As EFI_STATUS
+    }
+    define EFI_STATUS Response(EFI_HTTP_TOKEN* Token) {
+        return EFICall(this, Token As void*, this->_Response) As EFI_STATUS
+    }
+
+    define EFI_STATUS Poll() {
+        return EFICall(this, this->_Poll) As EFI_STATUS
+    }
+
+    define i32 GET(i16* URL, void** OutBuffer, i32* OutSize) {
+        ; Build REQUEST_DATA
+
+        EFI_HTTP_REQUEST_DATA* RequestData := Alloc(#EFI_HTTP_REQUEST_DATA)
+        RequestData->Method := EFI_HTTP_METHOD::GET
+        RequestData->URL := URL
+
+        Print("GET URL: %w\n", URL)
+
+        ; Build HTTP_MESSAGE (containing REQUEST_DATA)
+
+        EFI_HTTP_MESSAGE* RequestMessage := Alloc(#EFI_HTTP_MESSAGE)
+
+        RequestMessage->Request := RequestData
+
+        EFI_HTTP_HEADER* Headers := Alloc(#EFI_HTTP_HEADER)
+
+        EFI_HTTP_HEADER* ConnectionHeader := Headers[0]
+        ConnectionHeader->FieldName := "Connection"
+        ConnectionHeader->FieldValue := "close"
+
+        RequestMessage->HeaderCount := 1
+        RequestMessage->Headers := Headers
+        RequestMessage->BodyLength := 0
+        RequestMessage->Body := null
+
+        ; Build HTTP_TOKEN (containing HTTP_MESSAGE)
+
+        EFI_HTTP_TOKEN* RequestToken := Alloc(#EFI_HTTP_TOKEN)
+
+        HTTP_REQUEST_COMPLETED := false
+        RequestToken->Event := SYSTEM_TABLE->BootServices->CreateEvent(EFI_EVENT_NOTIFY_SIGNAL, EFI_TPL_CALLBACK, &HTTPOnRequestComplete, this)
+        RequestToken->Status := EFI_STATUS_SUCCESS
+        RequestToken->Message := RequestMessage
+
+        ; Send the request and wait for it to be sent
+
+        EFI_STATUS RequestStatus := this->Request(RequestToken)
+
+        if (RequestStatus != EFI_STATUS_SUCCESS) {
+            Print("HTTP Request() failed: %s\n", nameof:(RequestStatus))
+            return -1
+        }
+
+        loop {
+            this->Poll()
+
+            if (HTTP_REQUEST_COMPLETED) {
+                break
+            }
+        }
+
+        ; Build HTTP_RESPONSE_DATA (for the response)
+        EFI_HTTP_RESPONSE_DATA* ResponseData := Alloc(#EFI_HTTP_RESPONSE_DATA)
+
+        ; Build HTTP_MESSAGE (for the response)
+
+        EFI_HTTP_MESSAGE* ResponseMessage := Alloc(#EFI_HTTP_MESSAGE)
+        ResponseMessage->Response := ResponseData
+        ResponseMessage->HeaderCount := 0
+        ResponseMessage->Headers := null
+
+        ; Allocate a buffer for the response body (1mb maximum) and set it in the response message
+
+        void* Buffer := Alloc(0x30_0000)
+
+        ResponseMessage->BodyLength := 0x30_0000 ; 3mb maximum
+        ResponseMessage->Body := Buffer
+
+        ; Build the HTTP_TOKEN (for the response) and wait for the response to be received
+
+        EFI_HTTP_TOKEN* ResponseToken := Alloc(#EFI_HTTP_TOKEN)
+
+        HTTP_RESPONSE_COMPLETED := false
+        ResponseToken->Event := SYSTEM_TABLE->BootServices->CreateEvent(EFI_EVENT_NOTIFY_SIGNAL, EFI_TPL_CALLBACK, &HTTPOnResponseComplete, this)
+        ResponseToken->Status := EFI_STATUS_SUCCESS
+        ResponseToken->Message := ResponseMessage
+
+        EFI_STATUS ResponseStatus := this->Response(ResponseToken)
+
+        if (ResponseStatus != EFI_STATUS_SUCCESS) {
+            Print("HTTP Response() failed: %s\n", nameof:(ResponseStatus))
+            return -1
+        }
+
+        loop {
+            this->Poll()
+
+            if (HTTP_RESPONSE_COMPLETED) {
+                break
+            }
+        }
+
+        i32 HeaderCount := ResponseMessage->HeaderCount As i32
+
+        i32 ContentLength := 0
+
+        for (i32 Index := 0, Index < HeaderCount, Index++) {
+            EFI_HTTP_HEADER* Header := ResponseMessage->Headers[Index]
+
+            Print("Response Header %i: %s: %s\n", Index, Header->FieldName, Header->FieldValue)
+
+            if (StringEquals(Header->FieldName, "Content-Length")) {
+                ContentLength := AToI(Header->FieldValue) As i32
+            }
+        }
+
+        Print("Content-Length: %i (%x)\n", ContentLength, ContentLength)
+        Print("First Chunk: %x\n\n", ResponseMessage->BodyLength, ResponseMessage->BodyLength)
+
+        i32 Downloaded := ResponseMessage->BodyLength As i32
+
+        while (Downloaded < ContentLength) {
+            ResponseMessage->Response := null
+
+            if (ResponseMessage->Headers) {
+                SYSTEM_TABLE->BootServices->FreePool(ResponseMessage->Headers)
+            }
+
+            ResponseMessage->HeaderCount := 0
+            ResponseMessage->BodyLength := 0x30_0000 - Downloaded ; 3mb maximum
+            ResponseMessage->Body := Buffer + Downloaded
+
+            HTTP_RESPONSE_COMPLETED := false
+            EFI_STATUS ResponseStatus := this->Response(ResponseToken)
+
+            if (ResponseStatus != EFI_STATUS_SUCCESS) {
+                Print("HTTP Response() failed: %s\n", nameof:(ResponseStatus))
+                loop {}
+            }
+
+            loop {
+                this->Poll()
+
+                if (HTTP_RESPONSE_COMPLETED) {
+                    break
+                }
+            }
+            
+            Downloaded += ResponseMessage->BodyLength As i32
+
+            Print("%i / %i", Downloaded, ContentLength)
+            PrintCharacter(0xD)
+        }
+
+        Print("\n")
+
+        Print("Downloaded all %i bytes\n", Downloaded)
+
+        ; Return the response body and size
+
+        OutSize[0] := ContentLength
+        OutBuffer[0] := Buffer
+
+        i32 Result := ResponseData->StatusCode
+
+        SYSTEM_TABLE->BootServices->CloseEvent(ResponseToken->Event)
+        Free(ResponseToken)
+        Free(ResponseData)
+        Free(ResponseMessage)
+
+        SYSTEM_TABLE->BootServices->CloseEvent(RequestToken->Event)
+        Free(RequestToken)
+        Free(RequestData)
+        Free(Headers)
+        Free(RequestMessage)
+
+        return Result
+    }
+}
+
+EFI_GUID* EFI_FTP4_SERVICE_BINDING_PROTOCOL_GUID := i8[0xb1, 0xec, 0xaa, 0x0f, 0x6e, 0x22, 0x82, 0x47, 0xaa, 0xce, 0x7d, 0xb9, 0xbc, 0xbf, 0x4d, 0xaf] As EFI_GUID*
+
+/*
+
+^{0x([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2}),\s*0x([0-9a-f]{2})([0-9a-f]{2}),\s*0x([0-9a-f]{2})([0-9a-f]{2}),\s*{0x([0-9a-f]{2}),\s*0x([0-9a-f]{2}),\s*0x([0-9a-f]{2}),\s*0x([0-9a-f]{2}),\s*0x([0-9a-f]{2}),\s*0x([0-9a-f]{2}),\s*0x([0-9a-f]{2}),\s*0x([0-9a-f]{2})}}
+0x$4, 0x$3, 0x$2, 0x$1, 0x$6, 0x$5, 0x$8, 0x$7, 0x$9, 0x$10, 0x$11, 0x$12, 0x$13, 0x$14, 0x$15, 0x$16
+
+*/
+
+EFI_GUID* EFI_MTFTP4_SERVICE_BINDING_PROTOCOL_GUID := i8[0xbe, 0x00, 0xe8, 0x2f, 0x01, 0x8f, 0xa6, 0x4a, 0x94, 0x6b, 0xd7, 0x13, 0x88, 0xe1, 0x83, 0x3f] As EFI_GUID*
+
+EFI_GUID* EFI_MTFTP4_PROTOCOL_GUID := i8[0x57, 0x7c, 0x24, 0x78, 0xdb, 0x63, 0x08, 0x47, 0x99, 0xc2, 0xa8, 0xb4, 0xa9, 0xa6, 0x1f, 0x6b] As EFI_GUID*
+
+struct EFI_MTFTP4_CONFIG_DATA unaligned {
+    i8 UseDefaultSetting ; 0x0
+
+    i32 StationIP ; 0x1
+    i32 SubnetMask ; 0x5
+
+    i16 LocalPort ; 0x9
+    i8 _ ; 0xB
+
+    i32 GatewayIP ; 0xC
+    i32 ServerIP ; 0x10
+
+    i16 InitialServerPort
+
+    i16 TryCount
+    i16 TimeoutValue
+}
+
+struct EFI_MTFTP4_MODE_DATA {
+    EFI_MTFTP4_CONFIG_DATA ConfigData
+
+    i8 SupportedOptionCount
+    i8** SupportedOptions
+
+    i8 UnsupportedOptionCount
+    i8** UnsupportedOptions
+}
+
+struct EFI_MTFTP4_OVERRIDE_DATA {
+    i32 GatewayIP
+    i32 ServerIP
+    i16 ServerPort
+    i16 TryCount
+    i16 TimeoutValue
+}
+
+struct EFI_MTFTP4_OPTION {
+    i8* Name
+    i8* Value
+}
+
+enum EFI_MTFTP4_OPCODE As i16 {
+    READ_REQUEST := 1
+    WRITE_REQUEST := 2
+    DATA := 3
+    ACK := 4
+    ERROR := 5
+    OPTION_ACK := 6
+    DIRECTORY := 7
+    DATA8 := 8
+    ACK8 := 9
+}
+
+struct EFI_MTFTP4_REQUEST_HEADER {
+    EFI_MTFTP4_OPCODE Opcode
+    i8[0] Filename
+}
+
+struct EFI_MTFTP4_OACK_HEADER {
+    EFI_MTFTP4_OPCODE Opcode
+    i8[0] Data
+}
+
+struct EFI_MTFTP4_DATA_HEADER {
+    EFI_MTFTP4_OPCODE Opcode
+    i16 Block
+    i8[0] Data
+}
+
+struct EFI_MTFTP4_ACK_HEADER {
+    EFI_MTFTP4_OPCODE Opcode
+    i16 Block
+}
+
+struct EFI_MTFTP4_DATA8_HEADER unaligned {
+    EFI_MTFTP4_OPCODE Opcode
+    i64 Block
+    i8[0] Data
+}
+
+struct EFI_MTFTP4_ACK8_HEADER unaligned {
+    EFI_MTFTP4_OPCODE Opcode
+    i64 Block
+}
+
+enum EFI_MTFTP4_ERROR_CODE As i16 {
+    NOT_DEFINED := 0
+    FILE_NOT_FOUND := 1
+    ACCESS_VIOLATION := 2
+    DISK_FULL := 3
+    ILLEGAL_OPERATION := 4
+    UNKNOWN_TRANSFER_ID := 5
+    FILE_ALREADY_EXISTS := 6
+    NO_SUCH_USER := 7
+    REQUEST_DENIED := 8
+}
+
+struct EFI_MTFTP4_ERROR_HEADER {
+    EFI_MTFTP4_OPCODE Opcode
+    EFI_MTFTP4_ERROR_CODE ErrorCode
+    i8[0] ErrorMessage
+}
+
+struct EFI_MTFTP4_PACKETE {
+    union {
+        EFI_MTFTP4_OPCODE Opcode
+        EFI_MTFTP4_REQUEST_HEADER ReadRequest
+        EFI_MTFTP4_REQUEST_HEADER WriteRequest
+        EFI_MTFTP4_OACK_HEADER Oack
+        EFI_MTFTP4_DATA_HEADER Data
+        EFI_MTFTP4_ACK_HEADER Ack
+        EFI_MTFTP4_DATA8_HEADER Data8
+        EFI_MTFTP4_ACK8_HEADER Ack8
+        EFI_MTFTP4_ERROR_HEADER Error
+    }
+}
+
+struct EFI_MTFTP4_TOKEN {
+    EFI_STATUS Status
+    EFI_EVENT* Event
+
+    EFI_MTFTP4_OVERRIDE_DATA* Override
+
+    i8* FileName
+    i8* Mode
+
+    i32 OptionCount
+    EFI_MTFTP4_OPTION* Options
+
+    i64 BufferSize
+    void* Buffer
+
+    void* Context
+
+    void* CheckPacketCallback
+    void* TimeoutCallback
+    void* PacketNeededCallback
+}
+
+i8 MTFTP4_READFILE_COMPLETED := false
+
+define void MTFTP4OnReadFileComplete(EFI_EVENT* Event, void* Context) {
+    MTFTP4_READFILE_COMPLETED := true
+}
+
+struct EFI_MTFTP4_PROTOCOL {
+    void* _GetModeData
+    void* _Configure
+    void* _GetInfo
+    void* _ParseOptions
+    void* _ReadFile
+    void* _WriteFile
+    void* _ReadDirectory
+    void* _Poll
+
+    define EFI_STATUS GetModeData(EFI_MTFTP4_MODE_DATA* ModeData) {
+        return EFICall(this, ModeData As void*, this->_GetModeData) As EFI_STATUS
+    }
+
+    define EFI_STATUS Configure(EFI_MTFTP4_CONFIG_DATA* ConfigData) {
+        return EFICall(this, ConfigData As void*, this->_Configure) As EFI_STATUS
+    }
+
+    define EFI_STATUS ReadFile(EFI_MTFTP4_TOKEN* Token) {
+        return EFICall(this, Token As void*, this->_ReadFile) As EFI_STATUS
+    }
+
+    define EFI_STATUS Poll() {
+        return EFICall(this, this->_Poll) As EFI_STATUS
+    }
+
+    define EFI_STATUS ReadFile(i8* FileName, i8* Mode, void** OutBuffer, i32* OutSize) {
+        Print("MTFTP4: Reading file: %s\n", FileName)
+
+        EFI_MTFTP4_TOKEN* Token := Alloc(#EFI_MTFTP4_TOKEN)
+
+        Token->FileName := FileName
+        Token->Mode := Mode
+
+        Token->BufferSize := 0x30_0000 ; 3mb maximum
+        Token->Buffer := Alloc(Token->BufferSize)
+
+        MTFTP4_READFILE_COMPLETED := false
+        Token->Event := SYSTEM_TABLE->BootServices->CreateEvent(EFI_EVENT_NOTIFY_SIGNAL, EFI_TPL_CALLBACK, &MTFTP4OnReadFileComplete, this)
+
+        EFI_STATUS Status := this->ReadFile(Token)
+
+        if (Status != EFI_STATUS_SUCCESS) {
+            Print("EFI_MTFTP4_PROTOCOL->ReadFile() failed: %s\n", nameof:(Status))
+            return Status
+        }
+
+        loop {
+            this->Poll()
+
+            if (MTFTP4_READFILE_COMPLETED) {
+                break
+            }
+        }
+
+        SYSTEM_TABLE->BootServices->CloseEvent(Token->Event)
+
+        if (Token->Status != EFI_STATUS_SUCCESS) {
+            return Token->Status
+        }
+
+        OutSize[0] := Token->BufferSize As i32
+        OutBuffer[0] := Token->Buffer
+
+        Free(Token)
+
+        return EFI_STATUS_SUCCESS
+    }
+}
+
+
+EFI_GUID* EFI_UDP4_SERVICE_BINDING_PROTOCOL_GUID := i8[0x64, 0x14, 0xf0, 0x83, 0xbd, 0x99, 0xe5, 0x45, 0xb3, 0x83, 0xaf, 0x63, 0x05, 0xd8, 0xe9, 0xe6] As EFI_GUID*
+
+EFI_GUID* EFI_UDP4_PROTOCOL_GUID := i8[0x29, 0xdf, 0xd9, 0x3a, 0x01, 0x45, 0x8d, 0x47, 0xb1, 0xf8, 0x7f, 0x7f, 0xe7, 0x0e, 0x50, 0xf3] As EFI_GUID*
+
+struct EFI_UDP4_CONFIG_DATA unaligned {
+    i8 AcceptBroadcast
+    i8 AcceptPromiscuous
+    i8 AcceptAnyPort
+    i8 AllowDuplicatePort
+
+    i8 TypeOfService
+    i8 TimeToLive
+    i8 DoNotFragment
+
+    i32 ReceiveTimeout
+    i32 TransmitTimeout
+
+    i8 UseDefaultAddress
+
+    i32 StationAddress
+    i32 SubnetMask
+    i16 StationPort
+
+    i32 RemoteAddress
+    i16 RemotePort
+}
+
+struct EFI_UDP4_PROTOCOL {
+    void* _GetModeData
+    void* _Configure
+    void* _Groups
+    void* _Routes
+    void* _Transmit
+    void* _Receive
+    void* _Cancel
+    void* _Poll
+
+    define EFI_STATUS Configure(EFI_UDP4_CONFIG_DATA* ConfigData) {
+        return EFICall(this, ConfigData As void*, this->_Configure) As EFI_STATUS
+    }
+}
+
+EFI_GUID* EFI_IPV4_SERVICE_BINDING_PROTOCOL_GUID := i8[0xe7, 0x11, 0x17, 0xc5, 0xbf, 0xb4, 0x4a, 0x40, 0xbf, 0xb8, 0x0a, 0x04, 0x8e, 0xf1, 0xff, 0xe4] As EFI_GUID*
