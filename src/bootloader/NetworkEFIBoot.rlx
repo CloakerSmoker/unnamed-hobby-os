@@ -76,8 +76,10 @@ define void* EFILoadELF(EFI_SYSTEM_TABLE* SystemTable, ELFHeader* Header, i64* O
 			
 			SystemTable->BootServices->AllocatePages(EFI_MEMORY_ALLOCATE_ADDRESS, SectionPageCount, &SectionMemory)
 
-			SetMemory(SectionMemory, 0, Next->MemorySize)
-			MoveMemory(SectionMemory, SectionData, Next->FileSize As i32)
+			FastSetMemory8(SectionMemory, 0x53, SectionPageCount * 0x1000)
+
+			FastZeroMemory(SectionMemory, Next->MemorySize)
+			FastMoveMemory(SectionMemory, SectionData, Next->FileSize As i32)
 		}
 	}
 
@@ -135,8 +137,18 @@ define i8 LoadFile(IFileHandle* RootDirectory, i8* FileName, void** OutFileData,
 
 #Require "./src/efi/Network.rlx"
 
+i64 never_initialized
+
 define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
     i64 Status := 0
+
+	Print("never_initialized: ")
+	Printer->PrintPrefixedHex(never_initialized)
+	Print("\n")
+
+	Print("First Print Format: ")
+	Printer->PrintPrefixedHex(FirstPrintFormat As i64)
+	Print("\n")
 
 	Print("Switching mode\n")
 	
@@ -577,8 +589,6 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
         loop {}
     }
 
-    Print("I've got an MTFTP service binding protocol! %x\n", MTFTP4ServiceBinding)
-
 	EFI_HANDLE* MTFTP4Handle := null
 	MTFTP4ServiceBinding->CreateChild(&MTFTP4Handle)
 
@@ -632,6 +642,7 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 
 	if (ReadKernelStatus != EFI_STATUS_SUCCESS) {
 		Print("Could not read kernel via MTFTP: %s\n", nameof:(ReadKernelStatus))
+		loop {}
 	}
 
 	Print("Kernel read via MTFTP: %i bytes\n", KernelSize)
@@ -643,6 +654,7 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 
 	if (ReadTrampolineStatus != EFI_STATUS_SUCCESS) {
 		Print("Could not read trampoline via MTFTP: %s\n", nameof:(ReadTrampolineStatus))
+		loop {}
 	}
 
 	Print("Trampoline read via MTFTP: %i bytes\n", TrampolineSize)

@@ -76,8 +76,8 @@ define void* EFILoadELF(EFI_SYSTEM_TABLE* SystemTable, ELFHeader* Header, i64* O
 			
 			SystemTable->BootServices->AllocatePages(EFI_MEMORY_ALLOCATE_ADDRESS, SectionPageCount, &SectionMemory)
 
-			SetMemory(SectionMemory, 0, Next->MemorySize)
-			MoveMemory(SectionMemory, SectionData, Next->FileSize As i32)
+			FastZeroMemory(SectionMemory, Next->MemorySize)
+			FastMoveMemory(SectionMemory, SectionData, Next->FileSize As i32)
 		}
 	}
 
