@@ -1,0 +1,1150 @@
+#Require "./src/drivers/block-device/SATA/SATA.rlx"
+
+PointerArray* ALL_AHCI_CONTROLLERS := new PointerArray() ; <SATA::AHCI::Controller*>
+
+namespace SATA::AHCI {
+    enum DeviceSignature {
+        ATA := 0x101
+        ATAPI := 0xEB140101
+        SEMB := 0xC33C0101
+        PM := 0x96690101
+    }
+
+    bits PxIS_FIELDS As i32 {
+        [0] DHRS
+        [1] PSS
+        [2] DSS
+        [3] SDBS
+        [4] UFS
+        [5] DPS
+        [6] PCS
+        [7] DMPS
+        [22] PRCS
+        [23] IPMS
+        [24] OFS
+        [26] INFS
+        [27] IFS
+        [28] HBDS
+        [29] HBFS
+        [30] TFES
+        [31] CPDS
+    }
+
+    bits PxCMD_FIELDS As i32 {
+        [0] ST
+        [1] SUD
+        [2] POD
+        [3] CLO
+        [4] FRE
+        [8:12] CCS
+        [13] MPSS
+        [14] FR
+        [15] CR
+        [16] CPS
+        [17] PMA
+        [18] HPCP
+        [19] MPSP
+        [20] CPD
+        [21] ESP
+        [22] FBSCP
+        [23] APSTE
+        [24] ATAPI
+        [25] DLAE
+        [26] ALPE
+        [27] ASP
+        [28:31] ICC
+    }
+
+    enum PxSSTS_DET {
+        DeviceNotPresent := 0
+        NoPhyCommunication := 1
+        DevicePresent := 3
+        PhyOffline := 4
+    }
+
+    enum PxSSTS_SPD {
+        DeviceNotPresent := 0
+        Generation1 := 1
+        Generation2 := 2
+        Generation3 := 3
+    }
+
+    enum PxSSTS_IPM {
+        DeviceNotPresent := 0
+        Active := 1
+        Partial := 2
+        Slumber := 6
+        DevSleep := 8
+    }
+
+    bits PxSSTS_FIELDS As i32 {
+        PxSSTS_DET [0:3] DET
+        PxSSTS_SPD [4:7] SPD
+        PxSSTS_IPM [8:11] IPM
+    }
+
+    bits PxTFD_FIELDS As i32 {
+        [0] ERR
+        [3] DRQ
+        [7] BSY
+    }
+
+    enum PxSIG_VALUES As i32 {
+        ATA := 0x101
+        ATAPI := 0xEB140101
+        SEMB := 0xC33C0101
+        PM := 0x96690101
+    }
+
+    bits PxSERR_DIAG_FIELDS As i32 {
+        [16] N
+        [17] I
+        [18] W
+        [19] B
+        [20] D
+        [21] C
+        [22] H
+        [23] S
+        [24] T
+        [25] F
+        [26] X
+    }
+
+    bits PxSERR_ERR_FIELDS As i32 {
+        [0] I
+        [1] M
+        [8] T
+        [9] C
+        [10] P
+        [11] E
+    }
+
+    enum PxSCTL_DET_INITIALIZATION {
+        Normal := 0
+        HardReset := 1
+        Disable := 4
+    }
+
+    enum PxSCTL_SPD_LIMIT {
+        NoLimit := 0
+        Generation1 := 1
+        Generation2 := 2
+        Generation3 := 3
+    }
+
+    enum PxSCTL_IPM_RESTRICTIONS {
+        NoRestrictions := 0
+        NoPartial := 1
+        NoSlumber := 2
+        NoPartialOrSlumber := 3
+        NoDevSleep := 4
+        NoPartialOrDevSleep := 5
+        NoSlumberOrDevSleep := 6
+        NoPartialOrSlumberOrDevSleep := 7
+    }
+
+    bits PxSCTL_FIELDS As i32 {
+        PxSCTL_DET_INITIALIZATION [0:3] DET
+        PxSCTL_SPD_LIMIT [4:7] SPD
+        PxSCTL_IPM_RESTRICTIONS [8:11] IPM
+    }
+
+    struct PortRegisters {
+        i32 CommandListBaseAddressLow
+        i32 CommandListBaseAddressHigh
+
+        i32 FISBaseAddressLow
+        i32 FISBaseAddressHigh
+        
+        union {
+            PxIS_FIELDS PxIS
+            i32 RawPxIS
+        }
+
+        i32 PxIE
+        PxCMD_FIELDS PxCMD
+        i32 Reserved
+
+        PxTFD_FIELDS PxTFD
+        PxSIG_VALUES PxSIG
+        PxSSTS_FIELDS PxSSTS
+
+        PxSCTL_FIELDS PxSCTL
+        
+        union {
+            PxSERR_DIAG_FIELDS PxSERR_DIAG
+            PxSERR_ERR_FIELDS PxSERR_ERR
+            i32 RawPxSERR
+        }
+
+        i32 SATA_Active
+
+        i32 CommandIssue
+
+        i32 SATA_Notification
+
+        i32 FISBasedSwitchControl
+
+        i8[0x2c] Reserved2
+
+        i8[0x10] VendorSpecific
+    }
+
+    bits CAP_FIELDS As i32 {
+        [0:4] NP
+        [5] SXS
+        [6] EMS
+        [7] CCCS
+        [8:12] NCS
+        [13] PSC
+        [14] SSC
+        [15] PMD
+        [16] FBSS
+        [17] SPM
+        [18] SAM
+        [20:23] ISS
+        [24] SCLO
+        [25] SAL
+        [26] SALP
+        [27] SSS
+        [28] SMPS
+        [29] SSNTF
+        [30] SNCQ
+        [31] S64A
+    }
+
+    bits GHC_FIELDS As i32 {
+        [0] HR
+        [1] IE
+        [2] MRSM
+        [31] AE
+    }
+
+    struct ControllerRegisters {
+        CAP_FIELDS CAP
+        GHC_FIELDS GHC
+
+        i32 InterruptStatus
+        i32 PortsImplemented
+        i32 Version
+        i32 CommandCompletionCoalescingControl
+        i32 CommandCompletionCoalescingPorts
+        i32 EnclosureManagementLocation
+        i32 EnclosureManagementControl
+        i32 HostCapabilitiesExtended
+        i32 BIOSHandoffControl
+
+        i8[0x74] Reserved
+        i8[0x60] VendorSpecific
+
+        PortRegisters[32] Ports
+    }
+
+    struct CommandHeader {
+        bits As i16 {
+            [0:4] DWORDCount
+            [5] UseATAPI
+            TransferDirection [6] Direction
+            [7] Prefetchable
+            [8] Reset
+            [9] SelfTest
+            [10] ClearBusy
+            [12:15] PortMultiplierPort
+        }
+
+        i16 PhysicalDescriptorTableLength
+
+        i32 PhysicalDescriptorBytesTransferred
+
+        i32 CommandTableDescriptorBaseAddressLow
+        i32 CommandTableDescriptorBaseAddressHigh
+
+        i32[4] Reserved
+    }
+
+    struct PhysicalRegionDescriptor {
+        i32 BaseAddressLow
+        i32 BaseAddressHigh
+
+        define void SetBaseAddress(i64 Address) {
+            this->BaseAddressLow := (Address & 0xFFFF_FFFF) As i32
+            this->BaseAddressHigh := ((Address >> 32) & 0xFFFF_FFFF) As i32
+        }
+
+        i32 Reserved
+
+        bits As i32 {
+            [0:22] ByteCount
+            [31] InterruptOnCompletion
+        }
+    }
+
+    struct CommandTable {
+        i8[0x40] FIS
+
+        i8[0x10] ATAPICommand
+
+        i8[0x30] Reserved
+
+        PhysicalRegionDescriptor[8] RegionDescriptors
+    }
+
+    ; MMIO -
+    ; Controller 0x100
+    ; Ports 0x1000
+    ;  0x1100
+
+    ; Per Port:
+    ;  Command List:
+    ;   0x20 * 32 = 0x400
+    ;  Recieved FIS:
+    ;   0x100
+    ; Total: 0x500
+    
+    ; Per Command List:
+    ;  Command Header:
+    ;   0x80
+    ;  Physical Regions:
+    ;   N * 0x10
+
+    ; With 8 physical regions (max) per command:
+    ;  Command table: 0x100 bytes per
+    ;  0x20 command tables: 0x2000 bytes total (2 pages)
+
+    enum RequestState {
+        Idle, ; not allocated, not issued
+        Waiting, ; allocated, waiting for issue
+        Issued, ; allocated, issued, waiting for completion
+        Completed ; allocated, completed, waiting to be acknowledged
+    }
+
+    class RequestHandle implements IRequestHandle, derives INew {
+        i8* Name
+        i32 Slot
+
+        CommandHeader* Header
+        CommandTable* Table
+
+        PhysicalRegionDescriptor* Regions
+        i32 RegionCount
+
+        union {
+            void* RawFIS
+            SATA::FIS::SetDeviceRegisters* SetDeviceRegisters
+        }
+
+
+        RequestState State
+        i64 LastStateChangeTime
+        Synchronization::Semaphore* StateChange
+
+        define void New(i8* ParentName, i32 Slot, CommandHeader* Header, CommandTable* Table) {
+            this->Slot := Slot
+            this->Name := FormatString("%s Command Slot %i", ParentName, this->Slot)
+            this->StateChange := new Synchronization::Semaphore(this->Name, 0)
+
+            this->Header := Header
+            this->Table := Table
+            this->Regions := Table~>RegionDescriptors
+            this->RegionCount := 8
+
+            this->RawFIS := Table~>FIS As void*
+        }
+
+        define void Prepare() {
+            this->Header->ClearBusy := true
+            this->Header->DWORDCount := 5
+            
+            FastZeroMemory(this->Table, #CommandTable)
+        }
+
+        define void MakeSetDeviceRegisters(TransferDirection Direction, ATA::Command Command) {
+            this->Header->Direction := Direction
+
+            SATA::FIS::SetDeviceRegisters* SDR := this->SetDeviceRegisters
+            
+            SDR->Type := SATA::FIS::Type::HostToDevice
+            SDR->CommandOrControl := SATA::FIS::CommandControl::Command
+            SDR->Device := 0b1100_0000 As i8 ; Set bit 6 for LBA mode, and reserved bit 7
+
+            SDR->Command := Command
+        }
+
+        define void SetTransferSize(i64 RawBlockCount) {
+            i32 BlockCount := RawBlockCount As i32
+
+            i32 BYTES_PER_PRDT := 0x40_0000 ; 2 ** 22
+
+            i32 ByteCount := BlockCount * 512
+            i32 RegionCount := ByteCount / BYTES_PER_PRDT
+
+            for (i32 Index := 0, Index < RegionCount, Index++) {
+                PhysicalRegionDescriptor* Region := this->Regions[Index]
+
+                Region->ByteCount := BYTES_PER_PRDT - 1
+            }
+
+            if (ByteCount % BYTES_PER_PRDT) {
+                PhysicalRegionDescriptor* LastRegion := this->Regions[RegionCount++]
+
+                LastRegion->ByteCount := (ByteCount % BYTES_PER_PRDT) - 1
+            }
+
+            this->Header->PhysicalDescriptorTableLength := RegionCount As i16
+            ;this->SetDeviceRegisters->Count := BlockCount As i16
+        }
+
+        define void SetTransferBlockCount(i32 BlockCount) {
+            this->SetDeviceRegisters->Count := BlockCount As i16
+        }
+
+        define void SetTransferDeviceLocation(i64 Base) {
+            SATA::FIS::SetDeviceRegisters* SDR := this->SetDeviceRegisters
+
+            SDR->SetLBA(Base)
+        }
+
+        define void SetTransferHostLocation(void* Where) {
+            i32 BYTES_PER_PRDT := 0x40_0000 ; 2 ** 22
+
+            i64 WherePhysical := VirtualToPhysical(Where)
+
+            i32 RegionCount := this->Header->PhysicalDescriptorTableLength
+
+            for (i32 Index := 0, Index < RegionCount, Index++) {
+                PhysicalRegionDescriptor* Region := this->Regions[Index]
+
+                ;Print("Set slots[%i].PRDT[%i] base address to %x\n", this->Slot, Index, WherePhysical + (Index * BYTES_PER_PRDT))
+
+                Region->SetBaseAddress(WherePhysical + (Index * BYTES_PER_PRDT))
+
+                ;Print("  slots[%i].PRDT[%i] base address low: %x, high: %x\n", this->Slot, Index, Region->BaseAddressLow, Region->BaseAddressHigh)
+            }
+
+            PhysicalRegionDescriptor* LastRegion := this->Regions[this->RegionCount - 1]
+
+            LastRegion->InterruptOnCompletion := true
+        }
+
+        define void SetState(RequestState NewState) {
+            this->State := NewState
+            this->LastStateChangeTime := GetUptimeMS()
+
+            this->StateChange->Signal()
+        }
+
+        define i8 Poll(i32 Timeout) {
+            i64 Deadline := GetUptimeMS() + Timeout
+
+            loop {
+                i64 Budget := Deadline - GetUptimeMS()
+
+                this->StateChange->Wait(Budget As i32)
+
+                if (this->State = RequestState::Completed) {
+                    return true
+                }
+
+                if (GetUptimeMS() >= Deadline) {
+                    return false
+                }
+            }
+
+            return false
+        }
+
+        define IRequestHandle* Wait() {
+            loop {
+                this->StateChange->Wait(0)
+
+                if (this->State = RequestState::Completed) {
+                    break
+                }
+            }
+
+            return this
+        }
+
+        define void Free() {
+            ; Look, it's terrible, but this class is meant to be reused.
+            ; Calling `->Free()` on a request handle is how you say "I'm done with this"
+            ; so we'll... bastardize it and just reset the state to idle
+
+            this->State := RequestState::Idle
+        }
+    }
+
+    class Port derives INew {
+        i32 Index
+        i8* Name
+
+        DeviceType Type
+
+        PortRegisters* Registers
+
+        SATA::FIS::ReceivedFIS* ReceivedFIS
+
+        CommandHeader* HeaderList ; <CommandHeader, 32>
+        CommandTable* CommandList ; <CommandTable, 32>
+
+        RequestHandle** Requests ; <RequestHandle*, 32>
+
+        define void New(i32 Index, i8* ParentName, PortRegisters* Registers) {
+            this->Index := Index
+            this->Name := FormatString("%s Port %i", ParentName, this->Index)
+
+            this->Registers := Registers
+        }
+
+        define void SetBuffers(FIS::ReceivedFIS* ReceivedFIS, CommandHeader* HeaderList, CommandTable* CommandList) {
+            this->ReceivedFIS := ReceivedFIS
+
+            this->HeaderList := HeaderList
+            this->CommandList := CommandList
+
+            this->Requests := Alloc(32 * #RequestHandle*)
+            
+            for (i32 SlotIndex := 0, SlotIndex < 32, SlotIndex++) {
+                RequestHandle* Handle := new RequestHandle(this->Name, SlotIndex, HeaderList[SlotIndex], CommandList[SlotIndex])
+
+                this->Requests[SlotIndex] := Handle
+            }
+        }
+
+        define void DumpRequestSlot(i32 Index) {
+            RequestHandle* Handle := this->Requests[Index]
+            CommandHeader* Header := Handle->Header
+
+            Print("Command Header %i:\n", Index)
+            Print("  Virtual Address: %x\n", Header)
+            Print("  Physical Address: %x\n", VirtualToPhysical(Header))
+            Print("  DWORDCount: %i\n", Header->DWORDCount)
+            Print("  UseATAPI: %i\n", Header->UseATAPI)
+            Print("  Direction: %i\n", Header->Direction)
+            Print("  Prefetchable: %i\n", Header->Prefetchable)
+            Print("  Reset: %i\n", Header->Reset)
+            Print("  SelfTest: %i\n", Header->SelfTest)
+            Print("  ClearBusy: %i\n", Header->ClearBusy)
+            Print("  PortMultiplierPort: %i\n", Header->PortMultiplierPort)
+            Print("  PhysicalDescriptorTableLength: %i\n", Header->PhysicalDescriptorTableLength)
+            Print("  PhysicalDescriptorBytesTransferred: %i\n", Header->PhysicalDescriptorBytesTransferred)
+            Print("  CommandTableDescriptorBaseAddressLow: %x\n", Header->CommandTableDescriptorBaseAddressLow)
+            Print("  CommandTableDescriptorBaseAddressHigh: %x\n", Header->CommandTableDescriptorBaseAddressHigh)
+
+            CommandTable* Table := Handle->Table
+
+            Print("Command Table %i:\n", Index)
+            Print("  Virtual Address: %x\n", Table)
+            Print("  Physical Address: %x\n", VirtualToPhysical(Table))
+            Print("  FIS:\n%hexdump\n", Table->FIS As void*, 0x40)
+            Print("  ATAPICommand:\n%hexdump\n", Table->ATAPICommand As void*, 0x10)
+            Print("  Reserved: \n%hexdump\n", Table->Reserved As void*, 0x30)
+
+            i32 PRDTCount := Header->PhysicalDescriptorTableLength
+
+            for (i32 PRDTIndex := 0, PRDTIndex < PRDTCount, PRDTIndex++) {
+                PhysicalRegionDescriptor* Region := Table->RegionDescriptors[PRDTIndex]
+
+                Print("  PRDT[%i]:\n", PRDTIndex)
+                Print("    Virtual Address: %x\n", Region)
+                Print("    Physical Address: %x\n", VirtualToPhysical(Region))
+                Print("    BaseAddressLow: %x\n", Region->BaseAddressLow)
+                Print("    BaseAddressHigh: %x\n", Region->BaseAddressHigh)
+                Print("    ByteCount: %i\n", Region->ByteCount)
+                Print("    InterruptOnCompletion: %i\n", Region->InterruptOnCompletion)
+            }
+        }
+
+        define void CommunicationReset() {
+            Print("Communication reset on port %i\n", this->Index)
+
+            this->Registers->PxCMD.ST := false
+
+            while (this->Registers->PxCMD.CR) {
+                ; wait for command list to stop
+            }
+
+            Print("Port stopped\n")
+
+            this->Registers->PxSCTL.DET := PxSCTL_DET_INITIALIZATION::HardReset
+
+            SleepMS(10)
+
+            this->Registers->PxSCTL.DET := PxSCTL_DET_INITIALIZATION::Normal
+
+            Print("Waiting for device to be present\n")
+
+            while (this->Registers->PxSSTS.DET != PxSSTS_DET::DevicePresent) {
+                SleepMS(1)
+            }
+
+            Print("Device present, clearing state\n")
+
+            this->Registers->RawPxSERR := -1
+            this->Registers->RawPxIS := -1
+
+            Print("Waiting for device to be ready\n")
+
+            while (this->Registers->PxTFD.BSY || this->Registers->PxTFD.DRQ) {
+                ; wait for device to be ready
+                SleepMS(1)
+            }
+
+            this->Registers->PxCMD.FRE := true
+            this->Registers->PxCMD.ST := true
+
+            Print("Device ready, COMRESET done\n")
+        }
+
+        define void EnableInterrupts() {
+            this->Registers->PxIE := -1
+        }
+        define void DisableInterrupts() {
+            this->Registers->PxIE := 0
+        }
+
+        define void DumpPxSERR() {
+            PxSERR_ERR_FIELDS ERR := this->Registers->PxSERR_ERR
+            PxSERR_DIAG_FIELDS DIAG := this->Registers->PxSERR_DIAG
+
+            Print("PxSERR: %x\n", this->Registers->RawPxSERR)
+            Print(".ERR:\n")
+
+            if (ERR.I) {
+                Print("+ Recovered Data Integrity Error\n")
+            }
+
+            if (ERR.M) {
+                Print("+ Recovered Communication Error\n")
+            }
+
+            if (ERR.T) {
+                Print("+ Transient Data Integrity Error\n")
+            }
+
+            if (ERR.C) {
+                Print("+ Persistent Communication or Data Integrity Error\n")
+            }
+
+            if (ERR.P) {
+                Print("+ Protocol Error\n")
+            }
+
+            if (ERR.E) {
+                Print("+ Internal Error\n")
+            }
+
+            Print(".DIAG:\n")
+
+            if (DIAG.N) {
+                Print("+ PhyRdy Change\n")
+            }
+
+            if (DIAG.I) {
+                Print("+ Phy Internal Error\n")
+            }
+
+            if (DIAG.W) {
+                Print("+ Comm Wake\n")
+            }
+
+            if (DIAG.B) {
+                Print("+ 10B to 8B Decoding Error\n")
+            }
+
+            if (DIAG.D) {
+                Print("+ Disparity Error\n")
+            }
+
+            if (DIAG.C) {
+                Print("+ CRC Error\n")
+            }
+
+            if (DIAG.H) {
+                Print("+ Handshake Error\n")
+            }
+
+            if (DIAG.S) {
+                Print("+ Link Sequence Error\n")
+            }
+
+            if (DIAG.T) {
+                Print("+ Transport State Transition Error\n")
+            }
+
+            if (DIAG.F) {
+                Print("+ Unknown FIS Type\n")
+            }
+
+            if (DIAG.X) {
+                Print("+ Exchanged FIS Error\n")
+            }
+        }
+
+        define void CheckInterruptStatus() {
+            PxIS_FIELDS IS := this->Registers->PxIS
+
+            if (IS.IFS || IS.INFS) {
+                if (IS.IFS) {
+                    Print("PxIS: IFS\n")
+                }
+
+                if (IS.INFS) {
+                    Print("PxIS: INFS\n")
+                }
+
+                this->DumpPxSERR()
+                loop {}
+            } 
+        }
+
+        define i32 FindFreeCommandSlot() {
+            i32 Allocated := this->Registers->CommandIssue | this->Registers->SATA_Active
+
+            for (i32 Slot := 0, Slot < 32, Slot++) {
+                i32 Bit := 1 << Slot
+
+                if !(Allocated & Bit) {
+                    if (this->Requests[Slot]->State = RequestState::Idle) {
+                        return Slot
+                    }
+                }
+            }
+
+            Panic("Could not find free AHCI command slot")
+            return 0
+        }
+
+        define i8 CanIssueCommand() {
+            return !(this->Registers->PxTFD.BSY || this->Registers->PxTFD.DRQ)
+        }
+
+        define void Issue(i32 Slot) {
+            ;Print("Issuing command slot %i\n", Slot)
+
+            i32 SlotMask := 1 << Slot
+            this->Registers->CommandIssue := SlotMask
+        }
+
+        define void Issue(RequestHandle* Handle) {
+            this->Issue(Handle->Slot)
+            Handle->SetState(RequestState::Issued)
+        }
+
+        define IRequestHandle* SendRequest(Request* R) {
+            i32 Slot := this->FindFreeCommandSlot()
+
+            ;Print("Allocating command slot %i\n", Slot)
+
+            RequestHandle* Handle := this->Requests[Slot]
+
+            Handle->Prepare()
+
+            Handle->MakeSetDeviceRegisters(R->Direction, R->Command)
+
+            Handle->SetTransferSize(R->DataSize)
+            Handle->SetTransferDeviceLocation(R->DeviceLocation)
+            Handle->SetTransferHostLocation(R->DataBuffer)
+            Handle->SetTransferBlockCount(R->BlockCount)
+
+            ; Cheat a bit and issue the command ASAP
+            ; (without waiting for an interrupt or timeout, and without signalling)
+
+            if (this->CanIssueCommand()) {
+                ;Print("Device not busy, short circuiting to issue command slot %i\n", Slot)
+
+                this->Issue(Handle->Slot)
+                Handle->State := RequestState::Issued
+            }
+            else {
+                ;Print("Device busy, waiting to issue command slot %i\n", Slot)
+
+                Handle->State := RequestState::Waiting
+            }
+
+            return Handle
+        }
+
+        define void CheckTimeout(RequestHandle* Handle) {
+            i64 Now := GetUptimeMS()
+
+            if (Now - Handle->LastStateChangeTime > 5000) {
+                Print("%s: Request slot %i has timed out\n", this->Name, Handle->Slot)
+                this->DumpRequestSlot(Handle->Slot)
+                this->DumpPxSERR()
+                loop {}
+            }
+        }
+
+        define void Wake(i8 IsRealInterrupt) {
+            if (IsRealInterrupt) {
+                this->CheckInterruptStatus()
+            }
+
+            for (i32 Index := 0, Index < 32, Index++) {
+                RequestHandle* Handle := this->Requests[Index]
+
+                if (Handle->State = RequestState::Waiting) {
+                    ;Print("Slot %i is waiting, checking if we can issue\n", Index)
+
+                    if (this->CanIssueCommand()) {
+                        ;Print("Device not busy, issuing command slot %i\n", Index)
+                        this->Issue(Handle)
+                    }
+                    else {
+                        ;Print("Device busy, cannot issue command slot %i\n", Index)
+                        this->CheckTimeout(Handle)
+                    }
+                }
+                else if (Handle->State = RequestState::Issued) {
+                    ;Print("Slot %i is issued, checking if it has completed\n", Index)
+
+                    i32 SlotMask := 1 << Handle->Slot
+
+                    if !(this->Registers->CommandIssue & SlotMask) {
+                        ;Print("Command slot %i has completed\n", Index)
+                        Handle->SetState(RequestState::Completed)
+                    }
+                    else {
+                        ;Print("Command slot %i has not completed\n", Index)
+                        this->CheckTimeout(Handle)
+                    }
+                }
+                else if (Handle->State = RequestState::Completed) {
+                    ; do nothing, waiting for the request to be released
+                }
+                else if (Handle->State = RequestState::Idle) {
+                    ; do nothing, waiting for the request to be allocated
+                }
+            }
+        }
+    }
+
+    class Controller implements IController, derives INew {
+        PCIeDevice* Device
+        PCIeAddress* Address
+
+        i8* Name
+
+        void* MemoryBase
+
+        ControllerRegisters* Registers
+        
+        PointerArray* Ports ; <Port*>
+        PointerArray* Devices ; <Device*>
+
+        define void Log(i8* Format, ... Args) {
+            i8[200] Buffer
+
+            i32 Length := RawFormatString(Buffer, 300, Format, Args)
+            Buffer[Length] := 0
+
+            Print("%s: %s\n", this->Name, Buffer)
+        }
+
+        Synchronization::Semaphore* Interrupt
+        Task* InterruptTask
+
+        define void InterruptThread() {
+            loop {
+                i8 IsRealInterrupt := this->Interrupt->Wait(40)
+
+                if (IsRealInterrupt) {
+                    ;Print("Woke from real interrupt\n")
+                }
+
+                i32 PortCount := this->Ports->Count()
+
+                for (i32 Index := 0, Index < PortCount, Index++) {
+                    Port* P := this->Ports->Get(Index)
+
+                    P->Wake(IsRealInterrupt)
+                }
+
+                i32 DeviceCount := this->Devices->Count()
+
+                for (i32 Index := 0, Index < DeviceCount, Index++) {
+                    Device* D := this->Devices->Get(Index)
+
+                    if (D->State != DeviceState::Ready) {
+                        if (D->Poll(TIMEOUT_INSTANT)) {
+                            ; If the device has signalled a state change
+
+                            if (D->State = DeviceState::Ready) {
+                                this->Log("Device %i is ready", Index)
+                                this->Log("  Model: %s", D->Model)
+                                this->Log("  Serial: %s", D->SerialNumber)
+                                this->Log("  Attaching...\n")
+
+                                ;NotifyBlockDeviceAttach("sata", D)
+
+                                KERNEL_JOBS->Queue(
+                                    0,
+                                    &NotifyBlockDeviceAttach,
+                                    "sata" As void,
+                                    D As IBlockDevice* As void
+                                )
+                            }
+                        }   
+                    }
+                }
+            }
+        }
+
+        static void OnInterrupt(AMD64Context* Context, i32 InterruptNumber) {
+            ;Print("AHCI interrupt received\n")
+
+            i32 Count := ALL_AHCI_CONTROLLERS->Count()
+
+            for (i32 Index := 0, Index < Count, Index++) {
+                Controller* C := ALL_AHCI_CONTROLLERS->Get(Index)
+
+                C->Interrupt->Signal()
+            }
+
+            LocalAPIC->EOI()
+        }
+
+        define void New(PCIeDevice* _Device, PCIeAddress* Address) {
+            this->Device := _Device
+            this->Address := Address
+
+            this->Name := FormatString("%pcie-address: AHCI", Address)
+
+            ALL_AHCI_CONTROLLERS->Push(this)
+        }
+
+        define void Start(i32 ControllerNumber) {
+            /*Info("AHCI_HBA_HOST_CONTROL: %x\n", #HBA::HostControl)
+            Info("AHCI_HBA_PORT_CONTROL: %x\n", #HBA::PortControl)
+            Info("AHCI_HBA_COMMAND_HEADER: %x\n", #HBA::CommandHeader)
+            Info("AHCI_HBA_COMMAND_TABLE: %x\n", #HBA::CommandTable)
+            Info("AHCI_HBA_PHYSICAL_REGION_DESCRIPTOR: %x\n", #HBA::PhysicalRegionDescriptor)
+            */
+
+            this->Log("Initializing AHCI controller")
+
+            this->Interrupt := new Synchronization::Semaphore(this->Name, 0)
+
+            this->InterruptTask := Scheduler->AddLightTask(null, this->Name)
+            this->InterruptTask~>Context->CallMethod(this, &self.InterruptThread)
+            this->InterruptTask->Unblock()
+            
+            DisableInterrupts()
+            this->Device->EnableMSI(20)
+
+            if (ControllerNumber = 0) {
+                ; Only bother to register the interrupt handler for the first controller, since all controllers share the same interrupt line
+
+                RegisterInterruptHandler(IRQToIDT(20), &self:OnInterrupt)
+                EnablePICLine(20, true)
+            }
+
+            EnableInterrupts()
+
+            i64 ControllerPhysicalAddress := this->Device->ReadBAR(5) & 0xFFFF_FFFF
+            i32 Size := this->Device->GetBARSize(5)
+
+            this->Log("Controller physical address: %x, size: %x", ControllerPhysicalAddress, Size)
+
+            i64 PhysicalMMIO := ControllerPhysicalAddress & PCI_BAR_MEMORY_MASK
+            i32 PageCount := SizeToPageCount(Size)
+            i32 PhysicalMMIOSize := PageCount * PAGE_SIZE
+
+            this->MemoryBase := KernelVirtualMemory->FindGapAligned(PhysicalMMIOSize)
+
+            this->Log("Mapping MMIO region at %x, size: %x", this->MemoryBase, PhysicalMMIOSize)
+
+            ;KernelAddressSpace->MapRange(this->MemoryBase, PhysicalMMIO, PhysicalMMIOSize, PAGE_PRESENT | PAGE_WRITE)
+            KernelVirtualMemory->SetRange(this->MemoryBase, PhysicalMMIO, PageCount, PAGE_PRESENT | PAGE_WRITE)
+
+            this->Registers := this->MemoryBase
+
+            this->Log("Version %x", this->Registers->Version)
+
+            /*
+            if (this->Registers->BIOSHandoffControl.BIOSOwnedSemaphore) {
+                this->Log("BIOS owns AHCI controller, requesting ownership")
+
+                this->Registers->BIOSHandoffControl.OSOwnedSemaphore := true
+
+                i32 Spin := 0
+
+                loop {
+                    Spin++
+
+                    if !(this->Registers->BIOSHandoffControl.BIOSOwnedSemaphore) {
+                        break
+                    }
+
+                    if (Spin > 0x2000) {
+                        Panic("AHCI BIOS handoff timeout")
+                        return
+                    }
+                }
+
+                this->Log("AHCI controller ownership acquired")
+            }
+            */
+
+            this->Log("Resetting...")
+
+            this->Registers->GHC.HR := true
+
+            while (this->Registers->GHC.HR) {
+                ; wait for reset
+            }
+
+            this->Log("Reset complete, enabling AHCI mode")
+
+            this->Registers->GHC.AE := true
+
+            this->Log("AHCI mode enabled")
+
+            this->Log("Capabilities: %x", this->Registers->CAP)
+
+            i32 PortCount := this->Registers->CAP.NP + 1
+
+            this->Log("Controller has up to %i implemented ports", PortCount)
+            this->Log("Port implementation mask: %b", this->Registers->PortsImplemented)
+
+            i32 DeviceCount := 0
+            this->Ports := PointerArray:New()
+
+            i32 PortsImplemented := this->Registers->PortsImplemented
+            PortRegisters* PortsRegisters := this->Registers->Ports
+
+            for (i32 Index := 0, Index < 32, Index++) {
+                i32 Mask := 1 << Index
+
+                if (PortsImplemented & Mask) {
+                    PortRegisters* Registers := PortsRegisters[Index]
+
+                    this->Log("Port %i implemented", Index)
+
+                    PxSSTS_DET DET := Registers->PxSSTS.DET
+
+                    if (DET = PxSSTS_DET::DeviceNotPresent || DET = PxSSTS_DET::PhyOffline) {
+                        this->Log("  Port %i has no device present", Index)
+                        continue
+                    }
+
+                    PxCMD_FIELDS PxCMD := Registers->PxCMD
+                    
+                    i32 ST := PxCMD.ST
+                    i32 CR := PxCMD.CR
+                    i32 FRE := PxCMD.FRE
+                    i32 FR := PxCMD.FR
+
+                    this->Log("  Port %i PxCMD: %x", Index, PxCMD)
+                    this->Log("  ST = %i, CR = %i, FRE = %i, FR = %i", ST, CR, FRE, FR)
+
+                    if (PxCMD.ST || PxCMD.CR || PxCMD.FRE || PxCMD.FR) {
+                        this->Log("  Port %i is already running, stopping...", Index)
+                        
+                        Registers->PxCMD.ST := false
+
+                        while (Registers->PxCMD.CR) {
+                            ; wait for controller to stop
+                        }
+                    }
+
+                    this->Log("  Stopped: ERR = %i, DRQ = %i, BSY = %i", Registers->PxTFD.ERR, Registers->PxTFD.DRQ, Registers->PxTFD.BSY)
+
+                    Registers->RawPxSERR := -1
+                    Registers->RawPxIS := -1
+
+                    void* ReceivedFIS := KernelPageAllocator->AllocateVirtual(1)
+                    SplitLowHigh(VirtualToPhysical(ReceivedFIS), Registers~>FISBaseAddressLow, Registers~>FISBaseAddressHigh)
+
+                    CommandHeader* Headers := KernelPageAllocator->AllocateVirtual(1)
+                    SplitLowHigh(VirtualToPhysical(Headers), Registers~>CommandListBaseAddressLow, Registers~>CommandListBaseAddressHigh)
+
+                    CommandTable* Tables := KernelPageAllocator->AllocateVirtual(1)
+
+                    for (i32 CommandIndex := 0, CommandIndex < 32, CommandIndex++) {
+                        CommandHeader* Header := Headers[CommandIndex]
+
+                        Header->PhysicalDescriptorTableLength := 8
+                        SplitLowHigh(VirtualToPhysical(Tables[CommandIndex]), Header~>CommandTableDescriptorBaseAddressLow, Header~>CommandTableDescriptorBaseAddressHigh)
+                    }
+
+                    Port* P := new Port(Index, this->Name, Registers)
+                    P->SetBuffers(ReceivedFIS, Headers, Tables)
+                    this->Ports->Push(P)
+
+                    Registers->PxCMD.FRE := true
+
+                    i8 DeviceReady := false
+
+                    for (i32 Spin := 0, Spin < 0x20_0000, Spin++) {
+                        if !(Registers->PxTFD.BSY || Registers->PxTFD.DRQ) {
+                            DeviceReady := true
+                            break
+                        }
+                    }
+
+                    if (!DeviceReady) {
+                        Panic("AHCI port did not become ready after spinup")
+                        return
+                    }
+
+                    this->Log("  Device ready: ERR = %i, DRQ = %i, BSY = %i", Registers->PxTFD.ERR, Registers->PxTFD.DRQ, Registers->PxTFD.BSY)
+
+                    PxSIG_VALUES Signature := Registers->PxSIG
+
+                    this->Log("  Device signature: %s", nameof:(Signature))
+
+                    if (Signature = PxSIG_VALUES::ATA) {
+                        P->Type := SATA::DeviceType::SATA
+                    }
+                    else if (Signature = PxSIG_VALUES::ATAPI) {
+                        P->Type := SATA::DeviceType::SATAPI
+                    }
+                    else if (Signature = PxSIG_VALUES::SEMB) {
+                        P->Type := SATA::DeviceType::EnclosureBridge
+                    }
+                    else if (Signature = PxSIG_VALUES::PM) {
+                        P->Type := SATA::DeviceType::PortMultiplier
+                    }
+
+                    Registers->PxCMD.ST := true
+                }
+            }
+
+            ; Enable interrupts
+            this->Registers->GHC.IE := true
+
+            this->Devices := PointerArray:New()
+            i32 ActivePortCount := this->Ports->Count()
+
+            for (i32 Index := 0, Index < ActivePortCount, Index++) {
+                Port* P := this->Ports->Get(Index)
+
+                if (P->Type = SATA::DeviceType::SATA) {
+                    this->Log("Port %i has a SATA device, creating SATA::Device object", Index)
+
+                    P->Registers->PxIE := -1
+
+                    this->Devices->Push(new Device(this, Index))
+                }
+            }
+        }
+
+        define i32 GetPortCount() {
+            return this->Ports->Count()
+        }
+
+        define DeviceType GetPortDeviceType(i32 PortIndex) {
+            Port* P := this->Ports->At(PortIndex)
+
+            return P->Type
+        }
+
+        define IRequestHandle* SendRequest(i32 PortIndex, Request* R) {
+            Port* P := this->Ports->At(PortIndex)
+
+            return P->SendRequest(R)
+        }
+    }
+}
