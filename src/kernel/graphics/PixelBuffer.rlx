@@ -187,7 +187,7 @@ struct PixelBuffer {
 				void* Destination := this->Format->GetPixelAddress(this~>Instance, MyX, MyY + Row)
 				void* Source := Other->Format->GetPixelAddress(Other~>Instance, OtherX, OtherY + Row)
 				
-				MoveMemory(Destination, Source, Width * this->Format->Size)
+				FastMoveMemory(Destination, Source, Width * this->Format->Size)
 			}
 		}
 		else {
