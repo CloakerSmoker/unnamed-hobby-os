@@ -150,7 +150,7 @@ define i64 EFIMain(EFI_HANDLE* ImageHandle, EFI_SYSTEM_TABLE* SystemTable) {
 		
 		if (Mode->HorizontalResolution = 1024 && Mode->VerticalResolution = 768) {
 			if (Graphics->Mode->CurrentMode != Index) {
-				;Graphics->SetMode(Index)
+				Graphics->SetMode(Index)
 			}
 			
 			break
