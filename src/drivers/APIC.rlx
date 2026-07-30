@@ -136,7 +136,7 @@ struct APIC {
 		
 		Info("APIC @ %x\n", Base)
 		
-		KernelAddressSpace->MapRange(MMIO, BasePage, 1, PAGE_PRESENT | PAGE_WRITE)
+		KernelAddressSpace->MapRange(MMIO, BasePage, 1, PAGE_PRESENT | PAGE_WRITE | PAGE_UNCACHED)
 	}
 
 	define void SetLVTEntryMask(i32 Address, i8 Mode) {
@@ -384,7 +384,7 @@ struct IOAPIC {
 		
 		i64 PhysicalMMIOPage := this->PhysicalMMIO / PAGE_SIZE
 		
-		KernelAddressSpace->MapRange(this->MMIO, PhysicalMMIOPage, 1, PAGE_PRESENT | PAGE_WRITE)
+		KernelAddressSpace->MapRange(this->MMIO, PhysicalMMIOPage, 1, PAGE_PRESENT | PAGE_WRITE | PAGE_UNCACHED)
 	}
 }
 

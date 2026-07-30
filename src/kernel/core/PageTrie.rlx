@@ -13,6 +13,11 @@ struct PagePath {
     i32 Low
 }
 
+i64 PAGE_CACHE_DISABLE := 0x10
+i64 PAGE_WRITE_THROUGH := 0x8
+
+i64 PAGE_UNCACHED := PAGE_CACHE_DISABLE | PAGE_WRITE_THROUGH
+
 struct PageMapping {
     void* Virtual
     i64 Physical
@@ -23,6 +28,7 @@ struct PageMapping {
 struct VirtualMapping {
     void* Virtual
     i64 Physical
+    i64 Flags
     i64 Size
 }
 
@@ -403,6 +409,9 @@ struct PageTrie {
 
     define void* FindGap(i64 Start, i64 PageCount) {
         return this->FindGap(1, Start, PageCount)
+    }
+    define void* FindGap(i64 PageCount) {
+        return this->FindGap(1, 0, PageCount)
     }
 
     define void* FindGapAligned(i64 Size) {
