@@ -51,7 +51,7 @@ struct PCIeSegmentGroup {
 
         ;loop {}
 
-        KernelAddressSpace->MapRange(this->RawBase, this->Entry->BaseAddress / PAGE_SIZE, (Count * PCIE_BUS_CONFIGURATION_SPACE_SIZE) / PAGE_SIZE)
+        KernelAddressSpace->MapRange(this->RawBase, this->Entry->BaseAddress / PAGE_SIZE, (Count * PCIE_BUS_CONFIGURATION_SPACE_SIZE) / PAGE_SIZE, PAGE_PRESENT | PAGE_WRITE | PAGE_UNCACHED)
 
         return this
     }
@@ -118,34 +118,34 @@ bits PCIMSIControlRegister As i16 {
 
     define void Info() {
         if (this.Enable) {
-            Info("E")
+            Print("E")
         }
 
         if (this.MultipleMessageCapable) {
             i32 VectorsRequested := 1 << this.MultipleMessageCapable
 
-            Info("R(%i)", VectorsRequested)
+            Print("R(%i)", VectorsRequested)
 
             if (this.MultipleMessageEnable) {
                 i32 VectorsAllocated := 1 << this.MultipleMessageEnable
 
-                Info("A(%i)", VectorsAllocated)
+                Print("A(%i)", VectorsAllocated)
             }
         }
 
         if (this.LargeAddressCapable) {
-            Info("64")
+            Print("64")
         }
 
         if (this.PreVectorMaskingCapable) {
-            Info("M")
+            Print("M")
         }
 
         if (this.ExtendedMessageDataCapable) {
-            Info("D")
+            Print("D")
 
             if (this.ExtendedMessageDataEnable) {
-                Info("+")
+                Print("+")
             }
         }
     }
@@ -167,6 +167,26 @@ struct PCIMSICapability32Bit {
     ; if Control.PreVectorMaskingCapable
     i32 MaskBits
     i32 PendingBits
+
+    define void Info() {
+        Print("PCI MSI 32 Capability {\n")
+        Print("\tControl ")
+        this->Control.Info()
+        Print("\n")
+        Print("\tAddress %x\n", this->MessageAddress)
+        Print("\tData %x\n", this->MessageData)
+
+        if (this->Control.ExtendedMessageDataEnable) {
+            Print("\tExtended Data %x\n", this->ExtendedMessageData)
+        }
+
+        if (this->Control.PreVectorMaskingCapable) {
+            Print("\tMask %x\n", this->MaskBits)
+            Print("\tPending %x\n", this->PendingBits)
+        }
+
+        Print("}\n")
+    }
 }
 
 struct PCIMSICapability64Bit {
@@ -187,25 +207,25 @@ struct PCIMSICapability64Bit {
     i32 PendingBits
 
     define void Info() {
-        Info("PCI MSI Capability {\n")
-        Info("\tControl ")
+        Print("PCI MSI 64 Capability {\n")
+        Print("\tControl ")
         this->Control.Info()
-        Info("\n")
-        Info("\tAddressLow %x\n", this->MessageAddressLow)
-        Info("\tAddressHigh %x\n", this->MessageAddressHigh)
+        Print("\n")
+        Print("\tAddressLow %x\n", this->MessageAddressLow)
+        Print("\tAddressHigh %x\n", this->MessageAddressHigh)
 
-        Info("\tData %x\n", this->MessageData)
+        Print("\tData %x\n", this->MessageData)
 
         if (this->Control.ExtendedMessageDataEnable) {
-            Info("\tExtended Data %x\n", this->ExtendedMessageData)
+            Print("\tExtended Data %x\n", this->ExtendedMessageData)
         }
 
         if (this->Control.PreVectorMaskingCapable) {
-            Info("\tMask %x\n", this->MaskBits)
-            Info("\tPending %x\n", this->PendingBits)
+            Print("\tMask %x\n", this->MaskBits)
+            Print("\tPending %x\n", this->PendingBits)
         }
 
-        Info("}\n")
+        Print("}\n")
     }
 }
 
@@ -215,11 +235,11 @@ struct PCIMSICapability {
     PCIMSIControlRegister Control
 
     define void Info() {
-        Info("PCI MSI Capability {\n")
-        Info("\tControl ")
+        Print("PCI MSI Capability {\n")
+        Print("\tControl ")
         this->Control.Info()
-        Info("\n")
-        Info("}\n")
+        Print("\n")
+        Print("}\n")
     }
 }
 
@@ -393,17 +413,23 @@ struct PCIeDevice {
     }
 
     define void EnableMSI(i8 Vector) {
-        PCICapability* RawMSI := this->FindPCICapability(PCI_CAPABILITY_ID_MSI)
-        PCIMSICapability64Bit* MSI := RawMSI As void*
+        PCICapability* Capability := this->FindPCICapability(PCI_CAPABILITY_ID_MSI)
+        PCIMSICapability* GenericMSI := Capability As void*
 
-        MSI->MessageAddressLow := PackMSIAddress(LocalAPIC->ID As i8)
-        MSI->MessageData := PackMSIData(Vector, AMD64_MSI_DELIVERY_MODE_FIXED, AMD64_MSI_DATA_TRIGGER_EDGE)
+        if (GenericMSI->Control.LargeAddressCapable) {
+            PCIMSICapability64Bit* MSI64 := Capability As void*
 
-        PCIMSIControlRegister Control := MSI->Control
+            MSI64->MessageAddressLow := PackMSIAddress(LocalAPIC->ID As i8)
+            MSI64->MessageData := PackMSIData(Vector, AMD64_MSI_DELIVERY_MODE_FIXED, AMD64_MSI_DATA_TRIGGER_EDGE)
+        }
+        else {
+            PCIMSICapability32Bit* MSI32 := Capability As void*
 
-        Control.Enable := true
+            MSI32->MessageAddress := PackMSIAddress(LocalAPIC->ID As i8)
+            MSI32->MessageData := PackMSIData(Vector, AMD64_MSI_DELIVERY_MODE_FIXED, AMD64_MSI_DATA_TRIGGER_EDGE)
+        }
 
-        MSI->Control := Control
+        GenericMSI->Control.Enable := true
     }
 
     define i8 Is(i8 Class, i8 SubClass, i8 Interface) {
