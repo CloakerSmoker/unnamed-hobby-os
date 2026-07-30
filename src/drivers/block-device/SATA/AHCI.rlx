@@ -220,19 +220,36 @@ namespace SATA::AHCI {
         [31] AE
     }
 
+    bits CAP2_FIELDS As i32 {
+        [0] BOH
+        [1] NVMP
+        [2] APST
+        [3] SDS
+        [4] SADM
+        [5] DESO
+    }
+
+    bits BOHC_FIELDS As i32 {
+        [0] BOS
+        [1] OOS
+        [2] SOOE
+        [3] OOC
+        [4] BB
+    }
+
     struct ControllerRegisters {
         CAP_FIELDS CAP
         GHC_FIELDS GHC
 
-        i32 InterruptStatus
+        i32 PIS
         i32 PortsImplemented
         i32 Version
         i32 CommandCompletionCoalescingControl
         i32 CommandCompletionCoalescingPorts
         i32 EnclosureManagementLocation
         i32 EnclosureManagementControl
-        i32 HostCapabilitiesExtended
-        i32 BIOSHandoffControl
+        CAP2_FIELDS CAP2
+        BOHC_FIELDS BOHC
 
         i8[0x74] Reserved
         i8[0x60] VendorSpecific
@@ -338,7 +355,11 @@ namespace SATA::AHCI {
         i64 LastStateChangeTime
         Synchronization::Semaphore* StateChange
 
-        define void New(i8* ParentName, i32 Slot, CommandHeader* Header, CommandTable* Table) {
+        Request* Request
+
+        void* BounceBuffer
+
+        define void New(i8* ParentName, i32 Slot, CommandHeader* Header, CommandTable* Table, void* BounceBuffer) {
             this->Slot := Slot
             this->Name := FormatString("%s Command Slot %i", ParentName, this->Slot)
             this->StateChange := new Synchronization::Semaphore(this->Name, 0)
@@ -349,13 +370,32 @@ namespace SATA::AHCI {
             this->RegionCount := 8
 
             this->RawFIS := Table~>FIS As void*
+
+            this->BounceBuffer := BounceBuffer
         }
 
-        define void Prepare() {
+        define void SetTransferHostLocation(void* Where) {
+            i64 WherePhysical := VirtualToPhysical(Where)
+
+            this->Header->PhysicalDescriptorTableLength := 1
+
+            PhysicalRegionDescriptor* Region := this->Regions[0]
+
+            Region->SetBaseAddress(WherePhysical)
+            Region->InterruptOnCompletion := true
+        }
+
+        define void Prepare(Request* R) {
+            this->Request := R
+
             this->Header->ClearBusy := true
             this->Header->DWORDCount := 5
+
+            this->Header->PhysicalDescriptorBytesTransferred := 0
             
             FastZeroMemory(this->Table, #CommandTable)
+
+            this->SetTransferHostLocation(this->BounceBuffer)
         }
 
         define void MakeSetDeviceRegisters(TransferDirection Direction, ATA::Command Command) {
@@ -370,28 +410,12 @@ namespace SATA::AHCI {
             SDR->Command := Command
         }
 
-        define void SetTransferSize(i64 RawBlockCount) {
-            i32 BlockCount := RawBlockCount As i32
+        define void SetTransferSize(i64 Size) {
+            PhysicalRegionDescriptor* Region := this->Regions[0]
 
-            i32 BYTES_PER_PRDT := 0x40_0000 ; 2 ** 22
+            Region->ByteCount := (Size - 1) As i32
 
-            i32 ByteCount := BlockCount * 512
-            i32 RegionCount := ByteCount / BYTES_PER_PRDT
-
-            for (i32 Index := 0, Index < RegionCount, Index++) {
-                PhysicalRegionDescriptor* Region := this->Regions[Index]
-
-                Region->ByteCount := BYTES_PER_PRDT - 1
-            }
-
-            if (ByteCount % BYTES_PER_PRDT) {
-                PhysicalRegionDescriptor* LastRegion := this->Regions[RegionCount++]
-
-                LastRegion->ByteCount := (ByteCount % BYTES_PER_PRDT) - 1
-            }
-
-            this->Header->PhysicalDescriptorTableLength := RegionCount As i16
-            ;this->SetDeviceRegisters->Count := BlockCount As i16
+            FastZeroMemory(this->BounceBuffer, Size)
         }
 
         define void SetTransferBlockCount(i32 BlockCount) {
@@ -404,33 +428,23 @@ namespace SATA::AHCI {
             SDR->SetLBA(Base)
         }
 
-        define void SetTransferHostLocation(void* Where) {
-            i32 BYTES_PER_PRDT := 0x40_0000 ; 2 ** 22
-
-            i64 WherePhysical := VirtualToPhysical(Where)
-
-            i32 RegionCount := this->Header->PhysicalDescriptorTableLength
-
-            for (i32 Index := 0, Index < RegionCount, Index++) {
-                PhysicalRegionDescriptor* Region := this->Regions[Index]
-
-                ;Print("Set slots[%i].PRDT[%i] base address to %x\n", this->Slot, Index, WherePhysical + (Index * BYTES_PER_PRDT))
-
-                Region->SetBaseAddress(WherePhysical + (Index * BYTES_PER_PRDT))
-
-                ;Print("  slots[%i].PRDT[%i] base address low: %x, high: %x\n", this->Slot, Index, Region->BaseAddressLow, Region->BaseAddressHigh)
-            }
-
-            PhysicalRegionDescriptor* LastRegion := this->Regions[this->RegionCount - 1]
-
-            LastRegion->InterruptOnCompletion := true
-        }
-
         define void SetState(RequestState NewState) {
             this->State := NewState
             this->LastStateChangeTime := GetUptimeMS()
 
             this->StateChange->Signal()
+        }
+
+        define void Complete() {
+            ;asm {
+            ;    { 0x0F, 0xAE, 0xF0, 0x0F, 0xAE, 0xE8 }
+            ;}
+
+            if (this->Request->Direction = TransferDirection::DeviceToHost) {
+                FastMoveMemory(this->Request->DataBuffer, this->BounceBuffer, this->Request->DataSize)
+            }
+
+            this->SetState(RequestState::Completed)
         }
 
         define i8 Poll(i32 Timeout) {
@@ -496,7 +510,7 @@ namespace SATA::AHCI {
             this->Registers := Registers
         }
 
-        define void SetBuffers(FIS::ReceivedFIS* ReceivedFIS, CommandHeader* HeaderList, CommandTable* CommandList) {
+        define void SetBuffers(FIS::ReceivedFIS* ReceivedFIS, CommandHeader* HeaderList, CommandTable* CommandList, void* BounceBuffers) {
             this->ReceivedFIS := ReceivedFIS
 
             this->HeaderList := HeaderList
@@ -505,7 +519,11 @@ namespace SATA::AHCI {
             this->Requests := Alloc(32 * #RequestHandle*)
             
             for (i32 SlotIndex := 0, SlotIndex < 32, SlotIndex++) {
-                RequestHandle* Handle := new RequestHandle(this->Name, SlotIndex, HeaderList[SlotIndex], CommandList[SlotIndex])
+                void* BounceBuffer := BounceBuffers + (SlotIndex * BYTES_IN_1MB)
+
+                RequestHandle* Handle := new RequestHandle(this->Name, SlotIndex, HeaderList[SlotIndex], CommandList[SlotIndex], BounceBuffer)
+
+                Handle->SetTransferHostLocation(BounceBuffer)
 
                 this->Requests[SlotIndex] := Handle
             }
@@ -513,6 +531,19 @@ namespace SATA::AHCI {
 
         define void DumpRequestSlot(i32 Index) {
             RequestHandle* Handle := this->Requests[Index]
+
+            Request* R := Handle->Request
+
+            Print("Request:\n")
+            Print("  TransferDirection: %s\n", nameof:(R->Direction))
+            Print("  Command: %s\n", nameof:(R->Command))
+            Print("  DeviceLocation: %x\n", R->DeviceLocation)
+            Print("  BlockCount: %i\n", R->BlockCount)
+            Print("  DataBuffer: %x\n", R->DataBuffer)
+            Print("  DataSize: %i\n", R->DataSize)
+
+            Print("BounceBuffer: %x -> %x\n", Handle->BounceBuffer, VirtualToPhysical(Handle->BounceBuffer))
+
             CommandHeader* Header := Handle->Header
 
             Print("Command Header %i:\n", Index)
@@ -538,7 +569,7 @@ namespace SATA::AHCI {
             Print("  Physical Address: %x\n", VirtualToPhysical(Table))
             Print("  FIS:\n%hexdump\n", Table->FIS As void*, 0x40)
             Print("  ATAPICommand:\n%hexdump\n", Table->ATAPICommand As void*, 0x10)
-            Print("  Reserved: \n%hexdump\n", Table->Reserved As void*, 0x30)
+            ;Print("  Reserved: \n%hexdump\n", Table->Reserved As void*, 0x30)
 
             i32 PRDTCount := Header->PhysicalDescriptorTableLength
 
@@ -738,14 +769,23 @@ namespace SATA::AHCI {
 
             RequestHandle* Handle := this->Requests[Slot]
 
-            Handle->Prepare()
+            Handle->Prepare(R)
 
             Handle->MakeSetDeviceRegisters(R->Direction, R->Command)
 
             Handle->SetTransferSize(R->DataSize)
             Handle->SetTransferDeviceLocation(R->DeviceLocation)
-            Handle->SetTransferHostLocation(R->DataBuffer)
             Handle->SetTransferBlockCount(R->BlockCount)
+
+            if (R->Direction = TransferDirection::HostToDevice) {
+                MoveMemory(Handle->BounceBuffer, R->DataBuffer, R->DataSize)
+            }
+
+            if (R->Command = ATA::Command::READ_DMA_EXT) {
+                ;DisableInterrupts()
+                ;this->DumpRequestSlot(Slot)
+                ;loop {}
+            }
 
             ; Cheat a bit and issue the command ASAP
             ; (without waiting for an interrupt or timeout, and without signalling)
@@ -769,6 +809,7 @@ namespace SATA::AHCI {
             i64 Now := GetUptimeMS()
 
             if (Now - Handle->LastStateChangeTime > 5000) {
+                DisableInterrupts()
                 Print("%s: Request slot %i has timed out\n", this->Name, Handle->Slot)
                 this->DumpRequestSlot(Handle->Slot)
                 this->DumpPxSERR()
@@ -778,7 +819,10 @@ namespace SATA::AHCI {
 
         define void Wake(i8 IsRealInterrupt) {
             if (IsRealInterrupt) {
+                ;Print("\nAHCI Port %i woke from interrupt: %x\n", this->Index, this->Registers->RawPxIS)
+
                 this->CheckInterruptStatus()
+                this->Registers->RawPxIS := -1 ; Clear all interrupt status bits
             }
 
             for (i32 Index := 0, Index < 32, Index++) {
@@ -796,14 +840,15 @@ namespace SATA::AHCI {
                         this->CheckTimeout(Handle)
                     }
                 }
-                else if (Handle->State = RequestState::Issued) {
+                else if (IsRealInterrupt && Handle->State = RequestState::Issued) {
                     ;Print("Slot %i is issued, checking if it has completed\n", Index)
 
                     i32 SlotMask := 1 << Handle->Slot
 
                     if !(this->Registers->CommandIssue & SlotMask) {
                         ;Print("Command slot %i has completed\n", Index)
-                        Handle->SetState(RequestState::Completed)
+
+                        Handle->Complete()
                     }
                     else {
                         ;Print("Command slot %i has not completed\n", Index)
@@ -849,8 +894,14 @@ namespace SATA::AHCI {
             loop {
                 i8 IsRealInterrupt := this->Interrupt->Wait(40)
 
+                i32 PortInterruptMask := 0
+
                 if (IsRealInterrupt) {
-                    ;Print("Woke from real interrupt\n")
+                    PortInterruptMask := this->Registers->PIS
+
+                    ;Print("PIS: %b\n", PortInterruptMask)
+
+                    this->Registers->PIS := -1
                 }
 
                 i32 PortCount := this->Ports->Count()
@@ -858,7 +909,9 @@ namespace SATA::AHCI {
                 for (i32 Index := 0, Index < PortCount, Index++) {
                     Port* P := this->Ports->Get(Index)
 
-                    P->Wake(IsRealInterrupt)
+                    i8 IsPortInterrupt := (PortInterruptMask & (1 << P->Index)) != 0
+
+                    P->Wake(IsPortInterrupt)
                 }
 
                 i32 DeviceCount := this->Devices->Count()
@@ -913,6 +966,17 @@ namespace SATA::AHCI {
 
             ALL_AHCI_CONTROLLERS->Push(this)
         }
+        
+        define void* AllocateDMA(i32 PageCount) {
+            void* Virtual := KernelVirtualMemory->FindGap(PageCount)
+            i64 Physical := PhysicalMemory->Allocate(PageCount)
+
+            KernelVirtualMemory->SetRange(Virtual, Physical, PageCount, PAGE_PRESENT | PAGE_WRITE | PAGE_CACHE_DISABLE | 0x8)
+
+            FastZeroMemory(Virtual, PageCount * PAGE_SIZE)
+
+            return Virtual
+        }
 
         define void Start(i32 ControllerNumber) {
             /*Info("AHCI_HBA_HOST_CONTROL: %x\n", #HBA::HostControl)
@@ -928,7 +992,6 @@ namespace SATA::AHCI {
 
             this->InterruptTask := Scheduler->AddLightTask(null, this->Name)
             this->InterruptTask~>Context->CallMethod(this, &self.InterruptThread)
-            this->InterruptTask->Unblock()
             
             DisableInterrupts()
             this->Device->EnableMSI(20)
@@ -956,7 +1019,7 @@ namespace SATA::AHCI {
             this->Log("Mapping MMIO region at %x, size: %x", this->MemoryBase, PhysicalMMIOSize)
 
             ;KernelAddressSpace->MapRange(this->MemoryBase, PhysicalMMIO, PhysicalMMIOSize, PAGE_PRESENT | PAGE_WRITE)
-            KernelVirtualMemory->SetRange(this->MemoryBase, PhysicalMMIO, PageCount, PAGE_PRESENT | PAGE_WRITE)
+            KernelVirtualMemory->SetRange(this->MemoryBase, PhysicalMMIO, PageCount, PAGE_PRESENT | PAGE_WRITE | PAGE_CACHE_DISABLE)
 
             this->Registers := this->MemoryBase
 
@@ -1054,13 +1117,15 @@ namespace SATA::AHCI {
                     Registers->RawPxSERR := -1
                     Registers->RawPxIS := -1
 
-                    void* ReceivedFIS := KernelPageAllocator->AllocateVirtual(1)
+                    void* BounceBuffers := this->AllocateDMA(PAGES_IN_1MB * 32)
+
+                    void* ReceivedFIS := this->AllocateDMA(10)
                     SplitLowHigh(VirtualToPhysical(ReceivedFIS), Registers~>FISBaseAddressLow, Registers~>FISBaseAddressHigh)
 
-                    CommandHeader* Headers := KernelPageAllocator->AllocateVirtual(1)
+                    CommandHeader* Headers := this->AllocateDMA(10)
                     SplitLowHigh(VirtualToPhysical(Headers), Registers~>CommandListBaseAddressLow, Registers~>CommandListBaseAddressHigh)
 
-                    CommandTable* Tables := KernelPageAllocator->AllocateVirtual(1)
+                    CommandTable* Tables := this->AllocateDMA(SizeToPageCount(32 * #CommandTable))
 
                     for (i32 CommandIndex := 0, CommandIndex < 32, CommandIndex++) {
                         CommandHeader* Header := Headers[CommandIndex]
@@ -1070,7 +1135,7 @@ namespace SATA::AHCI {
                     }
 
                     Port* P := new Port(Index, this->Name, Registers)
-                    P->SetBuffers(ReceivedFIS, Headers, Tables)
+                    P->SetBuffers(ReceivedFIS, Headers, Tables, BounceBuffers)
                     this->Ports->Push(P)
 
                     Registers->PxCMD.FRE := true
@@ -1113,6 +1178,7 @@ namespace SATA::AHCI {
             }
 
             ; Enable interrupts
+            this->InterruptTask->Unblock()
             this->Registers->GHC.IE := true
 
             this->Devices := PointerArray:New()
@@ -1129,6 +1195,34 @@ namespace SATA::AHCI {
                     this->Devices->Push(new Device(this, Index))
                 }
             }
+
+            /*
+            Port* P0 := this->Ports->At(0)
+
+            this->Log("GHC = %x, GHC.IE = %i, GHC.AE = %i", this->Registers->GHC, this->Registers->GHC.IE, this->Registers->GHC.AE)
+            this->Log("GHC.MSRM = %i", this->Registers->GHC.MRSM)
+            this->Log("CAP2.BOHC = %i", this->Registers->CAP2.BOH)
+            this->Log("P0.PxIE = %x, P0.PxIS = %x", P0->Registers->PxIE, P0->Registers->PxIS)
+
+            Print("LAPIC ID: %x\n", LocalAPIC->ID)
+
+            PCICapability* Cap := this->Device->FindPCICapability(PCI_CAPABILITY_ID_MSI)
+            PCIMSICapability* MSI := Cap As void*
+            PCIMSICapability32Bit* MSI32 := Cap As void*
+            PCIMSICapability64Bit* MSI64 := Cap As void*
+
+            MSI->Info()
+            
+            if (MSI->Control.LargeAddressCapable) {
+                this->Log("MSI is 64-bit capable, using 64-bit address")
+
+                MSI64->Info()
+            }
+            else {
+                this->Log("MSI is 32-bit only, using 32-bit address")
+
+                MSI32->Info()
+            }*/
         }
 
         define i32 GetPortCount() {
