@@ -2,7 +2,7 @@
 #Require "./src/kernel/core/Descriptors.rlx"
 
 declare AMD64Context* GetCurrentTaskContext()
-declare void SchedulerRestart()
+declare void SchedulerResume()
 
 struct IDTEntry unaligned {
 	i16 OffsetLow16,
@@ -141,7 +141,7 @@ define void DispatchInterrupt(AMD64Context* Context, i32 InterruptNumber, i64 Er
 			(Handler As void(AMD64Context*, i32))(Context, InterruptNumber)
 		}
 
-		SchedulerRestart()
+		SchedulerResume()
 	}
 	else {
 		GenericInterrupt(Context, InterruptNumber)

@@ -11,19 +11,17 @@ define i64 GetUptimeMS() {
 	return TIME_UPTIME_MS
 }
 
-#Require "./src/kernel/core/Events.rlx"
-
-Event* OnHardwareTimerTick := Event:New("Hardware Timer Tick")
+declare void SchedulerTick()
 
 define void GenericTimerInterrupt() {
     TIME_TICK_COUNT += 1
 
     if (DEBUG_SLOW_CLOCK) {
 		if (TIME_TICK_COUNT % DEBUG_SLOW_CLOCK = 0) {
-			OnHardwareTimerTick->Fire(TIME_UPTIME_MS As void*)
+			SchedulerTick()
 		}
 	}
 	else {
-		OnHardwareTimerTick->Fire(TIME_UPTIME_MS As void*)
+		SchedulerTick()
 	}
 }

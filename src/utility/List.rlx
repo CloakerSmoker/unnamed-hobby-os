@@ -36,6 +36,10 @@ struct List {
         return this
     }
 
+    define void Free() {
+        Free(this)
+    }
+
     define void InsertBefore(ListNode* Anchor, ListNode* Node) {
         Anchor->Last->Next := Node
 

@@ -224,7 +224,7 @@ namespace USB::HID {
 
             this->ReportTask := Scheduler->AddLightTask(null, "USB::HID::Keyboard Report Handler")
             this->ReportTask~>Context->CallMethod(this, &self.ReportThread)
-            this->ReportTask->Unblock()
+            Scheduler->SetRunnable(this->ReportTask)
         }
 
         define i32 Available() {

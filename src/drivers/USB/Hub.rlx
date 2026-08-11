@@ -355,7 +355,7 @@ namespace USB::HubProtocol {
 
             this->PortThreadTask := Scheduler->AddLightTask(null, "USB Hub Status Change Thread")
             this->PortThreadTask~>Context->CallMethod(this, &self.PortThread)
-            this->PortThreadTask->Unblock()
+            Scheduler->SetRunnable(this->PortThreadTask)
         }
     }
 

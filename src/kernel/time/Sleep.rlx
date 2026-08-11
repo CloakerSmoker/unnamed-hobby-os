@@ -1,18 +1,11 @@
-define void SleepTicks(i32 Ticks) {
-	i64 End := TIME_TICK_COUNT + Ticks
-	
-	if (IsSchedulerActive()) {
-		while (TIME_TICK_COUNT < End) {}
-	}
-	else {
-		while (TIME_TICK_COUNT < End) { SchedulerYield() }
-	}
-}
+
+declare void SchedulerSleep(i64)
+
 define void SleepMS(i32 Milliseconds) {
 	i64 End := TIME_UPTIME_MS + Milliseconds
 	
 	if (IsSchedulerActive()) {
-		while (TIME_UPTIME_MS < End) { SchedulerYield() }
+		SchedulerSleep(Milliseconds)
 	}
 	else {
 		while (TIME_UPTIME_MS < End) {}

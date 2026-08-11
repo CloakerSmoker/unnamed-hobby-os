@@ -18,7 +18,7 @@ define void Exit(i32 Code) {
 }
 
 declare void DUMP_TASKS()
-declare void DUMP_TASK_LISTS()
+declare void DUMP_WAIT_QUEUES()
 declare void DUMP_LOCKS()
 declare void DUMP_SEMAPHORES()
 
@@ -27,7 +27,7 @@ define void Panic(i8* Reason) {
     Info("PANIC: %s\n%stackdump\nHALTING\n", Reason)
 
     DUMP_TASKS()
-    DUMP_TASK_LISTS()
+    DUMP_WAIT_QUEUES()
     DUMP_LOCKS()
     DUMP_SEMAPHORES()
 

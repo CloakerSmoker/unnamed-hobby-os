@@ -98,7 +98,7 @@ define void ACPI_CreateTask(void* Function, void* Context) {
 
     ACPI_Tasks->Push(Result)
 
-    Result->Unblock()
+    Scheduler->SetRunnable(Result)
 }
 
 define void ACPI_Sleep(i64 Time) {

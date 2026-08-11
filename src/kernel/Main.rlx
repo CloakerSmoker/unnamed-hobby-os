@@ -150,7 +150,9 @@ HPETDriver::HPET* HPET := null
 
 #Require "./src/kernel/multitasking/Tasks.rlx"
 #Require "./src/kernel/multitasking/Scheduler.rlx"
-#Require "./src/kernel/multitasking/Timers.rlx"
+#Require "./src/kernel/multitasking/Synchronization.rlx"
+#Require "./src/kernel/multitasking/Jobs.rlx"
+
 #Require "./src/kernel/user-mode/Process.rlx"
 
 #Require "./src/kernel/graphics/LoadFON.rlx"
@@ -235,6 +237,8 @@ define void DO_NOT_OPTIMIZE_AWAY(void* Function) asm { ret }
 
 #Require "./src/kernel/core/Debug.rlx"
 
+#Require "./src/drivers/networking/I219.rlx"
+
 USB::Bus* USB0 := null
 USB::UHCI::Controller* UHCIController := null
 
@@ -264,19 +268,23 @@ define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Devic
 		if (Device->ClassCode = PCI_CLASS_CODE_NETWORK_CONTROLLER && Device->SubClass = PCI_SUBCLASS_NETWORK_ETHERNET) {
 			;Print("Network interface\n", Device->VendorID, Device->DeviceID)
 			
-			if (Device->VendorID = PCI_VENDOR_INTEL && Device->DeviceID = PCI_DEVICE_INTEL_82574L) {
-				Print("Found E1000\n")
+			if (Device->VendorID = PCI_VENDOR_INTEL) {
+				if (Device->DeviceID = PCI_DEVICE_INTEL_82574L || Device->DeviceID = PCI_DEVICE_INTEL_I219_LM) {
+					/*Print("Found E1000\n")
 
-				;if (false) {
+					;if (false) {
 
-				Device->EnableMSI(19)
+					Device->EnableMSI(19)
 
-				E1000* Adapter := Alloc('E1000', #E1000)
-				Adapter->Initialize(Device)
-				Adapter->Setup()
+					E1000* Adapter := Alloc('E1000', #E1000)
+					Adapter->Initialize(Device)
+					Adapter->Setup()
 
-				Network->AddInterface(MakeNetworkInterfaceFromE1000(Adapter))
-				;}
+					Network->AddInterface(MakeNetworkInterfaceFromE1000(Adapter))
+					;}*/
+
+					I219::Controller* NIC := new I219::Controller(Device, new PCIeAddress(0, Bus, Slot, Function))
+				}
 			}
 		}
 		else if (Device->ClassCode = PCI_CLASS_CODE_MASS_STORAGE_CONTROLLER && Device->SubClass = PCI_SUBCLASS_SATA_CONTROLLER) {
@@ -596,14 +604,24 @@ define i8 TryMountPartitions(i8* RootPartitionGUID, i8* EFISystemPartitionGUID) 
 }
 
 define void NetworkSetupTask() {
-	NetworkInterface* Interface := Network->Interfaces->At(1)
+	i32 Count := ALL_I219_CONTROLLERS->Count()
 
+	for (i32 Index := 0, Index < Count, Index++) {
+		I219::Controller* NIC := ALL_I219_CONTROLLERS->At(Index)
+
+		NIC->Start(Index)
+	}
+
+	SleepMS(100000000)
+
+	/*
     SetStaticIP(Interface, "10.0.2.2/24", "10.0.2.15", "10.0.2.3")
 
     Interface->SetKnobToggle("Ethernet.SpewInOut", true)
     Interface->SetKnobToggle("ARP.SpewInOut", true)
 	Interface->SetKnobToggle("ARP.SpewCache", true)
     Interface->SetKnobToggle("ARP.SpewGateway", true)
+	*/
 }
 
 i8* ROOT_PARTITION_GUID := null
@@ -648,7 +666,7 @@ define void MainTask() {
 	SetupACPI()
 
 	Task* ShellThread := Scheduler->AddLightTask(&VFSRunShellTask, "VFS Shell")
-	ShellThread->State := TASK_CAN_RUN
+	Scheduler->SetRunnable(ShellThread)
 }
 
 define void Main(TrampolineInfo* Info) {
@@ -755,10 +773,7 @@ define void Main(TrampolineInfo* Info) {
 
 	Print("TIME: System clock is running\n")
 
-	SetupTimers()
 	RegisterSerialInterrupts()
-	
-	Print("Set up PIT/timers/serial\n")
 	
 	SetupKernelGS()
 	SetupUserMode()
@@ -788,8 +803,8 @@ define void Main(TrampolineInfo* Info) {
 
 	PopulateDevicesDirectory(VFSDevicesDirectory)
 	
-	Task* MainTaskThread := Scheduler->AddLightTask(&MainTask, "Main Task")
-	MainTaskThread->State := TASK_CAN_RUN
+	Task* MainTaskThread := Scheduler->AddLightTask(&NetworkSetupTask, "Main Task")
+	Scheduler->SetRunnable(MainTaskThread)
 
 	StartScheduler()
 
@@ -826,10 +841,10 @@ define void Main(TrampolineInfo* Info) {
 	;StartScheduler()
 
 	Task* NetworkThread := Scheduler->AddLightTask(&NetworkSetupTask, "Network Setup")
-	NetworkThread->State := TASK_CAN_RUN
+	Scheduler->SetRunnable(NetworkThread)
 
 	Task* ShellThread := Scheduler->AddLightTask(&VFSRunShellTask, "VFS Shell")
-	ShellThread->State := TASK_CAN_RUN
+	Scheduler->SetRunnable(ShellThread)
 
 	StartScheduler()
 

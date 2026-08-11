@@ -415,5 +415,5 @@ define void SetupShell() {
 	
 	Task* ShellThreadTask := Scheduler->AddLightTask(&ShellThread, "Legacy Shell")
 	
-	ShellThreadTask->State := TASK_CAN_RUN
+	Scheduler->SetRunnable(ShellThreadTask)
 }

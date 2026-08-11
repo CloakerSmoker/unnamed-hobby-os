@@ -1178,7 +1178,7 @@ namespace SATA::AHCI {
             }
 
             ; Enable interrupts
-            this->InterruptTask->Unblock()
+            Scheduler->SetRunnable(this->InterruptTask)
             this->Registers->GHC.IE := true
 
             this->Devices := PointerArray:New()

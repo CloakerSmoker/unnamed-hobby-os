@@ -110,7 +110,7 @@ struct UserThread {
 		DisableInterrupts()
 
 		if (this->Killed) {
-			SchedulerEnd()
+			SchedulerKill()
 		}
 		
 		i32 SignalErrorNumber := 0
@@ -136,14 +136,14 @@ struct UserThread {
 		}
 
 		if (this->Killed) {
-			SchedulerEnd()
+			SchedulerKill()
 		}
 		
 		MoveMemory(this->KernelTask~>Context, this~>AbortSystemCallState, #AMD64Context)
 		
 		CurrentThread := this
 		
-		Scheduler->RunNow(this->UserTask)
+		Scheduler->SetRunnable(this->UserTask)
 	}
 	
 	define void Exit(i32 Code) {
@@ -233,17 +233,18 @@ struct UserThread {
 		this->KernelTask~>Context->RDI := this As i64
 		this->KernelTask~>Context->Flags := 0
 		
-		Scheduler->Enqueue(this->KernelTask)
+		Scheduler->SetRunnable(this->KernelTask)
 	}
 	
 	define void FireSystemCall() {
 		this->HasPendingSystemCall := true
 		
-		Scheduler->RunNow(this->KernelTask)
+		Scheduler->SetRunnable(this->KernelTask)
 	}
 	
 	define void Free() {
-		Scheduler->Remove(this->KernelTask)
+		Scheduler->Kill(this->KernelTask)
+
 		this~>OnKilled->Free()
 		this->KernelTask->Free()
 		this->UserTask->Free()

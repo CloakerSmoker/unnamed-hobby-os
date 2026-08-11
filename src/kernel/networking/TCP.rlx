@@ -494,14 +494,17 @@ struct TCPSocket {
         EnableInterrupts()
     }
 
-    Timer* QuantumTimer
+    i8 PauseSendPump
 
     define void Quantum() {
         loop {
             ;Info("Quantum\n")
-			this->SendPump()
+
+            if !(this->PauseSendPump) {
+                this->SendPump()
+            }
 			
-			SchedulerBlock()
+			SleepMS(20)
 		}
     }
 
@@ -510,14 +513,13 @@ struct TCPSocket {
 
         QuantumTask~>Context->CallMethod(this, &self.Quantum)
 
-        this->QuantumTimer := SetTimer(20, QuantumTask)
+        Scheduler->SetRunnable(QuantumTask)
     }
 
-    define void AbortSendPump() {
+    /*define void AbortSendPump() {
         ; Disable send pump timer, pause task
 
-        this->QuantumTimer->Disable()
-        this->QuantumTimer->Task->Pause()
+        this->PauseSendPump := true
     }
 
     define void ResetSendPump() {
@@ -530,7 +532,7 @@ struct TCPSocket {
         QuantumTask~>Context->CallMethod(this, &self.Quantum)
 
         this->QuantumTimer->Enable()
-    }
+    }*/
 
     define void QueueDataFrame(void* Data, i32 Size) {
         TCPFrame* Frame := this->EnterFrame()
@@ -563,7 +565,7 @@ struct TCPSocket {
     }
 
     define void DrainQueue() {
-        this->ResetSendPump()
+        ;this->ResetSendPump()
 
         TCPFrame* Current := this->OldestFrame
 
@@ -631,7 +633,7 @@ struct TCPSocket {
 
         this->LastRemoteAcknowledge := RemoteAcknowledge
 
-        this->ResetSendPump()
+        ;this->ResetSendPump()
 
         TCPFrame* Current := this->OldestFrame
 
@@ -1085,6 +1087,7 @@ struct TCPSocket {
     }
 
     define void Destroy() {
+        /*
         if (this->QuantumTimer) {
             this->AbortSendPump() ; Shutdown data flow
 
@@ -1093,6 +1096,7 @@ struct TCPSocket {
 
             ; NOTE: leaks `this->QuantumTimer` itself (timers are annoying to free)
         }
+        */
 
         this->Free() ; Free protocol level buffers (and `this`)
     }

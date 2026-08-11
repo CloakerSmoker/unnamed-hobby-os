@@ -1594,11 +1594,11 @@ namespace USB::UHCI {
 
             Task* CheckPorts := Scheduler->AddLightTask(null, "UHCI Port Checker")
             CheckPorts~>Context->CallMethod(this, &self.CheckPortsThread)
-            CheckPorts->Unblock()
+            Scheduler->SetRunnable(CheckPorts)
 
             Task* InterruptThread := Scheduler->AddLightTask(null, "UHCI Interrupt Handler")
             InterruptThread~>Context->CallMethod(this, &self.InterruptThread)
-            InterruptThread->Unblock()
+            Scheduler->SetRunnable(InterruptThread)
         }
     }
 }

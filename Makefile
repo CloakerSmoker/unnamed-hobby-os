@@ -182,7 +182,7 @@ format ext2 /dev/loop0p1 70M
 
 mount fat32 /dev/loop0p0 /efi
 
-install /host/build/NetworkBoot.efi /efi/EFI/BOOT/BOOTX64.EFI
+install /host/build/Boot.efi /efi/EFI/BOOT/BOOTX64.EFI
 install /host/build/KernelCommandLine.txt /efi/EFI/BOOT/KCMDLN.TXT
 
 mount ext2 /dev/loop0p1 /root

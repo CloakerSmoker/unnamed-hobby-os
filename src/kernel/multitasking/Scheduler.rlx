@@ -14,31 +14,312 @@ define void DoSchedulerDelay() {
 i8 AWOKEN_BY_ALARM := 0 ; For SchedulerWait, indicates that the timeout was reached
 i8 AWOKEN_BY_OTHER := 1
 
+enum TaskPriority As i32 {
+	High,
+	Normal,
+	Low,
+	Idle,
+	Background
+}
+
+struct WaitQueue {
+	i8* Name
+
+	ListNode Link
+	List* Tasks
+}
+
+enum WaitResult As i32 {
+	Timeout,
+	Success
+}
+
 struct TaskScheduler {
 	Task* DelayTask
 
-	List* NeedsToRun
-	List* HasRan
-	
-	define void RunCurrent() {
-		CurrentTask->State := TASK_RUNNING
-		CurrentTask->Resume()
-	}
-	
-	define void RunNow(Task* Next) {
-		CurrentTask->State := TASK_CAN_RUN
-		
-		CurrentTask := Next
-		this->RunCurrent()
-	}
-	
+	List*[5] PriorityLevels
+	List* Paused ; Tasks that are sleeping for a single tick
+	List* Sleeping ; Tasks that are sleeping longer
+
+	List* WaitQueues ; <WaitQueue>
+
 	define void Debug(i8* Format, ... Parameters) {
 		if (DEBUG_SCHEDULER) {
 			RawInfo(Format, Parameters)
 		}
 	}
-	
-	define void PickNext() {
+
+	define void Remove(Task* Target) {
+		if (Target->State = TaskState::Runnable) {
+			i32 Priority := Target->Priority
+
+			this->PriorityLevels[Priority]->Remove(Target~>Link)
+		}
+		else if (Target->State = TaskState::Paused) {
+			this->Paused->Remove(Target~>Link)
+		}
+		else if (Target->State = TaskState::Sleeping) {
+			this->Sleeping->Remove(Target~>Link)
+		}
+		else if (Target->State = TaskState::Waiting) {
+			if (Target->Queue) {
+				Target->Queue->Tasks->Remove(Target~>Link)
+			}
+		}
+	}
+
+	define void SetPriority(Task* Target, i32 NewPriority) {
+		if (Target->Priority = NewPriority) {
+			return
+		}
+
+		i32 OldPriority := Target->Priority
+
+		if (Target->State = TaskState::Runnable) {
+			this->Remove(Target)
+		}
+
+		Target->Priority := NewPriority
+
+		this->PriorityLevels[NewPriority]->Push(Target~>Link)
+	}
+
+	define void SetRunnable(Task* Target) {
+		if (Target->State = TaskState::Runnable) {
+			return
+		}
+
+		this->Debug("SetRunnable: %x (%s)\n", Target, Target->Name)
+		this->Debug("  Into priority %i\n", Target->Priority)
+
+		this->Remove(Target)
+
+		Target->State := TaskState::Runnable
+
+		this->PriorityLevels[Target->Priority]->Push(Target~>Link)
+	}
+
+	define void SetPaused(Task* Target) {
+		if (Target->State = TaskState::Paused) {
+			return
+		}
+		
+		this->Debug("SetPaused: %x (%s)\n", Target, Target->Name)
+
+		this->Remove(Target)
+
+		Target->State := TaskState::Paused
+
+		this->Paused->Push(Target~>Link)
+	}
+
+	define void InsertSortedByAlarm(List* TargetList, Task* Target) {
+		ListNode* Node := null
+
+		while (TargetList->Next(&Node)) {
+			Task* Current := TargetList->Self(Node)
+
+			if (Current->Alarm > Target->Alarm) {
+				TargetList->InsertBefore(Node, Target~>Link)
+				return
+			}
+		}
+
+		; If we got here, the target has the largest alarm time, so just push it to the end
+		TargetList->Push(Target~>Link)
+	}
+
+	define void SetSleeping(Task* Target, i64 WakeupTime) {
+		if (Target->State = TaskState::Sleeping) {
+			return
+		}
+
+		this->Debug("SetSleeping: %x (%s)\n", Target, Target->Name)
+		this->Debug("  Wakeup time: %i\n", WakeupTime)
+
+		this->Remove(Target)
+
+		Target->State := TaskState::Sleeping
+		Target->Alarm := WakeupTime
+
+		this->InsertSortedByAlarm(this->Sleeping, Target)
+	}
+
+	define void Kill(Task* Target) {
+		this->Remove(Target)
+
+		Target->State := TaskState::Killed
+	}
+
+	define WaitQueue* RegisterWaitQueue(i8* Name) {
+		WaitQueue* Result := Alloc(#WaitQueue)
+
+		Result->Name := Name
+		Result->Tasks := new List(&Task.Link)
+
+		this->WaitQueues->Push(Result~>Link)
+
+		return Result
+	}
+
+	define void UnregisterWaitQueue(WaitQueue* Queue) {
+		this->WaitQueues->Remove(Queue~>Link)
+
+		Queue->Tasks->Free()
+		Free(Queue)
+	}
+
+	define void SetWaiting(Task* Target, WaitQueue* Queue, i64 Timeout) {
+		if (Target->State = TaskState::Waiting) {
+			return
+		}
+
+		this->Debug("SetWaiting: %x (%s)\n", Target, Target->Name)
+		this->Debug("  Wait queue: %x (%s)\n", Queue, Queue->Name)
+		this->Debug("  Timeout: %i\n", Timeout)
+
+		this->Remove(Target)
+
+		Target->State := TaskState::Waiting
+		Target->Queue := Queue
+		Target->Alarm := Timeout
+
+		this->InsertSortedByAlarm(Queue->Tasks, Target)
+	}
+
+	define void WakeSingle(WaitQueue* Queue) {
+		this->Debug("WakeSingle: %x (%s)\n", Queue, Queue->Name)
+
+		ListNode* Node := Queue->Tasks->First()
+		
+		if (Node = null) {
+			return
+		}
+
+		Task* First := Queue->Tasks->Self(Node)
+		Queue->Tasks->Remove(Node)
+
+		; SchedulerWait "returns" WaitResult::Success
+		First~>Context->RBX := WaitResult::Success As i32
+
+		this->SetRunnable(First)
+	}
+
+	define void WakeAll(WaitQueue* Queue) {
+		this->Debug("WakeAll: %x (%s)\n", Queue, Queue->Name)
+
+		while (Queue->Tasks->First() != null) {
+			this->WakeSingle(Queue)
+		}
+	}
+
+	define void Preempt() {
+		; When a task is preempted by the timer, we need to juggle
+		;  it back into the scheduler's queues, otherwise it will be lost
+
+		;this->Debug("Preempting %x (%s) by system timer tick\n", CurrentTask, CurrentTask->Name)
+
+		Task* Next := null
+
+		if (CurrentTask != this->DelayTask) {
+			; CurrentTask IS NOT tracked in any queue.
+			; We NEED to put it back into a queue, otherwise it gets lost
+
+			CurrentTask->TimeSlicesRemaining -= 1
+			CurrentTask->TimeSlicesUsed += 1
+			CurrentTask->State := TaskState::Runnable
+
+			i8 UsedEntireTimeSlice := CurrentTask->TimeSlicesRemaining = 0
+
+			;this->Debug(" + has %i time slices remaining\n", CurrentTask->TimeSlicesRemaining)
+
+			i32 CurrentPriority := CurrentTask->Priority
+			List* CurrentPriorityList := this->PriorityLevels[CurrentPriority]
+
+			if (UsedEntireTimeSlice) {
+				;this->Debug(" + is out of time\n")
+
+				if (CurrentTask->Priority < TaskPriority::Background) {
+					; Demote task for using up its time slice
+
+					;this->Debug(" + demoted to priority %i\n", CurrentTask->Priority + 1)
+
+					this->SetPriority(CurrentTask, CurrentTask->Priority + 1)
+				}
+				else {
+					; Already at lowest priority, just move to the back of the queue
+					; Note that priority selection might still re-pick CurrentTask
+
+					;this->Debug(" + already at lowest priority, moving to back of queue\n")
+
+					CurrentPriorityList->Push(CurrentTask~>Link)
+				}
+			}
+			else {
+				;this->Debug(" + has time slices remaining, continuing to run\n")
+
+				CurrentPriorityList->Insert(CurrentTask~>Link)
+			}
+		}
+		else {
+			;this->Debug("No previous task to impact scheduling\n")
+		}
+	}
+
+	define void Alarm() {
+		ListNode* Node := null
+
+		while (Node := this->Paused->First()) {
+			Task* Current := this->Paused->Self(Node)
+
+			this->SetRunnable(Current)
+		}
+
+		; All sleep/wait queues are sorted by earliest alarm time,
+		;  so we can just remove from the front of the queues until
+		;   we run into a task that isn't ready to wake up yet.
+		; This avoids nasty modification during enumeration issues
+
+		ListNode* Node := null
+		i64 Now := GetUptimeMS()
+
+		while (Node := this->Sleeping->First()) {
+			Task* Current := this->Sleeping->Self(Node)
+
+			if (Current->Alarm <= Now) {
+				this->SetRunnable(Current)
+			}
+			else {
+				break
+			}
+		}
+
+		ListNode* QueueNode := null
+
+		while (this->WaitQueues->Next(&QueueNode)) {
+			WaitQueue* Queue := this->WaitQueues->Self(QueueNode)
+
+			ListNode* TaskNode := null
+
+			while (TaskNode := Queue->Tasks->First()) {
+				Task* Current := Queue->Tasks->Self(TaskNode)
+
+				if (Current->Alarm <= Now) {
+					this->SetRunnable(Current)
+
+					; SchedulerWait "returns" WaitResult::Timeout if
+					;  we had to manually wake the task due to timeout
+
+					Current~>Context->RBX := WaitResult::Timeout As i32
+				}
+				else {
+					break
+				}
+			}
+		}
+	}
+
+	define void Schedule() {
 		if (InterrupsAreEnabled()) {
 			DisableInterrupts()
 			
@@ -48,184 +329,148 @@ struct TaskScheduler {
 			loop {}
 		}
 
-		this->Debug("To  Run: %list\n", this->NeedsToRun)
-		this->Debug("Has Ran: %list\n", this->HasRan)
+		this->Alarm()
+
+		;this->Debug("\n\nScheduling...\n")
+		;this->Debug("Current task: %x (%s)\n", CurrentTask, CurrentTask->Name)
+
+		Task* Next := null
 		
-		if (this->NeedsToRun->Empty()) {
-			this->Debug("Swapping\n")
-			
-			List* Temp := this->NeedsToRun
-			this->NeedsToRun := this->HasRan
-			this->HasRan := Temp
-		}
+		; Pick the highest priority task
 
-		Task* Next := this->DelayTask
-		ListNode* Node := null
+		for (i32 Priority := 0, Priority <= TaskPriority::Background, Priority += 1) {
+			List* PriorityList := this->PriorityLevels[Priority]
 
-		while (this->NeedsToRun->Next(&Node)) {
-			Task* Candidate := this->NeedsToRun->Self(Node)
+			;this->Debug("Checking priority %i\n", Priority)
 
-			this->Debug("Candidate %x (%s)\n", Candidate, Candidate->Name)
+			if (PriorityList->First() != null) {
+				;this->Debug("Found a runnable task at priority %i\n", Priority)
 
-			if (Candidate->CouldRun()) {
-				this->Debug("Picked    /\\\n")
+				ListNode* Node := PriorityList->First()
+				Next := PriorityList->Self(Node)
+				PriorityList->Remove(Node)
 
-				Next := Candidate
 				break
 			}
 		}
 
-		loop {
-			ListNode* Previous := this->NeedsToRun->First()
+		if !(Next) {
+			; No runnable tasks, run the delay task
 
-			if (Previous = null) {
-				break
-			}
+			;this->Debug("No runnable tasks, running delay task\n")
 
-			this->NeedsToRun->Remove(Previous)
-			this->HasRan->Push(Previous)
-
-			if (Previous = Next) {
-				break
-			}
+			Next := this->DelayTask
 		}
 
+		if (Next->TimeSlicesRemaining = 0) {
+			; Reset time slices to a full quantum based on the task's priority.
+
+			Next->TimeSlicesRemaining := (Next->Priority * 2) + 1
+		}
+
+		;this->Debug("Switching from %x (%s) to %x (%s)\n", CurrentTask, CurrentTask->Name, Next, Next->Name)
+		;this->Debug("  %i ticks assigned for new task\n", Next->TimeSlicesRemaining)
+		
+		Next->State := TaskState::Running
 		CurrentTask := Next
+
+		if (CurrentTask != this->DelayTask) {
+			this->Debug(" - Running task %x (%s) at priority %i\n", CurrentTask, CurrentTask->Name, CurrentTask->Priority)
+		}
 	}
-	
-	define void RunNext() {
-		this->PickNext()
-		this->RunCurrent()
+
+	define void Tick() {
+		this->Preempt()
+		this->Schedule()
 	}
-	
+
+	define void ResumeCurrent() {
+		CurrentTask->Resume()
+	}
+
 	define void YieldCurrent() {
-		CurrentTask->State := TASK_PAUSED
-		this->RunNext()
+		this->SetRunnable(CurrentTask)
+		this->Schedule()
+		this->ResumeCurrent()
 	}
-	define void BlockCurrent() {
-		CurrentTask->State := TASK_BLOCKED
-		this->RunNext()
+
+	define void PauseCurrent() {
+		this->SetPaused(CurrentTask)
+		this->Schedule()
+		this->ResumeCurrent()
 	}
-	define void WaitCurrent(i32 TimeoutMS) {
-		CurrentTask->State := TASK_WAITING
-		CurrentTask->Alarm := GetUptimeMS() + TimeoutMS
-		CurrentTask~>Context->RAX := AWOKEN_BY_OTHER
-		this->RunNext()
+
+	define void SleepCurrent(i64 DurationMS) {
+		this->SetSleeping(CurrentTask, GetUptimeMS() + DurationMS)
+		this->Schedule()
+		this->ResumeCurrent()
 	}
-	define void EndCurrent() {
-		CurrentTask->State := TASK_KILLED
 
-		this->NeedsToRun->Remove(CurrentTask~>Link)
-		this->HasRan->Remove(CurrentTask~>Link)
+	define void WaitCurrent(WaitQueue* Queue, i64 Timeout) {
+		if (Timeout = 0) {
+			Timeout := 0x7FFFFFFFFFFFFFFF
+		}
+		else if (Timeout = -1) {
+			Timeout := 0
+		}
+		else {
+			Timeout := GetUptimeMS() + Timeout
+		}
 
-		CurrentTask->Free()
-		this->RunNext()
+		this->SetWaiting(CurrentTask, Queue, Timeout)
+		this->Schedule()
+		this->ResumeCurrent()
 	}
-	
-	define Task* OnExternalControlTransfer(Task* NewCurrent) {
-		CurrentTask->State := TASK_CAN_RUN
-		
-		Task* Result := CurrentTask
-		CurrentTask := NewCurrent
-		
-		return Result
-	}
-	
-	define void Remove(Task* Old) {
-		Old->State := TASK_KILLED
 
-		this->HasRan->Remove(Old~>Link)
-	}
-	
-	define void Enqueue(Task* NewTask) {
-		this->Debug("Enqueue %x\n", NewTask)
-
-		;i8 Enabled := InterrupsAreEnabled()
-
-		;if (Enabled) { DisableInterrupts() }
-
-		this->NeedsToRun->Push(NewTask~>Link)
-
-		;if (Enabled) { EnableInterrupts() }
-	}
-	
-	define void Add(Task* NewTask) {
-		this->Enqueue(NewTask)
+	define void KillCurrent() {
+		this->Kill(CurrentTask)
+		this->Schedule()
+		this->ResumeCurrent()
 	}
 	
 	define Task* MakeLightTask(void* Function, i8* Name) {
 		Task* NewTask := Task:NewWithStack(0, 2)
 
-		if (Function = null) {
-			NewTask->State := TASK_BLOCKED
-		}
-		else {
-			NewTask~>Context->RIP := Function
-		}
-
+		NewTask~>Context->RIP := Function
 		NewTask->Name := Name
 		
 		return NewTask
 	}
 	define Task* AddLightTask(void* Function, i8* Name) {
 		Task* NewTask := this->MakeLightTask(Function, Name)
-		
-		this->Add(NewTask)
+
+		this->SetRunnable(NewTask)
 		
 		return NewTask
 	}
-	
-	define EventState Quantum(void* CurrentTickCount, Event* Fired) {
-		;Info("%x,", CurrentTask~>Context->RIP)
-		
-		ListNode* Node := null
-
-		i64 Now := GetUptimeMS()
-
-		while (this->HasRan->Next(&Node)) {
-			Task* Current := this->HasRan->Self(Node)
-
-			this->Debug("Checking %x (%s)\n", Current, Current->Name)
-
-			if (Current->State = TASK_PAUSED) {
-				this->Debug("Allowing resume for %x (%s)\n", Current, Current->Name)
-
-				Current->State := TASK_CAN_RUN
-			}
-			else if (Current->State = TASK_WAITING && Current->Alarm <= Now) {
-				this->Debug("Waking %x (%s) from waiting\n", Current, Current->Name)
-
-				Current->State := TASK_CAN_RUN
-				Current~>Context->RAX := AWOKEN_BY_ALARM ; SchedulerWait "returns" 0 for timeout
-			}
-		}
-
-		;Current->State := TASK_PAUSED
-		
-		this->PickNext()
-		
-		return EventState:CallNextListener
-	}
 
 	define void Initialize() {
-		this->NeedsToRun := List:New(&Task.Link)
-		this->HasRan := List:New(&Task.Link)
+		for (i32 Priority := 0, Priority < 5, Priority += 1) {
+			this->PriorityLevels[Priority] := List:New(&Task.Link)
+		}
+
+		this->Paused := List:New(&Task.Link)
+		this->Sleeping := List:New(&Task.Link)
+		
+		this->WaitQueues := List:New(&WaitQueue.Link)
 
 		this->DelayTask := this->MakeLightTask(&DoSchedulerDelay, "Idle")
+		this->SetRunnable(this->DelayTask)
 	}
 
 	define void Start() {
-		OnHardwareTimerTick->ListenMethod(&TaskScheduler.Quantum, this)
+		CurrentTask := this->DelayTask
 	}
 }
 
 TaskScheduler _Scheduler
 TaskScheduler* Scheduler := &_Scheduler
 
-define void _SchedulerYield() {
-	Scheduler->YieldCurrent()
-}
-define void SchedulerYield() asm {
+define i8 ENTER_SCHEDULER() asm {
+	; Saves the current context into CurrentTask, and returns "twice"
+	; When 1 is returned, the context has just been saved and the caller should return to the scheduler
+	; When 0 is returned, the context has just been restored and the caller should continue
+	
 	emit, 0x48
 	emit, 0x9C ; PUSHFQ
 
@@ -233,7 +478,7 @@ define void SchedulerYield() asm {
 	
 	call, @GetCurrentTaskContext
 	mov, rdi, rax      ; Parameter = CurrentTaskContext
-	call, @SaveContext ; Capure interrupted context, with anything extra cleaned up below
+	call, @SaveContext ; Capture current context, with anything extra cleaned up below
 
 	pop, rbx ; save pre-`cli` eflags
 	mov, {rdi + AMD64Context.Flags} As i64*, rbx
@@ -242,113 +487,179 @@ define void SchedulerYield() asm {
 	mov, {rdi} As i64*, rbx        ; Context.RIP = rax
 	mov, {rdi + 0x20} As i64*, rsp ; Fix RSP, original capture is off by 8 because of our
 	;  return address
-	
-	jmp, @_SchedulerYield
+
+	mov, {rdi + AMD64Context.RAX} As i64*, 0
+
+	mov, rax, 1
+	jmp, rbx
 }
 
-define void _SchedulerBlock() {
-	Scheduler->BlockCurrent()
-}
-define void SchedulerBlock() asm {
-	emit, 0x48
-	emit, 0x9C ; PUSHFQ
-
-	cli
-	
-	call, @GetCurrentTaskContext
-	mov, rdi, rax      ; Parameter = CurrentTaskContext
-	call, @SaveContext ; Capure interrupted context, with anything extra cleaned up below
-	
-	pop, rbx ; save pre-`cli` eflags
-	mov, {rdi + AMD64Context.Flags} As i64*, rbx
-
-	pop, rbx ; grab return address, store into context
-	mov, {rdi} As i64*, rbx        ; Context.RIP = rax
-	mov, {rdi + 0x20} As i64*, rsp ; Fix RSP, original capture is off by 8 because of our
-	;  return address
-	
-	jmp, @_SchedulerBlock
+define void SchedulerYield() {
+	if (ENTER_SCHEDULER()) {
+		Scheduler->YieldCurrent()
+	}
 }
 
-define void _SchedulerWait(i32 TimeoutMS) {
-	Scheduler->WaitCurrent(TimeoutMS)
+define void SchedulerPause() {
+	if (ENTER_SCHEDULER()) {
+		Scheduler->PauseCurrent()
+	}
 }
-define i8 SchedulerWait(i32 TimeoutMS) asm {
-	emit, 0x48
-	emit, 0x9C ; PUSHFQ
 
-	cli
+define void SchedulerSleep(i64 DurationMS) {
+	if (ENTER_SCHEDULER()) {
+		Scheduler->SleepCurrent(DurationMS)
+	}
+}
 
-	push, rdi ; Save timeout
+define i8 InterruptGuard() {
+	i8 Guard := InterrupsAreEnabled()
+	DisableInterrupts()
+	return Guard
+}
+define void InterruptRestore(i8 Guard) {
+	if (Guard) {
+		EnableInterrupts()
+	}
+}
+
+define WaitQueue* SchedulerRegisterWaitQueue(i8* Name) {
+	i8 Guard := InterruptGuard()
+	WaitQueue* Result := Scheduler->RegisterWaitQueue(Name)
+	InterruptRestore(Guard)
+
+	return Result
+}
+define void SchedulerUnregisterWaitQueue(WaitQueue* Queue) {
+	i8 Guard := InterruptGuard()
+	Scheduler->UnregisterWaitQueue(Queue)
+	InterruptRestore(Guard)
+}
+
+define WaitResult SchedulerWait(WaitQueue* Queue, i64 Timeout) {
+	; NOTE:
+	;  RAX is used by the ENTER_SCHEDULER() trick to return twice,
+	;   so we can't reuse it to return the WaitResult. Instead, we just
+	;    use RBX. It's probably free anyways.
+
+	if (ENTER_SCHEDULER()) {
+		Scheduler->WaitCurrent(Queue, Timeout)
+	}
 	
-	call, @GetCurrentTaskContext
-	mov, rdi, rax      ; Parameter = CurrentTaskContext
-	call, @SaveContext ; Capure interrupted context, with anything extra cleaned up below
-	
-	mov, rax, rdi
-
-	pop, rdi ; Restore timeout
-
-	pop, rbx ; save pre-`cli` eflags
-	mov, {rax + AMD64Context.Flags} As i64*, rbx
-
-	pop, rbx ; grab return address, store into context
-	mov, {rax + AMD64Context.RIP} As i64*, rbx        ; Context.RIP = rax
-	mov, {rax + AMD64Context.RSP} As i64*, rsp ; Fix RSP, original capture is off by 16 because of our
-	;  return address and timeout
-	
-	jmp, @_SchedulerWait
+	return CurrentTask~>Context->RBX As WaitResult
 }
 
-define void _SchedulerEnd() {
-	Scheduler->EndCurrent()
-}
-define void SchedulerEnd() asm {
-	cli
-
-	call, @_SchedulerEnd
-}
-define void SchedulerRestart() {
-	; Called after non-task code 
-	
-	Scheduler->RunCurrent()
+define void SchedulerWakeOne(WaitQueue* Queue) {
+	i8 Guard := InterruptGuard()
+	Scheduler->WakeSingle(Queue)
+	InterruptRestore(Guard)
 }
 
+define void SchedulerWakeAll(WaitQueue* Queue) {
+	i8 Guard := InterruptGuard()
+	Scheduler->WakeAll(Queue)
+	InterruptRestore(Guard)
+}
+
+define void SchedulerKill() {
+	if (ENTER_SCHEDULER()) {
+		Scheduler->KillCurrent()
+	}
+}
+
+define void SchedulerResume() {
+	; Called with interrupts disabled, resumes current task after
+	;  interruption
+
+	Scheduler->ResumeCurrent()
+}
 
 define void DUMP_TASKS() {
 	Info("=======================================\n")
 	Info("Task Dump\n\n")
 
-	Info("Current Task: %x (%s)\n", CurrentTask, CurrentTask->Name)
+	Info("Current Task: %x (%s) prio %i\n", CurrentTask, CurrentTask->Name, CurrentTask->Priority)
 
-	Info("\nNeeds To Run:\n")
+	for (i32 Priority := 0, Priority < 5, Priority += 1) {
+		List* PriorityList := Scheduler->PriorityLevels[Priority]
+
+		Info("Priority %i:\n", Priority)
+
+		ListNode* Node := null
+
+		while (PriorityList->Next(&Node)) {
+			Task* Current := PriorityList->Self(Node)
+
+			Info("    %x (%s), %i ticks allocated, %i total used\n", Current, Current->Name, Current->TimeSlicesRemaining, Current->TimeSlicesUsed)
+		}
+	}
+
+	Info("Paused:\n")
 
 	ListNode* Node := null
 
-	while (Scheduler->NeedsToRun->Next(&Node)) {
-		Task* Current := Scheduler->NeedsToRun->Self(Node)
+	while (Scheduler->Paused->Next(&Node)) {
+		Task* Current := Scheduler->Paused->Self(Node)
 
-		Info("  %x (%s) - %s\n", Current, Current->Name, nameof:(Current->State As TaskState))
+		Info("    %x (%s)\n", Current, Current->Name)
 	}
+
+	Info("Sleeping: (currently %i)\n", GetUptimeMS())
 
 	ListNode* Node := null
 
-	Info("\nHas Ran:\n")
+	while (Scheduler->Sleeping->Next(&Node)) {
+		Task* Current := Scheduler->Sleeping->Self(Node)
 
-	while (Scheduler->HasRan->Next(&Node)) {
-		Task* Current := Scheduler->HasRan->Self(Node)
-
-		Info("  %x (%s) - %s\n", Current, Current->Name, nameof:(Current->State As TaskState))
+		Info("    %x (%s), alarm %i\n", Current, Current->Name, Current->Alarm)
 	}
+}
 
+define void DUMP_WAIT_QUEUES() {
+	Info("=======================================\n")
+	Info("Wait Queue Dump\n\n")
+
+	ListNode* Node := null
+
+	while (Scheduler->WaitQueues->Next(&Node)) {
+		WaitQueue* Current := Scheduler->WaitQueues->Self(Node)
+
+		Info("Wait Queue %x (%s):\n", Current, Current->Name)
+
+		ListNode* TaskNode := null
+
+		while (Current->Tasks->Next(&TaskNode)) {
+			Task* CurrentTask := Current->Tasks->Self(TaskNode)
+
+			Info("    %x (%s), alarm %i\n", CurrentTask, CurrentTask->Name, CurrentTask->Alarm)
+		}
+	}
+}
+
+define void DEBUG_SCHEDULER_ON() {
+	DEBUG_SCHEDULER := true
+}
+define void DEBUG_SCHEDULER_OFF() {
+	DEBUG_SCHEDULER := false
 }
 
 i8 SchedulerStarted := false
+
+define void SchedulerTick() {
+	; Call in interrupt context from timer interrupt handler
+
+	if (SchedulerStarted) {
+		Scheduler->Tick()
+	}
+}
 
 declare void DO_NOT_OPTIMIZE_AWAY(void*)
 
 define void StartScheduler() {
 	DO_NOT_OPTIMIZE_AWAY(&DUMP_TASKS)
+	DO_NOT_OPTIMIZE_AWAY(&DUMP_WAIT_QUEUES)
+	DO_NOT_OPTIMIZE_AWAY(&DEBUG_SCHEDULER_ON)
+	DO_NOT_OPTIMIZE_AWAY(&DEBUG_SCHEDULER_OFF)
 
 	DisableInterrupts()
 	
@@ -367,6 +678,4 @@ define void StartScheduler() {
 define i8 IsSchedulerActive() {
 	return InterrupsAreEnabled() && SchedulerStarted
 }
-
-#Require "./src/kernel/multitasking/Jobs.rlx"
 

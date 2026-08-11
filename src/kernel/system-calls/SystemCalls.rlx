@@ -44,7 +44,7 @@ define void HandleSystemCall(AMD64Context* Context) {
 }
 
 define void ExitSystemCall() {
-	Scheduler->RunNext()
+	SchedulerResume()
 }
 
 define void EnterSystemCall(AMD64Context* UserContext) {

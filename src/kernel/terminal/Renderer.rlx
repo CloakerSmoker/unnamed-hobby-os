@@ -194,13 +194,10 @@ class TerminalRendererHandle implements IFileHandle, derives INew {
 		}
 	}
 	
-	Timer* CursorTimer
-	
 	define void DoCursorTimerTick() {
 		loop {
 			this->ToggleCursor()
-			
-			SchedulerBlock()
+			SleepMS(500)
 		}
 	}
 	
@@ -209,7 +206,7 @@ class TerminalRendererHandle implements IFileHandle, derives INew {
 		
 		CursorTimerTask~>Context->RDI := this As i64
 		
-		this->CursorTimer := SetTimer(500, CursorTimerTask)
+		Scheduler->SetRunnable(CursorTimerTask)
 	}
 
 	define i32 GetTabLength(i32 AtIndex) {

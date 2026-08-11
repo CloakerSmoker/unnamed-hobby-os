@@ -6,38 +6,46 @@ PointerArray* ALL_LOCKS := new PointerArray()
 i32 TIMEOUT_INSTANT := -1
 i32 TIMEOUT_FOREVER := 0
 
+i32 WAIT_PROBE := -1
+i32 WAIT_FOREVER := 0
+
 namespace Synchronization {
-    class TaskList derives INew {
+    /*class TaskList derives INew {
         i8* Name
-        PointerArray* Tasks
+
+        ListNode Link
+        List* Tasks
 
         define void New(i8* Name) {
             this->Name := Name
-            this->Tasks := PointerArray:New()
+            this->Tasks := new List(&Task.Link)
 
-            ALL_TASK_LISTS->Push(this)
+            ;Scheduler->RegisterTaskList(this)
         }
 
         define void Free() {
-            ALL_TASK_LISTS->RemoveValue(this)
+            ;Scheduler->UnregisterTaskList(this)
+
             this->Tasks->Free()
             this->Delete()
         }
 
-        define i8 Wait(i32 TimeoutMS) {
-            if (TimeoutMS < 0) {
+        define i8 WaitCurrent(i32 TimeoutMS) {
+            i8 Result := SchedulerWait(this, TimeoutMS)
+
+            if (TimeoutMS = WAIT_PROBE) {
                 return AWOKEN_BY_ALARM
             }
 
             this->Tasks->Add(CurrentTask)
 
-            if (TimeoutMS = 0) {
-                SchedulerBlock()
+            if (TimeoutMS = WAIT_FOREVER) {
+                SchedulerWait(this, WAIT_FOREVER)
                 
                 return AWOKEN_BY_OTHER
             }
             else {
-                i8 Result := SchedulerWait(TimeoutMS)
+                i8 Result := SchedulerWait(this, TimeoutMS)
 
                 if (Result = AWOKEN_BY_ALARM) {
                     this->Tasks->RemoveValue(CurrentTask)
@@ -46,8 +54,8 @@ namespace Synchronization {
                 return Result
             }
         }
-        define i8 Wait() {
-            return this->Wait(0)
+        define i8 WaitCurrent() {
+            return this->WaitCurrent(WAIT_FOREVER)
         }
 
         define void WakeOne() {
@@ -56,7 +64,8 @@ namespace Synchronization {
             }
 
             Task* First := this->Tasks->Remove(0)
-            First->State := TASK_CAN_RUN
+            
+            Scheduler->SetRunnable(First)
         }
 
         define void WakeAll() {
@@ -66,17 +75,17 @@ namespace Synchronization {
                 this->WakeOne()
             }
         }
-    }
+    }*/
 
     class Semaphore derives INew {
         i8* Name
 
-        TaskList* Waiters
+        WaitQueue* Waiters
         i32 Value
 
         define void New(i8* Name, i32 InitialValue) {
             this->Name := Name
-            this->Waiters := new TaskList(Name)
+            this->Waiters := SchedulerRegisterWaitQueue(Name)
 
             this->Value := InitialValue
 
@@ -85,7 +94,8 @@ namespace Synchronization {
 
         define void Free() {
             ALL_SEMAPHORES->RemoveValue(this)
-            this->Waiters->Free()
+            
+            SchedulerUnregisterWaitQueue(this->Waiters)
             this->Delete()
         }
 
@@ -93,9 +103,9 @@ namespace Synchronization {
             DisableInterrupts()
 
             while (this->Value < Value) {
-                i8 Result := this->Waiters->Wait(TimeoutMS)
+                WaitResult Result := SchedulerWait(this->Waiters, TimeoutMS)
 
-                if (Result = AWOKEN_BY_ALARM) {
+                if (Result = WaitResult::Timeout) {
                     EnableInterrupts()
                     return false
                 }
@@ -113,31 +123,26 @@ namespace Synchronization {
         }
 
         define void Wait() {
-            this->Wait(0)
+            this->Wait(WAIT_FOREVER)
         }
 
         define void Decrement(i32 Value, i32 TimeoutMS) {
             this->Wait(Value, TimeoutMS)
         }
         define void Decrement(i32 Value) {
-            this->Wait(Value, 0)
+            this->Wait(Value, WAIT_FOREVER)
         }
         define void Decrement() {
-            this->Wait(1, 0)
+            this->Wait(1, WAIT_FOREVER)
         }
 
         define void Signal(i32 Value) {
-            i8 ShouldEnableInterrupts := InterrupsAreEnabled()
-
-            DisableInterrupts()
+            i8 Guard := InterruptGuard()
 
             this->Value += Value
+            SchedulerWakeOne(this->Waiters)
 
-            this->Waiters->WakeOne()
-
-            if (ShouldEnableInterrupts) {
-                EnableInterrupts()
-            }
+            InterruptRestore(Guard)
         }
         define void Signal() {
             this->Signal(1)
@@ -154,14 +159,14 @@ namespace Synchronization {
     class Lock derives INew {
         i8* Name
 
-        TaskList* Waiters
+        WaitQueue* Waiters
         i8 Locked
 
         Task* Owner
 
         define void New(i8* Name) {
             this->Name := Name
-            this->Waiters := new TaskList(Name)
+            this->Waiters := SchedulerRegisterWaitQueue(Name)
 
             this->Locked := 0
 
@@ -170,7 +175,8 @@ namespace Synchronization {
 
         define void Free() {
             ALL_LOCKS->RemoveValue(this)
-            this->Waiters->Free()
+            
+            SchedulerUnregisterWaitQueue(this->Waiters)
             this->Delete()
         }
 
@@ -178,9 +184,9 @@ namespace Synchronization {
             DisableInterrupts()
 
             while (this->Locked) {
-                i8 Result := this->Waiters->Wait(TimeoutMS)
+                WaitResult Result := SchedulerWait(this->Waiters, TimeoutMS)
                 
-                if (Result = AWOKEN_BY_ALARM) {
+                if (Result = WaitResult::Timeout) {
                     EnableInterrupts()
                     return false
                 }
@@ -220,25 +226,9 @@ namespace Synchronization {
             this->Locked := false
             this->Owner := null
 
-            this->Waiters->WakeOne()
+            SchedulerWakeOne(this->Waiters)
 
             EnableInterrupts()
-        }
-    }
-}
-
-define void DUMP_TASK_LISTS() {
-    Info("TASK LISTS:\n")
-
-    for (i32 Index := 0, Index < ALL_TASK_LISTS->Count(), Index++) {
-        Synchronization::TaskList* TL := ALL_TASK_LISTS->Get(Index)
-
-        Info("  %s:\n", TL->Name)
-
-        for (i32 TaskIndex := 0, TaskIndex < TL->Tasks->Count(), TaskIndex++) {
-            Task* T := TL->Tasks->Get(TaskIndex)
-
-            Info("    %s\n", T->Name)
         }
     }
 }
@@ -274,6 +264,5 @@ define void DUMP_LOCKS() {
 }
 
 ; lol
-void DO_NOT_OPTIMIZE_AWAY_DUMP_TASK_LISTS := DO_NOT_OPTIMIZE_AWAY(&DUMP_TASK_LISTS)
 void DO_NOT_OPTIMIZE_AWAY_DUMP_SEMAPHORES := DO_NOT_OPTIMIZE_AWAY(&DUMP_SEMAPHORES)
 void DO_NOT_OPTIMIZE_AWAY_DUMP_LOCKS := DO_NOT_OPTIMIZE_AWAY(&DUMP_LOCKS)

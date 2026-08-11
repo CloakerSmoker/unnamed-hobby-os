@@ -6,25 +6,19 @@ define Task* GetCurrentTaskContext() {
 	return CurrentTask ; For inline assembly to call
 }
 
-i8 TASK_CAN_RUN := 0
-i8 TASK_RUNNING := 1
-i8 TASK_BLOCKED := 2
-i8 TASK_PAUSED  := 3
-i8 TASK_KILLED  := 4
-i8 TASK_WAITING := 5
-
 enum TaskState As i8 {
-	CAN_RUN := 0,
-	RUNNING := 1,
-	BLOCKED := 2,
-	PAUSED  := 3,
-	KILLED  := 4,
-	WAITING := 5
+	Running,
+	Runnable,
+	Paused,
+	Sleeping,
+	Waiting,
+	Blocked,
+	Killed
 }
 
 i32 TASK_ON_HEAP := -1
 
-declare void SchedulerEnd()
+declare void SchedulerKill()
 
 #Require "./src/utility/List.rlx"
 
@@ -41,7 +35,15 @@ struct Task {
 	void* InitialRIP
 	void* InitialRSP
 
-	i64 Alarm ; For TASK_WAITING, is the deadline to wake the task
+	; For TaskState::Waiting, the wait queue which the task is a member of
+	WaitQueue* Queue
+
+	; For TaskState::Waiting, the timeout for the wait, in ticks.
+	; For TaskState::Sleeping, the time at which the task should wake up, in ticks.
+	i64 Alarm
+
+	i64 TimeSlicesRemaining
+	i64 TimeSlicesUsed
 	
 	i32 Priority
 	i32 AllocationInfo 
@@ -53,7 +55,7 @@ struct Task {
 		i8 IsProcess
 	}
 	
-	i8 State
+	TaskState State
 	
 	define void Zero() {
 		FastSetMemory8(this, 0, #Task)
@@ -81,7 +83,7 @@ struct Task {
 		Context->RSP   := (this + (PAGE_SIZE * TotalPages)) As void*
 		Context->Flags := X64_RFLAGS_IF
 
-		Context->Push(&SchedulerEnd As i64)
+		Context->Push(&SchedulerKill As i64)
 		
 		return this
 	}
@@ -106,34 +108,6 @@ struct Task {
 		else {
 			RestoreFullContext(this~>Context)
 		}
-	}
-
-	define void Yield() {
-		this->State := TASK_CAN_RUN
-	}
-	define void Pause() {
-		this->State := TASK_PAUSED
-	}
-	define void Block() {
-		this->State := TASK_BLOCKED
-	}
-	define void Unblock() {
-		this->State := TASK_CAN_RUN
-	}
-	define void End() {
-		this->State := TASK_KILLED
-		
-		Task* Waiter := this->AwaitedBy
-		
-		while (Waiter) {
-			Waiter->State := TASK_CAN_RUN
-			
-			Waiter := Waiter->AwaitedBy
-		}
-	}
-	
-	define i8 CouldRun() {
-		return this->State <= TASK_RUNNING
 	}
 
 	define void Dump() {

@@ -1,12 +1,16 @@
 #Require "./src/kernel/file-system/FileSystem.rlx"
 
-class PCSpeakerHandle implements IFileHandle, derives INew {
-    Timer* StopTimer
+#Require "./src/kernel/multitasking/Synchronization.rlx"
 
-    define void DoStopTimerTick() {
+class PCSpeakerHandle implements IFileHandle, derives INew {
+    Synchronization::Semaphore* StopTimerSemaphore
+    i32 StopDurationMS
+
+    define void StopTimerThread() {
         loop {
+            this->StopTimerSemaphore->Wait()
+            SleepMS(this->StopDurationMS)
             StopSound()
-            SchedulerBlock()
         }
     }
 
@@ -18,7 +22,9 @@ class PCSpeakerHandle implements IFileHandle, derives INew {
             i32 Duration := (Parameter >> 16) & 0xFFFF
 
             PlayRawSound(Counter)
-            this->StopTimer->SetOneShot(Duration)
+            
+            this->StopDurationMS := Duration
+            this->StopTimerSemaphore->Signal()
         }
         else if (Function = LINUX_CONSOLE_SOUND) {
             i32 Frequency := Parameter
@@ -38,11 +44,11 @@ class PCSpeakerHandle implements IFileHandle, derives INew {
     }
 
     define void New() {
-        Task* StopTimerTask := Scheduler->AddLightTask(&self.DoStopTimerTick, "PC Speaker Stop Timer")
+        Task* StopTimerTask := Scheduler->AddLightTask(&self.StopTimerThread, "PC Speaker Stop Timer")
 		
 		StopTimerTask~>Context->RDI := this As i64
 		
-		this->StopTimer := AllocateTimer(StopTimerTask)
+		this->StopTimerSemaphore := new Synchronization::Semaphore("PC Speaker Stop Timer Semaphore", 0)
     }
 }
 
