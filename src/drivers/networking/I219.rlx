@@ -1,0 +1,853 @@
+
+PointerArray* ALL_I219_CONTROLLERS := new PointerArray()
+
+namespace I219 {
+
+    enum Register As i32 {
+        CTRL     := 0x0000
+        STATUS   := 0x0008
+        EEC      := 0x0010
+        EEPROM   := 0x0014
+        CTRL_EXT := 0x0018
+
+        FCAL     := 0x0028
+        FCAH     := 0x002C
+        FCT      := 0x0030
+        FCTTV    := 0x0034
+
+        ICR     := 0x00C0
+        ITR     := 0x00C4
+        ICS     := 0x00C8
+        IMS     := 0x00D0
+        IMC     := 0x00D8
+
+        RCTL    := 0x0100
+        TCTL    := 0x0400
+
+        IOSFPC := 0x0F28 ; god only knows
+
+        RDBAL  := 0x2800
+        RDBAH  := 0x2804
+        RDLEN   := 0x2808
+        RDH     := 0x2810
+        RDT     := 0x2818
+        RDTR    := 0x2820
+
+        TDBAL   := 0x3800
+        TDBAH   := 0x3804
+        TDLEN   := 0x3808
+        TDH     := 0x3810
+        TDT     := 0x3818
+
+        TXDCTL0  := 0x3828
+        TXDCTL1  := 0x3928
+
+        TDFH := 0x3410
+        TDFT := 0x3418
+        TDFHS := 0x3420
+        TDFTS := 0x3428
+        TDFPC := 0x3430
+
+        TARC0    := 0x3840
+        TARC1    := 0x3940
+
+        RAL := 0x5400
+        RAH := 0x5404
+
+        MTA := 0x5200
+    }
+
+    enum SPEED As i32 {
+        TEN_MBPS := 0
+        ONE_HUNDRED_MBPS := 1
+        ONE_GBPS := 2
+    }
+
+    bits CTRL_FIELDS As i32 {
+        [0] FD
+        [3] LRST
+        [5] ASDE
+        [6] SLU
+        SPEED [8:9] SPEED
+        [11] FRCSPD
+        [12] FRCDPLX
+        [18] SDP0_DATA
+        [18] DUD_STATE
+        [19] SDP1_DATA
+        [20] ADVD3WUC
+        [22] SDP0_IODIR
+        [23] SDP1_IODIR
+        [26] RST
+        [27] RFCE
+        [28] TFCE
+        [29] VME
+        [31] PHY_RST
+    }
+
+    bits STATUS_FIELDS As i32 {
+        [0] FD
+        [1] LU
+        [2:3] LANID
+        [4] TXOFF
+        [5] TBIMODE
+        SPEED [6:7] SPEED
+        SPEED [8:9] ASDV
+        [10] PHYRA
+    }
+
+    bits EEC_FIELDS As i32 {
+        [0] EE_SK
+        [1] EE_CS
+        [2] EE_DI
+        [3] EE_DO
+        [4:5] FWE
+        [6] EE_REQ
+        [7] EE_GNT
+        [8] EE_PRES
+        [9] AUTO_RD
+        [10] EE_ADDR_SIZE
+        [11:14] EE_SIZE
+        [15:16] NVADDS
+        [20] AUPDEN
+        [23:24] NVMTYPE
+    }
+
+    bits EERD_FIELDS As i32 {
+        [0] START
+        [1] DONE
+        [2:15] ADDR
+        [16:31] DATA
+    }
+
+    bits ICR_FIELDS As i32 {
+        [0] TXDW
+        [1] TXQE
+        [2] LSC
+        [3] RXSEQ
+        [4] RXDMT0
+        [6] RXO
+        [7] RXT0
+        [9] MDAC
+        [10] RXCFG
+        [13] GPI_SDP2
+        [14] GPI_SDP3
+        [15] TXD_LOW
+        [16] SRPD
+        [17] ACK
+        [20] RX_DESC_FIFO_PAR0
+        [21] TX_DESC_FIFO_PAR0
+        [22] PCIE_MASTER_DATA_FIFO_PAR
+        [23] PB_PAR
+        [24] RX_DESC_FIFO_PAR1
+        [25] TX_DESC_FIFO_PAR1
+        [31] INT_ASSERTED
+    }
+
+    bits IMS_FIELDS As i32 {
+        [0] TXDW
+        [1] TXQE
+        [2] LSC
+        [3] RXSEQ
+        [4] RXDMT0
+        [6] RXO
+        [7] RXT0
+        [9] MDAC
+        [10] RXCFG
+        [13] GPI_SDP2
+        [14] GPI_SDP3
+        [15] TXD_LOW
+        [16] SRPD
+        [17] ACK
+        [20] RX_DESC_FIFO_PAR0
+        [21] TX_DESC_FIFO_PAR0
+        [22] PCIE_MASTER_DATA_FIFO_PAR
+        [23] PB_PAR
+        [24] RX_DESC_FIFO_PAR1
+        [25] TX_DESC_FIFO_PAR1
+    }
+
+    bits IMC_FIELDS As i32 {
+        [0] TXDW
+        [1] TXQE
+        [2] LSC
+        [3] RXSEQ
+        [4] RXDMT0
+        [6] RXO
+        [7] RXT0
+        [9] MDAC
+        [10] RXCFG
+        [13] GPI0
+        [14] GPI1
+        [15] TXD_LOW
+        [16] SRPD
+        [17] ACK
+        [20] RX_DESC_FIFO_PAR0
+        [21] TX_DESC_FIFO_PAR0
+        [22] HOST_ARB_PAR
+        [23] PB_PAR
+        [24] RX_DESC_FIFO_PAR1
+        [25] TX_DESC_FIFO_PAR1
+    }
+
+    enum RCTL_BSIZE As i32 {
+        2048 := 0
+        1024 := 1
+        512 := 2
+        256 := 3
+    }
+
+    bits RCTL_FIELDS As i32 {
+        [1] EN
+        [2] SBP
+        [3] UPE
+        [4] MPE
+        [5] LPE
+        [6:7] LBM
+        [8:9] RDMTS
+        [10:11] DTYP
+        [12:13] MO
+        [15] BAM
+        RCTL_BSIZE [16:17] BSIZE
+        [18] VFE
+        [19] CFIEN
+        [20] CFI
+        [22] DPF
+        [23] PMCF
+        [25] BSEX
+        [26] SECRC
+        [27:30] FLXBUF
+    }
+
+    struct ReceiveDescriptor {
+        i64 Address
+        i16 Length
+        i16 Checksum
+
+        union {
+            bits As i8 {
+                [0] DD
+                [1] EOP
+                [2] IXSM
+                [3] VP
+                [4] UDPCS
+                [5] TCPPS
+                [6] IPCS
+                [7] PIF
+            }
+
+            i8 Status
+        }
+
+        bits As i8 {
+            [0] CE
+            [1] SE
+            [2] SEQ
+            [5] TCPE
+            [6] IPE
+            [7] RXE
+        }
+
+        i16 Special
+    }
+
+    bits RDTR_FIELDS As i32 {
+        [0:15] Delay
+        [31] FPD
+    }
+
+    bits TCTL_FIELDS As i32 {
+        [1] EN
+        [3] PSP
+        [4:11] CT
+        [12:21] COLD
+        [22] SWXOFF
+        [24] RTLC
+        [25] UNORTX
+        [26:27] TXCSCMT
+        [28] MULR
+    }
+
+    struct TransmitDescriptor {
+        i64 Address
+        i16 Length
+        i8 ChecksumOffset
+        
+        bits As i8 {
+            [0] EOP
+            [1] IFCS
+            [2] IC
+            [3] RS
+            [5] DEXT
+            [6] VLE
+            [7] IDE
+        }
+
+        union {
+            bits As i8 {
+                [0] DD
+                [1] EC
+                [2] LC
+            }
+
+            i8 Status
+        }
+
+        i8 ChecksumStart
+        i16 Special
+    }
+
+    class Controller derives INew {
+        PCIeDevice* Device
+        PCIeAddress* Address
+
+        i8* Name
+
+        union {
+            MACAddress MAC
+            i8[6] MAC8
+            i16[3] MAC16
+            i32[2] MAC32
+        }
+
+        i32 DescriptorCount
+
+        i32 ReceiveIndex
+
+        TransmitDescriptor* TransmitDescriptors
+        void* TransmitBuffers
+
+        ReceiveDescriptor* ReceiveDescriptors
+        void* ReceiveBuffers
+
+        define void Log(i8* Format, ... Args) {
+            i8[200] Buffer
+
+            i32 Length := RawFormatString(Buffer, 300, Format, Args)
+            Buffer[Length] := 0
+
+            Print("%s: %s\n", this->Name, Buffer)
+        }
+
+        void* MMIO
+
+        define void Write(Register R, i32 Value) {
+            *((this->MMIO + (R As i32)) As i32*) := Value
+        }
+        define i32 Read(Register R) {
+            return *((this->MMIO + (R As i32)) As i32*)
+        }
+
+        define void LogTx() {
+            i32 TCTL := this->Read(Register::TCTL)
+            i32 TXDCTL0 := this->Read(Register::TXDCTL0)
+            i32 TARC0 := this->Read(Register::TARC0)
+            i32 TARC1 := this->Read(Register::TARC1)
+            i32 TDLEN := this->Read(Register::TDLEN)
+            i32 TDBAL := this->Read(Register::TDBAL)
+            i32 TDBAH := this->Read(Register::TDBAH)
+            i32 TDH := this->Read(Register::TDH)
+            i32 TDT := this->Read(Register::TDT)
+            i32 TDFH := this->Read(Register::TDFH)
+            i32 TDFT := this->Read(Register::TDFT)
+            i32 TDFHS := this->Read(Register::TDFHS)
+            i32 TDFTS := this->Read(Register::TDFTS)
+            i32 TDFPC := this->Read(Register::TDFPC)
+            i32 STATUS := this->Read(Register::STATUS)
+            i32 CTRL := this->Read(Register::CTRL)
+
+            this->Log("Tx State {")
+            this->Log("  TCTL: %x", TCTL)
+            this->Log("  TXDCTL0: %x", TXDCTL0)
+            this->Log("  TARC0: %x", TARC0)
+            this->Log("  TARC1: %x", TARC1)
+            ;this->Log("  TDLEN: %x", TDLEN)
+            ;this->Log("  TDBAL: %x", TDBAL)
+            ;this->Log("  TDBAH: %x", TDBAH)
+            this->Log("  TDH: %x", TDH)
+            this->Log("  TDT: %x", TDT)
+            this->Log("  TDFH: %x", TDFH)
+            this->Log("  TDFT: %x", TDFT)
+            this->Log("  TDFHS: %x", TDFHS)
+            this->Log("  TDFTS: %x", TDFTS)
+            this->Log("  TDFPC: %x", TDFPC)
+            ;this->Log("  STATUS: %x", STATUS)
+            ;this->Log("  CTRL: %x", CTRL)
+            this->Log("}")
+        }
+
+        define void Send(void* Packet, i32 Size) {
+            i32 Head := this->Read(Register::TDH)
+            i32 Tail := this->Read(Register::TDT)
+
+            i32 Next := (Tail + 1) % this->DescriptorCount
+
+            TransmitDescriptor* Descriptor := this->TransmitDescriptors[Tail]
+            void* Buffer := this->TransmitBuffers + (Tail * 2048)
+
+            MoveMemory(Buffer, Packet, Size)
+
+            Descriptor->Length := Size As i16
+
+            Descriptor->Status := 0
+
+            Descriptor->EOP := true
+            Descriptor->IFCS := true
+            Descriptor->RS := true
+
+            asm (rdi := Descriptor) {
+                ; clflush [rdi]
+                { 0x0F, 0xAE, 0x3F }
+                
+                ; mfence
+                { 0x0F, 0xAE, 0xF0 }
+            }
+
+            this->Write(Register::TDT, Next)
+
+            i32 TDT := this->Read(Register::TDT)
+
+            if (TDT != Next) {
+                this->Log("Transmit failed: TDT did not update (TDT = %i, Next = %i)", TDT, Next)
+                Panic("I219 transmit failed")
+            }
+        }
+
+        define void Send(NetworkPacket* Packet) {
+            this->Send(Packet->Buffer, Packet->Size)
+        }
+
+        NetworkInterface* Interface
+        NetworkProtocolPrototype* Prototype
+
+        Task* InterruptTask
+        Synchronization::Semaphore* Interrupt
+
+        define void InterruptThread() {
+            this->Log("Interrupt thread started")
+
+            loop {
+                i8 IsRealInterrupt := this->Interrupt->Wait(4096)
+
+                ;this->Log("Interrupt thread woke up, IsRealInterrupt: %i", IsRealInterrupt)
+
+                if (IsRealInterrupt) {
+                    ICR_FIELDS ICR := this->Read(Register::ICR) As ICR_FIELDS
+
+                    ;this->Log("ICR: %x", ICR As i32)
+
+                    i32 Tail := -1
+
+                    loop {
+                        ReceiveDescriptor* Next := this->ReceiveDescriptors[this->ReceiveIndex]
+
+                        if !(Next->DD) {
+                            break
+                        }
+
+                        i16 Length := Next->Length
+                        void* Buffer := this->ReceiveBuffers + (this->ReceiveIndex * 2048)
+
+                        ;this->Log("Received packet of length %i", Length)
+
+                        NetworkPacket* Packet := new NetworkPacket(Buffer, Length)
+                        this->Interface->OnReceive(Packet)
+                        Free(Packet)
+
+                        Next->DD := false
+
+                        Tail := this->ReceiveIndex
+                        this->ReceiveIndex := (this->ReceiveIndex + 1) % this->DescriptorCount
+                    }
+
+                    if (Tail != -1) {
+                        this->Write(Register::RDT, Tail)
+                    }
+                }
+            }
+        }
+
+        static void OnInterrupt(AMD64Context* Context, i32 InterruptNumber) {
+            ;Print("I219 interrupt %i\n", InterruptNumber)
+
+            i32 Count := ALL_I219_CONTROLLERS->Count()
+
+            for (i32 Index := 0, Index < Count, Index++) {
+                Controller* NIC := ALL_I219_CONTROLLERS->At(Index) As Controller*
+
+                NIC->Interrupt->Signal()
+            }
+
+            LocalAPIC->EOI()
+        }
+
+        define void New(PCIeDevice* Device, PCIeAddress* Address) {
+            this->Device := Device
+            this->Address := Address
+
+            this->Name := FormatString("%pcie-address: I219", Address)
+
+            this->Prototype := Alloc(#NetworkProtocolPrototype)
+            this->Prototype->Ingest := &self.Send(NetworkPacket*)
+
+            this->Interface := new NetworkInterface(this->Name)
+            this->Interface->MAC := this~>MAC
+            this->Interface->SendProtocol := this->Interface->AddProtocol(
+                "MAC",
+                this->Prototype,
+                this
+            )
+
+            this->Interface->AttachWellKnownProtocols()
+
+            ALL_I219_CONTROLLERS->Push(this)
+        }
+
+        define void* AllocateDMA(i32 Size) {
+            i32 PageCount := SizeToPageCount(Size)
+
+            void* Virtual := KernelVirtualMemory->FindGap(PageCount)
+            i64 Physical := PhysicalMemory->Allocate(PageCount)
+
+            KernelVirtualMemory->SetRange(Virtual, Physical, PageCount, PAGE_PRESENT | PAGE_WRITE | PAGE_UNCACHED)
+
+            FastZeroMemory(Virtual, PageCount * PAGE_SIZE)
+
+            return Virtual
+        }
+
+        define i16 ReadEEPROM(i16 Address) {
+            EERD_FIELDS EERD := 0 As EERD_FIELDS
+
+            EERD.ADDR := Address
+            EERD.START := true
+
+            this->Write(Register::EEPROM, EERD As i32)
+
+            this->Log("EEPROM read %i: EERD: %x", Address, EERD As i32)
+
+            i64 Timeout := GetUptimeMS() + 1000
+
+            loop {
+                EERD := this->Read(Register::EEPROM) As EERD_FIELDS
+
+                this->Log("EEPROM read %i: EERD: %x", Address, EERD As i32)
+
+                if (EERD.DONE) {
+                    break
+                }
+
+                if (GetUptimeMS() > Timeout) {
+                    this->Log("EEPROM read timed out")
+                    Panic("I219 EEPROM read timed out")
+                }
+            }
+
+            return EERD.DATA
+        }
+
+
+        define void Reset() {
+            ; Disable interrupts
+            this->Write(Register::IMC, -1)
+
+            ; Acknowledge any pending interrupts
+            this->Read(Register::ICR)
+
+            ; (Hopefully) bring the link down
+            CTRL_FIELDS CTRL := 0 As CTRL_FIELDS
+            CTRL.LRST := true
+            this->Write(Register::CTRL, CTRL As i32)
+
+            SleepMS(50)
+
+            ; Issue a global reset
+            CTRL_FIELDS CTRL := 0 As CTRL_FIELDS
+            CTRL.RST := true
+            this->Write(Register::CTRL, CTRL As i32)
+
+            ; Disable interrupts (again)
+            this->Write(Register::IMC, -1)
+
+            ; Wait for the reset to complete
+            SleepMS(10)
+
+            this->Device->SetBusMaster(true)
+
+            i64 Timeout := GetUptimeMS() + 2000
+
+            loop {
+                CTRL := this->Read(Register::CTRL) As CTRL_FIELDS
+
+                if !(CTRL.RST) {
+                    break
+                }
+
+                if (GetUptimeMS() > Timeout) {
+                    this->Log("Reset timed out")
+                    Panic("I219 reset timed out")
+                }
+            }
+
+            ; Disable interrupts (again again)
+            this->Write(Register::IMC, -1)
+
+            ; Wait for EEPROM to be read (if present)
+
+            i64 Timeout := GetUptimeMS() + 2000
+
+            loop {
+                EEC_FIELDS EEC := this->Read(Register::EEC) As EEC_FIELDS
+
+                if (EEC.AUTO_RD) {
+                    break
+                }
+
+                if (GetUptimeMS() > Timeout) {
+                    this->Log("EEPROM failed to read")
+                    Panic("I219 EEPROM failed to read")
+                }
+            }
+        }
+
+        define void LogPCI() {
+            this->Log("COMMAND: %x", this->Device->Command)
+            this->Log("STATUS : %x", this->Device->Status)
+
+            this->Log("34 %B", this->Device->CapabilitiesPointer & 0xFF)
+            
+            PCICapability* Next := this->Device->FirstPCICapability()
+
+            loop {
+                i64 Offset := (Next As i64) - (this->Device As i64)
+
+                this->Log("%B %B %B", Offset & 0xFF, Next->ID, Next->Next & 0xFF)
+
+                if (Next->Next = 0) {
+                    break
+                }
+
+                Next := this->Device->NextPCICapability(Next)
+            }
+        }
+
+        define void Start(i32 ControllerNumber) {
+            this->Log("Starting I219 controller %i", ControllerNumber)
+
+            this->Device->SetBusMaster(true)
+
+            i64 BAR0 := this->Device->ReadBAR(0) & 0xFFFF_FFFF
+            i32 Size := this->Device->GetBARSize(0)
+
+            this->Log("BAR0: %x, Size: %x", BAR0, Size)
+
+            i32 PageCount := SizeToPageCount(Size)
+
+            this->MMIO := KernelVirtualMemory->FindGapAligned(PageCount * PAGE_SIZE)
+
+            KernelVirtualMemory->SetRange(this->MMIO, BAR0, PageCount, PAGE_PRESENT | PAGE_WRITE | PAGE_UNCACHED)
+
+            this->Log("MMIO mapped to %x", this->MMIO)
+
+            ; Mask all interrupts
+            this->Write(Register::IMC, -1)
+            this->Read(Register::ICR) ; Acknowledge any pending interrupts
+
+            ; Disable interrupt throttling with 0 x256ns delay
+            this->Write(Register::ITR, 0)
+
+            ; Disable transmit+receive
+
+            RCTL_FIELDS RCTL := this->Read(Register::RCTL) As RCTL_FIELDS
+            RCTL.EN := false
+            this->Write(Register::RCTL, RCTL As i32)
+
+            TCTL_FIELDS TCTL := this->Read(Register::TCTL) As TCTL_FIELDS
+            TCTL.EN := false
+            this->Write(Register::TCTL, TCTL As i32)
+
+            ;DEBUG_SCHEDULER_ON()
+
+            this->Interrupt := new Synchronization::Semaphore(this->Name, 0)
+
+            this->InterruptTask := Scheduler->AddLightTask(null, this->Name)
+            this->InterruptTask~>Context->CallMethod(this, &self.InterruptThread)
+            Scheduler->SetRunnable(this->InterruptTask)
+
+            if !(this->Device->CanUseMSI()) {
+                this->Log("Device does not support MSI, aborting")
+                Panic("I219 device does not support MSI")
+            }
+
+            DisableInterrupts()
+            this->Device->EnableMSI(21)
+
+            RegisterInterruptHandler(IRQToIDT(21), &self:OnInterrupt)
+            EnablePICLine(21, true)
+            EnableInterrupts()
+
+            ; Force a real down->up transition so a genuine LSC fires once IMS is armed below
+            this->Reset()
+
+            EEC_FIELDS EEC := this->Read(Register::EEC) As EEC_FIELDS
+
+            if (EEC.EE_PRES) {
+                this->Log("EEPROM present")
+
+                for (i32 Index := 0, Index < 3, Index++) {
+                    this->MAC16[Index] := this->ReadEEPROM(Index As i16)
+                }
+            }
+            else {
+                this->Log("EEPROM not present")
+
+                this->MAC32[0] := this->Read(Register::RAL)
+                this->MAC32[1] := this->Read(Register::RAH)
+            }
+
+            this->Log("MAC Address: %mac", this~>MAC)
+
+            for (i32 Index := 0, Index < 128, Index++) {
+                this->Write(((Register::MTA As i32) + (Index * 4)) As Register, 0)
+            }
+
+            this->DescriptorCount := 256
+
+            ; Set up receive descriptors
+
+            void* ReceiveDescriptorsBuffer := this->AllocateDMA(this->DescriptorCount * #ReceiveDescriptor)
+            void* ReceiveBuffers := this->AllocateDMA(this->DescriptorCount * 2048)
+
+            ReceiveDescriptor* ReceiveDescriptors := ReceiveDescriptorsBuffer As ReceiveDescriptor*
+
+            for (i32 Index := 0, Index < this->DescriptorCount, Index++) {
+                ReceiveDescriptor* Receive := ReceiveDescriptors[Index]
+
+                Receive->Address := VirtualToPhysical(ReceiveBuffers + (Index * 2048))
+            }
+
+            this->ReceiveDescriptors := ReceiveDescriptors
+            this->ReceiveBuffers := ReceiveBuffers
+
+            i64 ReceiveDescriptorsPhysical := VirtualToPhysical(ReceiveDescriptorsBuffer)
+
+            this->Write(Register::RDBAL, (ReceiveDescriptorsPhysical & 0xFFFF_FFFF) As i32)
+            this->Write(Register::RDBAH, ((ReceiveDescriptorsPhysical >> 32) & 0xFFFF_FFFF) As i32)
+            this->Write(Register::RDLEN, this->DescriptorCount * #ReceiveDescriptor)
+            this->Write(Register::RDH, 0)
+            this->Write(Register::RDT, this->DescriptorCount - 1)
+
+            this->Log("Receive descriptors set up, physical address: %x", ReceiveDescriptorsPhysical)
+
+            ; Set up transmit descriptors
+
+            void* TransmitDescriptorsBuffer := this->AllocateDMA(this->DescriptorCount * #TransmitDescriptor)
+            void* TransmitBuffers := this->AllocateDMA(this->DescriptorCount * 2048)
+
+            TransmitDescriptor* TransmitDescriptors := TransmitDescriptorsBuffer As TransmitDescriptor*
+
+            for (i32 Index := 0, Index < this->DescriptorCount, Index++) {
+                TransmitDescriptor* Transmit := TransmitDescriptors[Index]
+
+                Transmit->Address := VirtualToPhysical(TransmitBuffers + (Index * 2048))
+            }
+
+            this->TransmitDescriptors := TransmitDescriptors
+            this->TransmitBuffers := TransmitBuffers
+
+            i64 TransmitDescriptorsPhysical := VirtualToPhysical(TransmitDescriptorsBuffer)
+
+            this->Write(Register::TDBAL, (TransmitDescriptorsPhysical & 0xFFFF_FFFF) As i32)
+            this->Write(Register::TDBAH, ((TransmitDescriptorsPhysical >> 32) & 0xFFFF_FFFF) As i32)
+            this->Write(Register::TDLEN, this->DescriptorCount * #TransmitDescriptor)
+
+            ; copy linux and set shitloads of random bits in the registers to make it work
+
+            i32 CTRL_EXT := this->Read(Register::CTRL_EXT)
+            CTRL_EXT |= 1 << 22
+            this->Write(Register::CTRL_EXT, CTRL_EXT)
+
+            this->Write(Register::TXDCTL0, 0x0141011f)
+            this->Write(Register::TXDCTL1, 0x0141011f)
+
+            i32 RCTL_RDMTS_HEX := 0x00010000
+
+            i32 IOSFPC := this->Read(Register::IOSFPC)
+            IOSFPC |= RCTL_RDMTS_HEX
+            this->Write(Register::IOSFPC, IOSFPC)
+
+            i32 TARC0_CB_MULTIQ_3_REQ := 0x30000000
+            i32 TARC0_CB_MULTIQ_2_REQ := 0x20000000
+
+            i32 TARC0 := this->Read(Register::TARC0)
+            TARC0 &= ~TARC0_CB_MULTIQ_3_REQ
+            TARC0 |= TARC0_CB_MULTIQ_2_REQ
+            this->Write(Register::TARC0, TARC0)
+
+            this->Write(Register::TDH, 0)
+            this->Write(Register::TDT, 0)
+
+            this->Log("Transmit descriptors set up, physical address: %x", TransmitDescriptorsPhysical)
+
+            TCTL_FIELDS TCTL := this->Read(Register::TCTL) As TCTL_FIELDS
+            
+            TCTL.PSP := true
+            TCTL.CT := 0xF
+            TCTL.RTLC := true
+
+            this->Write(Register::TCTL, TCTL As i32)
+
+            ; Enable receiving
+
+            ; Clear the receive delay timer register for immediate interrupts
+            this->Write(Register::RDTR, 0)
+
+            RCTL_FIELDS RCTL := 0 As RCTL_FIELDS
+
+            RCTL.EN := true
+            RCTL.BAM := true
+            RCTL.BSIZE := RCTL_BSIZE::2048
+            RCTL.DPF := true
+
+            this->Write(Register::RCTL, RCTL As i32)
+
+            this->Log("Receive enabled")
+
+            ; Unmask the interrupts we do want
+            IMS_FIELDS IMS := 0 As IMS_FIELDS
+
+            IMS.LSC  := true
+            IMS.TXDW := true
+            IMS.RXT0 := true
+
+            this->Write(Register::IMS, IMS As i32)
+
+            CTRL_FIELDS CTRL := 0 As CTRL_FIELDS
+
+            CTRL.ASDE := true ; Allow the PHY to manage speed/duplex
+            CTRL.SLU := true ; Set link up
+
+            this->Write(Register::CTRL, CTRL As i32)
+
+            STATUS_FIELDS STATUS := this->Read(Register::STATUS) As STATUS_FIELDS
+
+            this->Log("STATUS: %x", STATUS As i32)
+
+            if (STATUS.LU) {
+                this->Log("Link is up, speed: %s", nameof:(STATUS.SPEED))
+
+                ; Enable transmitting
+
+                TCTL_FIELDS TCTL := this->Read(Register::TCTL) As TCTL_FIELDS
+
+                TCTL.EN := true
+
+                this->Write(Register::TCTL, TCTL As i32)
+
+                this->Log("Transmit enabled")
+            }
+            else {
+                this->Log("Link is down")
+            }
+        }
+    }
+}
