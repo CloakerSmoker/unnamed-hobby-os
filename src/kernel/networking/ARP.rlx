@@ -172,7 +172,7 @@ struct ARPLayer {
     }
 
     define void SendReply(MACAddress* TargetHardwareAddress, i32 TargetProtocolAddress) {
-        NetworkPacket* Packet := this->Enter(TargetHardwareAddress, ARP_OPCODE_REQUEST)
+        NetworkPacket* Packet := this->Enter(TargetHardwareAddress, ARP_OPCODE_REPLY)
         ARPBodyIPV4* Body := Packet->Get(PACKET_DATA_ARP_BODY)
 
         Body~>SenderHardwareAddress->Set(this->Interface->MAC)

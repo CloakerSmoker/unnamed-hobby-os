@@ -92,7 +92,7 @@ struct NetworkInterface {
         i32 Length := FormatString(Buffer, 200, "[%s] %s\n", this->Name, Format)
         Buffer[Length] := 0
 
-        RawInfo(Buffer, Args)
+        RawPrint(Buffer, Args)
     }
 
     define NetworkProtocol* AddProtocol(i8* Name, NetworkProtocolPrototype* Prototype, void* State) {
@@ -138,9 +138,6 @@ declare void AddNetworkRoute(i32, i64, NetworkInterface*)
 #Require "./src/kernel/networking/UDP.rlx"
 #Require "./src/kernel/networking/TCP.rlx"
 
-;#Require "./src/kernel/networking/DHCP.rlx"
-;#Require "./src/kernel/networking/DNS.rlx"
-
 struct WellKnownProtocols {
     EthernetLayer* Ethernet
     ARPLayer* ARP
@@ -151,8 +148,8 @@ struct WellKnownProtocols {
     UDPLayer* UDP
     TCPLayer* TCP
 
-    ;DHCPClient* DHCP
-    ;DNSLayer* DNS
+    DHCPClient* DHCP
+    DNSLayer* DNS
 
     static self* Attach(NetworkInterface* Interface) {
         self* this := Alloc(#self)
@@ -165,9 +162,6 @@ struct WellKnownProtocols {
 
         this->UDP := UDPLayer:New(Interface, this->IP->AsProtocol)
         this->TCP := TCPLayer:New(Interface, this->IP->AsProtocol)
-
-        ;this->DHCP := DHCPClient:New(Interface, this->UDP->AsProtocol)
-        ;this->DNS := DNSLayer:New(Interface)
 
         return this
     }
@@ -312,11 +306,49 @@ struct NetworkStack {
     ;    return UDPSocketHandle:New()
     ;}
 
-    define UDPError Bind(i32 Address, i16 Port, UDPSocket* Socket) {
-        NetworkRoute* Route := this->Lookup(Address)
-        UDPLayer* UDP := Route->Interface->WellKnownProtocols->UDP
+    define UDPError Bind(NetworkAddress* Address, UDPSocket* Socket) {
+        if (Address->Type = NetworkAddressType::Interface) {
+            i32 Count := this->Interfaces->Count()
 
-        return UDP->Bind(Port, Socket)
+            for (i32 Index := 0, Index < Count, Index++) {
+                NetworkInterface* Interface := this->Interfaces->At(Index)
+
+                if !(StringEquals(Address->InterfaceName, Interface->Name)) {
+                    continue
+                }
+
+                UDPLayer* UDP := Interface->WellKnownProtocols->UDP
+
+                Print("Binding to %s:%i\n", Interface->Name, Address->Port)
+
+                return UDP->Bind(Address->Port, Socket)
+            }
+
+            return UDPError::NoSuchInterface
+        }
+        else if (Address->Type = NetworkAddressType::IPv4) {
+            if (Address->IPv4 = 0) {
+                i32 Count := this->Interfaces->Count()
+
+                for (i32 Index := 0, Index < Count, Index++) {
+                    NetworkInterface* Interface := this->Interfaces->At(Index)
+
+                    if (Interface->IP != 0) {
+                        UDPLayer* UDP := Interface->WellKnownProtocols->UDP
+
+                        return UDP->Bind(Address->Port, Socket)
+                    }
+                }
+            }
+            else {
+                NetworkRoute* Route := this->Lookup(Address->IPv4)
+                UDPLayer* UDP := Route->Interface->WellKnownProtocols->UDP
+
+                return UDP->Bind(Address->Port, Socket)
+            }
+        }
+
+        return UDPError::NoSuchInterface
     }
 }
 
@@ -328,6 +360,9 @@ define void AddNetworkRoute(i32 Prefix, i64 Mask, NetworkInterface* Interface) {
 
 #Require "./src/kernel/networking/TCPSocketHandle.rlx"
 #Require "./src/kernel/networking/UDPSocketHandle.rlx"
+
+#Require "./src/kernel/networking/DHCP.rlx"
+#Require "./src/kernel/networking/DNS.rlx"
 
 #Require "./src/kernel/networking/Parse.rlx"
 

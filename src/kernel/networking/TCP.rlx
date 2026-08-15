@@ -1242,6 +1242,8 @@ struct TCPLayer {
 
         TCP->FlipEndianess()
 
+        Print("TCP(%ipv4:%net-port -> :%net-port) IN %i [%tcp-flags]\n", IPV4->Source, TCP->SourcePort, TCP->DestinationPort, Packet~>GetSize(PACKET_DATA_TCP_BODY), TCP->Flags)
+
         i64 ExistingID := this->ID(IPV4->Source, TCP->SourcePort, TCP->DestinationPort)
         NetworkProtocol* ExistingConnection := this->Sockets->GetPointer(ExistingID)
 

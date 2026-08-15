@@ -123,6 +123,11 @@ struct NetworkPacket {
     define void ClearMarkers() {
         this->MarkerCount := 0
     }
+    define void Clear() {
+        this->Offset := 0
+        this->Size := 0
+        this->ClearMarkers()
+    }
 
     define void* Mark(i32 ID, i32 Size) {
         void* Result := this->Buffer + this->Offset
@@ -307,19 +312,19 @@ define i32 PackIPV4(i32 A, i32 B, i32 C, i32 D) {
 }
 
 enum NetworkAddressType {
-    IPv4
+    IPv4,
+    Interface
 }
 
 struct NetworkAddress {
     NetworkAddressType Type
-
+    
     union {
         i32 IPv4
+        i8[64] InterfaceName
     }
 
-    union {
-        i16 Port
-    }
+    i16 Port
 }
 
 define void DoNetworkAddressPrint(PrintOutputAdapterPrototype* this, i8* Format, i32* FormatIndex, void* Parameters, i32 ParameterCount, i32* ParameterIndex) {
@@ -327,6 +332,9 @@ define void DoNetworkAddressPrint(PrintOutputAdapterPrototype* this, i8* Format,
 
     if (Address->Type = NetworkAddressType::IPv4) {
         this->Print("%ipv4:%net-port", Address->IPv4, Address->Port)
+    }
+    else if (Address->Type = NetworkAddressType::Interface) {
+        this->Print("%s:%net-port", Address->InterfaceName, Address->Port)
     }
     else {
         this->Print("<unknown net address type %x>", Address->Type)
@@ -337,7 +345,7 @@ define void DoNetworkAddressPrint(PrintOutputAdapterPrototype* this, i8* Format,
 
 PrintFormatPrototype NetworkAddressFormatPrototype {
 	Name: "net-addr",
-	Format: &DoMACAddressPrint
+	Format: &DoNetworkAddressPrint
 }
 
 i32 NETWORK_ADDRESS_FORMAT_PROTOTYPE_ID := AddPrintFormat(&NetworkAddressFormatPrototype)

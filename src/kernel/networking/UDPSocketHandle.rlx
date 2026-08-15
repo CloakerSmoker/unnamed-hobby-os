@@ -1,6 +1,6 @@
 
 class UDPSocketHandle implements IFileHandle, derives INew {
-    i8 HasLocalPort
+    i8 Bound
     UDPSocket* Socket
 
     define void New() {
@@ -8,11 +8,7 @@ class UDPSocketHandle implements IFileHandle, derives INew {
     }
 
     define i32 Bind(NetworkAddress* Address) {
-        if (Address->Type != NetworkAddressType::IPv4) {
-            Throw(LINUX_ERROR_OPNOTSUPP)
-        }
-
-        UDPError Error := Network->Bind(Address->IPv4, Address->Port, this->Socket)
+        UDPError Error := Network->Bind(Address, this->Socket)
 
         if (Error = UDPError::PortBusy) {
             Throw(LINUX_ERROR_ADDRINUSE)
@@ -20,6 +16,8 @@ class UDPSocketHandle implements IFileHandle, derives INew {
         else if (Error != UDPError::Ok) {
             Throw(LINUX_ERROR_INVAL)
         }
+
+        this->Bound := true
 
         return 0
     }
@@ -29,15 +27,23 @@ class UDPSocketHandle implements IFileHandle, derives INew {
     }
 
     define i32 SendTo(void* Buffer, i32 Size, NetworkAddress* Address) {
-        if !(this->HasLocalPort) {
-            Network->Bind(Address->IPv4, NextUDPConnectionPort++, this->Socket)
+        if !(this->Bound) {
+            NetworkAddress LocalAddress {
+                Type: NetworkAddressType::IPv4,
+                IPv4: 0,
+                Port: NextUDPConnectionPort++
+            }
 
-            this->HasLocalPort := true
+            this->Bind(&LocalAddress)
         }
 
         this->Socket->SendTo(Address, Buffer, Size)
 
         return Size
+    }
+
+    define i8 Wait(i32 Mode, i64 Timeout) {
+        return this->Socket->Wait(Mode, Timeout)
     }
 
     define i32 RecieveFrom(void* Buffer, i32 Size, NetworkAddress* Address) {

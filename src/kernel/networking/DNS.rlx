@@ -96,7 +96,7 @@ struct DNSResource {
 i32 DNS_PACKET_BUFFER_SIZE := 0x4000
 
 struct DNSClient {
-    UDPSocket* Socket
+    IFileHandle* Socket
     i32 ServerAddress
 
     union {
@@ -108,11 +108,18 @@ struct DNSClient {
     i32 Offset
     i16 RequestID
 
-    static self* New(NetworkInterface* Interface, i32 ServerAddress) {
+    static self* New(NetworkInterface* Interface, IFileHandle* Socket, i32 ServerAddress) {
         self* this := Alloc(#self)
 
-        this->Socket := UDPSocket:New(Interface)
-        this->Socket->Bind(DNS_PORT)
+        this->Socket := Socket
+
+        NetworkAddress Address {
+            Type: NetworkAddressType::IPv4,
+            IPv4: Interface->IP,
+            Port: DNS_PORT
+        }
+
+        this->Socket->Bind(&Address)
 
         this->ServerAddress := ServerAddress
 
@@ -183,7 +190,13 @@ struct DNSClient {
     define void SendRequest() {
         this->Header->FlipEndianess()
 
-        this->Socket->SendTo(this->ServerAddress, this->Buffer, this->Offset)
+        NetworkAddress Address {
+            Type: NetworkAddressType::IPv4,
+            IPv4: this->ServerAddress,
+            Port: DNS_PORT
+        }
+
+        this->Socket->SendTo(this->Buffer, this->Offset, &Address)
     }
 
     define void SendSingleQuestion(i8* Name, i16 Class, i16 Type) {
@@ -334,18 +347,27 @@ struct DNSClient {
         this->FirstAdditionalOffset := this->Offset
     }
 
-    define void WaitForResponse() {
-        loop {
-            this->ReceiveSize := this->Socket->ReceiveFrom(this->ServerAddress, this->Buffer, DNS_PACKET_BUFFER_SIZE)
-
-            this->Header->FlipEndianess()
-
-            if (this->Header->ID = this->RequestID) {
-                break
-            }
+    define void ReceiveResponse(i64 Timeout) {
+        if !(this->Socket->Wait(POLL_FOR_READ, Timeout)) {
+            return false
         }
 
-        this->ProcessResponse()
+        NetworkAddress Address {
+            Type: NetworkAddressType::IPv4,
+            IPv4: 0,
+            Port: 0
+        }
+
+        this->ReceiveSize := this->Socket->RecieveFrom(this->Buffer, DNS_PACKET_BUFFER_SIZE, &Address)
+
+        this->Header->FlipEndianess()
+
+        if (this->Header->ID = this->RequestID) {
+            this->ProcessResponse()
+            return true
+        }
+
+        return false
     }
 
     define DNSQuestion* QuestionAt(i32 TargetIndex, i32* OutNameOffset) {
@@ -571,7 +593,7 @@ struct DNSCache {
         return Name
     }
 
-    define DNSCacheEntry* Query(i16 Class, i16 Type, i8* Name) {
+    define DNSCacheEntry* Query(i16 Class, i16 Type, i8* Name, i64 Timeout) {
         i32 Now := EpochSeconds()
 
         i64 QuestionHash := this->Hash(Class, Type, Name)
@@ -591,7 +613,7 @@ struct DNSCache {
 
         if (CanonicalName) {
             if (Now <= CanonicalName->Deadline) {
-                return this->Query(Class, Type, CanonicalName->Data)
+                return this->Query(Class, Type, CanonicalName->Data, Timeout)
             }
             else {
                 this->Evict(CanonicalNameHash, CanonicalName)
@@ -599,7 +621,10 @@ struct DNSCache {
         }
 
         this->Client->SendSingleQuestion(Name, Class, Type)
-        this->Client->WaitForResponse()
+        
+        if !(this->Client->ReceiveResponse(Timeout)) {
+            return null
+        }
 
         i64 FirstAnswerHash := 0
         i8 GotCanonicalName := false
@@ -650,7 +675,7 @@ struct DNSCache {
             return this->GetCached(FirstAnswerHash)
         }
         else if (GotCanonicalName) {
-            return this->Query(Class, Type, Name)
+            return this->Query(Class, Type, Name, Timeout)
         }
         else {
             return null
@@ -685,12 +710,17 @@ struct DNSLayer {
     }
 
     define void Enable() {
-        this->Client := DNSClient:New(this->Interface, this->Interface->DNS)
+        this->Client := DNSClient:New(
+            this->Interface,
+            new UDPSocketHandle(),
+            this->Interface->DNS
+        )
+
         this->Cache := DNSCache:New(this->Client, 30, 7 * 60 * 60 * 24)
     }
 
-    define i32 Lookup(i8* Name) {
-        DNSCacheEntry* Entry := this->Cache->Query(DNS_CLASS_IN, DNS_TYPE_A, Name)
+    define i32 Lookup(i8* Name, i64 Timeout) {
+        DNSCacheEntry* Entry := this->Cache->Query(DNS_CLASS_IN, DNS_TYPE_A, Name, Timeout)
 
         if (Entry) {
             DNSResource* Answer := Entry~>Answer

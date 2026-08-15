@@ -153,40 +153,35 @@ struct DHCPOptions {
 i32 PACKET_DATA_DHCP_HEADER := RegisterPacketData("DHCP Header")
 i32 PACKET_DATA_DHCP_OPTIONS := RegisterPacketData("DHCP Options")
 
-declare NetworkProtocolPrototype* GetDHCPProtocolPrototype()
-
 struct DHCPClient {
     NetworkInterface* Interface
-    FileHandle* Socket
 
-    NetworkProtocol* AsProtocol
-
+    IFileHandle* Socket
     NetworkPacket* Packet
 
-	static self* New(NetworkInterface* Interface, FileHandle* Socket) {
+	static self* New(NetworkInterface* Interface) {
 		self* this := Alloc(#self)
 
 		this->Interface := Interface
-		this->Socket := Socket
-
-        this->AsProtocol := Interface->AddProtocol("DHCP", GetDHCPProtocolPrototype(), this)
 
         this->Packet := NetworkPacket:New(2)
+		this->Socket := new UDPSocketHandle()
 
         NetworkAddress BindAddress {
-            Type: NetworkAddressType::IPv4,
-            IPv4: Interface->IP,
+            Type: NetworkAddressType::Interface,
             Port: DHCP_CLIENT_PORT
         }
 
-        Socket->Bind(&BindAddress)
+        MoveMemory(BindAddress.InterfaceName, Interface->Name, StringLength(Interface->Name) + 1)
+
+        this->Socket->Bind(&BindAddress)
 
         return this
     }
 
     define NetworkPacket* Enter() {
         NetworkPacket* Packet := this->Packet
-        Packet->ClearMarkers()
+        Packet->Clear()
 
         DHCPHeader* Header := Packet->Mark(PACKET_DATA_DHCP_HEADER, #DHCPHeader)
 
@@ -228,37 +223,19 @@ struct DHCPClient {
 
     declare void SendRequest(i32, i32)
 
-    define void Recieve() {
-        loop {
-            if (this->Socket->Poll(POLL_CAN_READ)) {
-                this->Packet->Reset()
-
-                i32 Size := this->Socket->Read(this->Packet->Buffer, 0x2000)
-
-                this->Packet->Size := Size
-
-                this->Ingest(this->Packet)
-            }
-
-            SchedulerYield()
-        }
-    }
-
-    define void Ingest(NetworkPacket* Packet) {
-        IPV4Header* IP := Packet->Get(PACKET_DATA_IPV4_HEADER)
-        UDPHeader* UDP := Packet->Get(PACKET_DATA_UDP_HEADER)
+    define void Ingest(NetworkPacket* Packet, NetworkAddress* Address) {
         DHCPHeader* DHCP := Packet->Mark(PACKET_DATA_DHCP_HEADER, #DHCPHeader)
 
         DHCP->FlipEndianess()
 
-        Info("DHCP Packet from %ipv4:%i\n", IP->Source, UDP->SourcePort)
+        Info("DHCP Packet from %ipv4:%i\n", Address->IPv4, Address->Port)
 
         DHCPOptions* Options := Packet->Mark(PACKET_DATA_DHCP_OPTIONS, #DHCPOption::Header)
 
         DHCPOption::MessageType* MessageType := Options->Get(DHCP_OPTION_MESSAGE_TYPE)
 
         if !(MessageType) {
-            Info("DHCP: Dropping packet from %ipv4:%i with no message type option\n", IP->Source, UDP->SourcePort)
+            Info("DHCP: Dropping packet from %ipv4:%i with no message type option\n", Address->IPv4, Address->Port)
             return
         }
 
@@ -288,8 +265,26 @@ struct DHCPClient {
         }
     }
 
+    define i8 ReceiveSingle(i64 Timeout) {
+        this->Packet->Clear()
+
+        if !(this->Socket->Wait(POLL_FOR_READ, Timeout)) {
+            return false
+        }
+
+        NetworkAddress Address
+
+        i32 Size := this->Socket->RecieveFrom(this->Packet->Buffer, 0x2000, &Address)
+
+        this->Packet->Size := Size
+
+        this->Ingest(this->Packet, &Address)
+
+        return true
+    }
+
     define void Send(i32 ServerAddress, i32 DesiredAddress, i8 MessageType) {
-        NetworkPacket* Packet := this->Enter(IPV4_BROADCAST_ADDRESS)
+        NetworkPacket* Packet := this->Enter()
 
         DHCPHeader* Header := Packet->Get(PACKET_DATA_DHCP_HEADER)
 
@@ -313,7 +308,7 @@ struct DHCPClient {
 
         this->AddOption(Packet, DHCP_OPTION_END, 1)
 
-        this->Send(Packet)
+        this->Send(Packet, IPV4_BROADCAST_ADDRESS)
     }
 
     define void SendDiscover(i32 DesiredIP) {
@@ -323,16 +318,25 @@ struct DHCPClient {
     define void SendRequest(i32 ServerAddress, i32 DesiredAddress) {
         this->Send(ServerAddress, DesiredAddress, DHCP_MESSAGE_TYPE_REQUEST)
     }
-}
 
-NetworkProtocolPrototype DHCPProtocolPrototype {
-    ;Enter: &DHCPClient.Enter,
-    ;Send: &DHCPClient.Send,
-    Ingest: &DHCPClient.Ingest
-}
+    define i8 EstablishLease() {
+        i64 Timeout := GetUptimeMS() + 10000
 
-define NetworkProtocolPrototype* GetDHCPProtocolPrototype() {
-    return &DHCPProtocolPrototype
+        this->SendDiscover(0)
+
+        while (this->Interface->IP = 0) {
+            i64 Remaining := Timeout - GetUptimeMS()
+
+            if (Remaining < 500) {
+                Info("DHCP: Timed out waiting for offer\n")
+                return false
+            }
+
+            this->ReceiveSingle(Remaining)
+        }
+
+        return true
+    }
 }
 
 /*

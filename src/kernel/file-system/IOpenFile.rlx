@@ -51,20 +51,12 @@ interface IFileHandle {
         Raise(new FileException::NotSupported())
         return 0
     }
-    virtual i32 Wait(i32 Mode, i64 Timeout) {
-        i64 Deadline := GetUptimeMS() + Timeout
 
-        while (GetUptimeMS() < Deadline) {
-            i32 Result := this->Poll(Mode)
-
-            if (Result) {
-                return Result
-            }
-        }
-
-        return 0
+    virtual i8 Wait(i32 Mode, i64 Timeout) {
+        Raise(new FileException::NotSupported())
+        return false
     }
-    virtual i32 Wait(i32 Mode) {
+    virtual i8 Wait(i32 Mode) {
         return this->Wait(Mode, -1)
     }
 
@@ -134,7 +126,7 @@ interface IFileHandle {
         Raise(new FileException::NotSupported())
         return 0
     }
-    virtual i32 SentTo(void* Buffer, i32 Size, NetworkAddress* Address) {
+    virtual i32 SendTo(void* Buffer, i32 Size, NetworkAddress* Address) {
         Raise(new FileException::NotSupported())
         return 0
     }

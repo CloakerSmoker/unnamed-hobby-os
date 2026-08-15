@@ -86,6 +86,8 @@ struct EthernetLayer {
     }
 
     define void Ingest(NetworkPacket* Packet) {
+        ;this->Interface->Info("Ethernet: Ingesting %x byte packet", Packet->Size)
+
         EthernetHeader* Header := Packet->Mark(PACKET_DATA_ETHERNET, #EthernetHeader)
 
         Header->FlipEndianess()
@@ -103,7 +105,11 @@ struct EthernetLayer {
         NetworkProtocol* Protocol := this->EtherTypeHandlers->GetPointer(Header->EtherType)
 
         if !(Protocol) {
-            this->Interface->Info("Ethernet: Dropping packet from %mac for unknown ethertype %x", Header~>Source, Header->EtherType)
+            if (Header->EtherType != 0x8899) {
+                ; silence, realtek
+                this->Interface->Info("Ethernet: Dropping packet from %mac for unknown ethertype %x", Header~>Source, Header->EtherType)
+            }
+
             return
         }
 
