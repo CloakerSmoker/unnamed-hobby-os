@@ -9,6 +9,64 @@ i32 TIMEOUT_FOREVER := 0
 i32 WAIT_PROBE := -1
 i32 WAIT_FOREVER := 0
 
+i32 DEADLINE_INSTANT := 0
+i32 DEADLINE_ENDLESS := 0x7FFF_FFFF
+
+define i32 TIMEOUT_DEADLINE(i32 Timeout) {
+    if (Timeout = WAIT_FOREVER) {
+        return DEADLINE_ENDLESS
+    }
+    else if (Timeout = WAIT_PROBE) {
+        return DEADLINE_INSTANT
+    }
+    else {
+        return (GetUptimeMS() + Timeout) As i32
+    }
+}
+
+define i32 TIMEOUT_REMAINING(i32 Deadline) {
+    if (Deadline = DEADLINE_ENDLESS) {
+        return DEADLINE_ENDLESS
+    }
+    else if (Deadline = DEADLINE_INSTANT) {
+        return DEADLINE_INSTANT
+    }
+    else {
+        i32 Remaining := (Deadline - GetUptimeMS()) As i32
+
+        if (Remaining < 0) {
+            return 0
+        }
+        else {
+            return Remaining
+        }
+    }
+}
+
+define i8 TIMEOUT_EXPIRED(i32 Deadline) {
+    if (Deadline = DEADLINE_ENDLESS) {
+        return false
+    }
+    else if (Deadline = DEADLINE_INSTANT) {
+        return true
+    }
+    else {
+        return GetUptimeMS() >= Deadline
+    }
+}
+
+define i8 TIMEOUT_NOT_EXPIRED(i32 Deadline) {
+    if (Deadline = DEADLINE_ENDLESS) {
+        return true
+    }
+    else if (Deadline = DEADLINE_INSTANT) {
+        return false
+    }
+    else {
+        return GetUptimeMS() < Deadline
+    }
+}
+
 namespace Synchronization {
     /*class TaskList derives INew {
         i8* Name
@@ -97,6 +155,14 @@ namespace Synchronization {
             
             SchedulerUnregisterWaitQueue(this->Waiters)
             this->Delete()
+        }
+
+        define void Reset() {
+            i8 Guard := InterruptGuard()
+
+            this->Value := 0
+
+            InterruptRestore(Guard)
         }
 
         define i8 Wait(i32 Value, i32 TimeoutMS) {
@@ -229,6 +295,45 @@ namespace Synchronization {
             SchedulerWakeOne(this->Waiters)
 
             EnableInterrupts()
+        }
+    }
+
+    class ConditionVariable derives INew {
+        i8* Name
+
+        WaitQueue* Waiters
+
+        define void New(i8* Name) {
+            this->Name := Name
+            this->Waiters := SchedulerRegisterWaitQueue(Name)
+        }
+
+        define void Free() {
+            SchedulerUnregisterWaitQueue(this->Waiters)
+            this->Delete()
+        }
+
+        define WaitResult Wait(Lock* L, i32 Timeout) {
+            L->Release()
+
+            WaitResult Result := SchedulerWait(this->Waiters, Timeout)
+
+            L->Acquire()
+
+            return Result
+        }
+        define i8 Check(Lock* L) {
+            WaitResult Result := this->Wait(L, WAIT_PROBE)
+
+            return Result = WaitResult::Success
+        }
+
+        define void Signal() {
+            SchedulerWakeOne(this->Waiters)
+        }
+
+        define void Broadcast() {
+            SchedulerWakeAll(this->Waiters)
         }
     }
 }

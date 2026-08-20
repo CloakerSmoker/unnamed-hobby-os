@@ -79,6 +79,7 @@ define void TestICMPPing() {
 }
 */
 
+/*
 define void SocketListener() {
     TCPSocket* Socket := Network->CreateTCP()
 
@@ -95,28 +96,32 @@ define void SocketListener() {
     Socket->Listen()
 
     loop {
-        TCPSocket* Child := null
-        Socket->Accept(&Child)
+        TCPSocket* Child := Socket->Accept()
 
-        while (Child->State != TCP_SOCKET_STATE_ESTABLISHED) { SchedulerYield() }
+        if !(Socket->Establish(WAIT_FOREVER)) {
+            Print("Failed to establish connection with %ipv4:%net-port\n", Child->RemoteAddress, Child->RemotePort)
+            Child->Close()
+            continue
+        }
 
         Print("Say hello to %ipv4:%net-port!\n", Child->RemoteAddress, Child->RemotePort)
 
-        while (Child->State = TCP_SOCKET_STATE_ESTABLISHED) {
-            i8[100] Line
+        loop {
+            i8[100] Buffer
 
-            i32 Recv := 0
-            Child->Poll(POLL_FOR_READ, &Recv)
+            Child->Wait(POLL_FOR_READ, WAIT_FOREVER)
             
-            if (Recv) {
-                i32 Size := 0
-                Child->Recieve(Line, 100, &Size)
-                Line[Size] := 0
+            i32 Size := Child->Recieve(Buffer, 100)
 
-                Print("\nLoser: %s\n", Line)
+            if (Size) {
+                Buffer[Size + 1] := 0
+
+                Print("%s", Buffer)
             }
 
-            SchedulerYield()
+            if (Socket->State != TCP_SOCKET_STATE_ESTABLISHED) {
+                break
+            }
         }
     }
 }
@@ -343,3 +348,6 @@ define void TestNetworking(IFileHandle* stdio) {
     ;TestIPV4Fragmentation()
     ;TestICMPPing()
 }
+
+*/
+*/

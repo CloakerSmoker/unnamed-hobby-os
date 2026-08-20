@@ -244,6 +244,7 @@ USB::UHCI::Controller* UHCIController := null
 
 define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Device) {
 	Print("%x/%x/%x:\n\t%pcie-product\n\t%pcie-purpose\n", Bus, Slot, Function, Device, Device)
+	Print("\tVendor: %x, Device: %x, Revision: %x\n", Device->VendorID, Device->DeviceID, Device->Revision)
 
 	if (Device->Status & PCI_STATUS_REGISTER_HAS_CAPABILITIES) {
 		Print("\tHas Capabilities: ")
@@ -604,24 +605,135 @@ define i8 TryMountPartitions(i8* RootPartitionGUID, i8* EFISystemPartitionGUID) 
 }
 
 define void NetworkSetupTask() {
+	NetworkInterface* Interface := null
+
 	i32 Count := ALL_I219_CONTROLLERS->Count()
 
 	for (i32 Index := 0, Index < Count, Index++) {
 		I219::Controller* NIC := ALL_I219_CONTROLLERS->At(Index)
 
 		NIC->Start(Index)
+
+		Interface := NIC->Interface
 	}
 
-	SleepMS(100000000)
+	Network->AddInterface(Interface)
+
+	Print("Network: Interface %s, MAC: %mac\n", Interface->Name, Interface->MAC)
+
+	DHCPClient* DHCP := new DHCPClient(Interface)
+
+	i8 Result := DHCP->EstablishLease()
+
+	if (Result) {
+		Print("DHCP established lease successfully\n")
+	}
+	else {
+		Print("DHCP failed to establish lease\n")
+		SleepMS(100000000)
+	}
+
+	Print("DHCP: Leased: %ipv4. DNS: %ipv4\n", Interface->IP, Interface->DNS)
+    Network->AddRoute("0.0.0.0/0", Interface)
+
+    Network->DumpRoutes()
+
+	ARPLayer* ARP := Interface->WellKnownProtocols->ARP
+
+    Interface->GatewayMAC := ARP->Lookup(Interface->Gateway)
+
+    Print("DHCP: Gateway: %ipv4. Gateway MAC: %mac\n", Interface->Gateway, Interface->GatewayMAC)
 
 	/*
-    SetStaticIP(Interface, "10.0.2.2/24", "10.0.2.15", "10.0.2.3")
+	IFileHandle* UDP := new UDPSocketHandle()
 
-    Interface->SetKnobToggle("Ethernet.SpewInOut", true)
-    Interface->SetKnobToggle("ARP.SpewInOut", true)
-	Interface->SetKnobToggle("ARP.SpewCache", true)
-    Interface->SetKnobToggle("ARP.SpewGateway", true)
+	NetworkAddress BindAddress {
+		Type: NetworkAddressType::Interface,
+		Port: 7777 As i16
+	}
+
+	MoveMemory(BindAddress~>InterfaceName, Interface->Name, StringLength(Interface->Name))
+
+	UDP->Bind(&BindAddress)
+
+	void* Buffer := Alloc(2048)
+
+	loop {
+		UDP->Wait(POLL_FOR_READ, WAIT_FOREVER)
+
+		NetworkAddress RemoteAddress
+		i32 Size := UDP->RecieveFrom(Buffer, 2048, &RemoteAddress)
+
+		Print("UDP: Received %i bytes from %ipv4:%net-port\n", Size, RemoteAddress.IPv4, RemoteAddress.Port)
+		Print("%s\n", Buffer)
+	}
 	*/
+
+	IFileHandle* Socket := new TCPSocketHandle()
+
+	NetworkAddress BindAddress {
+		Type: NetworkAddressType::IPv4,
+		IPv4: Interface->IP,
+		Port: 7777 As i16
+	}
+
+	Socket->Bind(&BindAddress)
+
+	Socket->Listen()
+
+    ;TCP->BindSocket(42830 As i16, Socket)
+    ;TCP->BindSocket(7777 As i16, Socket)
+    ;Network->Bind(Interface->IP, 7777 As i16, Socket)
+
+    ;Socket->Interface->SetKnobToggle("Ethernet.SpewInOut", true)
+
+    ;Socket->Connect(PackIPV4(10, 0, 2, 2), 7778)
+
+    ;while (Socket->State != TCP_SOCKET_STATE_ESTABLISHED) { SchedulerYield() }
+
+    ;Socket->Listen()
+
+    loop {
+		if !(Socket->Wait(POLL_FOR_READ, WAIT_FOREVER)) {
+			continue
+		}
+
+		Print("TCP: Reports ready to accept connection\n")
+
+		NetworkAddress RemoteAddress
+
+        IFileHandle* Child := Socket->Accept(&RemoteAddress)
+
+		if !(Child) {
+			continue
+		}
+
+        if !(Child->Wait(POLL_FOR_WRITE, 5000)) {
+			Print("Failed to establish TCP connection with %ipv4:%net-port\n", RemoteAddress.IPv4, RemoteAddress.Port)
+			continue
+		}
+
+        Print("Say hello to %ipv4:%net-port!\n", RemoteAddress.IPv4, RemoteAddress.Port)
+
+        while (Child->Poll(POLL_FOR_WRITE) & POLL_CAN_WRITE) {
+            i8[100] Line
+			
+			if !(Child->Wait(POLL_FOR_READ, WAIT_FOREVER)) {
+				Print("TCP: Can't read\n")
+				break
+			}
+
+            i32 Size := Child->Recieve(Line, 100)
+            
+            if (Size) {
+                Line[Size] := 0
+
+                Print("%s", Line)
+            }
+        }
+
+		Print("Remote closed, waiting for a new one!\n")
+    }
 }
 
 i8* ROOT_PARTITION_GUID := null

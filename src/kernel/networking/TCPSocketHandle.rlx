@@ -65,15 +65,7 @@ class TCPSocketHandle implements IFileHandle, derives INew {
         NetworkInterface* Interface := this->Socket->Interface
         TCPLayer* TCP := Interface->WellKnownProtocols->TCP
 
-        TCPSocket* Result := null
-        TCPError Error := TCP->Accept(this->Socket, &Result)
-
-        if (Error = TCPError::InvalidState) {
-            Throw(LINUX_ERROR_OPNOTSUPP)
-        }
-        else if (Error != TCPError::Ok) {
-            Throw(LINUX_ERROR_INVAL)
-        }
+        TCPSocket* Result := TCP->Accept(this->Socket)
 
         if (OutAddress) {
             OutAddress->Type := NetworkAddressType::IPv4
@@ -84,18 +76,12 @@ class TCPSocketHandle implements IFileHandle, derives INew {
         return TCPSocketHandle:New(Result)
     }
 
+    define i8 Wait(i32 Mode, i64 Timeout) {
+        return this->Socket->Wait(Mode, Timeout As i32)
+    }
+
     define i32 Poll(i32 Mode) {
-        i32 Result := 0
-        TCPError Error := this->Socket->Poll(Mode, &Result)
-
-        if (Error = TCPError::InvalidState) {
-            Throw(LINUX_ERROR_OPNOTSUPP)
-        }
-        else if (Error != TCPError::Ok) {
-            Throw(LINUX_ERROR_INVAL)
-        }
-
-        return Result
+        return this->Socket->Poll(Mode)
     }
 
     define i32 Send(void* Buffer, i32 Size) {
@@ -114,14 +100,7 @@ class TCPSocketHandle implements IFileHandle, derives INew {
     }
 
     define i32 Recieve(void* Buffer, i32 Size) {
-        i32 Result := 0
-        TCPError Error := this->Socket->Recieve(Buffer, Size, &Result)
-
-        if (Error = TCPError::InvalidState) {
-            Throw(LINUX_ERROR_OPNOTSUPP)
-        }
-
-        return Result
+        return this->Socket->Recieve(Buffer, Size)
     }
 
     define i32 Read(void* Buffer, i32 Size) {
