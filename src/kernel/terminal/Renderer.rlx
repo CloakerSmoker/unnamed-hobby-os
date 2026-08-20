@@ -5,6 +5,8 @@
 
 #Require "./src/kernel/terminal/PCSpeaker.rlx"
 
+#Require "./src/kernel/lib/Memory.rlx"
+
 i32 TAB_SIZE := 4
 
 enum TerminalMode {
@@ -23,6 +25,13 @@ enum TerminalEscapeState {
 i32 TERMINAL_RENDERER_START_CURSOR_TIMER := 'TRSC'
 
 #Require "./src/kernel/file-system/FileSystem.rlx"
+
+struct TerminalCell {
+	i8 Character
+	i8 Dirty
+	i32 Foreground
+	i32 Background
+}
 
 class TerminalRendererHandle implements IFileHandle, derives INew {
 	#Include "./src/kernel/terminal/InstanceComponent.rlx"
@@ -53,11 +62,75 @@ class TerminalRendererHandle implements IFileHandle, derives INew {
 	TerminalMode Mode
 	
 	SixelRenderer Sixel
+	
+	i32 SixelStartRow
 
 	IFileHandle* Speaker
 	
+	TerminalCell* Cells
+	i32 CellCount
+	i32 TopRow
+
+	Synchronization::Lock* LayoutLock
+	
+	define i32 CellIndex(i32 X, i32 Y) {
+		i32 Row := this->TopRow + Y
+		
+		if (Row >= this->Height) {
+			Row -= this->Height
+		}
+		
+		return Row * this->Width + X
+	}
+	
+	define void MarkAllDirty() {
+		for (i32 Index := 0, Index < this->CellCount, Index++) {
+			this->Cells[Index]->Dirty := true
+		}
+	}
+	
+	define void WriteCell(i32 X, i32 Y, i8 Character) {
+		i32 Index := this->CellIndex(X, Y)
+		
+		TerminalCell* Cell := this->Cells[Index]
+		
+		Cell->Character := Character
+		Cell->Foreground := this->ForegroundColor
+		Cell->Background := this->BackgroundColor
+		
+		Cell->Dirty := true
+	}
+	
+	define void BlankCells(i32 X, i32 Y, i32 Count, i8 MarkDirty) {
+		for (i32 Offset := 0, Offset < Count, Offset++) {
+			i32 Index := this->CellIndex(X + Offset, Y)
+			
+			TerminalCell* Cell := this->Cells[Index]
+			
+			Cell->Character := ' '
+			Cell->Foreground := this->ForegroundColor
+			Cell->Background := this->BackgroundColor
+			
+			if (MarkDirty) {
+				Cell->Dirty := true
+			}
+		}
+	}
+	
+	declare void Present()
+	
 	define void Clear() {
-		this->Output->Clear(this->BackgroundColor)
+		for (i32 Index := 0, Index < this->CellCount, Index++) {
+			TerminalCell* Cell := this->Cells[Index]
+			
+			Cell->Character := ' '
+			Cell->Foreground := this->ForegroundColor
+			Cell->Background := this->BackgroundColor
+		}
+		
+		this->TopRow := 0
+		
+		this->MarkAllDirty()
 	}
 	
 	define void CalculateBounds() {
@@ -68,6 +141,13 @@ class TerminalRendererHandle implements IFileHandle, derives INew {
 		this->Height := this->Output->Height() / this->Font->Height
 		this->MaxColumn := this->Width  - 1
 		this->MaxRow    := this->Height - 1
+		
+		i32 NewCellCount := this->Width * this->Height
+		
+		if (NewCellCount != this->CellCount) {
+			this->CellCount := NewCellCount
+			this->Cells := KernelHeapAllocate('TRM_CELL', NewCellCount * #TerminalCell) As TerminalCell*
+		}
 		
 		this->Clear()
 	}
@@ -85,9 +165,18 @@ class TerminalRendererHandle implements IFileHandle, derives INew {
 		
 		this->EscapeIndex := 0
 		
+		this->CellCount := 0
+		this->Cells := null
+		this->TopRow := 0
+		this->SixelStartRow := 0
+		
 		this->CalculateBounds()
 		
 		this~>Sixel->Initialize(this->Output)
+
+		this->LayoutLock := new Synchronization::Lock("Terminal Layout Lock")
+		
+		this->Present()
 	}
 	
 	define void SetColors(i32 ForegroundColor, i32 BackgroundColor) {
@@ -101,16 +190,7 @@ class TerminalRendererHandle implements IFileHandle, derives INew {
 	}
 	
 	define void ClearToLineEnd(i32 X, i32 Y) {
-		i32 OutputX := 0
-		i32 OutputY := 0
-		
-		this->ConvertToOutputCoords(X, Y, &OutputX, &OutputY)
-		
-		i32 Width := (this->MaxColumn - X) * this->Font->Width
-		
-		;Info("(%i, %i) -> (%i, %i)\n", ScreenX, ScreenY, ScreenX + Width, ScreenY + this->Font->Height)
-		
-		this->Output->DrawRectangle(OutputX, OutputY, Width, this->Font->Height, this->BackgroundColor)
+		this->BlankCells(X, Y, this->Width - X, true)
 	}
 	define void ClearLine(i32 Y) {
 		this->ClearToLineEnd(0, Y)
@@ -118,24 +198,33 @@ class TerminalRendererHandle implements IFileHandle, derives INew {
 	define void ClearToScreenEnd(i32 X, i32 Y) {
 		this->ClearToLineEnd(X, Y)
 		
-		for (i32 Index := Y + 1, Index < this->MaxRow, Index++) {
+		for (i32 Index := Y + 1, Index < this->Height, Index++) {
 			this->ClearLine(Index)
 		}
 	}
 	
 	define void ScrollUp(i32 LineCount) {
-		i32 ScrollSize := this->Font->Height * LineCount
+		if (LineCount > this->Height) {
+			LineCount := this->Height
+		}
 		
 		this->Y -= LineCount
 		
-		this->Output->VerticalScroll(-ScrollSize, this->BackgroundColor)
+		if (this->Y < 0) {
+			this->Y := 0
+		}
+		
+		this->TopRow := (this->TopRow + LineCount) % this->Height
+		
+		for (i32 Index := 0, Index < LineCount, Index++) {
+			this->ClearLine(this->MaxRow - Index)
+		}
+		
+		this->MarkAllDirty()
 	}
 	
 	define void NewLine() {
 		this->Y += 1
-		
-		i32 OutputX := 0
-		i32 OutputY := 0
 		
 		if (this->Y >= this->Height) {
 			this->ScrollUp(4)
@@ -144,30 +233,41 @@ class TerminalRendererHandle implements IFileHandle, derives INew {
 	
 	i8 CursorShown
 	
+	define void RenderCell(i32 X, i32 Y) {
+		TerminalCell* Cell := this->Cells[this->CellIndex(X, Y)]
+		
+		i32 OutputX := X * this->Font->Width
+		i32 OutputY := Y * this->Font->Height
+		
+		if (Cell->Character = ' ' || Cell->Character = 0) {
+			this->Output->DrawRectangle(OutputX, OutputY, this->Font->Width, this->Font->Height, Cell->Background)
+		}
+		else {
+			this->Font->Draw(this->Output, Cell->Foreground, Cell->Background, OutputX, OutputY, Cell->Character)
+		}
+	}
+	
 	define void DrawCursor(i8 Enable) {
 		if (this->X = this->MaxColumn) {
 			return
 		}
 		
-		i32 OutputX := 0
-		i32 OutputY := 0
-		
-		this->ConvertToOutputCoords(this->X, this->Y, &OutputX, &OutputY)
-		
-		i32 Color := this->BackgroundColor
-		
 		if (Enable) {
-			Color := this->ForegroundColor
+			i32 OutputX := 0
+			i32 OutputY := 0
+			
+			this->ConvertToOutputCoords(this->X, this->Y, &OutputX, &OutputY)
+			
+			i32 Height := 1
+			i32 Right  := 0
+			i32 Width  := this->Font->Width - 0
+			i32 Down   := this->Font->Height - 1
+			
+			this->Output->DrawRectangle(OutputX + Right, OutputY + Down, Width, Height, this->ForegroundColor)
 		}
-		
-		;this->Font->Draw(this->Output, Color, this->BackgroundColor, ScreenX, ScreenY, '_')
-		
-		i32 Height := 1
-		i32 Right  := 0
-		i32 Width  := this->Font->Width - 0
-		i32 Down   := this->Font->Height - 1
-		
-		this->Output->DrawRectangle(OutputX + Right, OutputY + Down, Width, Height, Color)
+		else {
+			this->RenderCell(this->X, this->Y)
+		}
 		
 		this->CursorShown := Enable
 	}
@@ -176,6 +276,24 @@ class TerminalRendererHandle implements IFileHandle, derives INew {
 	}
 	define void HideCursor() {
 		this->DrawCursor(false)
+	}
+	
+	define void Present() {
+		for (i32 Row := 0, Row < this->Height, Row++) {
+			for (i32 Column := 0, Column < this->Width, Column++) {
+				i32 Index := this->CellIndex(Column, Row)
+				TerminalCell* Cell := this->Cells[Index]
+				
+				if (Cell->Dirty) {
+					Cell->Dirty := false
+					this->RenderCell(Column, Row)
+				}
+			}
+		}
+		
+		if (this->CursorShown) {
+			this->DrawCursor(true)
+		}
 	}
 	
 	i32 IgnoreCursorTicks
@@ -403,9 +521,8 @@ class TerminalRendererHandle implements IFileHandle, derives INew {
 		}
 	}
 	
-	define void RawPrintCharacter(i32* OutputX, i32* OutputY, i8 Character) {		
-		;this->Screen->DrawCharacter(*ScreenX, *ScreenY, Character, this->ForegroundColor, this->BackgroundColor)
-		this->Font->Draw(this->Output, this->ForegroundColor, this->BackgroundColor, *OutputX, *OutputY, Character)
+	define void RawPrintCharacter(i8 Character) {
+		this->WriteCell(this->X, this->Y, Character)
 		
 		this->X += 1
 		
@@ -413,8 +530,6 @@ class TerminalRendererHandle implements IFileHandle, derives INew {
 			this->NewLine()
 			this->X := 0
 		}
-		
-		this->ConvertToOutputCoords(this->X, this->Y, OutputX, OutputY)
 	}
 	
 	declare i32 Print(i8*, i32)
@@ -433,6 +548,12 @@ class TerminalRendererHandle implements IFileHandle, derives INew {
 			
 			if (NewOutputY % this->Font->Height) {
 				NewY += 1
+			}
+			
+			; The sixel drew pixels over these rows; blank the cells so stale
+			; text doesn't reappear on top of the image on the next scroll redraw
+			for (i32 Row := this->SixelStartRow, Row <= NewY && Row < this->Height, Row++) {
+				this->BlankCells(0, Row, this->Width, false)
 			}
 			
 			this->Y := NewY
@@ -459,6 +580,7 @@ class TerminalRendererHandle implements IFileHandle, derives INew {
 					i32 OutputY := 0
 					this->ConvertToOutputCoords(this->X, this->Y, &OutputX, &OutputY)
 					
+					this->SixelStartRow := this->Y
 					this->Mode := TerminalMode:Sixel
 					this~>Sixel->Reset(OutputX, OutputY)
 					
@@ -498,6 +620,7 @@ class TerminalRendererHandle implements IFileHandle, derives INew {
 			}
 			else if (this->EscapeState = TerminalEscapeState:Command) {
 				this->DoEscape(this->EscapePrefix, Next, this->EscapeParameters, this->EscapeParameterCount)
+				this->Present()
 				this->Mode := TerminalMode:Normal
 				return Index + 1
 			}
@@ -507,11 +630,6 @@ class TerminalRendererHandle implements IFileHandle, derives INew {
 	}
 	
 	define void PrintChunk(i8* Chunk, i32 Length) {
-		i32 OutputX := 0
-		i32 OutputY := 0
-		
-		this->ConvertToOutputCoords(this->X, this->Y, &OutputX, &OutputY)
-		
 		for (i32 Index := 0, Index < Length, Index++) {
 			i8 Next := Chunk[Index]
 			
@@ -519,19 +637,17 @@ class TerminalRendererHandle implements IFileHandle, derives INew {
 				i32 TabLength := this->GetTabLength(this->X + Index)
 				
 				for (i32 TabIndex := 0, TabIndex < TabLength, TabIndex++) {
-					this->RawPrintCharacter(&OutputX, &OutputY, ' ')
+					this->RawPrintCharacter(' ')
 				}
 			}
 			else if (Next = ASCII_BACK) {
 				if (this->X) {
 					this->X -= 1
-					
-					this->ConvertToOutputCoords(this->X, this->Y, &OutputX, &OutputY)
-					this->Font->Draw(this->Output, this->ForegroundColor, this->BackgroundColor, OutputX, OutputY, ' ')
+					this->WriteCell(this->X, this->Y, ' ')
 				}
 			}
 			else {
-				this->RawPrintCharacter(&OutputX, &OutputY, Chunk[Index])
+				this->RawPrintCharacter(Chunk[Index])
 			}
 		}
 	}
@@ -583,6 +699,8 @@ class TerminalRendererHandle implements IFileHandle, derives INew {
 			this->PrintChunk(&Characters[LastChunkStart], Count - LastChunkStart)
 		}
 		
+		this->Present()
+		
 		this->IgnoreCursorTicks := 1
 		this->ShowCursor()
 		
@@ -590,6 +708,13 @@ class TerminalRendererHandle implements IFileHandle, derives INew {
 	}
 	
 	define void Print(i8* AllCharacters, i32 TotalCount) {
+		i8 Unlock := false
+
+		if (InterrupsAreEnabled()) {
+			Unlock := true
+			this->LayoutLock->Acquire()
+		}
+
 		i32 Written := 0
 		
 		while (Written != TotalCount) {
@@ -605,6 +730,10 @@ class TerminalRendererHandle implements IFileHandle, derives INew {
 			else {
 				Written += this->TextPrint(Characters, Count)
 			}
+		}
+		
+		if (Unlock) {
+			this->LayoutLock->Release()
 		}
 	}
 	
