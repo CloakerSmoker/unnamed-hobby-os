@@ -371,7 +371,7 @@ namespace USB::XHCI {
         i64 RingSegmentBaseAddress
         i32 RingSegmentSize
 
-        TRB::TransferRequestBlock* Events
+        TransferRequestBlock* Events
     }
 
     struct HostEventRing {
@@ -495,22 +495,22 @@ namespace USB::XHCI {
         i8* Name
         Synchronization::Semaphore* Completed
 
-        TRB::TransferRequestBlock Command
-        TRB::TransferRequestBlock Completion
+        TransferRequestBlock Command
+        TransferRequestBlock Completion
 
-        static self* New(i8* ParentName, i32 Number, TRB::TransferRequestBlock* Command) {
+        static self* New(i8* ParentName, i32 Number, TransferRequestBlock* Command) {
             self* this := Alloc(#self)
 
             this->Name := FormatString("%s: XHCI Command %i", ParentName, Number)
             this->Completed := new Synchronization::Semaphore(this->Name, 0)
 
-            MoveMemory(this~>Command, Command, #TRB::TransferRequestBlock)
+            MoveMemory(this~>Command, Command, #TransferRequestBlock)
 
             return this
         }
 
-        define void Complete(TRB::TransferRequestBlock* Completion) {
-            MoveMemory(this~>Completion, Completion, #TRB::TransferRequestBlock)
+        define void Complete(TransferRequestBlock* Completion) {
+            MoveMemory(this~>Completion, Completion, #TransferRequestBlock)
 
             this->Completed->Signal()
         }
@@ -527,7 +527,7 @@ namespace USB::XHCI {
     }
 
     struct HostTransferRing {
-        TRB::TransferRequestBlock* Ring
+        TransferRequestBlock* Ring
         i32 Size
 
         i32 EnqueueIndex
@@ -556,7 +556,7 @@ namespace USB::XHCI {
 
         HostTransferRing*[32] TransferRings
 
-        TRB::TransferRequestBlock ScratchTRB
+        TransferRequestBlock ScratchTRB
     }
 
     enum PortState {
@@ -573,7 +573,7 @@ namespace USB::XHCI {
         HostControllerPortRegisters* Registers
 
         CommandHandle* CurrentCommand
-        TRB::TransferRequestBlock CurrentTransferRequestBlock
+        TransferRequestBlock CurrentTransferRequestBlock
 
         ; Only valid if State = Enabled
         HostDevice* Device
@@ -594,9 +594,9 @@ namespace USB::XHCI {
             Print("%s: %s\n", this->Name, Buffer)
         }
 
-        define void New(PCIeAddress* Address, PCIeDevice* _Device) {
+        define void New(PCIeAddress* Address, PCIeDevice* Device) {
             this->Address := Address
-            this->Device := _Device
+            this->Device := Device
 
             this->Name := FormatString("%pcie-address: XHCI", Address)
 
@@ -624,7 +624,7 @@ namespace USB::XHCI {
         HostControllerRuntimeRegisters* RuntimeRegisters
         DoorbellRegister* DoorbellRegisters
 
-        TRB::TransferRequestBlock* CommandRing
+        TransferRequestBlock* CommandRing
 
         i64* DeviceContextBaseAddressArray
         HostDevice** Devices
@@ -650,12 +650,12 @@ namespace USB::XHCI {
         i32 CommandRingEnqueueIndex
         i8 CommandRingCycleBit
 
-        define i64 EnqueueCommand(TRB::TransferRequestBlock* TRB) {
+        define i64 EnqueueCommand(TransferRequestBlock* TRB) {
             i32 Index := this->CommandRingEnqueueIndex % 1024
 
-            TRB::TransferRequestBlock* RingTRB := this->CommandRing[Index]
+            TransferRequestBlock* RingTRB := this->CommandRing[Index]
 
-            MoveMemory(RingTRB, TRB, #TRB::TransferRequestBlock)
+            MoveMemory(RingTRB, TRB, #TransferRequestBlock)
 
             RingTRB->Cycle := this->CommandRingCycleBit
 
@@ -685,7 +685,7 @@ namespace USB::XHCI {
         define HostTransferRing* AllocateTransferRing(i32 Size) {
             HostTransferRing* Ring := Alloc(#HostTransferRing)
 
-            Ring->Ring := this->AllocateDMA(SizeToPageCount(Size * #TRB::TransferRequestBlock))
+            Ring->Ring := this->AllocateDMA(SizeToPageCount(Size * #TransferRequestBlock))
             Ring->Size := Size
 
             Ring->EnqueueIndex := 0
@@ -703,7 +703,7 @@ namespace USB::XHCI {
             HostEventRingSegment* Segment := Alloc(#HostEventRingSegment)
 
             Segment->RingSegmentSize := 1024
-            Segment->Events := this->AllocateDMA(SizeToPageCount(Segment->RingSegmentSize * #TRB::TransferRequestBlock))
+            Segment->Events := this->AllocateDMA(SizeToPageCount(Segment->RingSegmentSize * #TransferRequestBlock))
             Segment->RingSegmentBaseAddress := VirtualToPhysical(Segment->Events)
 
             return Segment
@@ -755,9 +755,9 @@ namespace USB::XHCI {
 
         Synchronization::Semaphore* Interrupt
 
-        define void ProcessEvent(TRB::TransferRequestBlock* Event) {
-            if (Event->Type = TRB::Type::CommandCompletionEvent) {
-                TRB::EventRing::CommandCompletion* CompletionEvent := Event As TRB::EventRing::CommandCompletion*
+        define void ProcessEvent(TransferRequestBlock* Event) {
+            if (Event->Type = Transfers::Type::CommandCompletionEvent) {
+                Transfers::EventRing::CommandCompletion* CompletionEvent := Event As Transfers::EventRing::CommandCompletion*
 
                 i64 CompletedPhysicalAddress := CompletionEvent->TransferRequestBlockPointer
 
@@ -774,8 +774,8 @@ namespace USB::XHCI {
 
                 Handle->Complete(Event)
             }
-            else if (Event->Type = TRB::Type::PortStatusChangeEvent) {
-                TRB::EventRing::PortStatusChange* PortEvent := Event As TRB::EventRing::PortStatusChange*
+            else if (Event->Type = Transfers::Type::PortStatusChangeEvent) {
+                Transfers::EventRing::PortStatusChange* PortEvent := Event As Transfers::EventRing::PortStatusChange*
 
                 i32 PortID := PortEvent->PortID
 
@@ -809,12 +809,12 @@ namespace USB::XHCI {
             for (i32 SegmentIndex := Ring->DequeueSegmentIndex, SegmentIndex < SegmentCount, SegmentIndex++) {
                 HostEventRingSegment* Segment := Ring->Segments->At(SegmentIndex)
 
-                TRB::TransferRequestBlock* Events := Segment->Events
+                TransferRequestBlock* Events := Segment->Events
 
                 i32 EventCount := Segment->RingSegmentSize
 
                 for (i32 EventIndex := Ring->DequeueEventIndex, EventIndex < EventCount, EventIndex++) {
-                    TRB::TransferRequestBlock* Event := Events[EventIndex]
+                    TransferRequestBlock* Event := Events[EventIndex]
 
                     if (Event->Cycle != Ring->CycleBit) {
                         ; Save state to resume processing later
@@ -852,7 +852,7 @@ namespace USB::XHCI {
                 ; Update the event ring dequeue pointer to the next event
 
                 HostEventRingSegment* CurrentSegment := Ring->Segments->At(Ring->DequeueSegmentIndex)
-                TRB::TransferRequestBlock* NextEvent := CurrentSegment->Events[Ring->DequeueEventIndex]
+                TransferRequestBlock* NextEvent := CurrentSegment->Events[Ring->DequeueEventIndex]
 
                 ERDP_FIELDS ERDP := VirtualToPhysical(NextEvent) As ERDP_FIELDS
 
@@ -872,12 +872,12 @@ namespace USB::XHCI {
         ; Then, once endpoint 0 is properly described, we switch back to a generic
         ;  "issue address device command" state and send the command to the controller to assign the device its address.
 
-        define void AllocateEndpointTransferRing(HostDevice* _Device, i32 EndpointIndex, i32 Size) {
+        define void AllocateEndpointTransferRing(HostDevice* Device, i32 EndpointIndex, i32 Size) {
             HostTransferRing* Ring := this->AllocateTransferRing(Size)
 
-            _Device->TransferRings[EndpointIndex] := Ring
+            Device->TransferRings[EndpointIndex] := Ring
 
-            EndpointContext* Endpoint := _Device->InputContext~>Endpoints[EndpointIndex]
+            EndpointContext* Endpoint := Device->InputContext~>Endpoints[EndpointIndex]
 
             i64 PhysicalAddress := VirtualToPhysical(Ring->Ring)
 
@@ -888,48 +888,48 @@ namespace USB::XHCI {
         }
 
         define HostDevice* AllocateDevice(i8 SlotID) {
-            HostDevice* _Device := Alloc(#HostDevice)
+            HostDevice* Device := Alloc(#HostDevice)
 
-            _Device->State := DeviceState::Disabled
-            _Device->SlotID := SlotID
+            Device->State := DeviceState::Disabled
+            Device->SlotID := SlotID
 
-            this->Devices[SlotID] := _Device
+            this->Devices[SlotID] := Device
 
             i32 ContextPageCount := SizeToPageCount(#InputControlContext) + SizeToPageCount(#DeviceContext)
             void* Contexts := this->AllocateDMA(ContextPageCount)
 
-            _Device->InputContext := Contexts As InputControlContext*
-            _Device->OutputContext := (Contexts + SizeToPageCount(#InputControlContext) * PAGE_SIZE) As DeviceContext*
+            Device->InputContext := Contexts As InputControlContext*
+            Device->OutputContext := (Contexts + SizeToPageCount(#InputControlContext) * PAGE_SIZE) As DeviceContext*
 
             ; We are updating context index 0  (SlotContext) and context index 1 (Endpoint 0 Context)
-            _Device->InputContext->AddContextFlags := (1 << 0) | (1 << 1)
+            Device->InputContext->AddContextFlags := (1 << 0) | (1 << 1)
 
-            this->DeviceContextBaseAddressArray[SlotID] := VirtualToPhysical(_Device->OutputContext)
+            this->DeviceContextBaseAddressArray[SlotID] := VirtualToPhysical(Device->OutputContext)
 
-            this->AllocateEndpointTransferRing(_Device, 0, 256) ; Endpoint 0 transfer ring
+            this->AllocateEndpointTransferRing(Device, 0, 256) ; Endpoint 0 transfer ring
 
-            return _Device
+            return Device
         }
 
-        define void IssueAddressDeviceCommand(HostDevice* _Device) {
-            TRB::CommandRing::AddressDevice* _TRB := _Device~>ScratchTRB As void*
+        define void IssueAddressDeviceCommand(HostDevice* Device) {
+            Transfers::CommandRing::AddressDevice* TRB := Device~>ScratchTRB As void*
 
-            FastZeroMemory(_TRB, #TRB::CommandRing::AddressDevice)
-            _TRB->Type := TRB::Type::AddressDevice
-            _TRB->InputContextPointer := VirtualToPhysical(_Device->InputContext)
-            _TRB->SlotID := _Device->SlotID
+            FastZeroMemory(TRB, #Transfers::CommandRing::AddressDevice)
+            TRB->Type := Transfers::Type::AddressDevice
+            TRB->InputContextPointer := VirtualToPhysical(Device->InputContext)
+            TRB->SlotID := Device->SlotID
 
-            _Device->CurrentCommand := this->SendCommand(_TRB)
+            Device->CurrentCommand := this->SendCommand(TRB)
 
-            _Device->State := DeviceState::Addressing
+            Device->State := DeviceState::Addressing
         }
 
         define void ProcessPort(HostPort* Port) {
             if (Port->State = PortState::Connected) {
                 this->Log("Port %i is connected, enabling slot", Port->Number)
 
-                FastZeroMemory(Port~>CurrentTransferRequestBlock, #TRB::CommandRing::EnableSlot)
-                Port~>CurrentTransferRequestBlock->Type := TRB::Type::EnableSlot
+                FastZeroMemory(Port~>CurrentTransferRequestBlock, #Transfers::CommandRing::EnableSlot)
+                Port~>CurrentTransferRequestBlock->Type := Transfers::Type::EnableSlot
 
                 Port->CurrentCommand := this->SendCommand(Port~>CurrentTransferRequestBlock)
 
@@ -943,9 +943,9 @@ namespace USB::XHCI {
                 if (Port->CurrentCommand->Wait(WAIT_PROBE)) {
                     this->Log("Port %i: EnableSlot command completed", Port->Number)
 
-                    TRB::EventRing::CommandCompletion* Completion := Port->CurrentCommand~>Completion As void*
+                    Transfers::EventRing::CommandCompletion* Completion := Port->CurrentCommand~>Completion As void*
 
-                    if (Completion->CompletionCode = TRB::CompletionCode::Success) {
+                    if (Completion->CompletionCode = Transfers::CompletionCode::Success) {
                         i8 SlotID := Completion->SlotID
 
                         this->Log("Port %i: EnableSlot command succeeded, assigned slot ID %i", Port->Number, SlotID)
@@ -956,8 +956,8 @@ namespace USB::XHCI {
 
                         ; 4.3.3 Device Slot Initialization
 
-                        HostDevice* _Device := Port->Device
-                        InputControlContext* InputContext := _Device->InputContext
+                        HostDevice* Device := Port->Device
+                        InputControlContext* InputContext := Device->InputContext
 
                         SlotContext* Slot := InputContext~>Slot
 
@@ -997,14 +997,14 @@ namespace USB::XHCI {
             }
         }
 
-        define void ProcessDevice(HostDevice* _Device) {
-            if (_Device->State = DeviceState::Addressing) {
-                if (_Device->CurrentCommand->Wait(WAIT_PROBE)) {
+        define void ProcessDevice(HostDevice* Device) {
+            if (Device->State = DeviceState::Addressing) {
+                if (Device->CurrentCommand->Wait(WAIT_PROBE)) {
                     ; Device has been addressed
 
                     Print("AddressDevice\n")
 
-                    _Device->State := DeviceState::Addressed
+                    Device->State := DeviceState::Addressed
                 }
             }
         }
@@ -1192,7 +1192,7 @@ namespace USB::XHCI {
 
             this->CommandHandles := new AVLTree(#CommandHandle*)
 
-            this->CommandRing := this->AllocateDMA(SizeToPageCount(1024 * #TRB::TransferRequestBlock))
+            this->CommandRing := this->AllocateDMA(SizeToPageCount(1024 * #TransferRequestBlock))
 
             this->Log("Command ring virtual address: %x", this->CommandRing)
 
@@ -1290,9 +1290,9 @@ namespace USB::XHCI {
 
             this->Log("Controller started successfully")
 
-            TRB::CommandRing::NoOperation* TRB := Alloc(#TRB::CommandRing::NoOperation)
+            Transfers::CommandRing::NoOperation* TRB := Alloc(#Transfers::CommandRing::NoOperation)
 
-            TRB->Type := TRB::Type::NoOperationCommand
+            TRB->Type := Transfers::Type::NoOperationCommand
 
             this->Log("Sending no-op command to controller")
 

@@ -1,5 +1,5 @@
 
-namespace USB::XHCI::TRB {
+namespace USB::XHCI::Transfers {
     enum Type {
         Reserved := 0,
 
@@ -45,15 +45,6 @@ namespace USB::XHCI::TRB {
         HostControllerEvent := 37,
         DeviceNotificationEvent := 38,
         MicroframeIndexWrapEvent := 39
-    }
-
-    struct TransferRequestBlock {
-        i32[3] _
-
-        bits As i32 {
-            [0] Cycle
-            Type [10:15] Type
-        }
     }
 
     namespace TransferRing {
@@ -501,5 +492,16 @@ namespace USB::XHCI::TRB {
 
         struct ForceEvent { }
         */
+    }
+}
+
+namespace USB::XHCI {
+    struct TransferRequestBlock {
+        i32[3] _
+
+        bits As i32 {
+            [0] Cycle
+            Transfers::Type [10:15] Type
+        }
     }
 }
