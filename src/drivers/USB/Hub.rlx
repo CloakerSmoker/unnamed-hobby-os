@@ -191,11 +191,11 @@ namespace USB::HubProtocol {
 
     struct Port {
         PortStatus Status
-        USB::Device* Attached
+        USB::PeripheralDevice* Attached
     }
 
     class Hub derives INew {
-        USB::Device* Base
+        USB::PeripheralDevice* Base
         InterfaceInfo* Info
         i32 Interface
 
@@ -307,7 +307,7 @@ namespace USB::HubProtocol {
             }
         }
 
-        define void New(USB::Device* Base, InterfaceInfo* Info) {
+        define void New(USB::PeripheralDevice* Base, InterfaceInfo* Info) {
             this->Base := Base
             this->Info := Info
 
@@ -370,7 +370,7 @@ namespace USB::HubProtocol {
             this->Devices := new PointerArray()
         }
 
-        define InterfaceMatchResult MatchInterface(USB::Device* Device, InterfaceInfo* Info) {
+        define InterfaceMatchResult MatchInterface(USB::PeripheralDevice* Device, InterfaceInfo* Info) {
             if (Info->Is(USB_CLASS_HUB, USB_HUB_SUBCLASS_UNUSED)) {
                 return InterfaceMatchResult::ClassSubclassMatch
             }
@@ -382,7 +382,7 @@ namespace USB::HubProtocol {
             }
         }
 
-        define void* AttachInterface(USB::Device* Base, InterfaceInfo* Info) {
+        define void* AttachInterface(USB::PeripheralDevice* Base, InterfaceInfo* Info) {
             Hub* Attached := new Hub(Base, Info)
 
             this->Devices->Push(Attached)

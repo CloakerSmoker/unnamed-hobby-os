@@ -727,12 +727,12 @@ namespace USB::HID {
     }
 
     class HumanInputDevice implements IFileHandle, derives INew {
-        Device* Base
+        PeripheralDevice* Base
         InterfaceInfo* Interface
 
         ReportDescriptorParser* Parser
 
-        define void New(Device* Base, InterfaceInfo* Info) {
+        define void New(PeripheralDevice* Base, InterfaceInfo* Info) {
             this->Base := Base
             this->Interface := Info
 
@@ -782,7 +782,7 @@ namespace USB::HID {
             this->Devices := PointerArray:New()
         }
 
-        define InterfaceMatchResult MatchInterface(USB::Device* Base, InterfaceInfo* Interface) {
+        define InterfaceMatchResult MatchInterface(USB::PeripheralDevice* Base, InterfaceInfo* Interface) {
             if (Interface->HIDDescriptors->Count() = 0) {
                 return InterfaceMatchResult::None
             }
@@ -794,7 +794,7 @@ namespace USB::HID {
             return InterfaceMatchResult::None
         }
 
-        define void* AttachInterface(USB::Device* Base, InterfaceInfo* Interface) {
+        define void* AttachInterface(USB::PeripheralDevice* Base, InterfaceInfo* Interface) {
             HumanInputDevice* HID := new HumanInputDevice(Base, Interface)
 
             this->Devices->Push(HID)

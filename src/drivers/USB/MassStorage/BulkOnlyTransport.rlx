@@ -97,7 +97,7 @@ namespace USB::MassStorage::BulkOnlyTransport {
     }
 
     class MassStorageDevice implements SCSI::IController, IBlockDevice, derives INew {
-        USB::Device* Base
+        USB::PeripheralDevice* Base
 
         i32 NextTag
 
@@ -111,7 +111,7 @@ namespace USB::MassStorage::BulkOnlyTransport {
         i64 BlockCount
         i32 BlockSize
 
-        define void New(USB::Device* Base, InterfaceInfo* Interface) {
+        define void New(USB::PeripheralDevice* Base, InterfaceInfo* Interface) {
             this->Base := Base
             this->Interface := Interface
 
@@ -255,7 +255,7 @@ namespace USB::MassStorage::BulkOnlyTransport {
             this->Devices := new PointerArray()
         }
 
-        define InterfaceMatchResult MatchInterface(Device* Base, InterfaceInfo* Interface) {
+        define InterfaceMatchResult MatchInterface(USB::PeripheralDevice* Base, InterfaceInfo* Interface) {
             InterfaceDescriptor* Descriptor := Interface~>Descriptor
 
             Print("Checking %i %i %i\n", Descriptor->Class, Descriptor->SubClass, Descriptor)
@@ -271,7 +271,7 @@ namespace USB::MassStorage::BulkOnlyTransport {
             return InterfaceMatchResult::None
         }
 
-        define void* AttachInterface(USB::Device* Base, InterfaceInfo* Interface) {
+        define void* AttachInterface(USB::PeripheralDevice* Base, InterfaceInfo* Interface) {
             MassStorageDevice* StorageDevice := new MassStorageDevice(Base, Interface)
 
             StorageDevice->Bus := new SCSI::Bus(StorageDevice, 0)

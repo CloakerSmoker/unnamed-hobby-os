@@ -125,7 +125,7 @@ namespace USB {
         virtual void Stop()
     }
 
-    class Device derives INew {
+    class PeripheralDevice derives INew {
         IController* Controller
 
         SetupPacket Setup
@@ -502,25 +502,25 @@ namespace USB {
     interface IDriver {
         virtual i8* Name()
 
-        virtual DeviceMatchResult Match(Device* Attached) {
+        virtual DeviceMatchResult Match(PeripheralDevice* Attached) {
             return DeviceMatchResult::None
         }
 
-        virtual InterfaceMatchResult MatchInterface(Device* Attached, InterfaceInfo* Info) {
+        virtual InterfaceMatchResult MatchInterface(PeripheralDevice* Attached, InterfaceInfo* Info) {
             return InterfaceMatchResult::None
         }
 
-        virtual void* Attach(Device* Attached) {
+        virtual void* Attach(PeripheralDevice* Attached) {
             return null
         }
-        virtual void* AttachInterface(Device* Attached, InterfaceInfo* Info) {
+        virtual void* AttachInterface(PeripheralDevice* Attached, InterfaceInfo* Info) {
             return null
         }
 
-        virtual void Remove(Device* Removed) {
+        virtual void Remove(PeripheralDevice* Removed) {
             ; Default implementation does nothing
         }
-        virtual void RemoveInterface(Device* Removed, InterfaceInfo* Info) {
+        virtual void RemoveInterface(PeripheralDevice* Removed, InterfaceInfo* Info) {
             ; Default implementation does nothing
         }
     }
@@ -545,7 +545,7 @@ namespace USB {
             return this->NextAddress++
         }
 
-        define Device* NotifyAttach() {
+        define PeripheralDevice* NotifyAttach() {
             Print("Notifying bus %i of new USB device\n", this->BusNumber)
 
             i32 Address := this->NextAddress++
@@ -553,7 +553,7 @@ namespace USB {
             this~>AssignAddressSetup->MakeSetAddress(Address As i8)
             this->Controller->SendControlTransfer(0, 0, TransferSpeed::Low, this~>AssignAddressSetup, null, 0)->Wait()->Free()
 
-            Device* Attached := new Device(this->Controller, Address)
+            PeripheralDevice* Attached := new PeripheralDevice(this->Controller, Address)
             DeviceDescriptor* AttachedDescriptor := Attached->Descriptor
 
             Print("What a wonderful %s %s you have plugged in !!!!!!\n", 
@@ -614,7 +614,7 @@ namespace USB {
                     }
 
                     if (BestInterfaceMatch) {
-                        Print("Bound interface %i of device %i to driver %s\n", InterfaceIndex, Address, BestInterfaceMatch->Name())
+                        Print("Bound interface %i of device %i to driver %s\n", InterfaceIndex, Attached->Address, BestInterfaceMatch->Name())
 
                         Interface->Driver := BestInterfaceMatch
                         Interface->DriverData := BestInterfaceMatch->AttachInterface(Attached, Interface)
@@ -627,7 +627,7 @@ namespace USB {
 
             return Attached
         }
-        define void NotifyRemove(Device* Removed) {
+        define void NotifyRemove(PeripheralDevice* Removed) {
             if (Removed->Driver) {
                 Removed->Driver->Remove(Removed)
             }
