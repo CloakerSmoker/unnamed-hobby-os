@@ -1,0 +1,505 @@
+
+namespace USB::XHCI::TRB {
+    enum Type {
+        Reserved := 0,
+
+        ; Allowed in transfer ring:
+        Normal := 1,
+        SetupStage := 2,
+        DataStage := 3,
+        StatusStage := 4,
+        Isochronous := 5,
+
+        ; Allowed in transfer+command rings
+        Link := 6,
+
+        ; Allowed in transfer ring:
+        EventData := 7,
+        NoOp := 8,
+
+        ; Allowed in command ring:
+        EnableSlot := 9,
+        DisableSlot := 10,
+        AddressDevice := 11,
+        ConfigureEndpoint := 12,
+        EvaluateContext := 13,
+        ResetEndpoint := 14,
+        StopEndpoint := 15,
+        SetTransferRingDequeuePointer := 16,
+        ResetDevice := 17,
+        ForceEvent := 18,
+        NegotiateBandwidth := 19,
+        SetLatencyToleranceValue := 20,
+        GetPortBandwidth := 21,
+        ForceHeader := 22,
+        NoOperationCommand := 23,
+        GetExtendedProperty := 24,
+        SetExtendedProperty := 25,
+        
+        ; Allowed in event ring:
+        TransferEvent := 32,
+        CommandCompletionEvent := 33,
+        PortStatusChangeEvent := 34,
+        BandwidthRequestEvent := 35,
+        DoorbellEvent := 36,
+        HostControllerEvent := 37,
+        DeviceNotificationEvent := 38,
+        MicroframeIndexWrapEvent := 39
+    }
+
+    struct TransferRequestBlock {
+        i32[3] _
+
+        bits As i32 {
+            [0] Cycle
+            Type [10:15] Type
+        }
+    }
+
+    namespace TransferRing {
+        struct NormalTransferRequestBlock {
+            i64 DataBufferPointer
+
+            bits As i32 {
+                [0:16] TransferLength
+                [17:21] TransferDescriptorSize
+                [22:31] InterrupterTarget
+            }
+
+            bits As i32 {
+                [0] Cycle
+                [1] EvaluateNextTransfer
+                [2] InterruptOnShortPacket
+                [3] NoSnoop
+                [4] Chain
+                [5] InterruptOnCompletion
+                [6] ImmediateData
+                [9] BlockEventInterrupt
+                Type [10:15] Type
+            }
+        }
+
+        enum ControlTransferType {
+            NoDataStage := 0,
+            Reserved := 1,
+            OutDataStage := 2,
+            InDataStage := 3
+        }
+
+        struct ControlTransferRequestBlock {
+            i8 bmRequestType
+            i8 bRequest
+            i16 wValue
+            i16 wIndex
+            i16 wLength
+
+            bits As i32 {
+                [0:16] TransferLength
+                [22:31] InterrupterTarget
+            }
+
+            bits As i32 {
+                [0] Cycle
+                [5] InterruptOnCompletion
+                [6] ImmediateData
+                [9] BlockEventInterrupt
+                [10:15] Type
+                ControlTransferType [16:17] TransferType
+            }
+        }
+
+        enum TransferDirection {
+            Out := 0,
+            In := 1
+        }
+
+        struct DataStageTransferRequestBlock {
+            i64 DataBufferPointer
+
+            bits As i32 {
+                [0:16] TransferLength
+                [17:21] TransferDescriptorSize
+                [22:31] InterrupterTarget
+            }
+
+            bits As i32 {
+                [0] Cycle
+                [1] EvaluateNextTransfer
+                [2] InterruptOnShortPacket
+                [3] NoSnoop
+                [4] Chain
+                [5] InterruptOnCompletion
+                [6] ImmediateData
+                Type [10:15] Type
+                TransferDirection [16] Direction
+            }
+        }
+
+        struct StatusStageTransferRequestBlock {
+            i64 _
+
+            bits As i32 {
+                [22:31] InterrupterTarget
+            }
+
+            bits As i32 {
+                [0] Cycle
+                [1] EvaluateNextTransfer
+                [4] Chain
+                [5] InterruptOnCompletion
+                Type [10:15] Type
+                TransferDirection [16] Direction
+            }
+        }
+
+        struct IsochronousTransferRequestBlock {
+            i64 DataBufferPointer
+
+            bits As i32 {
+                [0:16] TransferLength
+
+                [17:21] TransferDescriptorSize ; if ETE = 0
+                [17:21] TransferBurstCount ; if ETE = 1
+
+                [22:31] InterrupterTarget
+            }
+
+            bits As i32 {
+                [0] Cycle
+                [1] EvaluateNextTransfer
+                [2] InterruptOnShortPacket
+                [3] NoSnoop
+                [4] Chain
+                [5] InterruptOnCompletion
+                [6] ImmediateData
+                [7:8] TransferBurstCount ; if ETE = 0
+                [9] BlockEventInterrupt
+                Type [10:15] Type
+                [16:19] TransferLastBurstPacketCount
+                [20:30] FrameID
+                [31] StartIsochronousASAP
+            }
+        }
+
+        struct NoOpTransferRequestBlock {
+            i64 _
+
+            bits As i32 {
+                [22:31] InterrupterTarget
+            }
+
+            bits As i32 {
+                [0] Cycle
+                [1] EvaluateNextTransfer
+                [4] Chain
+                [5] InterruptOnCompletion
+                Type [10:15] Type
+            }
+        }
+    }
+
+    enum CompletionCode {
+        Invalid := 0,
+        Success := 1,
+        DataBufferError := 2,
+        BabbleDetected := 3,
+        USBTransactionError := 4,
+        TransferDescriptorError := 5,
+        StallError := 6,
+        ResourceError := 7,
+        BandwidthError := 8,
+        NoSlotsAvailableError := 9,
+        InvalidStreamTypeError := 10,
+        SlotNotEnabledError := 11,
+        EndpointNotEnabledError := 12,
+        ShortPacket := 13,
+        RingUnderrun := 14,
+        RingOverrun := 15,
+        VFEventRingFull := 16,
+        ParameterError := 17,
+        BandwidthOverrun := 18,
+        ContextStateError := 19,
+        NoPingResponseError := 20,
+        EventRingFullError := 21,
+        IncompatibleDeviceError := 22,
+        MissedServiceError := 23,
+        CommandRingStopped := 24,
+        CommandAborted := 25,
+        Stopped := 26,
+        StoppedLengthInvalid := 27,
+        StoppedShortPacket := 28,
+        MaxExitLatencyTooLarge := 29,
+        IsochronousBufferOverrun := 31,
+        EventLostError := 32,
+        UndefinedError := 33,
+        InvalidStreamIDError := 34,
+        SecondaryBandwidthError := 35,
+        SplitTransactionError := 36
+    }
+
+    namespace EventRing {
+        struct Any {
+            i32[2] _
+
+            bits As i32 {
+                CompletionCode [24:31] CompletionCode
+            }
+
+            bits As i32 {
+                [0] C
+                Type [10:15] Type
+            }
+        }
+
+        struct Transfer {
+            i64 TransferRequestBlockPointer
+
+            bits As i32 {
+                [0:23] TransferLength
+                CompletionCode [24:31] CompletionCode
+            }
+
+            bits As i32 {
+                [0] C
+                [2] ED
+                Type [10:15] Type
+                [16:20] EndpointID
+                [24:31] SlotID
+            }
+        }
+
+        struct CommandCompletion {
+            i64 TransferRequestBlockPointer
+
+            bits As i32 {
+                [0:23] CommandCompletionParameter
+                CompletionCode [24:31] CompletionCode
+            }
+
+            bits As i32 {
+                [0] C
+                Type [10:15] Type
+                [16:23] VFID
+                [24:31] SlotID
+            }
+        }
+
+        struct PortStatusChange {
+            bits As i32 {
+                [24:31] PortID
+            }
+
+            i32 _
+
+            bits As i32 {
+                CompletionCode [24:31] CompletionCode
+            }
+
+            bits As i32 {
+                [0] C
+                Type [10:15] Type
+            }
+        }
+
+        struct BandwidthRequest {
+            i32[2] _
+
+            bits As i32 {
+                CompletionCode [24:31] CompletionCode
+            }
+
+            bits As i32 {
+                [0] C
+                Type [10:15] Type
+                [24:31] SlotID
+            }
+        }
+
+        struct Doorbell {
+            bits As i32 {
+                [0:4] DoorbellReason
+            }
+
+            i32 _
+
+            bits As i32 {
+                CompletionCode [24:31] CompletionCode
+            }
+
+            bits As i32 {
+                [0] C
+                Type [10:15] Type
+                [16:23] VFID
+                [24:31] SlotID
+            }
+        }
+
+        struct HostController {
+            i32[2] _
+
+            bits As i32 {
+                CompletionCode [24:31] CompletionCode
+            }
+
+            bits As i32 {
+                [0] C
+                Type [10:15] Type
+                [24:31] SlotID
+            }
+        }
+
+        struct DeviceNotification {
+            bits As i8 {
+                [4:7] NotificationType
+            }
+
+            i8[6] DeviceNotificationData
+
+            bits As i32 {
+                CompletionCode [24:31] CompletionCode
+            }
+
+            bits As i32 {
+                [0] C
+                Type [10:15] Type
+                [24:31] SlotID
+            }
+        }
+
+        struct MicroframeIndexWrap {
+            i32[2] _
+
+            bits As i32 {
+                CompletionCode [24:31] CompletionCode
+            }
+
+            bits As i32 {
+                [0] C
+                Type [10:15] Type
+            }
+        }
+    }
+
+    namespace CommandRing {
+        struct NoOperation {
+            i32[3] _
+
+            bits As i32 {
+                [0] Cycle
+                Type [10:15] Type
+                [16:20] SlotType ; Note: this field appears to be a mistake in the spec
+            }
+        }
+
+        struct EnableSlot {
+            i32[3] _
+
+            bits As i32 {
+                [0] Cycle
+                Type [10:15] Type
+                [16:20] SlotType
+            }
+        }
+
+        struct DisableSlot {
+            i32[3] _
+
+            bits As i32 {
+                [0] Cycle
+                Type [10:15] Type
+                [24:31] SlotID
+            }
+        }
+
+        struct AddressDevice {
+            i64 InputContextPointer
+
+            i32 _    
+
+            bits As i32 {
+                [0] Cycle
+                [9] BlockSetAddressRequest
+                Type [10:15] Type
+                [24:31] SlotID
+            }
+        }
+
+        struct ConfigureEndpoint {
+            i64 InputContextPointer
+
+            i32 _    
+
+            bits As i32 {
+                [0] Cycle
+                [9] Deconfigure
+                Type [10:15] Type
+                [24:31] SlotID
+            }
+        }
+
+        struct EvaluateContext {
+            i64 InputContextPointer
+
+            i32 _    
+
+            bits As i32 {
+                [0] Cycle
+                Type [10:15] Type
+                [24:31] SlotID
+            }
+        }
+
+        struct ResetEndpoint {
+            i32[3] _
+
+            bits As i32 {
+                [0] Cycle
+                [9] TransferStatePreserve
+                Type [10:15] Type
+                [16:20] EndpointID
+                [24:31] SlotID
+            }
+        }
+
+        struct StopEndpoint {
+            i32[3] _
+
+            bits As i32 {
+                [0] Cycle
+                Type [10:15] Type
+                [16:20] EndpointID
+                [23] Suspend
+                [24:31] SlotID
+            }
+        }
+
+        struct SetTransferRingDequeuePointer {
+            i64 DequeuePointer
+
+            i32 _    
+
+            bits As i32 {
+                [0] Cycle
+                Type [10:15] Type
+                [16:20] EndpointID
+                [24:31] SlotID
+            }
+        }
+
+        struct ResetDevice {
+            i32[3] _
+
+            bits As i32 {
+                [0] Cycle
+                Type [10:15] Type
+                [24:31] SlotID
+            }
+        }
+
+        /*
+        Virtualization only
+
+        struct ForceEvent { }
+        */
+    }
+}

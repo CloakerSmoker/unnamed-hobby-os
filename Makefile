@@ -461,6 +461,11 @@ ifneq (,$(findstring ehci,$(flags)))
 	DISK_FLAGS:=-drive if=none,id=stick,format=raw,file=build/USB.img -usb -device usb-ehci,id=ehci -device usb-storage,bus=ehci.0,drive=stick,pcap=stick.pcap
 endif
 
+HELP_TEXT+=xhci: all that USB stuff
+ifneq (,$(findstring xhci,$(flags)))
+	DISK_FLAGS:=-drive if=none,id=stick,format=raw,file=build/USB.img -usb -device qemu-xhci,id=xhci -device usb-storage,bus=xhci.0,drive=stick,pcap=stick.pcap -device usb-kbd,bus=xhci.0,pcap=keeb.pcap --trace "*xhci*"
+endif
+
 HELP_TEXT+=-dint: dint
 ifneq (,$(findstring dint,$(flags)))
 	QEMU_FLAGS+=-d int

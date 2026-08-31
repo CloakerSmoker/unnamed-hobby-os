@@ -1,0 +1,1333 @@
+
+#Require "./src/drivers/PCI/MSI-X.rlx"
+
+i8 PCI_INTERFACE_XHCI := 0x30
+
+PointerArray* ALL_XHCI_CONTROLLERS := new PointerArray()
+
+#Require "./src/drivers/USB/XHCI/TRB.rlx"
+
+namespace USB::XHCI {
+    struct HostControllerCapabilityRegisters {
+        i8 CAPLENGTH
+
+        i8 _
+
+        i16 HCIVERSION
+        
+        union {
+            i32 HCSPARAMS1
+
+            bits As i32 {
+                [0:7] MaximumSlotCount
+                [8:18] MaximumInterrupterCount
+                [24:31] MaximumPortCount
+            }
+        }
+
+        union {
+            i32 HCSPARAMS2
+
+            bits As i32 {
+                [0:3] IsochronousSchedulingThreshold
+                [4:7] EventRingSegmentTableMaximumSize
+                [21:25] MaximumScratchpadBufferCountHigh
+                [26] ScratchpadRestore
+                [27:31] MaximumScratchpadBufferCountLow
+            }
+        }
+
+        union {
+            i32 HCSPARAMS3
+
+            bits As i32 {
+                [0:7] U1DeviceExitLatency
+                [17:31] U2DeviceExitLatency
+            }
+        }
+
+        union {
+            i32 HCCPARAMS1
+
+            bits As i32 {
+                [0] AC64
+                [1] BNC
+                [2] CSZ
+                [3] PPC
+                [4] PIND
+                [5] LHRC
+                [6] LTC
+                [7] NSS
+                [8] PAE
+                [9] SPC
+                [10] SEC
+                [11] CFC
+                [12:16] MaxPSASize
+                [16:31] xECP
+            }
+        }
+
+        i32 DBOFF
+        i32 RTSOFF
+
+        union {
+            i32 HCCPARAMS2
+
+            bits As i32 {
+                [0] U3C
+                [1] CMC
+                [2] FSC
+                [3] CTC
+                [4] LEC
+                [5] CIC
+                [6] ETC
+                [7] ETC_TSC
+                [8] GSC
+                [9] VTC
+            }
+        }
+
+        i32 VTIOSOFF
+    }
+
+    bits USBCMD_FIELDS As i32 {
+        [0] RS
+        [1] HCRST
+        [2] INTE
+        [3] HSEE
+        [7] LHCRST
+        [8] CSS
+        [9] CRS
+        [10] EWE
+        [11] EU3S
+        [13] CME
+        [14] ETE
+        [15] TSC_EN
+        [16] VTIOE
+    }
+
+    bits USBSTS_FIELDS As i32 {
+        [0] HCH
+        [2] HSE
+        [3] EINT
+        [4] PCD
+        [8] SSS
+        [9] RSS
+        [10] SRE
+        [11] CNR
+        [12] HCE
+    }
+
+    bits CRCR_FIELDS As i64 {
+        [0] RCS
+        [1] CS
+        [2] CA
+        [3] CRR
+        [0:63] CommandRingPointer
+    }
+
+    bits CONFIG_FIELDS As i32 {
+        [0:7] EnabledDeviceSlotCount
+        [8] U3E
+        [9] CIE
+    }
+
+    struct HostControllerOperationalRegisters unaligned {
+        USBCMD_FIELDS USBCMD ; 0x00
+        USBSTS_FIELDS USBSTS           ; 0x04
+        i32 PAGESIZE         ; 0x08
+        i8[8] _              ; 0x0C - 0x13
+        i32 DNCTRL           ; 0x14
+        CRCR_FIELDS CRCR             ; 0x18
+        i8[16] _             ; 0x20 - 0x2F
+        i64 DCBAAP           ; 0x30
+        CONFIG_FIELDS CONFIG
+    }
+
+    enum PLS_VALUES {
+        U0 := 0,
+        U1 := 1,
+        U2 := 2,
+        U3 := 3,
+        Disabled := 4,
+        RxDetect := 5,
+        Inactive := 6,
+        Polling := 7
+        Recover := 8
+        HotReset := 9
+        ComplianceMode := 10
+        TestMode := 11
+        Resume := 15
+    }
+
+    enum PS_VALUES {
+        Undefined := 0,
+        FullSpeed := 1,
+        LowSpeed := 2,
+        HighSpeed := 3,
+        SuperSpeed := 4
+    }
+
+    enum PIC_VALUES {
+        Off := 0,
+        Amber := 1,
+        Green := 2,
+        Undefined := 3
+    }
+
+    bits PORTSC_FIELDS As i32 {
+        [0] CCS
+        [1] PED
+        [3] OCA
+        [4] PR
+        PLS_VALUES [5:8] PLS
+        [9] PP
+        PS_VALUES [10:13] PS
+        PIC_VALUES [14:15] PIC
+        [16] LWS
+        [17] CSC
+        [18] PEC
+        [19] WRC
+        [20] OCC
+        [21] PRC
+        [22] PLC
+        [23] CEC
+        [24] CAS
+        [25] WCE
+        [26] WDE
+        [27] WOE
+        [30] DR
+        [31] WPR
+    }
+
+    bits PORTPMSC_USB3_FIELDS As i32 {
+        [0:7] U1Timeout
+        [8:15] U2Timeout
+        [16] FLA
+    }
+
+    enum L1S_VALUES {
+        Invalid := 0,
+        Success := 1,
+        NotYet := 2,
+        NotSupported := 3
+        TimeoutOrError := 4
+    }
+
+    enum PortTestControl_VALUES {
+        Disabled := 0,
+        JState := 1,
+        KState := 2,
+        SE0_NAK := 3,
+        Packet := 4,
+        ForceEnable := 5
+    }
+
+    bits PORTPMSC_USB2_FIELDS As i32 {
+        L1S_VALUES [0:2] L1S
+        [3] RWE
+        [4:7] BESL
+        [8:15] L1DeviceSlot
+        [16] HLE
+        PortTestControl_VALUES [28:31] PortTestControl
+    }
+
+    bits PORTLI_USB3_FIELDS As i32 {
+        [0:15] LinkErrorCount
+        [16:19] RLC
+        [20:23] TLC
+    }
+
+    bits PORTEXSC_USB3_FIELDS As i32 {
+        [0:15] LinkSoftErrorCount
+    }
+
+    bits PORTEXSC_USB2_FIELDS As i32 {
+        [0:1] HIRDM
+        [2:9] L1Timeout
+        [10:13] BESLD
+    }
+
+    bits PORTHLPMC_USB2_FIELDS As i32 {
+        [0:1] HIRDM
+        [2:9] L1Timeout
+        [10:13] BESLD
+    }
+
+    struct HostControllerPortRegisters {
+        PORTSC_FIELDS PORTSC
+
+        union {
+            PORTPMSC_USB3_FIELDS PORTPMSC_USB3
+            PORTPMSC_USB2_FIELDS PORTPMSC_USB2
+        }
+
+        union {
+            PORTLI_USB3_FIELDS PORTLI_USB3
+            i32 PORTLI_USB2
+        }
+
+        union {
+            i32 PORTHLPMC_USB3
+            PORTHLPMC_USB2_FIELDS PORTHLPMC_USB2
+        }
+    }
+
+    bits ERDP_FIELDS As i64 {
+        [0:2] DESI
+        [3] EHB
+    }
+
+    struct InterrupterRegisterSet {
+        bits As i32 {
+            [0] Pending
+            [1] Enabled
+        }
+        
+        bits As i32 {
+            [0:15] ModerationInterval
+            [16:31] ModerationCounter
+        }
+
+        i32 EventRingSegmentTableSize
+        i64 EventRingSegmentTableBaseAddress
+
+        union {
+            i64 EventRingDequeuePointer
+            ERDP_FIELDS ERDP
+        }
+    }
+
+    struct HostControllerRuntimeRegisters {
+        i32 MFINDEX
+        i8[0x1C] _
+        InterrupterRegisterSet[1024] Interrupters
+    }
+
+    enum DoorbellTarget {
+        Reserved := 0,
+        ControlEndpoint0 := 1,
+
+        Endpoint1Out := 2,
+        Endpoint1In := 3,
+
+        Endpoint2Out := 4,
+        Endpoint2In := 5,
+
+        Endpoint3Out := 6,
+        Endpoint3In := 7,
+
+        Endpoint4Out := 8,
+        Endpoint4In := 9,
+
+        Endpoint5Out := 10,
+        Endpoint5In := 11,
+
+        Endpoint6Out := 12,
+        Endpoint6In := 13,
+
+        Endpoint7Out := 14,
+        Endpoint7In := 15,
+
+        Endpoint8Out := 16,
+        Endpoint8In := 17,
+
+        Endpoint9Out := 18,
+        Endpoint9In := 19,
+
+        Endpoint10Out := 20,
+        Endpoint10In := 21,
+
+        Endpoint11Out := 22,
+        Endpoint11In := 23,
+
+        Endpoint12Out := 24,
+        Endpoint12In := 25,
+
+        Endpoint13Out := 26,
+        Endpoint13In := 27,
+
+        Endpoint14Out := 28,
+        Endpoint14In := 29,
+
+        Endpoint15Out := 30,
+        Endpoint15In := 31
+    }
+
+    bits DoorbellRegister As i32 {
+        DoorbellTarget [0:7] Target
+        [16:31] StreamID
+    }
+
+    ; Event ring management
+
+    struct EventRingSegmentTableEntry {
+        i64 RingSegmentBaseAddress
+        i32 RingSegmentSize
+        i32[3] _
+    }
+
+    struct HostEventRingSegment {
+        i64 RingSegmentBaseAddress
+        i32 RingSegmentSize
+
+        TRB::TransferRequestBlock* Events
+    }
+
+    struct HostEventRing {
+        i64 SegmentTablePhysicalAddress
+        EventRingSegmentTableEntry* SegmentTable
+
+        i32 SegmentTableSize
+        i32 SegmentTableCapacity
+
+        PointerArray* Segments ; <HostEventRingSegment*>
+
+        InterrupterRegisterSet* Interrupter
+
+        i32 DequeueSegmentIndex
+        i32 DequeueEventIndex
+        i8 CycleBit
+    }
+
+    enum SlotContextState {
+        Disabled := 0,
+        Default := 1,
+        Addressed := 2,
+        Configured := 3
+    }
+
+    struct SlotContext {
+        bits As i32 {
+            [0:19] RouteString
+            [20:23] Speed
+            [25] MTT
+            [26] Hub
+            [27] ContextEntries
+        }
+
+        bits As i32 {
+            [0:15] MaxExitLatency
+            [16:23] RootHubPortNumber
+            [24:31] NumberOfPorts
+        }
+
+        bits As i32 {
+            [0:7] TTHubSlotID
+            [8:15] TTPortNumber
+            [16:17] TTT
+            [22:31] InterrupterTarget
+        }
+
+        bits As i32 {
+            [0:7] USBDeviceAddress
+            SlotContextState [27:31] SlotState
+        }
+
+        i32[4] _
+    }
+
+    enum EndpointType {
+        Invalid,
+        IsochronousOut
+        BulkOut
+        InterruptOut
+        Control
+        IsochronousIn
+        BulkIn
+        InterruptIn
+    }
+
+    struct EndpointContext {
+        bits As i32 {
+            [0:2] EndpointState
+            [8:9] Mult
+            [10:14] MaxPrimaryStreams
+            [15] LSA
+            [16:23] Interval
+            [24:31] MaxESITPayloadHigh
+        }
+
+        bits As i32 {
+            [1:2] ErrorCount
+            EndpointType [3:5] Type
+            [7] HID
+            [8:15] MaxBurstSize
+            [16:31] MaxPacketSize
+        }
+
+        bits As i32 {
+            [0] DCS
+            [4:31] DequeuePointerLow
+        }
+
+        i32 DequeuePointerHigh
+
+        bits As i32 {
+            [0:15] AverageTRBLength
+            [16:31] MaxESITPayloadLow
+        }
+
+        i32[3] _
+    }
+
+    struct DeviceContext {
+        SlotContext Slot
+        EndpointContext[31] Endpoints
+    }
+
+    struct InputControlContext {
+        i32 DropContextFlags
+        i32 AddContextFlags
+
+        i32[5] _
+
+        i8 ConfigurationValue
+        i8 InterfaceNumber
+        i8 AlternateSetting
+        i8 _
+
+        SlotContext Slot
+        EndpointContext[31] Endpoints
+    }
+
+    struct CommandHandle {
+        i8* Name
+        Synchronization::Semaphore* Completed
+
+        TRB::TransferRequestBlock Command
+        TRB::TransferRequestBlock Completion
+
+        static self* New(i8* ParentName, i32 Number, TRB::TransferRequestBlock* Command) {
+            self* this := Alloc(#self)
+
+            this->Name := FormatString("%s: XHCI Command %i", ParentName, Number)
+            this->Completed := new Synchronization::Semaphore(this->Name, 0)
+
+            MoveMemory(this~>Command, Command, #TRB::TransferRequestBlock)
+
+            return this
+        }
+
+        define void Complete(TRB::TransferRequestBlock* Completion) {
+            MoveMemory(this~>Completion, Completion, #TRB::TransferRequestBlock)
+
+            this->Completed->Signal()
+        }
+
+        define i8 Wait(i32 Timeout) {
+            return this->Completed->Wait(Timeout)
+        }
+
+        define void Free() {
+            this->Completed->Free()
+            Free(this->Name)
+            Free(this)
+        }
+    }
+
+    struct HostTransferRing {
+        TRB::TransferRequestBlock* Ring
+        i32 Size
+
+        i32 EnqueueIndex
+        i32 DequeueIndex
+        i8 CycleBit
+    }
+
+    enum DeviceState {
+        Disabled
+        Addressing
+        Addressed
+        Configured
+    }
+
+    struct HostDevice {
+        DeviceState State
+
+        CommandHandle* CurrentCommand
+
+        i8 SlotID
+
+        i32 MaximumPacketSize
+        
+        InputControlContext* InputContext
+        DeviceContext* OutputContext
+
+        HostTransferRing*[32] TransferRings
+
+        TRB::TransferRequestBlock ScratchTRB
+    }
+
+    enum PortState {
+        Disabled
+        Connected
+        EnablingSlot
+        DeviceConnected
+    }
+
+    struct HostPort {
+        PortState State
+        i8 Number
+
+        HostControllerPortRegisters* Registers
+
+        CommandHandle* CurrentCommand
+        TRB::TransferRequestBlock CurrentTransferRequestBlock
+
+        ; Only valid if State = Enabled
+        HostDevice* Device
+    }
+
+    class Controller derives INew {
+        PCIeAddress* Address
+        PCIeDevice* Device
+
+        i8* Name
+
+        define void Log(i8* Format, ... Args) {
+            i8[200] Buffer
+
+            i32 Length := RawFormatString(Buffer, 300, Format, Args)
+            Buffer[Length] := 0
+
+            Print("%s: %s\n", this->Name, Buffer)
+        }
+
+        define void New(PCIeAddress* Address, PCIeDevice* _Device) {
+            this->Address := Address
+            this->Device := _Device
+
+            this->Name := FormatString("%pcie-address: XHCI", Address)
+
+            ALL_XHCI_CONTROLLERS->Push(this)
+        }
+
+        define void* AllocateDMA(i32 PageCount) {
+            void* Virtual := KernelVirtualMemory->FindGap(PageCount)
+            i64 Physical := PhysicalMemory->Allocate(PageCount)
+
+            KernelVirtualMemory->SetRange(Virtual, Physical, PageCount, PAGE_PRESENT | PAGE_WRITE | PAGE_CACHE_DISABLE | 0x8)
+
+            FastZeroMemory(Virtual, PageCount * PAGE_SIZE)
+
+            return Virtual
+        }
+
+        MSIX::Helper* MSIX
+
+        void* MMIO
+
+        HostControllerCapabilityRegisters* CapabilityRegisters
+        HostControllerOperationalRegisters* OperationalRegisters
+        HostControllerPortRegisters* PortRegisters
+        HostControllerRuntimeRegisters* RuntimeRegisters
+        DoorbellRegister* DoorbellRegisters
+
+        TRB::TransferRequestBlock* CommandRing
+
+        i64* DeviceContextBaseAddressArray
+        HostDevice** Devices
+
+        ; Command Ring
+
+        ; Map TRB physical addresses to command handles for completion handling
+        AVLTree* CommandHandles ; <i64, CommandHandle*>
+
+        define void RingSlotDoorbell(i32 SlotID, DoorbellTarget Target) {
+            DoorbellRegister Fields := 0 As DoorbellRegister
+
+            Fields.Target := Target
+            Fields.StreamID := 0
+
+            this->DoorbellRegisters[SlotID + 1] := Fields
+        }
+
+        define void RingCommandDoorbell() {
+            this->DoorbellRegisters[0] := 0 As DoorbellRegister
+        }
+
+        i32 CommandRingEnqueueIndex
+        i8 CommandRingCycleBit
+
+        define i64 EnqueueCommand(TRB::TransferRequestBlock* TRB) {
+            i32 Index := this->CommandRingEnqueueIndex % 1024
+
+            TRB::TransferRequestBlock* RingTRB := this->CommandRing[Index]
+
+            MoveMemory(RingTRB, TRB, #TRB::TransferRequestBlock)
+
+            RingTRB->Cycle := this->CommandRingCycleBit
+
+            this->CommandRingEnqueueIndex += 1
+
+            if (this->CommandRingEnqueueIndex % 1024 = 0) {
+                this->CommandRingCycleBit := !this->CommandRingCycleBit
+            }
+
+            return VirtualToPhysical(RingTRB)
+        }
+
+        define CommandHandle* SendCommand(void* TRB) {
+            CommandHandle* Handle := new CommandHandle(this->Name, this->CommandRingEnqueueIndex, TRB)
+
+            i64 CommandPhysicalAddress := this->EnqueueCommand(TRB)
+
+            this->CommandHandles->InsertPointer(CommandPhysicalAddress, Handle)
+
+            this->RingCommandDoorbell()
+
+            return Handle
+        }
+
+        ; Transfer Ring Management
+
+        define HostTransferRing* AllocateTransferRing(i32 Size) {
+            HostTransferRing* Ring := Alloc(#HostTransferRing)
+
+            Ring->Ring := this->AllocateDMA(SizeToPageCount(Size * #TRB::TransferRequestBlock))
+            Ring->Size := Size
+
+            Ring->EnqueueIndex := 0
+            Ring->DequeueIndex := 0
+            Ring->CycleBit := 1
+
+            return Ring
+        }
+
+        ; 4.9.4 Event Ring Management
+
+        define HostEventRingSegment* AllocateEventRingSegment() {
+            ; Allocate a new event ring segment with 1024 events
+
+            HostEventRingSegment* Segment := Alloc(#HostEventRingSegment)
+
+            Segment->RingSegmentSize := 1024
+            Segment->Events := this->AllocateDMA(SizeToPageCount(Segment->RingSegmentSize * #TRB::TransferRequestBlock))
+            Segment->RingSegmentBaseAddress := VirtualToPhysical(Segment->Events)
+
+            return Segment
+        }
+
+        define void AddEventRingSegment(HostEventRing* Ring, HostEventRingSegment* Segment) {
+            ; Add a segment to an event ring
+
+            i32 Index := Ring->SegmentTableSize
+            Ring->Segments->Push(Segment)
+
+            EventRingSegmentTableEntry* Entry := Ring->SegmentTable[Index]
+
+            Entry->RingSegmentBaseAddress := Segment->RingSegmentBaseAddress
+            Entry->RingSegmentSize := Segment->RingSegmentSize
+
+            Ring->SegmentTableSize += 1
+        }
+
+        define HostEventRing* AllocateEventRing(InterrupterRegisterSet* Interrupter) {
+            ; Allocate an empty event ring for the given interrupter
+
+            HostEventRing* Ring := Alloc(#HostEventRing)
+
+            Ring->Segments := new PointerArray()
+
+            Ring->Interrupter := Interrupter
+
+            Ring->SegmentTableCapacity := 8
+            Ring->SegmentTable := this->AllocateDMA(SizeToPageCount(Ring->SegmentTableCapacity * #EventRingSegmentTableEntry))
+            Ring->SegmentTablePhysicalAddress := VirtualToPhysical(Ring->SegmentTable)
+
+            this->AddEventRingSegment(Ring, this->AllocateEventRingSegment())
+
+            Interrupter->EventRingSegmentTableSize := Ring->SegmentTableSize
+
+            HostEventRingSegment* FirstSegment := Ring->Segments->At(0)
+            Interrupter->EventRingDequeuePointer := FirstSegment->RingSegmentBaseAddress
+
+            Interrupter->EventRingSegmentTableBaseAddress := Ring->SegmentTablePhysicalAddress
+
+            return Ring
+        }
+
+        HostEventRing* PrimaryEventRing
+        PointerArray* EventRings ; <HostEventRing*>
+
+        PointerArray* Ports ; <HostPort*>
+
+        Synchronization::Semaphore* Interrupt
+
+        define void ProcessEvent(TRB::TransferRequestBlock* Event) {
+            if (Event->Type = TRB::Type::CommandCompletionEvent) {
+                TRB::EventRing::CommandCompletion* CompletionEvent := Event As TRB::EventRing::CommandCompletion*
+
+                i64 CompletedPhysicalAddress := CompletionEvent->TransferRequestBlockPointer
+
+                this->Log("Command completion event received for TRB at physical address %x", CompletedPhysicalAddress)
+
+                CommandHandle* Handle := this->CommandHandles->GetPointer(CompletedPhysicalAddress) As CommandHandle*
+
+                if (Handle = null) {
+                    this->Log("Command completion event received for unknown TRB at physical address %x", CompletedPhysicalAddress)
+                    return
+                }
+
+                this->CommandHandles->Remove(CompletedPhysicalAddress)
+
+                Handle->Complete(Event)
+            }
+            else if (Event->Type = TRB::Type::PortStatusChangeEvent) {
+                TRB::EventRing::PortStatusChange* PortEvent := Event As TRB::EventRing::PortStatusChange*
+
+                i32 PortID := PortEvent->PortID
+
+                this->Log("Port status change event received for port %i", PortID)
+
+                HostPort* Port := this->Ports->At(PortID - 1)
+
+                PORTSC_FIELDS PORTSC := Port->Registers->PORTSC
+
+                this->Log("Port %i status: CCS=%i, PED=%i, PLS=%i, PP=%i, PS=%i", PortID, PORTSC.CCS, PORTSC.PED, PORTSC.PLS, PORTSC.PP, PORTSC.PS)
+
+                Port->State := PortState::Connected
+            }
+            else {
+                this->Log("Unknown event type %i received", Event->Type)
+            }
+        }
+
+        define void ProcessEventRing(HostEventRing* Ring) {
+            InterrupterRegisterSet* Interrupter := Ring->Interrupter
+
+            this->Log("Processing event ring for interrupter at %x", Interrupter)
+
+            this->Log("Pending? %i, Enabled? %i", Interrupter->Pending, Interrupter->Enabled)
+
+            i32 SegmentCount := Ring->Segments->Count()
+
+            i8 Wrapped := true
+            i8 Processed := false
+
+            for (i32 SegmentIndex := Ring->DequeueSegmentIndex, SegmentIndex < SegmentCount, SegmentIndex++) {
+                HostEventRingSegment* Segment := Ring->Segments->At(SegmentIndex)
+
+                TRB::TransferRequestBlock* Events := Segment->Events
+
+                i32 EventCount := Segment->RingSegmentSize
+
+                for (i32 EventIndex := Ring->DequeueEventIndex, EventIndex < EventCount, EventIndex++) {
+                    TRB::TransferRequestBlock* Event := Events[EventIndex]
+
+                    if (Event->Cycle != Ring->CycleBit) {
+                        ; Save state to resume processing later
+                        Ring->DequeueSegmentIndex := SegmentIndex
+                        Ring->DequeueEventIndex := EventIndex
+
+                        Wrapped := false
+                        break
+                    }
+
+                    Processed := true
+
+                    this->Log("Event TRB at %x: Type %i, Cycle %i", Event, Event->Type, Event->Cycle)
+
+                    this->ProcessEvent(Event)
+
+                    Event->Cycle := !Ring->CycleBit
+                }
+
+                if !(Wrapped) {
+                    ; This segment isn't full. We haven't wrapped, we can skip any other segments
+
+                    break
+                }
+            }
+
+            if (Wrapped) {
+                Ring->DequeueSegmentIndex := 0
+                Ring->DequeueEventIndex := 0
+
+                Ring->CycleBit := !Ring->CycleBit
+            }
+
+            if (Processed) {
+                ; Update the event ring dequeue pointer to the next event
+
+                HostEventRingSegment* CurrentSegment := Ring->Segments->At(Ring->DequeueSegmentIndex)
+                TRB::TransferRequestBlock* NextEvent := CurrentSegment->Events[Ring->DequeueEventIndex]
+
+                ERDP_FIELDS ERDP := VirtualToPhysical(NextEvent) As ERDP_FIELDS
+
+                ERDP.EHB := true ; event handler busy, write 1 to clear
+
+                Interrupter->ERDP := ERDP
+
+                this->Log("Updated event ring dequeue pointer to %i[%i]: %x", Ring->DequeueSegmentIndex, Ring->DequeueEventIndex, Interrupter->EventRingDequeuePointer)
+            }
+        }
+
+        ; Slot/device setup
+        ; Device slots are allocated and prepared for an AddressDevice command
+        ;  with a middle step to initialize endpoint 0 based on how the device is connected.
+        ; From the root hub, we can determine the speed of the device and set the maximum packet size for endpoint 0 accordingly.
+        ; For other devices, we would need to query the device for its maximum packet size.
+        ; Then, once endpoint 0 is properly described, we switch back to a generic
+        ;  "issue address device command" state and send the command to the controller to assign the device its address.
+
+        define void AllocateEndpointTransferRing(HostDevice* _Device, i32 EndpointIndex, i32 Size) {
+            HostTransferRing* Ring := this->AllocateTransferRing(Size)
+
+            _Device->TransferRings[EndpointIndex] := Ring
+
+            EndpointContext* Endpoint := _Device->InputContext~>Endpoints[EndpointIndex]
+
+            i64 PhysicalAddress := VirtualToPhysical(Ring->Ring)
+
+            Endpoint->DequeuePointerLow := (PhysicalAddress & 0xFFFF_FFFF) As i32
+            Endpoint->DequeuePointerHigh := (PhysicalAddress >> 32) As i32
+
+            Endpoint->DCS := Ring->CycleBit
+        }
+
+        define HostDevice* AllocateDevice(i8 SlotID) {
+            HostDevice* _Device := Alloc(#HostDevice)
+
+            _Device->State := DeviceState::Disabled
+            _Device->SlotID := SlotID
+
+            this->Devices[SlotID] := _Device
+
+            i32 ContextPageCount := SizeToPageCount(#InputControlContext) + SizeToPageCount(#DeviceContext)
+            void* Contexts := this->AllocateDMA(ContextPageCount)
+
+            _Device->InputContext := Contexts As InputControlContext*
+            _Device->OutputContext := (Contexts + SizeToPageCount(#InputControlContext) * PAGE_SIZE) As DeviceContext*
+
+            ; We are updating context index 0  (SlotContext) and context index 1 (Endpoint 0 Context)
+            _Device->InputContext->AddContextFlags := (1 << 0) | (1 << 1)
+
+            this->DeviceContextBaseAddressArray[SlotID] := VirtualToPhysical(_Device->OutputContext)
+
+            this->AllocateEndpointTransferRing(_Device, 0, 256) ; Endpoint 0 transfer ring
+
+            return _Device
+        }
+
+        define void IssueAddressDeviceCommand(HostDevice* _Device) {
+            TRB::CommandRing::AddressDevice* _TRB := _Device~>ScratchTRB As void*
+
+            FastZeroMemory(_TRB, #TRB::CommandRing::AddressDevice)
+            _TRB->Type := TRB::Type::AddressDevice
+            _TRB->InputContextPointer := VirtualToPhysical(_Device->InputContext)
+            _TRB->SlotID := _Device->SlotID
+
+            _Device->CurrentCommand := this->SendCommand(_TRB)
+
+            _Device->State := DeviceState::Addressing
+        }
+
+        define void ProcessPort(HostPort* Port) {
+            if (Port->State = PortState::Connected) {
+                this->Log("Port %i is connected, enabling slot", Port->Number)
+
+                FastZeroMemory(Port~>CurrentTransferRequestBlock, #TRB::CommandRing::EnableSlot)
+                Port~>CurrentTransferRequestBlock->Type := TRB::Type::EnableSlot
+
+                Port->CurrentCommand := this->SendCommand(Port~>CurrentTransferRequestBlock)
+
+                Port->State := PortState::EnablingSlot
+            }
+            else if (Port->State = PortState::EnablingSlot) {
+                if (Port->CurrentCommand = null) {
+                    Panic(FormatString("Port %i is in EnablingSlot state but has no current command", Port->Registers - this->PortRegisters + 1))
+                }
+
+                if (Port->CurrentCommand->Wait(WAIT_PROBE)) {
+                    this->Log("Port %i: EnableSlot command completed", Port->Number)
+
+                    TRB::EventRing::CommandCompletion* Completion := Port->CurrentCommand~>Completion As void*
+
+                    if (Completion->CompletionCode = TRB::CompletionCode::Success) {
+                        i8 SlotID := Completion->SlotID
+
+                        this->Log("Port %i: EnableSlot command succeeded, assigned slot ID %i", Port->Number, SlotID)
+
+                        Port->State := PortState::DeviceConnected
+
+                        Port->Device := this->AllocateDevice(SlotID)
+
+                        ; 4.3.3 Device Slot Initialization
+
+                        HostDevice* _Device := Port->Device
+                        InputControlContext* InputContext := _Device->InputContext
+
+                        SlotContext* Slot := InputContext~>Slot
+
+                        Slot->RootHubPortNumber := Port->Number
+                        Slot->ContextEntries := 1
+
+                        EndpointContext* Endpoint0 := InputContext~>Endpoints
+
+                        i32 MaxPacketSize := 8
+
+                        PS_VALUES PS := Port->Registers->PORTSC.PS
+
+                        if (PS = PS_VALUES::FullSpeed) {
+                            MaxPacketSize := 8
+                        }
+                        else if (PS = PS_VALUES::LowSpeed) {
+                            MaxPacketSize := 8
+                        }
+                        else if (PS = PS_VALUES::HighSpeed) {
+                            MaxPacketSize := 64
+                        }
+                        else if (PS = PS_VALUES::SuperSpeed) {
+                            MaxPacketSize := 512
+                        }
+
+                        Endpoint0->Type := EndpointType::Control
+                        Endpoint0->MaxPacketSize := MaxPacketSize As i16
+
+                        Endpoint0->ErrorCount := 3
+
+                        this->IssueAddressDeviceCommand(Port->Device)
+                    }
+                    else {
+                        Panic(FormatString("Port %i: EnableSlot command failed with completion code %i", Port->Number, Completion->CompletionCode))
+                    }
+                }
+            }
+        }
+
+        define void ProcessDevice(HostDevice* _Device) {
+            if (_Device->State = DeviceState::Addressing) {
+                if (_Device->CurrentCommand->Wait(WAIT_PROBE)) {
+                    ; Device has been addressed
+
+                    Print("AddressDevice\n")
+
+                    _Device->State := DeviceState::Addressed
+                }
+            }
+        }
+
+        define void InterruptThread() {
+            loop {
+                i8 IsRealInterrupt := this->Interrupt->Wait(128)
+
+                if (IsRealInterrupt) {
+                    this->Log("Interrupt received")
+
+                    i32 Count := this->EventRings->Count()
+
+                    for (i32 Index := 0, Index < Count, Index++) {
+                        HostEventRing* Ring := this->EventRings->At(Index)
+
+                        this->ProcessEventRing(Ring)
+                    }
+
+                    i32 Count := this->Ports->Count()
+
+                    for (i32 Index := 0, Index < Count, Index++) {
+                        HostPort* Port := this->Ports->At(Index)
+
+                        this->ProcessPort(Port)
+                    }
+
+                    i32 Count := this->CapabilityRegisters->MaximumSlotCount
+
+                    for (i32 Index := 0, Index < Count, Index++) {
+                        HostDevice* Device := this->Devices[Index]
+
+                        if (Device) {
+                            this->ProcessDevice(Device)
+                        }
+
+                    }
+                }
+            }
+        }
+
+        static void OnInterrupt(AMD64Context* Context, i32 InterruptNumber) {
+            Print("XHCI: Interrupt %x\n", InterruptNumber)
+
+            i32 Count := ALL_XHCI_CONTROLLERS->Count()
+
+            for (i32 Index := 0, Index < Count, Index++) {
+                Controller* this := ALL_XHCI_CONTROLLERS->At(Index)
+
+                this->Interrupt->Signal()
+            }
+
+            LocalAPIC->EOI()
+        }
+
+        define void Start(i32 ControllerIndex) {
+
+            ; MSI/MSI-X setup
+
+            if (this->Device->SupportsMSIX()) {
+                this->MSIX := new MSIX::Helper(this->Device, this->Address)
+            }
+            else if !(this->Device->SupportsMSI()) {
+                Panic("XHCI controller does not support MSI or MSI-X")
+            }
+
+            ; Register/MMIO setup
+
+            i64 BAR0 := this->Device->ReadBAR(0)
+            i64 BAR1 := this->Device->ReadBAR(1)
+
+            i64 BAR := (BAR0 & 0xFFFF_FFF0) | ((BAR1 & 0xFFFF_FFFF) << 32)
+
+            i64 ControllerPhysicalAddress := BAR
+            i32 Size := this->Device->GetBARSize(0)
+
+            this->Log("Controller physical address: %x, size: %x", ControllerPhysicalAddress, Size)
+
+            this->MMIO := this->Device->MapBAR(0)
+            void* Base := this->MMIO
+
+            this->CapabilityRegisters := Base As HostControllerCapabilityRegisters*
+            void* OperationalBase := this->MMIO + ((this->CapabilityRegisters->CAPLENGTH As i32) & 0xFF)
+
+            this->OperationalRegisters := OperationalBase As HostControllerOperationalRegisters*
+            this->PortRegisters := (OperationalBase + 0x400) As HostControllerPortRegisters*
+
+            void* RuntimeBase := Base + this->CapabilityRegisters->RTSOFF
+
+            this->RuntimeRegisters := RuntimeBase As HostControllerRuntimeRegisters*
+
+            this->DoorbellRegisters := (Base + this->CapabilityRegisters->DBOFF) As DoorbellRegister*
+
+            ; Stop the controller if it's running
+
+            this->Log("Stopping controller")
+
+            USBCMD_FIELDS USBCMD := this->OperationalRegisters->USBCMD
+
+            USBCMD.RS := false
+
+            this->OperationalRegisters->USBCMD := USBCMD
+
+            loop {
+                USBSTS_FIELDS USBSTS := this->OperationalRegisters->USBSTS
+
+                if (USBSTS.HCH = 1) {
+                    break
+                }
+
+                SleepMS(15)
+            }
+
+            this->Log("Controller stopped successfully, resetting controller")
+
+            USBCMD.HCRST := true
+
+            this->OperationalRegisters->USBCMD := USBCMD
+
+            this->Log("Waiting for controller reset to complete")
+
+            loop {
+                USBCMD := this->OperationalRegisters->USBCMD
+
+                if (USBCMD.HCRST = 0) {
+                    break
+                }
+
+                SleepMS(15)
+            }
+
+            this->Log("Waiting for controller to become ready")
+
+            loop {
+                USBSTS_FIELDS USBSTS := this->OperationalRegisters->USBSTS
+
+                if (USBSTS.CNR = 0) {
+                    break
+                }
+
+                SleepMS(15)
+            }
+
+            this->Log("Controller reset successfully")
+
+            ; CONFIG.MaxSlotsEn = HCSPARAMS1.MaxSlots
+
+            CONFIG_FIELDS CONFIG := this->OperationalRegisters->CONFIG
+
+            CONFIG.EnabledDeviceSlotCount := this->CapabilityRegisters->MaximumSlotCount
+
+            this->OperationalRegisters->CONFIG := CONFIG
+
+            ; Allocate DCBAA and device contexts
+
+            i32 DeviceContextCount := this->CapabilityRegisters->MaximumSlotCount + 1
+
+            this->DeviceContextBaseAddressArray := this->AllocateDMA(SizeToPageCount(DeviceContextCount * #DeviceContext*))
+
+            i32 Count := this->CapabilityRegisters->MaximumSlotCount + 1
+
+            this->Devices := Alloc(Count * #HostDevice*)
+
+            this->OperationalRegisters->DCBAAP := VirtualToPhysical(this->DeviceContextBaseAddressArray)
+
+            ; Figure out root hub/ports
+
+            this->Ports := new PointerArray()
+
+            i32 Count := this->CapabilityRegisters->MaximumPortCount
+
+            for (i32 Index := 0, Index < Count, Index++) {
+                HostControllerPortRegisters* PortRegisters := this->PortRegisters + Index
+
+                HostPort* Port := Alloc(#HostPort)
+
+                Port->Number := (Index + 1) As i8
+                Port->Registers := PortRegisters
+                Port->State := PortState::Disabled
+
+                this->Ports->Push(Port)
+            }
+
+            ; Program the command ring
+
+            this->CommandHandles := new AVLTree(#CommandHandle*)
+
+            this->CommandRing := this->AllocateDMA(SizeToPageCount(1024 * #TRB::TransferRequestBlock))
+
+            this->Log("Command ring virtual address: %x", this->CommandRing)
+
+            CRCR_FIELDS CRCR := VirtualToPhysical(this->CommandRing) As CRCR_FIELDS
+
+            CRCR.RCS := true
+
+            this->CommandRingCycleBit := true
+
+            this->Log("CRCR: %x", CRCR)
+
+            this->OperationalRegisters->CRCR := CRCR
+
+            ; Program interrupter event rings
+
+            this->EventRings := new PointerArray()
+
+            i32 Count := this->CapabilityRegisters->MaximumInterrupterCount + 1
+
+            this->Log("Maximum interrupter count: %i", Count)
+
+            for (i32 Index := 0, Index < 1, Index++) {
+                InterrupterRegisterSet* Interrupter := this->RuntimeRegisters->Interrupters[Index]
+
+                HostEventRing* Ring := this->AllocateEventRing(Interrupter)
+
+                Interrupter->ModerationInterval := 0
+                Interrupter->ModerationCounter := 0
+
+                Interrupter->Enabled := true
+
+                Ring->CycleBit := true
+
+                this->EventRings->Push(Ring)
+            }
+
+            this->PrimaryEventRing := this->EventRings->At(0)
+
+            ; Initialize interrupts
+
+            this->Interrupt := new Synchronization::Semaphore(this->Name, 0)
+
+            Task* InterruptThread := Scheduler->AddLightTask(null, this->Name)
+            InterruptThread~>Context->CallMethod(this, &self.InterruptThread)
+            Scheduler->SetRunnable(InterruptThread)
+
+            RegisterInterruptHandler(IRQToIDT(0x23), &self:OnInterrupt)
+            EnablePICLine(0x23, true)
+
+            if (this->MSIX) {
+                i32 Count := this->MSIX->TableSize
+
+                this->Log("MSI-X table size: %i", Count)
+
+                for (i32 Index := 0, Index < Count, Index++) {
+                    this->MSIX->SetEntry(Index, 0x23)
+                }
+
+                this->MSIX->Enable()
+
+                this->Log("MSI-X MessageControl: %x", this->MSIX->Capability->MessageControl)
+            }
+            else {
+                this->Log("Using MSI instead of MSI-X")
+
+                this->Device->EnableMSI(0x23)
+
+                PCIMSICapability* MSI := this->Device->FindPCICapability(PCI_CAPABILITY_ID_MSI) As void*
+
+                this->Log("MSI MessageControl: %x", MSI->Control)
+            }
+
+            ; Set run/stop and enable interrupts
+
+            this->Log("Starting controller")
+
+            USBCMD_FIELDS USBCMD := this->OperationalRegisters->USBCMD
+
+            USBCMD.RS := true
+            USBCMD.INTE := true
+
+            this->OperationalRegisters->USBCMD := USBCMD
+
+            ; Wait for the controller to start running
+
+            loop {
+                USBSTS_FIELDS USBSTS := this->OperationalRegisters->USBSTS
+
+                if (USBSTS.HCH = 0) {
+                    break
+                }
+
+                SleepMS(15)
+            }
+
+            this->Log("Controller started successfully")
+
+            TRB::CommandRing::NoOperation* TRB := Alloc(#TRB::CommandRing::NoOperation)
+
+            TRB->Type := TRB::Type::NoOperationCommand
+
+            this->Log("Sending no-op command to controller")
+
+            CommandHandle* Handle := this->SendCommand(TRB)
+
+            Handle->Wait(WAIT_FOREVER)
+
+            this->Log("No-op command completed successfully")
+
+            i32 PortCount := this->Ports->Count()
+
+            for (i32 PortIndex := 0, PortIndex < PortCount, PortIndex++) {
+                HostPort* Port := this->Ports->At(PortIndex)
+                HostControllerPortRegisters* PortRegisters := Port->Registers
+
+                PORTSC_FIELDS PORTSC := PortRegisters->PORTSC
+
+                PORTSC.PR := true
+
+                PortRegisters->PORTSC := PORTSC
+
+                this->Log("Resetting port %i", PortIndex + 1)
+
+                loop {
+                    PORTSC := PortRegisters->PORTSC
+
+                    if (PORTSC.PR = 0) {
+                        break
+                    }
+
+                    SleepMS(15)
+                }
+
+                this->Log("Port %i: CCS=%i, PED=%i, PLS=%i, PP=%i, PS=%i", PortIndex + 1, PORTSC.CCS, PORTSC.PED, PORTSC.PLS, PORTSC.PP, PORTSC.PS)
+            }
+        }
+    }
+}
