@@ -335,7 +335,8 @@ define void VisitPCIeFunction(i32 Bus, i32 Slot, i32 Function, PCIeDevice* Devic
 
 		PCIeAddress* Address := new PCIeAddress(0, Bus, Slot, Function)
 
-		USB::XHCI::Controller* XHCIController := new USB::XHCI::Controller(Address, Device)
+		USB0 := new USB::Bus(0)
+		USB::XHCI::Controller* XHCIController := new USB::XHCI::Controller(Address, Device, USB0)
 	}
 }
 

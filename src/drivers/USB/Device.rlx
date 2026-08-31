@@ -529,29 +529,17 @@ namespace USB {
         i32 BusNumber
         IController* Controller
 
-        SetupPacket AssignAddressSetup
-        i32 NextAddress
-
-        PointerArray* Devices ; <Device*>
+        ; Map of device addresses to devices
+        AVLTree* Devices ; <i32, Device*>
 
         define void New(i32 BusNumber) {
             this->BusNumber := BusNumber
 
-            this->NextAddress := 1
-            this->Devices := PointerArray:New()
+            this->Devices := new AVLTree(#PeripheralDevice*)
         }
 
-        define i32 AssignAddress() {
-            return this->NextAddress++
-        }
-
-        define PeripheralDevice* NotifyAttach() {
+        define PeripheralDevice* NotifyAttach(i32 Address) {
             Print("Notifying bus %i of new USB device\n", this->BusNumber)
-
-            i32 Address := this->NextAddress++
-            
-            this~>AssignAddressSetup->MakeSetAddress(Address As i8)
-            this->Controller->SendControlTransfer(0, 0, TransferSpeed::Low, this~>AssignAddressSetup, null, 0)->Wait()->Free()
 
             PeripheralDevice* Attached := new PeripheralDevice(this->Controller, Address)
             DeviceDescriptor* AttachedDescriptor := Attached->Descriptor
@@ -566,7 +554,7 @@ namespace USB {
             Print("  Product: %usb-string-descriptor\n", Attached->ProductString)
             Print("  Serial Number: %usb-string-descriptor\n", Attached->SerialNumberString)
 
-            this->Devices->Push(Attached)
+            this->Devices->InsertPointer(Address, Attached)
             
             i32 Count := USB_DRIVERS->Count()
 

@@ -68,6 +68,10 @@ namespace USB::XHCI::Transfers {
                 [9] BlockEventInterrupt
                 Type [10:15] Type
             }
+
+            define void Initialize() {
+                this->Type := Type::Normal
+            }
         }
 
         enum ControlTransferType {
@@ -94,14 +98,13 @@ namespace USB::XHCI::Transfers {
                 [5] InterruptOnCompletion
                 [6] ImmediateData
                 [9] BlockEventInterrupt
-                [10:15] Type
+                Type [10:15] Type
                 ControlTransferType [16:17] TransferType
             }
-        }
 
-        enum TransferDirection {
-            Out := 0,
-            In := 1
+            define void Initialize() {
+                this->Type := Type::SetupStage
+            }
         }
 
         struct DataStageTransferRequestBlock {
@@ -124,6 +127,10 @@ namespace USB::XHCI::Transfers {
                 Type [10:15] Type
                 TransferDirection [16] Direction
             }
+
+            define void Initialize() {
+                this->Type := Type::DataStage
+            }
         }
 
         struct StatusStageTransferRequestBlock {
@@ -140,6 +147,10 @@ namespace USB::XHCI::Transfers {
                 [5] InterruptOnCompletion
                 Type [10:15] Type
                 TransferDirection [16] Direction
+            }
+
+            define void Initialize() {
+                this->Type := Type::StatusStage
             }
         }
 

@@ -293,7 +293,7 @@ namespace USB::HubProtocol {
                             if (Status->Enable) {
                                 Print("Port %i Enabled\n", Index)
 
-                                Current->Attached := this->Bus->NotifyAttach()
+                                ;Current->Attached := this->Bus->NotifyAttach()
                             }
                             else {
                                 Print("Port %i Disabled\n", Index)

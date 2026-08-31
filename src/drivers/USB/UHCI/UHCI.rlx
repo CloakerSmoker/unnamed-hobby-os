@@ -1476,7 +1476,7 @@ namespace USB::UHCI {
 
                     ;this->FrameList[200] := this->RemoveLinkFlag(this->FrameList[200], LinkFlags::Terminator)
 
-                    this->Bus->NotifyAttach()
+                    ;this->Bus->NotifyAttach()
 
                     ;USB::Device* Dev := new USB::Device(this, Address)
                     ;USB::DeviceDescriptor* _Device := Dev->Descriptor

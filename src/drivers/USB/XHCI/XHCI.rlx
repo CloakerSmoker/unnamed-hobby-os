@@ -5,6 +5,13 @@ i8 PCI_INTERFACE_XHCI := 0x30
 
 PointerArray* ALL_XHCI_CONTROLLERS := new PointerArray()
 
+namespace USB::XHCI {
+    enum TransferDirection {
+        HostToDevice := 0
+        DeviceToHost := 1
+    }
+}
+
 #Require "./src/drivers/USB/XHCI/TRB.rlx"
 
 namespace USB::XHCI {
@@ -458,7 +465,7 @@ namespace USB::XHCI {
 
         bits As i32 {
             [0] DCS
-            [4:31] DequeuePointerLow
+            [0:31] DequeuePointerLow
         }
 
         i32 DequeuePointerHigh
@@ -526,8 +533,72 @@ namespace USB::XHCI {
         }
     }
 
+    class TransferHandle implements ITransferHandle, derives INew {
+        i32 Capacity
+        i32 Count
+
+        TransferRequestBlock** TRBs
+        TransferRequestBlock* Completions
+        i32 CompletedCount
+
+        Synchronization::Semaphore* Completed
+
+        define void New(i32 Capacity) {
+            this->TRBs := Alloc(Capacity * #TransferRequestBlock*)
+            this->Completions := Alloc(Capacity * #TransferRequestBlock)
+            
+            this->Completed := new Synchronization::Semaphore("Hello", 0)
+        }
+
+        define void Add(TransferRequestBlock* TRB) {
+            this->TRBs[this->Count++] := TRB
+        }
+
+        define void Complete(Transfers::EventRing::Transfer* Event) {
+            i64 CompletedPhysicalAddress := Event->TransferRequestBlockPointer
+
+            i32 Count := this->Count
+
+            for (i32 Index := 0, Index < Count, Index++) {
+                TransferRequestBlock* TRB := this->TRBs[Index]
+
+                if (VirtualToPhysical(TRB) = CompletedPhysicalAddress) {
+                    TransferRequestBlock* Completion := this->Completions[Index]
+                    
+                    MoveMemory(Completion, Event, #TransferRequestBlock)
+
+                    this->CompletedCount += 1
+
+                    break
+                }
+            }
+
+            if (this->CompletedCount = this->Count) {
+                this->Completed->Signal()
+            }
+        }
+
+        define i8 Wait(i32 Timeout) {
+            return this->Completed->Wait(Timeout)
+        }
+
+        ; TODO: ITransferHandle's `Wait` API is completely blocking (no timeout or anything)
+        define ITransferHandle* Wait() {
+            this->Completed->Wait(WAIT_FOREVER)
+
+            return this
+        }
+
+        define void Free() {
+            Free(this->TRBs)
+            Free(this->Completions)
+            this->Completed->Free()
+            Free(this)
+        }
+    }
+
     struct HostTransferRing {
-        TransferRequestBlock* Ring
+        TransferRequestBlock* TRBs
         i32 Size
 
         i32 EnqueueIndex
@@ -535,19 +606,28 @@ namespace USB::XHCI {
         i8 CycleBit
     }
 
+    struct HostEndpoint {
+        EndpointContext* OutputContext
+        EndpointContext* InputContext
+
+        HostTransferRing* TransferRing
+    }
+
     enum DeviceState {
         Disabled
         Addressing
-        Addressed
-        Configured
+        Discovering
+        Attached
     }
 
     struct HostDevice {
         DeviceState State
 
         CommandHandle* CurrentCommand
+        TransferHandle* CurrentControlTransfer
 
         i8 SlotID
+        i32 Address
 
         i32 MaximumPacketSize
         
@@ -557,6 +637,8 @@ namespace USB::XHCI {
         HostTransferRing*[32] TransferRings
 
         TransferRequestBlock ScratchTRB
+
+        i8[40] Buffer
     }
 
     enum PortState {
@@ -579,24 +661,30 @@ namespace USB::XHCI {
         HostDevice* Device
     }
 
-    class Controller derives INew {
+    class Controller implements IController, derives INew {
         PCIeAddress* Address
         PCIeDevice* Device
+
+        USB::Bus* Bus
 
         i8* Name
 
         define void Log(i8* Format, ... Args) {
             i8[200] Buffer
 
-            i32 Length := RawFormatString(Buffer, 300, Format, Args)
+            i32 Length := RawFormatString(Buffer, 200, Format, Args)
             Buffer[Length] := 0
 
             Print("%s: %s\n", this->Name, Buffer)
         }
 
-        define void New(PCIeAddress* Address, PCIeDevice* Device) {
+
+        define void New(PCIeAddress* Address, PCIeDevice* Device, USB::Bus* _Bus) {
             this->Address := Address
             this->Device := Device
+            this->Bus := _Bus
+
+            _Bus->Controller := this
 
             this->Name := FormatString("%pcie-address: XHCI", Address)
 
@@ -629,6 +717,9 @@ namespace USB::XHCI {
         i64* DeviceContextBaseAddressArray
         HostDevice** Devices
 
+        ; Map USB addresses to HostDevice instances
+        AVLTree* Addresses
+
         ; Command Ring
 
         ; Map TRB physical addresses to command handles for completion handling
@@ -640,7 +731,7 @@ namespace USB::XHCI {
             Fields.Target := Target
             Fields.StreamID := 0
 
-            this->DoorbellRegisters[SlotID + 1] := Fields
+            this->DoorbellRegisters[SlotID] := Fields
         }
 
         define void RingCommandDoorbell() {
@@ -685,12 +776,12 @@ namespace USB::XHCI {
         define HostTransferRing* AllocateTransferRing(i32 Size) {
             HostTransferRing* Ring := Alloc(#HostTransferRing)
 
-            Ring->Ring := this->AllocateDMA(SizeToPageCount(Size * #TransferRequestBlock))
+            Ring->TRBs := this->AllocateDMA(SizeToPageCount(Size * #TransferRequestBlock))
             Ring->Size := Size
 
             Ring->EnqueueIndex := 0
             Ring->DequeueIndex := 0
-            Ring->CycleBit := 1
+            Ring->CycleBit := true
 
             return Ring
         }
@@ -753,6 +844,10 @@ namespace USB::XHCI {
 
         PointerArray* Ports ; <HostPort*>
 
+        ; Map TRB physical addresses to their corresponding transfer handles
+        ;  (multiple TRBs share the same transfer handle)
+        AVLTree* TransferHandles ; <i64, TransferHandle*>
+
         Synchronization::Semaphore* Interrupt
 
         define void ProcessEvent(TransferRequestBlock* Event) {
@@ -763,16 +858,16 @@ namespace USB::XHCI {
 
                 this->Log("Command completion event received for TRB at physical address %x", CompletedPhysicalAddress)
 
-                CommandHandle* Handle := this->CommandHandles->GetPointer(CompletedPhysicalAddress) As CommandHandle*
+                CommandHandle* Command := this->CommandHandles->GetPointer(CompletedPhysicalAddress) As CommandHandle*
 
-                if (Handle = null) {
+                if (Command = null) {
                     this->Log("Command completion event received for unknown TRB at physical address %x", CompletedPhysicalAddress)
                     return
                 }
 
                 this->CommandHandles->Remove(CompletedPhysicalAddress)
 
-                Handle->Complete(Event)
+                Command->Complete(Event)
             }
             else if (Event->Type = Transfers::Type::PortStatusChangeEvent) {
                 Transfers::EventRing::PortStatusChange* PortEvent := Event As Transfers::EventRing::PortStatusChange*
@@ -788,6 +883,22 @@ namespace USB::XHCI {
                 this->Log("Port %i status: CCS=%i, PED=%i, PLS=%i, PP=%i, PS=%i", PortID, PORTSC.CCS, PORTSC.PED, PORTSC.PLS, PORTSC.PP, PORTSC.PS)
 
                 Port->State := PortState::Connected
+            }
+            else if (Event->Type = Transfers::Type::TransferEvent) {
+                Transfers::EventRing::Transfer* TransferEvent := Event As void*
+
+                i64 CompletedPhysicalAddress := TransferEvent->TransferRequestBlockPointer
+
+                TransferHandle* Transfer := this->TransferHandles->GetPointer(CompletedPhysicalAddress) As TransferHandle*
+
+                if (Transfer = null) {
+                    this->Log("Transfer event received for unknown TRB at physical address %x", CompletedPhysicalAddress)
+                    return
+                }
+
+                this->TransferHandles->Remove(CompletedPhysicalAddress)
+
+                Transfer->Complete(TransferEvent)
             }
             else {
                 this->Log("Unknown event type %i received", Event->Type)
@@ -879,7 +990,7 @@ namespace USB::XHCI {
 
             EndpointContext* Endpoint := Device->InputContext~>Endpoints[EndpointIndex]
 
-            i64 PhysicalAddress := VirtualToPhysical(Ring->Ring)
+            i64 PhysicalAddress := VirtualToPhysical(Ring->TRBs)
 
             Endpoint->DequeuePointerLow := (PhysicalAddress & 0xFFFF_FFFF) As i32
             Endpoint->DequeuePointerHigh := (PhysicalAddress >> 32) As i32
@@ -997,16 +1108,206 @@ namespace USB::XHCI {
             }
         }
 
+        define void* AllocateEndpointTransfer(HostDevice* Device, i32 EndpointNumber, TransferHandle* Owner) {
+            EndpointContext* Endpoint := Device->OutputContext~>Endpoints[EndpointNumber]
+            HostTransferRing* Ring := Device->TransferRings[EndpointNumber]
+
+            i32 Index := Ring->EnqueueIndex % Ring->Size
+
+            TransferRequestBlock* TRB := Ring->TRBs[Index]
+
+            FastZeroMemory(TRB, #TransferRequestBlock)
+
+            TRB->Cycle := Ring->CycleBit
+
+            this->Log("Allocated endpoint TRB %i at %x for transfer, cycle %i", Ring->EnqueueIndex, VirtualToPhysical(TRB), Ring->CycleBit)
+
+            Ring->EnqueueIndex += 1
+
+            if (Ring->EnqueueIndex % Ring->Size = 0) {
+                Ring->CycleBit := !Ring->CycleBit
+            }
+
+
+            Owner->Add(TRB)
+
+            return TRB
+        }
+
+        define void RingEndpointDoorbell(HostDevice* Device, i32 EndpointNumber, TransferDirection Direction) {
+            DoorbellTarget Target := DoorbellTarget::Reserved
+
+            if (EndpointNumber = 0) {
+                Target := DoorbellTarget::ControlEndpoint0
+            }
+            else {
+                Target := ((DoorbellTarget::Endpoint1Out As i32)
+                            + (EndpointNumber - 1)
+                            + (Direction As i32)
+                          ) As DoorbellTarget
+            }
+
+            this->RingSlotDoorbell(Device->SlotID, Target)
+        }
+
+        define void RegisterTransferHandle(TransferHandle* Handle) {
+            i32 Count := Handle->Count
+
+            for (i32 Index := 0, Index < Count, Index++) {
+                TransferRequestBlock* TRB := Handle->TRBs[Index]
+                i64 PhysicalAddress := VirtualToPhysical(TRB)
+
+                this->TransferHandles->InsertPointer(PhysicalAddress, Handle)
+            }
+        }
+
+        define TransferHandle* SendControlTransfer(HostDevice* Device, i32 Endpoint, TransferSpeed Speed, SetupPacket* Setup, void* Data, i32 DataSize) {
+            TransferDirection Direction := 0 As TransferDirection
+
+            if (Setup->DataDirection = USB::RequestDataPhaseDirection::HostToDevice) {
+                Direction := TransferDirection::HostToDevice
+            }
+            else if (Setup->DataDirection = USB::RequestDataPhaseDirection::DeviceToHost) {
+                Direction := TransferDirection::DeviceToHost
+            }
+
+            i32 StageCount := 2
+
+            if (DataSize) {
+                StageCount := 3
+            }
+
+            TransferHandle* Handle := new TransferHandle(StageCount)
+            
+            ; SETUP stage
+
+            Transfers::TransferRing::ControlTransferRequestBlock* SetupTRB := this->AllocateEndpointTransfer(Device, Endpoint, Handle)
+
+            SetupTRB->Initialize()
+
+            ; Store the SETUP packet into the control TRB as immediate data
+            SetupTRB->ImmediateData := true
+            MoveMemory(SetupTRB, Setup, #SetupPacket)
+
+            SetupTRB->TransferLength := 8
+
+            if (DataSize = 0) {
+                SetupTRB->TransferType := Transfers::TransferRing::ControlTransferType::NoDataStage
+            }
+            else if (Direction = TransferDirection::HostToDevice) {
+                SetupTRB->TransferType := Transfers::TransferRing::ControlTransferType::OutDataStage
+            }
+            else if (Direction = TransferDirection::DeviceToHost) {
+                SetupTRB->TransferType := Transfers::TransferRing::ControlTransferType::InDataStage
+            }
+
+            SetupTRB->InterruptOnCompletion := true
+
+            Print("Setup TRB:\n%hexdump\n", SetupTRB, #TransferRequestBlock)
+
+            if (DataSize) {
+                ; DATA stage
+
+                Transfers::TransferRing::DataStageTransferRequestBlock* DataTRB := this->AllocateEndpointTransfer(Device, Endpoint, Handle)
+
+                DataTRB->Initialize()
+
+                DataTRB->DataBufferPointer := VirtualToPhysical(Data)
+                DataTRB->TransferLength := DataSize As i16
+                DataTRB->Direction := Direction
+
+                DataTRB->InterruptOnCompletion := true
+            }
+
+            ; STATUS stage
+
+            Transfers::TransferRing::StatusStageTransferRequestBlock* StatusTRB := this->AllocateEndpointTransfer(Device, Endpoint, Handle)
+
+            StatusTRB->Initialize()
+
+            StatusTRB->InterruptOnCompletion := true
+
+            ; Swap direction for status stage
+
+            if (Direction = TransferDirection::DeviceToHost) {
+                StatusTRB->Direction := TransferDirection::HostToDevice
+            }
+            else if (Direction = TransferDirection::HostToDevice) {
+                StatusTRB->Direction := TransferDirection::DeviceToHost
+            }
+
+            this->RegisterTransferHandle(Handle)
+            this->RingEndpointDoorbell(Device, Endpoint, Direction)
+
+            return Handle
+        }
+        define ITransferHandle* SendControlTransfer(i32 Address, i32 Endpoint, TransferSpeed Speed, SetupPacket* Setup, void* Buffer, i32 DataLength) {
+            HostDevice* Device := this->Addresses->GetPointer(Address)
+
+            return this->SendControlTransfer(Device, Endpoint, Speed, Setup, Buffer, DataLength)
+        }
+
+        define void AttachDevice(HostDevice* Device) {
+            ; Runs as a job since it'll block during descriptor requests and such
+
+            this->Bus->NotifyAttach(Device->Address)
+
+            Device->State := DeviceState::Attached
+        }
+
         define void ProcessDevice(HostDevice* Device) {
             if (Device->State = DeviceState::Addressing) {
                 if (Device->CurrentCommand->Wait(WAIT_PROBE)) {
                     ; Device has been addressed
 
-                    Print("AddressDevice\n")
+                    Device->CurrentCommand->Free()
 
-                    Device->State := DeviceState::Addressed
+                    DeviceContext* Out := Device->OutputContext
+                    SlotContext* Slot := Out~>Slot
+
+                    Device->Address := (Slot->USBDeviceAddress As i32) & 0xFF
+
+                    this->Log("New device at USB Address: %x\n", Device->Address)
+    
+                    Device->State := DeviceState::Discovering
+
+                    this->Addresses->InsertPointer(Device->Address, Device)
+
+                    KERNEL_JOBS->Queue(0, &self.AttachDevice, this As void, Device As void)
+
+                    /*
+                    SetupPacket Setup
+                    FastZeroMemory(&Setup, #SetupPacket)
+
+                    Setup->MakeGetDescriptor(
+                        DescriptorType::Device, LanguageID::None,
+                        0, 8
+                    )
+
+                    Device->CurrentControlTransfer := this->SendControlTransfer(Device, TransferDirection::DeviceToHost, &Setup, Device->Buffer, 8)
+                    */
                 }
             }
+            else if (Device->State = DeviceState::Discovering) {
+                
+            }
+        }
+
+        ; IController implementation
+
+        define Bus* GetBus() {
+            return this->Bus
+        }
+        define ITransferHandle* SendBulkTransfer(i32 Address, i32 Endpoint, i8* pDataToggle, TransferSpeed Speed, RequestDataPhaseDirection DataDirection, void* Buffer, i32 DataLength) {
+            return null
+        }
+        define IPeriodicTransferHandle* ScheduleInterruptTransfer(i32 Address, i32 Endpoint, TransferSpeed Speed, RequestDataPhaseDirection Direction, i32 Size, i32 Period) {
+            return null
+        }
+        define void Free(ITransferHandle* Handle) {
+        }
+
+        define void Stop() {
         }
 
         define void InterruptThread() {
@@ -1167,6 +1468,7 @@ namespace USB::XHCI {
             i32 Count := this->CapabilityRegisters->MaximumSlotCount + 1
 
             this->Devices := Alloc(Count * #HostDevice*)
+            this->Addresses := new AVLTree(#HostDevice*)
 
             this->OperationalRegisters->DCBAAP := VirtualToPhysical(this->DeviceContextBaseAddressArray)
 
@@ -1230,6 +1532,10 @@ namespace USB::XHCI {
             }
 
             this->PrimaryEventRing := this->EventRings->At(0)
+
+            ; Prepare for transfers
+
+            this->TransferHandles := new AVLTree(#TransferHandle*)
 
             ; Initialize interrupts
 
