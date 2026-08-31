@@ -108,13 +108,13 @@ struct PCICapability {
 i8 PCI_CAPABILITY_ID_MSI := 0x5
 
 bits PCIMSIControlRegister As i16 {
-    [0:1] Enable
+    [0] Enable
     [1:3] MultipleMessageCapable
     [4:6] MultipleMessageEnable
-    [7:8] LargeAddressCapable
-    [8:9] PreVectorMaskingCapable
-    [9:10] ExtendedMessageDataCapable
-    [10:11] ExtendedMessageDataEnable
+    [7] LargeAddressCapable
+    [8] PreVectorMaskingCapable
+    [9] ExtendedMessageDataCapable
+    [10] ExtendedMessageDataEnable
 
     define void Info() {
         if (this.Enable) {
@@ -412,6 +412,13 @@ struct PCIeDevice {
         return this->FindPCICapability(PCI_CAPABILITY_ID_MSI) != null
     }
 
+    define i8 SupportsMSI() {
+        return this->FindPCICapability(PCI_CAPABILITY_ID_MSI) != null
+    }
+    define i8 SupportsMSIX() {
+        return this->FindPCICapability(0x11) != null
+    }
+
     define void EnableMSI(i8 Vector) {
         PCICapability* Capability := this->FindPCICapability(PCI_CAPABILITY_ID_MSI)
         PCIMSICapability* GenericMSI := Capability As void*
@@ -445,6 +452,33 @@ struct PCIeDevice {
         }
 
         return this->Command
+    }
+
+    define void* MapBAR(i32 Index) {
+        i32 BAR := this->ReadBAR(Index)
+
+        if (BAR = 0) {
+            return null
+        }
+
+        i32 Size := this->GetBARSize(Index)
+        i32 PageCount := SizeToPageCount(Size)
+        i64 Physical := BAR & 0xFFFF_FFF0
+
+
+        if (BAR & 0b110 = 0b100) {
+            ; 64 bit BAR
+
+            i64 High := this->ReadBAR(Index + 1)
+
+            Physical |= High << 32   
+        }
+
+        void* Virtual := KernelVirtualMemory->FindGapAligned(PageCount)
+
+        KernelVirtualMemory->SetRange(Virtual, Physical, PageCount, PAGE_PRESENT | PAGE_WRITE | PAGE_UNCACHED)
+
+        return Virtual
     }
 }
 

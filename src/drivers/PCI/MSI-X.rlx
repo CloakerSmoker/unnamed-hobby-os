@@ -1,0 +1,113 @@
+
+namespace MSIX {
+
+
+    struct Capability {
+        i8 ID
+        i8 Next
+        
+        union {
+            i16 MessageControl
+
+            bits As i16 {
+                [0:10] TableSize
+                [14] FunctionMask
+                [15] Enable
+            }
+        }
+        
+        bits As i32 {
+            [0:2] TableBIR
+            [3:31] TableOffset
+        }
+
+        bits As i32 {
+            [0:2] PendingBitArrayBIR
+            [3:31] PendingBitArrayOffset
+        }
+    }
+
+    struct TableEntry {
+        i32 MessageAddressLow
+        i32 MessageAddressHigh
+        i32 MessageData
+        i32 VectorControl
+    }
+
+    struct Helper {
+        PCIeDevice* Device
+        PCIeAddress* Address
+
+        Capability* Capability
+
+        i32 TableSize
+
+
+        void* TableMapping
+        i32 TableBIR
+        i32 TableOffset
+        TableEntry* Table
+
+        void* PendingBitArrayMapping
+        i32 PendingBitArrayBIR
+        i32 PendingBitArrayOffset
+        i64* PendingBitArray
+
+
+        static self* New(PCIeDevice* Device, PCIeAddress* Address) {
+            self* this := Alloc(#self)
+
+            this->Device := Device
+            this->Address := Address
+
+            this->Capability := Device->FindPCICapability(0x11) As Capability*
+
+            this->TableSize := this->Capability->TableSize + 1
+            
+            this->TableBIR := this->Capability->TableBIR
+            this->TableOffset := this->Capability->TableOffset << 3
+
+            this->PendingBitArrayBIR := this->Capability->PendingBitArrayBIR
+            this->PendingBitArrayOffset := this->Capability->PendingBitArrayOffset << 3
+
+            this->TableMapping := Device->MapBAR(this->TableBIR)
+            this->Table := (this->TableMapping + this->TableOffset) As TableEntry*
+
+            if (this->PendingBitArrayBIR != this->TableBIR) {
+                this->PendingBitArrayMapping := Device->MapBAR(this->PendingBitArrayBIR)
+            }
+            else {
+                this->PendingBitArrayMapping := this->TableMapping
+            }
+
+            this->PendingBitArray := (this->PendingBitArrayMapping + this->PendingBitArrayOffset) As i64*
+
+            return this
+        }
+
+        define void Enable() {
+            this->Capability->Enable := true
+        }
+        define void Disable() {
+            this->Capability->Enable := false
+        }
+
+        define void SetEntry(i32 Index, i64 MessageAddress, i32 MessageData) {
+            TableEntry* Entry := this->Table[Index]
+
+            Entry->MessageAddressLow := (MessageAddress & 0xFFFFFFFF) As i32
+            Entry->MessageAddressHigh := ((MessageAddress >> 32) & 0xFFFFFFFF) As i32
+            Entry->MessageData := MessageData
+            Entry->VectorControl := 0
+        }
+
+        define void SetEntry(i32 Index, i8 IRQ) {
+            ; Old MSI functions expect the address to be 32 bits, so we mask it to ensure compatibility with those functions.
+
+            i64 Address := (PackMSIAddress(LocalAPIC->ID) As i64) & 0xFFFF_FFFF
+            i32 Data := PackMSIData(IRQ, AMD64_MSI_DELIVERY_MODE_FIXED, AMD64_MSI_DATA_TRIGGER_EDGE)
+
+            this->SetEntry(Index, Address, Data)
+        }
+    }
+}
