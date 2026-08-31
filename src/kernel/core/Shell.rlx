@@ -292,7 +292,7 @@ define void OnCommand(i8* CommandLine) {
 
 			KernelPageAllocator->FreeVirtual(FileData, FilePages)
 			
-			Child~>OnKilled->Wait()
+			;Child~>OnKilled->Wait()
 			
 
 			LastStatus := Child->ExitCode

@@ -71,7 +71,6 @@ struct UserThread {
 	
 	i8 Killed
 	i32 ExitCode
-	Event OnKilled
 	
 	declare void SetupSignalState(i32, i32, i32)
 	
@@ -149,7 +148,7 @@ struct UserThread {
 	define void Exit(i32 Code) {
 		this->Killed := true
 		this->ExitCode := Code
-		this~>OnKilled->Fire(this)
+		;this~>OnKilled->Fire(this)
 		
 		;KernelHeap->Free(CurrentProcess)
 		;Mappings->Delete()
@@ -245,7 +244,7 @@ struct UserThread {
 	define void Free() {
 		Scheduler->Kill(this->KernelTask)
 
-		this~>OnKilled->Free()
+		;this~>OnKilled->Free()
 		this->KernelTask->Free()
 		this->UserTask->Free()
 	}
@@ -275,10 +274,11 @@ struct Process {
 	i32 TotalThreads
 	i32 AliveThreads
 	
-	Event OnKilled
+	;Event OnKilled
 	
 	i32 ExitCode
 	
+	/*
 	define EventState OnThreadKilled(UserThread* Thread, Event* Fired) {
 		this->Threads->RemoveValue(Thread)
 
@@ -291,6 +291,7 @@ struct Process {
 		
 		return EventState:CallNextListener
 	}
+	*/
 	
 	define void Initialize(ELFHeader* Header, IFileHandle* WorkingDirectory) {
 		this->ELF := Header
@@ -321,7 +322,7 @@ struct Process {
 		this->TotalThreads := 1
 		this->AliveThreads := 1
 		
-		this~>MainThread~>OnKilled->ListenMethod(&Process.OnThreadKilled, this)
+		;this~>MainThread~>OnKilled->ListenMethod(&Process.OnThreadKilled, this)
 
 		this->Threads := PointerArray:New()
 		
@@ -352,7 +353,7 @@ struct Process {
 	
 	define void Free() {
 		this~>MainThread->Free()
-		this~>OnKilled->Free()
+		;this~>OnKilled->Free()
 	}
 
 	define i8 CanAccessMemory(i64 Address, i32 PageCount, i8 ForWrite) {
