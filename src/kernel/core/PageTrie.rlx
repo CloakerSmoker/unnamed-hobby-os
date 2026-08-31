@@ -40,6 +40,8 @@ i32 BYTES_IN_4K := 0x1000
 i32 BYTES_IN_2M := 0x20_0000
 i32 BYTES_IN_1G := 0x4000_0000
 
+i64 LOWEST_GAP_ADDRESS := 0x20_0000
+
 struct PageTrie {
     i64* Root
     IPhysicalAllocator* Allocator
@@ -411,10 +413,10 @@ struct PageTrie {
         return this->FindGap(1, Start, PageCount)
     }
     define void* FindGap(i64 PageCount) {
-        return this->FindGap(1, 0, PageCount)
+        return this->FindGap(1, LOWEST_GAP_ADDRESS, PageCount)
     }
 
     define void* FindGapAligned(i64 Size) {
-        return this->FindGap(Size, 0, Size / PAGE_SIZE)
+        return this->FindGap(Size, LOWEST_GAP_ADDRESS, Size / PAGE_SIZE)
     }
 }
